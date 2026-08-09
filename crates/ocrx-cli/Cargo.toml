@@ -1,0 +1,20 @@
+[package]
+name = "ocrx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ocrx-core = { path = "../ocrx-core" }
+ocrx-runtime = { path = "../ocrx-runtime" }
+ocrx-models = { path = "../ocrx-models" }
+ocrx-output = { path = "../ocrx-output" }
+ocrx-skill = { path = "../ocrx-skill" }
+ocrx-pdf = { path = "../ocrx-pdf" }
+ocrx-ovisocr2 = { path = "../ocrx-ovisocr2" }
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+ctrlc = "3.5.2"

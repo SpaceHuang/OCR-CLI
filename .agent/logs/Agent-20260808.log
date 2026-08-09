@@ -1,0 +1,3 @@
+{"ts":"2026-08-07T22:13:22.407Z","level":"info","event":"agent.startup","workDir":"/Users/space/Documents/Develop/OCR-CLI","isPackaged":true,"logDir":"/Users/space/Documents/Develop/OCR-CLI/.agent/logs"}
+{"ts":"2026-08-07T22:13:22.428Z","level":"info","event":"tray.init_ok","iconPath":"/Applications/SpaceAssistant.app/Contents/Resources/tray/tray.png"}
+{"ts":"2026-08-07T22:19:18.640Z","level":"info","event":"workdir.switch.start","fromProfileId":"2e153c3a-3b5e-4cbb-b095-1b7c9ec17c69","fromProfileName":"OCR-CLI","toProfileId":"c4f7a1af-5f95-49ba-abc7-0abbd6fdd8a6","toProfileName":"SpaceAssistant"}

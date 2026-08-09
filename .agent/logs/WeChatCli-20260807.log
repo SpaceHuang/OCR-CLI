@@ -1,0 +1,3 @@
+{"ts":"2026-08-06T22:19:23.657Z","level":"info","event":"wechat.logger.startup","logDir":"/Users/space/Documents/Develop/OCR-CLI/.agent/logs","isPackaged":true,"workDir":"/Users/space/Documents/Develop/OCR-CLI"}
+{"ts":"2026-08-06T22:19:23.659Z","level":"info","event":"wechat.service.bundle_created","loggedIn":false,"remoteEnabled":false,"storageDir":"/Users/space/Library/Application Support/spaceassistant/wechatbot"}
+{"ts":"2026-08-06T22:19:23.676Z","level":"info","event":"wechat.poll.auto_start_skipped","enabled":false,"remoteEnabled":false,"loggedIn":false,"hasBundle":true}

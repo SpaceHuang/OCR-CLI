@@ -1,0 +1,3 @@
+{"ts":"2026-08-06T22:19:23.654Z","level":"info","event":"agent.startup","workDir":"/Users/space/Documents/Develop/OCR-CLI","isPackaged":true,"logDir":"/Users/space/Documents/Develop/OCR-CLI/.agent/logs"}
+{"ts":"2026-08-06T22:19:23.676Z","level":"info","event":"tray.init_ok","iconPath":"/Applications/SpaceAssistant.app/Contents/Resources/tray/tray.png"}
+{"ts":"2026-08-06T22:19:36.763Z","level":"info","event":"skills.load","workDir":"/Users/space/Documents/Develop/OCR-CLI","skillCount":2,"skillNames":["browser-setup-guide","shell-setup-guide"],"scannedAt":1786054776763,"cacheHit":false}

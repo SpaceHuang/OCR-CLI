@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "set_id": "replace-with-approved-set",
+  "page_count": 0,
+  "input_sha256": "",
+  "renderer": {"dpi": 300, "pixel_budget": 1048576},
+  "prompt_revision": "",
+  "adapter_revision": "",
+  "runtime_revision": "",
+  "model_revision": "",
+  "license": {"redistributable": false, "provenance": ""},
+  "required_categories": ["text", "formula", "table", "visual", "mixed", "blank", "truncated", "failure"]
+}

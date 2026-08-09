@@ -1,0 +1,8 @@
+{"ts":"2026-08-07T22:07:35.616Z","level":"info","event":"wechat.poll.stopped","processedCount":0}
+{"ts":"2026-08-07T22:07:35.630Z","level":"info","event":"wechat.poll.paused_window_closed"}
+{"ts":1786140455633,"level":"info","event":"wechat.audit.authorization_revoked","channel":"feishu","reason":"service_stopped","authorizationGeneration":1,"cancelledPending":0,"revokedGrants":0}
+{"ts":"2026-08-07T22:07:35.667Z","level":"info","event":"wechat.poll.stopped","processedCount":0}
+{"ts":"2026-08-07T22:07:35.667Z","level":"info","event":"wechat.service.shutdown"}
+{"ts":"2026-08-07T22:13:22.412Z","level":"info","event":"wechat.logger.startup","logDir":"/Users/space/Documents/Develop/OCR-CLI/.agent/logs","isPackaged":true,"workDir":"/Users/space/Documents/Develop/OCR-CLI"}
+{"ts":"2026-08-07T22:13:22.414Z","level":"info","event":"wechat.service.bundle_created","loggedIn":false,"remoteEnabled":false,"storageDir":"/Users/space/Library/Application Support/spaceassistant/wechatbot"}
+{"ts":"2026-08-07T22:13:22.428Z","level":"info","event":"wechat.poll.auto_start_skipped","enabled":false,"remoteEnabled":false,"loggedIn":false,"hasBundle":true}

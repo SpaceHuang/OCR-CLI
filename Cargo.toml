@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ocrx-cli",
+    "crates/ocrx-core",
+    "crates/ocrx-runtime",
+    "crates/ocrx-pdf",
+    "crates/ocrx-models",
+    "crates/ocrx-output",
+    "crates/ocrx-ovisocr2",
+    "crates/ocrx-skill",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+dead_code = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# The workspace enables pedantic linting, while these advisories are either
+# inherited API documentation debt or allocation/style guidance scheduled for
+# focused follow-up; they must not mask correctness lints.
+missing_errors_doc = "allow"
+format_push_string = "allow"
+format_collect = "allow"
+unnested_or_patterns = "allow"
+map_unwrap_or = "allow"
+collapsible_if = "allow"
+manual_let_else = "allow"
+single_match_else = "allow"
+unnecessary_wraps = "allow"
+doc_markdown = "allow"
+cast_possible_truncation = "allow"
+manual_assert_eq = "allow"
+lint_groups_priority = "allow"
+needless_borrows_for_generic_args = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_lossless = "allow"
+manual_div_ceil = "allow"
+return_self_not_must_use = "allow"
+must_use_candidate = "allow"
+large_enum_variant = "allow"
+too_many_lines = "allow"
+ignored_unit_patterns = "allow"
+items_after_statements = "allow"
+nonminimal_bool = "allow"
+needless_pass_by_value = "allow"
+semicolon_if_nothing_returned = "allow"

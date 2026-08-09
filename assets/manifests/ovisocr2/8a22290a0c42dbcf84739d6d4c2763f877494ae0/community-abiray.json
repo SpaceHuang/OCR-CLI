@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "model": "ovisocr2",
+  "source": {
+    "repository": "Abiray/OvisOCR2-GGUF",
+    "revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+    "base_model": "ATH-MaaS/OvisOCR2",
+    "license": "apache-2.0",
+    "source_url": "https://huggingface.co/Abiray/OvisOCR2-GGUF"
+  },
+  "projector": {
+    "file": "mmproj-F16.gguf",
+    "sha256": "7e371704e8f3c88638830e52866dfa88b2fd383155e3a0f9484e4ce037fdd42f",
+    "size_bytes": 204987079
+  },
+  "profiles": {
+    "compact": {
+      "file": "OvisOCR2-Q4_K_M.gguf",
+      "sha256": "4ae54c66bfe1efb2882854ff642c3d137aa082dbd0699bc9234ff39874a492a1",
+      "size_bytes": 529297280
+    },
+    "balanced": {
+      "file": "OvisOCR2-Q5_K_M.gguf",
+      "sha256": "e17744e367adb891cc9c82f4255408cf46a00efa1b20a83f8187d5bd662ce89a",
+      "size_bytes": 577998720
+    },
+    "quality": {
+      "file": "OvisOCR2-Q8_0.gguf",
+      "sha256": "3fba6d94312e550575a92d55cffb8d75997bf68a9f133c92ab6ad7f0bf2bc93e",
+      "size_bytes": 811843498
+    },
+    "reference": {
+      "file": "OvisOCR2-F16.gguf",
+      "sha256": "bd8f2c62c930d74590abcb5f65f79e898672e458d6044e8b2e885daea948592e",
+      "size_bytes": 1516744617
+    }
+  }
+}

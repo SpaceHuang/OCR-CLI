@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "model_id": "ovisocr2",
+  "model_source": "Abiray/OvisOCR2-GGUF",
+  "model_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+  "profiles": ["compact", "balanced", "quality", "reference"],
+  "mmproj": {"file": "mmproj-F16.gguf", "sha256": "7e371704e8f3c88638830e52866dfa88b2fd383155e3a0f9484e4ce037fdd42f", "bytes": 204987079},
+  "runtime": {"llama_cpp_rs": "0.1.152", "llama_cpp_sys": "0.1.153", "features": ["mtmd", "metal"], "platform": "macos-arm64", "metal_minimum": "Apple Silicon"},
+  "license": "Apache-2.0",
+  "source_url": "https://huggingface.co/Abiray/OvisOCR2-GGUF"
+}

@@ -1,0 +1,5 @@
+{"ts":"2026-08-02T09:00:52.485Z","level":"info","event":"wechat.poll.stopped","processedCount":0}
+{"ts":"2026-08-02T09:00:52.496Z","level":"info","event":"wechat.poll.paused_window_closed"}
+{"ts":1785661252496,"level":"info","event":"wechat.audit.authorization_revoked","channel":"feishu","reason":"service_stopped","authorizationGeneration":1,"cancelledPending":0,"revokedGrants":0}
+{"ts":"2026-08-02T09:00:52.552Z","level":"info","event":"wechat.poll.stopped","processedCount":0}
+{"ts":"2026-08-02T09:00:52.552Z","level":"info","event":"wechat.service.shutdown"}

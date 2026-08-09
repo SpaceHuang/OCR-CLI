@@ -1,0 +1,23 @@
+{"ts":"2026-08-06T22:19:23.657Z","level":"info","event":"feishu.logger.startup","logDir":"/Users/space/Documents/Develop/OCR-CLI/.agent/logs","isPackaged":true,"workDir":"/Users/space/Documents/Develop/OCR-CLI"}
+{"ts":"2026-08-06T22:19:23.658Z","level":"info","event":"feishu.service.bundle_created","hasRunner":true,"remoteEnabled":false}
+{"ts":"2026-08-06T22:19:23.659Z","level":"info","event":"feishu.ipc.auto_start","started":false,"reason":"disabled"}
+{"ts":"2026-08-06T22:19:24.314Z","level":"info","event":"feishu.cli.run.start","argsRedacted":"lark-cli --version","timeoutSec":10}
+{"ts":"2026-08-06T22:19:24.317Z","level":"warn","event":"feishu.cli.run.done","exitCode":1,"timedOut":false,"durationMs":3,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
+{"ts":"2026-08-06T22:19:24.317Z","level":"info","event":"feishu.cli.detect","installed":false,"path":"lark-cli","nodeAvailable":false,"npmAvailable":false}
+{"ts":"2026-08-06T22:19:24.317Z","level":"info","event":"feishu.ipc.health_check","cliInstalled":false,"eventState":"stopped","pendingConfirms":0}
+{"ts":"2026-08-06T22:19:24.317Z","level":"info","event":"feishu.cli.run.start","argsRedacted":"lark-cli --version","timeoutSec":10}
+{"ts":"2026-08-06T22:19:24.320Z","level":"warn","event":"feishu.cli.run.done","exitCode":1,"timedOut":false,"durationMs":3,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
+{"ts":"2026-08-06T22:19:24.320Z","level":"info","event":"feishu.cli.detect","installed":false,"path":"lark-cli","nodeAvailable":false,"npmAvailable":false}
+{"ts":"2026-08-06T22:19:24.320Z","level":"info","event":"feishu.ipc.auth_status","authorized":false,"exitCode":1,"cliMissing":true}
+{"ts":"2026-08-06T22:19:24.323Z","level":"warn","event":"feishu.cli.run.done","exitCode":-2,"timedOut":false,"durationMs":6,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
+{"ts":"2026-08-06T22:19:24.323Z","level":"warn","event":"feishu.cli.run.done","exitCode":-2,"timedOut":false,"durationMs":9,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
+{"ts":"2026-08-06T22:19:24.339Z","level":"info","event":"feishu.cli.run.start","argsRedacted":"lark-cli --version","timeoutSec":10}
+{"ts":"2026-08-06T22:19:24.340Z","level":"warn","event":"feishu.cli.run.done","exitCode":1,"timedOut":false,"durationMs":1,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
+{"ts":"2026-08-06T22:19:24.340Z","level":"info","event":"feishu.cli.detect","installed":false,"path":"lark-cli","nodeAvailable":false,"npmAvailable":false}
+{"ts":"2026-08-06T22:19:24.340Z","level":"info","event":"feishu.ipc.auth_status","authorized":false,"exitCode":1,"cliMissing":true}
+{"ts":"2026-08-06T22:19:24.340Z","level":"warn","event":"feishu.cli.run.done","exitCode":-2,"timedOut":false,"durationMs":1,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
+{"ts":"2026-08-06T22:19:24.341Z","level":"info","event":"feishu.cli.run.start","argsRedacted":"lark-cli --version","timeoutSec":10}
+{"ts":"2026-08-06T22:19:24.341Z","level":"warn","event":"feishu.cli.run.done","exitCode":1,"timedOut":false,"durationMs":0,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
+{"ts":"2026-08-06T22:19:24.341Z","level":"info","event":"feishu.cli.detect","installed":false,"path":"lark-cli","nodeAvailable":false,"npmAvailable":false}
+{"ts":"2026-08-06T22:19:24.341Z","level":"info","event":"feishu.ipc.health_check","cliInstalled":false,"eventState":"stopped","pendingConfirms":0}
+{"ts":"2026-08-06T22:19:24.341Z","level":"warn","event":"feishu.cli.run.done","exitCode":-2,"timedOut":false,"durationMs":0,"stdoutLen":0,"stdoutPreview":"","stderrLen":22,"stderrPreview":"spawn lark-cli ENOENT\n"}
