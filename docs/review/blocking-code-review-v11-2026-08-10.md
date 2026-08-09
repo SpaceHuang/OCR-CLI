@@ -8,7 +8,7 @@
 
 ### Critical：`result.json.diagnostics[*].warnings` 被硬编码为空，页级告警在最终契约中再次丢失
 
-位置：`crates/ocrx-cli/src/main.rs:1362-1368`；上游状态来源：`crates/ocrx-output/src/lib.rs:500-554`、`crates/ocrx-output/src/lib.rs:905-919`
+位置：`src/ocrx-cli/src/main.rs:1362-1368`；上游状态来源：`src/ocrx-output/src/lib.rs:500-554`、`src/ocrx-output/src/lib.rs:905-919`
 
 扫描层目前会正确完成以下工作：
 
@@ -28,7 +28,7 @@
 
 ### Required：新增 diagnostics/checkpoint v4 行为没有回归测试，当前测试无法发现上述数据丢失
 
-位置：`crates/ocrx-cli/src/main.rs:1747-1773`、`crates/ocrx-output/src/lib.rs:1600-1785`
+位置：`src/ocrx-cli/src/main.rs:1747-1773`、`src/ocrx-output/src/lib.rs:1600-1785`
 
 CLI 的 `scan_result_json_preserves_truncation_and_escapes_paths` 仍传入空 diagnostics，只断言全局 warnings；output 的 checkpoint round-trip 使用 `audit: None`，也没有断言 scaled audit、页级 warnings 和 resume diagnostic 的联合恢复。测试数量与上一轮相同，新增实现没有对应的行为测试，所以 `"warnings":[]` 这类直接契约错误仍能让全部质量门通过。
 

@@ -10,7 +10,7 @@
 
 ### Critical：adapter 的截断状态被丢弃，`result.json` 会把不完整 OCR 报告为 success
 
-位置：`crates/ocrx-ovisocr2/src/lib.rs:16-57`; `crates/ocrx-cli/src/main.rs:797-817`; `crates/ocrx-output/src/lib.rs:491-524`; `crates/ocrx-cli/src/main.rs:1190-1268`
+位置：`src/ocrx-ovisocr2/src/lib.rs:16-57`; `src/ocrx-cli/src/main.rs:797-817`; `src/ocrx-output/src/lib.rs:491-524`; `src/ocrx-cli/src/main.rs:1190-1268`
 
 `adapt_response` 能根据 runtime 的 `finish_reason=max_tokens` 产生 `Termination::MaxTokens` 和 `PageWarning::Truncated`，但 `write_page_artifacts` 最终只返回 `String` Markdown。`OvisRecognizer::recognize_artifact` 和 `PageArtifactRecognizer` 也只返回 `(PNG, Markdown)`，没有传递页面 termination/warnings。
 
@@ -27,7 +27,7 @@
 
 ### Required：`--keep-pages` 会把整页 PNG 计入插图数量，结果字段语义错误
 
-位置：`crates/ocrx-cli/src/main.rs:1253-1266`; 全页图写入见 `crates/ocrx-output/src/lib.rs:1039-1048`
+位置：`src/ocrx-cli/src/main.rs:1253-1266`; 全页图写入见 `src/ocrx-output/src/lib.rs:1039-1048`
 
 image count 通过统计 `images/` 下所有以 `page-` 开头的 PNG 得出。bbox 插图名为 `page-0001-figure-001.png`，但 `--keep-pages` 保留的整页图名也为 `page-0001.png`；因此启用该参数后，每个成功页至少额外增加 1 张“图片”，即使 PDF 没有任何插图。
 
@@ -37,7 +37,7 @@ image count 通过统计 `images/` 下所有以 `page-` 开头的 PNG 得出。b
 
 ### Required：成功热路径保留完整 `_legacy_result_json` 死实现
 
-位置：`crates/ocrx-cli/src/main.rs:1202-1243`
+位置：`src/ocrx-cli/src/main.rs:1202-1243`
 
 代码先构造一整份 `_legacy_result_json`，执行所有路径扫描和字符串分配，然后完全丢弃，再调用 `serialize_scan_result` 构造第二份相同结果。这不是兼容层，而是明确的无用计算和重复 schema；变量名前缀只是压制 unused 检查。
 
@@ -47,7 +47,7 @@ image count 通过统计 `images/` 下所有以 `page-` 开头的 PNG 得出。b
 
 ### Required：stale-lock 以固定 1 小时年龄强制接管，可能删除仍活跃但阻塞的提交锁
 
-位置：`crates/ocrx-models/src/lib.rs:331-386`
+位置：`src/ocrx-models/src/lib.rs:331-386`
 
 当前 stale 条件是“锁年龄超过 1 小时 **或** owner 已死亡”。这使 Windows 崩溃锁最终可恢复，但也意味着任何仍活跃、因慢盘/网络文件系统/安全软件而卡住超过 1 小时的 commit 会被第二进程强制删除锁。第二进程随后与第一进程并发操作同一最终文件和备份。
 

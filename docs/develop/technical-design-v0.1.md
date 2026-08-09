@@ -89,7 +89,7 @@ ocrx CLI
 
 ```text
 Cargo.toml
-crates/
+src/
   ocrx-cli/          # 参数解析、命令路由、stdout/stderr 与退出码
   ocrx-core/         # 领域类型、应用服务、统一流水线
   ocrx-ovisocr2/     # 唯一生产 adapter、prompt、原始输出解析

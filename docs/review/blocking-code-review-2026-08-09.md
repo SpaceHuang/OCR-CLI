@@ -10,7 +10,7 @@
 
 ### Required：workspace 测试不隔离用户 HOME，当前环境直接失败
 
-位置：`crates/ocrx-cli/src/main.rs:1457-1475`
+位置：`src/ocrx-cli/src/main.rs:1457-1475`
 
 `doctor_json_report_has_stable_golden_shape` 期望 `skill_installed=false`，但被测函数直接读取真实 `HOME/.codex/skills/ocrx/SKILL.md`。当开发者机器已安装该 Skill 时，测试得到 `true` 并失败。本次运行 `cargo test --workspace` 即在此断言失败（19 passed, 1 failed，随后停止）。
 
@@ -20,7 +20,7 @@
 
 ### Required：仓库声明的 Clippy 质量门无法通过
 
-位置：workspace 多处；首批错误见 `crates/ocrx-output/src/lib.rs:275`、`crates/ocrx-skill/src/lib.rs:27`、`crates/ocrx-models/src/lib.rs:36`
+位置：workspace 多处；首批错误见 `src/ocrx-output/src/lib.rs:275`、`src/ocrx-skill/src/lib.rs:27`、`src/ocrx-models/src/lib.rs:36`
 
 `Cargo.toml` 为 workspace 启用了 `clippy::all` 和 `clippy::pedantic`，但 `cargo clippy --workspace --all-targets -- -D warnings` 当前失败。输出包含未嵌套模式、公共 `Result` API 缺失 Errors 文档、截断 cast、可折叠控制流及不必要分配等大量错误。无论这些单项是否影响运行时，它们共同意味着仓库自己的静态质量门是红色的，不能进入合并/发布状态。
 
@@ -28,7 +28,7 @@
 
 ### Critical：默认 `scan` 无法兑现“一条命令完成 OCR”的模型安装行为
 
-位置：`crates/ocrx-cli/src/main.rs:875-893, 1013-1017`
+位置：`src/ocrx-cli/src/main.rs:875-893, 1013-1017`
 
 `run_scan` 只在 `--offline` 且模型文件缺失时提前报错。非离线模式下，代码既不验证缓存资产，也不调用 `install_from_urls`；它直接把预期缓存路径交给运行时加载。因此全新安装后执行文档中的 `ocrx scan document.pdf`，最终只会因模型文件不存在而以 runtime 错误退出。`--non-interactive` 也没有参与任何下载决策。
 
@@ -38,7 +38,7 @@
 
 ### Critical：失败的安装事务会删除原本完好的已安装模型
 
-位置：`crates/ocrx-models/src/lib.rs:311-339, 375-394`
+位置：`src/ocrx-models/src/lib.rs:311-339, 375-394`
 
 `install_from_urls` 和 `install_from_files` 在任何错误后，不仅删除 `.part` 文件，还无条件删除最终的 `model.gguf` 与 `mmproj.gguf`。当用户对已安装 profile 重试安装，而下载、源文件复制、哈希校验或第二次 rename 失败时，之前可用的模型会被删除。
 
@@ -48,7 +48,7 @@
 
 ### Critical：断点续扫没有验证输入或页面产物，可能静默输出错误文档
 
-位置：`crates/ocrx-cli/src/main.rs:1022-1029`; `crates/ocrx-output/src/lib.rs:475-481, 494-500, 815-816`
+位置：`src/ocrx-cli/src/main.rs:1022-1029`; `src/ocrx-output/src/lib.rs:475-481, 494-500, 815-816`
 
 `CompatibilityKey.input_sha256` 实际保存的是输入路径字符串，`PageCheckpoint.output_sha256` 实际保存固定的 `page-N`。`is_reusable` 只检查这些字符串是否相等/非空，不读取或校验页面 Markdown/图片。
 
@@ -65,7 +65,7 @@
 
 ### Required：`--max-image-tokens` 与 `--context-size` 被接受但完全不生效
 
-位置：`crates/ocrx-cli/src/main.rs:177-190, 1018-1029`; `crates/ocrx-runtime/src/llama_mtmd.rs:96-108`
+位置：`src/ocrx-cli/src/main.rs:177-190, 1018-1029`; `src/ocrx-runtime/src/llama_mtmd.rs:96-108`
 
 CLI 解析并校验这两个参数，但没有把它们传入 runtime：MTMD 的 image token 上下限固定为 1024，context 固定为 16384。compatibility key 也未包含二者。因此用户指定的内存/上下文限制被静默忽略，且未来修复后旧 checkpoint 仍可能被错误复用。
 

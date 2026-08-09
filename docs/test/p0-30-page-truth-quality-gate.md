@@ -190,7 +190,7 @@ shasum -a 256 assets/regression/<set-id>/inputs/source.pdf
 7. **失败页**：可标 `termination` 为预期状态，并在页备注/报告里写“预期失败原因”。  
 8. **禁止**：根据模型输出“倒着改真值”来抬分；真值只对原图/PDF。
 
-参考样例：`crates/ocrx-ovisocr2/tests/fixtures/reference/page-01.page.json`（无 `categories`，真值集需自行加上）。
+参考样例：`src/ocrx-ovisocr2/tests/fixtures/reference/page-01.page.json`（无 `categories`，真值集需自行加上）。
 
 ### 3.5 真值集自检（标注完成后第一件事）
 

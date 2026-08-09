@@ -10,7 +10,7 @@
 
 ### Critical：模型 SHA-256 校验将整个 GGUF 读入内存，可能在启动前造成 OOM
 
-位置：`crates/ocrx-core/src/lib.rs:6-10`; 调用路径见 `crates/ocrx-models/src/lib.rs:196-205, 253-257`
+位置：`src/ocrx-core/src/lib.rs:6-10`; 调用路径见 `src/ocrx-models/src/lib.rs:196-205, 253-257`
 
 新的跨平台 `sha256_file` 使用 `read_to_end` 把整个文件装入 `Vec<u8>`，随后 `sha256` 又执行 `data.to_vec()` 创建第二份完整副本用于 padding。对需求中约 529MB、812MB、最高约 1.52GB 的模型文件，单次校验峰值接近文件大小的两倍；校验 model 后还要校验约 205MB mmproj。8GB 最低设备或当前可用内存紧张时，程序可能仅为哈希瞬时占用约 3GB，并在真正加载模型前 OOM/严重 swap。
 
@@ -20,7 +20,7 @@
 
 ### Critical：落盘 `result.json` 仍可能是非法 JSON，且未实现需求最低 schema
 
-位置：`crates/ocrx-cli/src/main.rs:1198-1223, 1273-1279`
+位置：`src/ocrx-cli/src/main.rs:1198-1223, 1273-1279`
 
 修复已让 partial 的 `markdown_path` 为 null，并转义反斜杠、双引号、换行和回车；但仍通过 `format!` 手拼 JSON。`json_escape_path` 没有转义 tab、backspace、form-feed 及其他 U+0000–U+001F 控制字符，合法 Unix 路径包含这些字符时仍会生成无效 JSON。
 
@@ -32,7 +32,7 @@
 
 ### Critical：模型事务回滚仍忽略恢复失败，可能破坏已有有效安装
 
-位置：`crates/ocrx-models/src/lib.rs:268-304`
+位置：`src/ocrx-models/src/lib.rs:268-304`
 
 `commit_pair` 与 v3 相同：第二次提交失败后删除最终文件，再用 rename 恢复备份，但所有恢复结果均以 `let _ =` 丢弃。如果磁盘、权限、杀毒软件占用或目录状态导致恢复失败，函数只返回通用 `TransactionFailed`，旧模型可能丢失或只恢复一半。成功提交后的备份删除失败同样被忽略，可能遗留 GB 级备份。
 
@@ -42,7 +42,7 @@
 
 ### Required：Windows 测试仍依赖 `shasum`，跨平台质量门会失败
 
-位置：`crates/ocrx-models/src/lib.rs:638-650, 680-690`（测试模块）
+位置：`src/ocrx-models/src/lib.rs:638-650, 680-690`（测试模块）
 
 生产代码已切换到 `ocrx_core::sha256_file`，但模型测试的 hash closure 仍启动 `shasum -a 256`。Windows 10/11 是首发平台，标准环境没有该命令；因此这些单元测试会在 Windows CI 直接失败，恰好无法验证本轮跨平台修复。
 

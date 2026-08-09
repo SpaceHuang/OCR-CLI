@@ -10,7 +10,7 @@
 
 ### Critical：`result.json` 的格式参数错位，正常成功结果通常不是合法 JSON
 
-位置：`crates/ocrx-cli/src/main.rs:1198-1227`
+位置：`src/ocrx-cli/src/main.rs:1198-1227`
 
 格式字符串在 status 后依次要求：
 
@@ -36,7 +36,7 @@ partial 时则会得到 `"input":"null"`，并继续把未加 JSON 引号的输�
 
 ### Critical：扩展后的 `result.json` 字段仍不满足真实稳定契约
 
-位置：`crates/ocrx-cli/src/main.rs:1205-1222`; 需求基线 `docs/requirement/requirements-v0.1.md:452-487`
+位置：`src/ocrx-cli/src/main.rs:1205-1222`; 需求基线 `docs/requirement/requirements-v0.1.md:452-487`
 
 即使修正参数顺序，当前实现仍有会误导 Agent 的确定性数据错误：
 
@@ -53,7 +53,7 @@ partial 时则会得到 `"input":"null"`，并继续把未加 JSON 引号的输�
 
 ### Required：安装锁在崩溃后永久残留，后续安装无法自愈
 
-位置：`crates/ocrx-models/src/lib.rs:318-337`
+位置：`src/ocrx-models/src/lib.rs:318-337`
 
 `InstallLock` 通过 `create_new(.install.lock)` 获取锁，只在 Rust `Drop` 中删除。正常返回和 panic unwind 可以释放，但进程被 kill、断电或 abort 时不会执行 Drop；此后锁文件永久存在，所有安装都会立即返回 `TransactionFailed`。没有 PID/时间元数据、存活检测、过期策略或用户可操作错误，`model remove` 也不会清理 profile 父目录中的该锁。
 
@@ -63,7 +63,7 @@ partial 时则会得到 `"input":"null"`，并继续把未加 JSON 引号的输�
 
 ### Required：回滚在清理新文件失败时提前返回，跳过旧资产恢复
 
-位置：`crates/ocrx-models/src/lib.rs:291-307`
+位置：`src/ocrx-models/src/lib.rs:291-307`
 
 提交失败后，代码先删除新 `model`/`mmproj`。若任一 `remove_file` 失败且路径仍存在，会立即返回，后面的 backup rename 完全不执行。此时旧的有效资产仍在 `.bak`，规范路径却保持半提交状态；扫描无法使用，且 stale lock/备份需要人工理解内部命名才能恢复。
 

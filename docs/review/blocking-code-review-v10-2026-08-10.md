@@ -8,7 +8,7 @@
 
 ### Critical：渲染尺寸、缩放状态没有进入 checkpoint/result，`render_scaled` warning 永远不会由扫描路径产生
 
-位置：`crates/ocrx-output/src/lib.rs:499-521`、`crates/ocrx-output/src/lib.rs:894-915`、`crates/ocrx-cli/src/main.rs:1322-1378`
+位置：`src/ocrx-output/src/lib.rs:499-521`、`src/ocrx-output/src/lib.rs:894-915`、`src/ocrx-cli/src/main.rs:1322-1378`
 
 `RenderedPage` 已携带完整 `RenderAudit`，但扫描成功时只把它写入独立的 `page-NNNN.render-audit` 文件。`PageCheckpoint` v3 的序列化字段仅有兼容键、完成状态、摘要、截断和 warnings；最终 `ScanResultFields` 也只有聚合页数，没有任何页级原始尺寸、300 DPI 渲染尺寸、送模尺寸或缩放状态。因此冻结计划 P4.2 的“缩放 warning、页面尺寸与页段审计进入 checkpoint/result”仍未实现，Agent 仅解析稳定 JSON/checkpoint 时无法取得这些诊断。
 
@@ -18,7 +18,7 @@
 
 ### Critical：分页渲染和识别错误被吞掉，partial 结果只有计数、没有失败页面或原因
 
-位置：`crates/ocrx-output/src/lib.rs:499-525`、`crates/ocrx-output/src/lib.rs:545-551`、`crates/ocrx-cli/src/main.rs:1322-1378`
+位置：`src/ocrx-output/src/lib.rs:499-525`、`src/ocrx-output/src/lib.rs:545-551`、`src/ocrx-cli/src/main.rs:1322-1378`
 
 renderer 与 recognizer 的错误分支都使用 `Err(_)`，仅增加 `failed` 计数后继续。错误类型、消息、失败阶段和页码没有写入 checkpoint、`JobSummary` 或 `result.json`。最终 JSON 只能报告 `pages.failed=N`；多页任务中无法判断具体哪页失败，更无法区分 PDF 渲染、worker、模型推理或产物提交问题。
 

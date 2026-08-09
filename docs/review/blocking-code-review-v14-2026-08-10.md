@@ -8,7 +8,7 @@
 
 ### Critical：worker 模式静默忽略 `--dpi`，checkpoint 兼容键与真实渲染参数不一致
 
-位置：`crates/ocrx-cli/src/main.rs:1154-1175`、`crates/ocrx-pdf/src/lib.rs:251-284`、`crates/ocrx-pdf/src/bin/pdfium-worker.rs:23-29`；兼容键：`crates/ocrx-cli/src/main.rs:1208-1218`
+位置：`src/ocrx-cli/src/main.rs:1154-1175`、`src/ocrx-pdf/src/lib.rs:251-284`、`src/ocrx-pdf/src/bin/pdfium-worker.rs:23-29`；兼容键：`src/ocrx-cli/src/main.rs:1208-1218`
 
 CLI 创建进程内 `PdfScanRenderer` 时会构造：
 
@@ -32,7 +32,7 @@ RenderOptions { dpi: options.dpi.unwrap_or(300) }
 
 ### Required：新增比例测试仍使用与尺寸不一致的手工数据，未验证真实计算
 
-位置：`crates/ocrx-cli/src/main.rs:1832-1872`
+位置：`src/ocrx-cli/src/main.rs:1832-1872`
 
 测试中的 rendered/model 宽度为 `80 → 64`，真实线性比例应为 `4/5`，但 fixture 手工填入 `1/4`，且测试只断言 `scaled=true`，没有断言序列化后的 ratio。它能验证字段存在，却不能防止线性比例再次退化为面积比或任意错误数值。
 

@@ -8,7 +8,7 @@
 
 ### Critical：worker audit 文件未从 segment 临时目录提交，启用 worker 后每页必然失败
 
-位置：`crates/ocrx-pdf/src/bin/pdfium-worker.rs:29-45`、`crates/ocrx-pdf/src/lib.rs:285-298`、`crates/ocrx-cli/src/main.rs:696-715`
+位置：`src/ocrx-pdf/src/bin/pdfium-worker.rs:29-45`、`src/ocrx-pdf/src/lib.rs:285-298`、`src/ocrx-cli/src/main.rs:696-715`
 
 `pdfium-worker` 现在为每页生成两份文件：
 
@@ -30,7 +30,7 @@
 
 ### Critical：`scale_ratio` 使用面积比，数值会把线性缩放比例平方
 
-位置：`crates/ocrx-cli/src/main.rs:716-742`、`crates/ocrx-cli/src/main.rs:773-798`、`crates/ocrx-output/src/lib.rs:364-391`
+位置：`src/ocrx-cli/src/main.rs:716-742`、`src/ocrx-cli/src/main.rs:773-798`、`src/ocrx-output/src/lib.rs:364-391`
 
 当前 numerator 使用 `model_width * model_height`，denominator 使用 `rendered_width * rendered_height`。这表示保留的像素面积比例，而需求中的“保持宽高比缩小”和“缩放比例”是线性尺度。例如宽高都缩小到 50% 时，当前 JSON 会输出 `1/4`，调用方会误以为页面线性缩小到了 25%。字段名 `scale_ratio` 也没有表明它是 area ratio。
 

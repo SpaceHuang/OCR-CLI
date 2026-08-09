@@ -8,7 +8,7 @@
 
 ### Critical：渲染审计缺少缩放比例，worker 模式还会报告错误的原始页面尺寸
 
-位置：`crates/ocrx-output/src/lib.rs:364-387`、`crates/ocrx-cli/src/main.rs:696-724`、`crates/ocrx-cli/src/main.rs:1366-1374`
+位置：`src/ocrx-output/src/lib.rs:364-387`、`src/ocrx-cli/src/main.rs:696-724`、`src/ocrx-cli/src/main.rs:1366-1374`
 
 需求 `docs/requirement/requirements-v0.1.md:304-312` 明确要求 `result.json` 和页面 checkpoint 同时记录原始页面尺寸、300 DPI 渲染尺寸、最终送模尺寸和**缩放比例**。
 

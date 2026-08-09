@@ -10,7 +10,7 @@
 
 ### Critical：`scan` 仍不验证已存在模型的哈希与配对关系
 
-位置：`crates/ocrx-cli/src/main.rs:896-943, 1070-1076`
+位置：`src/ocrx-cli/src/main.rs:896-943, 1070-1076`
 
 扫描前的模型准备只判断 `model.gguf` 和 `mmproj.gguf` 是否为文件。只要两个路径存在，无论文件是否下载中断、被篡改、属于不同 revision，都会直接交给 `LlamaMtmdRuntime::load`。非离线和离线路径都没有调用现成的 `verify_manifest_files_with_sizes` 与 runtime/adapter compatibility preflight。
 
@@ -20,7 +20,7 @@
 
 ### Critical：模型资产对的最终提交仍不是原子事务
 
-位置：`crates/ocrx-models/src/lib.rs:307-339, 372-393`
+位置：`src/ocrx-models/src/lib.rs:307-339, 372-393`
 
 修复已避免在失败清理时删除旧文件，但最终仍依次执行两次 rename：先覆盖 `model.gguf`，再覆盖 `mmproj.gguf`。若第二次 rename 失败，函数返回 `TransactionFailed`，缓存中却已经留下“新 model + 旧 mmproj”的混合资产对；旧 model 也无法恢复。以 PID 命名临时文件还会让同一进程内针对同 profile 的并发/重入安装共享临时路径。
 
@@ -30,7 +30,7 @@
 
 ### Critical：稳定的 `result.json` 契约尚未实现
 
-位置：`crates/ocrx-cli/src/main.rs:1096-1160`；仓库内没有写入 `result.json` 的实现
+位置：`src/ocrx-cli/src/main.rs:1096-1160`；仓库内没有写入 `result.json` 的实现
 
 成功扫描只通过 `Reporter` 向终端输出精简的 `ResultReport`，没有在输出目录生成 `result.json`。当前 JSON 也不包含需求规定的 `markdown_path`、模型 revision/profile、后端、页级状态、渲染尺寸、耗时、warnings 和图片信息。代码却在输出目录冲突判断中检查 `result.json`，表明文件契约并未真正接通。
 
@@ -40,7 +40,7 @@
 
 ### Required：断点摘要仍只覆盖 Markdown，图片产物损坏会被静默复用
 
-位置：`crates/ocrx-output/src/lib.rs:820-839, 1031-1042`
+位置：`src/ocrx-output/src/lib.rs:820-839, 1031-1042`
 
 `artifact_sha256(markdown, _image)` 明确忽略了传入的图片路径，只计算 Markdown 哈希。由识别器生成的 bbox 插图也不在 checkpoint 摘要中。因此 `--keep-pages` 场景下全页 PNG 被篡改不会触发重算；更重要的是 Markdown 引用的裁剪插图缺失或损坏时，checkpoint 仍会被判为可复用，最终文档留下断链图片。
 
@@ -48,7 +48,7 @@
 
 ### Required：推理 token 预算缺少联合校验，合法 CLI 输入可保证运行期失败
 
-位置：`crates/ocrx-cli/src/main.rs:266-282, 1070-1091`; `crates/ocrx-runtime/src/llama_mtmd.rs:96-139`
+位置：`src/ocrx-cli/src/main.rs:266-282, 1070-1091`; `src/ocrx-runtime/src/llama_mtmd.rs:96-139`
 
 `--max-image-tokens` 和 `--context-size` 已成功传入 runtime，这是有效改进；但 CLI 仅分别校验最小值，没有验证 prompt/image tokens 与最大输出 tokens 是否能放入 context。默认值本身是 `context_size=16384`、`max_output_tokens=16384`，尚未计入 prompt 和默认 1024 image tokens。模型不提前产生 EOS 时必然在达到声明的输出上限前触碰 context 边界并把页面记为失败。
 
@@ -58,7 +58,7 @@
 
 ### Required：交互式自动下载绕过确认，可能无提示下载大型资产
 
-位置：`crates/ocrx-cli/src/main.rs:896-925`
+位置：`src/ocrx-cli/src/main.rs:896-925`
 
 当模型缺失且未指定 `--offline` 时，无论 stdin 是否为 TTY、是否指定 `--non-interactive`，代码都直接将 `license_accepted=true` 并开始下载。需求规定交互模式必须先展示模型、来源、大小、磁盘空间和许可并确认；当前实现会无提示下载约数百 MB 至 GB 的模型资产。
 

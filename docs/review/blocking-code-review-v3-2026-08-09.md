@@ -10,7 +10,7 @@
 
 ### Critical：生成的 `result.json` 对合法路径可能不是 JSON，partial 结果还会指向不存在的 Markdown
 
-位置：`crates/ocrx-cli/src/main.rs:1163-1216`
+位置：`src/ocrx-cli/src/main.rs:1163-1216`
 
 `result.json` 通过 `format!` 直接拼接 `markdown_path`、`output_dir`、profile 和 backend，没有进行 JSON escaping。合法 Unix 路径可包含双引号、反斜杠和换行；遇到这些字符会生成无法解析或语义错误的 JSON。代码库已有 `ResultReport::to_json` 的 escaping 能力，但新文件没有复用它或结构化序列化模型。
 
@@ -22,7 +22,7 @@
 
 ### Critical：断点图片摘要解析不到程序自己生成的标准 Markdown 链接
 
-位置：`crates/ocrx-output/src/lib.rs:834-885`; 生成格式见 `crates/ocrx-ovisocr2/src/lib.rs:571-590`
+位置：`src/ocrx-output/src/lib.rs:834-885`; 生成格式见 `src/ocrx-ovisocr2/src/lib.rs:571-590`
 
 `artifact_sha256` 用 `split_whitespace()` 后仅对整个 token 执行 `strip_prefix("images/")`。程序生成的链接形如 `![figure](images/page-0002-figure-001.png)`；整个 token 以 `![figure](` 开头，因此不会匹配。HTML 的 `src="images/..."` 同样不会匹配。结果是摘要仍只覆盖 Markdown，自身生成的 bbox PNG 被删除或篡改后，`--resume` 仍会复用 checkpoint，并输出断链或错误图片。
 
@@ -32,7 +32,7 @@
 
 ### Critical：首发 Windows 路径依赖系统 `shasum`，模型安装和校验无法工作
 
-位置：`crates/ocrx-models/src/lib.rs:253-269`; `crates/ocrx-cli/src/main.rs:1251-1263`; `crates/ocrx-output/src/lib.rs:834-885`
+位置：`src/ocrx-models/src/lib.rs:253-269`; `src/ocrx-cli/src/main.rs:1251-1263`; `src/ocrx-output/src/lib.rs:834-885`
 
 模型哈希、输入 PDF 哈希和断点产物哈希全部通过启动外部 `shasum -a 256` 完成。`shasum` 是 macOS/Unix 常见工具，不是 Windows 10/11 的标准命令；而 Windows x86_64 CPU 是 v0.1 明确首发平台。结果是 Windows 上模型安装/verify 会失败，扫描输入哈希被 `unwrap_or_default()` 静默降为空字符串，页面提交也会因找不到 `shasum` 而失败。
 
@@ -42,7 +42,7 @@
 
 ### Required：模型资产回滚仍是 best-effort，失败时可能留下缺失或混合缓存
 
-位置：`crates/ocrx-models/src/lib.rs:280-316`
+位置：`src/ocrx-models/src/lib.rs:280-316`
 
 `commit_pair` 已加入备份与回滚，这是明显进步；但所有恢复 rename 的结果都被忽略。第二个新文件提交失败后，代码先删除最终 model/mmproj，再尝试恢复备份；任一恢复失败，函数仍只返回通用 `TransactionFailed`，缓存可能缺文件。成功提交后删除备份也忽略失败，会积累接近 GB 级的孤儿备份。当前测试没有故障注入覆盖第二次提交和恢复失败。
 
@@ -52,7 +52,7 @@
 
 ### Required：PDF worker 成功测试使用 2 秒真实墙钟超时，质量门并发时发生失败
 
-位置：`crates/ocrx-pdf/src/lib.rs:675-694`
+位置：`src/ocrx-pdf/src/lib.rs:675-694`
 
 本轮首次并发执行 `cargo test`、Clippy 和 fmt 时，`worker_scheduler_commits_only_valid_segments_and_reports_resources` 以 `worker timed out` 失败；隔离重跑及随后顺序重跑 workspace 均通过。测试启动 shell、base64 和子进程，却只给 2 秒墙钟预算，因此容易受构建锁和机器负载影响。
 

@@ -157,14 +157,14 @@
 
 ```text
 Cargo.toml
-crates/ocrx-cli
-crates/ocrx-core
-crates/ocrx-runtime
-crates/ocrx-pdf
-crates/ocrx-models
-crates/ocrx-output
-crates/ocrx-ovisocr2
-crates/ocrx-skill
+src/ocrx-cli
+src/ocrx-core
+src/ocrx-runtime
+src/ocrx-pdf
+src/ocrx-models
+src/ocrx-output
+src/ocrx-ovisocr2
+src/ocrx-skill
 assets/manifests/ovisocr2
 assets/skills/ocrx
 benchmarks/fixtures

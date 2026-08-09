@@ -10,7 +10,7 @@
 
 ### Critical：`--report json` 仍输出旧的精简 schema，Agent 无法从最终 JSON 读取 `markdown_path`
 
-位置：`crates/ocrx-cli/src/main.rs:1185-1258`; `crates/ocrx-output/src/lib.rs:20-46, 96-108`
+位置：`src/ocrx-cli/src/main.rs:1185-1258`; `src/ocrx-output/src/lib.rs:20-46, 96-108`
 
 CLI 已构造并落盘 schema v3 的 `result.json`，但随后传给 `reporter.result` 的仍是旧 `ResultReport`。当用户按需求执行：
 
@@ -26,7 +26,7 @@ stdout 最终对象仍只有 schema_version=1、job/status、页数和 `output_d
 
 ### Critical：Windows 上崩溃遗留安装锁永远无法自动恢复
 
-位置：`crates/ocrx-models/src/lib.rs:331-381`
+位置：`src/ocrx-models/src/lib.rs:331-381`
 
 为避免误删活跃锁，非 Unix 的 `process_alive` 现在恒为 true。这保护了正常并发，但意味着 Windows 上只要安装进程被 kill、崩溃、断电或 abort，遗留 `.install.lock` 就会永远被视为活跃；该 profile 的每次后续安装都返回 `TransactionFailed`。模型安装是长下载后的关键步骤，异常中断是必须可恢复的现实路径。
 
@@ -36,7 +36,7 @@ stdout 最终对象仍只有 schema_version=1、job/status、页数和 `output_d
 
 ### Required：实际 schema v3 仍由位置参数手拼，且没有解析回读测试
 
-位置：`crates/ocrx-cli/src/main.rs:1200-1237`
+位置：`src/ocrx-cli/src/main.rs:1200-1237`
 
 本轮修复补齐了 canonical input、真实 elapsed、profile→quantization 和图片 count，但实现仍是一条超长 `format!`，依赖十余个位置参数顺序。v5 已实际发生过参数错位导致非法 JSON，而当前 20 个 CLI 测试仍没有执行这段成功扫描后的落盘逻辑，也没有用 JSON parser 回读 schema v3。
 

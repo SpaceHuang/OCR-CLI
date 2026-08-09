@@ -10,7 +10,7 @@
 
 ### Critical：resume 不恢复截断状态，同一结果第二次运行会从 partial 变成 success
 
-位置：`crates/ocrx-output/src/lib.rs:456-538, 750-766, 862-944`; CLI 判定见 `crates/ocrx-cli/src/main.rs:1190-1275`
+位置：`src/ocrx-output/src/lib.rs:456-538, 750-766, 862-944`; CLI 判定见 `src/ocrx-cli/src/main.rs:1190-1275`
 
 首次识别时，recognizer 返回 `was_truncated=true`，`ScanService` 会增加 `truncated`，最终正确输出 partial、退出码 10。但 `PageCheckpoint` 仍只保存 page、compatibility、complete 和 output SHA，没有 termination/truncated/warnings。
 
@@ -22,7 +22,7 @@
 
 ### Required：页面 warning 被压缩成布尔 truncated，其他诊断永久丢失
 
-位置：`crates/ocrx-ovisocr2/src/lib.rs:36-85`; `crates/ocrx-output/src/lib.rs:420-532`; `crates/ocrx-cli/src/main.rs:1332-1370`
+位置：`src/ocrx-ovisocr2/src/lib.rs:36-85`; `src/ocrx-output/src/lib.rs:420-532`; `src/ocrx-cli/src/main.rs:1332-1370`
 
 `adapt_response` 已能产生 `PageWarning::Truncated`、`RepetitionRemoved` 等 warnings，但新的 `PageArtifactOutput` 只暴露 `truncated: bool`。recognizer trait 也只传 `(PNG, Markdown, bool)`。最终 schema 根据 truncated_pages 人工生成单一 `["truncated"]`，因此 repetition removal、render scaling、无效区域等已知诊断不会出现在 `result.json`。
 
@@ -32,7 +32,7 @@
 
 ### Required：Windows lock 存活判断依赖本地化命令文本且没有目标平台测试
 
-位置：`crates/ocrx-models/src/lib.rs:331-392`
+位置：`src/ocrx-models/src/lib.rs:331-392`
 
 按年龄强制抢锁已删除，这是正确修复。Windows 现在调用 `tasklist /FI "PID eq ..." /NH`，再用 stdout 是否包含 PID 字符串判断存活。该判断依赖外部命令、输出格式/本地化，并使用子串匹配；命令失败会返回 false，随后删除可能仍活跃的锁。当前模型测试没有覆盖 stale owner、active owner 或两个进程竞争，且本轮未运行 Windows CI。
 

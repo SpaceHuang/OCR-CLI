@@ -10,7 +10,7 @@
 
 ### Critical：Windows 上安装锁会把任何活跃锁当作 stale，允许并发提交同一模型
 
-位置：`crates/ocrx-models/src/lib.rs:327-365`
+位置：`src/ocrx-models/src/lib.rs:327-365`
 
 非 Unix 实现的 `process_alive` 无条件返回 false。Windows 是 v0.1 首发平台；当进程 A 持有 `.install.lock` 时，进程 B 读取到 A 的 PID 后仍会判定其“不存活”，删除 A 的锁并获取新锁。A 和 B 随后都可进入 `commit_pair`，同时 rename 相同的 model/mmproj/backup 路径，破坏互斥及回滚假设。
 
@@ -20,7 +20,7 @@
 
 ### Critical：lockfile 创建与写入 PID 分成两步，空文件窗口可让第二进程删除活跃锁
 
-位置：`crates/ocrx-models/src/lib.rs:328-352`
+位置：`src/ocrx-models/src/lib.rs:328-352`
 
 获取流程先以 `create_new(true)` 创建空锁文件，随后才调用 `fs::write` 写 PID。两步之间，第二进程可能看到锁文件、读取为空、得到 `owner=None`，而 `owner.is_none_or(...)` 会立即把它视为 stale，删除该活跃锁并创建自己的锁。第一进程随后又会按路径写入第二进程新建的锁文件，最终两个进程都认为自己持锁。
 
@@ -30,7 +30,7 @@
 
 ### Critical：`result.json` 仍报告虚假或错误类型的数据，无法作为 Agent 稳定契约
 
-位置：`crates/ocrx-cli/src/main.rs:1198-1227`; 需求基线 `docs/requirement/requirements-v0.1.md:452-487`
+位置：`src/ocrx-cli/src/main.rs:1198-1227`; 需求基线 `docs/requirement/requirements-v0.1.md:452-487`
 
 参数顺序现已正确，但 v5 已指出的字段问题没有解决：
 
@@ -47,7 +47,7 @@
 
 ### Required：路径转义仍不能覆盖全部 JSON 控制字符，且仍是手写 JSON
 
-位置：`crates/ocrx-cli/src/main.rs:1277-1283`
+位置：`src/ocrx-cli/src/main.rs:1277-1283`
 
 `json_escape_path` 仅处理反斜杠、双引号、LF 和 CR，没有处理 tab、backspace、form-feed 及其余 U+0000–U+001F。合法 Unix 文件名包含这些字符时会生成非法 JSON。仓库仍没有对实际落盘 schema 做 JSON parser 回读测试。
 
