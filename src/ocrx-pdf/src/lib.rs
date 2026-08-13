@@ -427,11 +427,37 @@ pub struct PdfiumRenderer {
 // The bind happens inside `OnceLock::get_or_init` so concurrent callers never race
 // on `Pdfium::new` (which asserts bindings are uninitialized); the closure runs at
 // most once and the result - success or failure - is cached for the process.
+
+/// Resolves the platform PDFium library file path under `library_dir`, rejecting
+/// path-escape (`..` components) so a crafted `library_dir` can never traverse
+/// out to load an unintended library. Pure: builds a path only, never loads.
+///
+/// # Errors
+///
+/// Returns [`PdfErrorKind::DynamicLibrary`] when `library_dir` contains a
+/// parent-dir (`..`) component.
+pub fn pdfium_library_path(library_dir: &Path) -> Result<PathBuf, PdfErrorKind> {
+    if library_dir
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(PdfErrorKind::DynamicLibrary);
+    }
+    Ok(Pdfium::pdfium_platform_library_name_at_path(library_dir))
+}
+
 fn shared_pdfium(library_dir: &Path) -> Result<&'static Pdfium, Box<dyn std::error::Error>> {
     use std::sync::OnceLock;
     static PDFIUM: OnceLock<Result<Pdfium, String>> = OnceLock::new();
     let result = PDFIUM.get_or_init(|| {
-        let library = Pdfium::pdfium_platform_library_name_at_path(library_dir);
+        let library = match pdfium_library_path(library_dir) {
+            Ok(path) => path,
+            Err(_) => {
+                return Err(
+                    "library_dir contains parent-dir (..) traversal; refused to load".to_owned(),
+                );
+            }
+        };
         Pdfium::bind_to_library(library)
             .map(Pdfium::new)
             .map_err(|error| error.to_string())
@@ -715,6 +741,40 @@ mod tests {
         assert!(scaled && u64::from(width) * u64::from(height) <= 1_000_000);
     }
 
+    // --- W2.1/W0.2: PDFium library path resolution & loading guard ---------
+    //
+    // A crafted library_dir must never traverse out (via `..`) to load an
+    // unintended DLL. The resolver is pure (builds a path only, never loads),
+    // so the guard is testable in-process without touching the process-global
+    // Pdfium binding.
+
+    #[test]
+    fn pdfium_library_path_rejects_parent_dir_traversal() {
+        // A clean directory resolves to the platform library file beside it.
+        let clean = pdfium_library_path(Path::new("/vendor/pdfium/bin")).unwrap();
+        assert!(
+            clean
+                .file_name()
+                .map(|name| name.to_string_lossy().contains("pdfium"))
+                .unwrap_or(false),
+            "resolved path should be the platform pdfium library, got {clean:?}"
+        );
+        // Parent-dir traversal anywhere in library_dir is rejected (path escape
+        // must not silently succeed - W0.2).
+        assert_eq!(
+            pdfium_library_path(Path::new("/vendor/pdfium/bin/../../evil")),
+            Err(PdfErrorKind::DynamicLibrary)
+        );
+        assert_eq!(
+            pdfium_library_path(Path::new("../evil")),
+            Err(PdfErrorKind::DynamicLibrary)
+        );
+        assert_eq!(
+            pdfium_library_path(Path::new("/opt/../evil")),
+            Err(PdfErrorKind::DynamicLibrary)
+        );
+    }
+
     #[test]
     fn bbox_iou_and_png_output_are_deterministic() {
         let image = RgbImage::from_pixel(100, 100, image::Rgb([255, 0, 0]));
@@ -895,16 +955,20 @@ mod tests {
     // docs/develop/pdfium-windows-release-baseline-2026-08-11.md.
 
     /// Directory holding the co-located `pdfium.dll`/`libpdfium.dylib`, or
-    /// `None` when the runtime artifact is not present.
+    /// `None` when the runtime artifact is not present. The path is canonicalized
+    /// so it has no `..` components: the `pdfium_library_path` guard rejects
+    /// parent-dir traversal (W0.2), and the application is expected to pass a
+    /// canonical `library_dir` (the production default is `.`).
     fn pdfium_lib_dir() -> Option<PathBuf> {
         let dir = std::env::var_os("OCRX_PDFIUM_LIB_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/pdfium/bin")
             });
-        Pdfium::pdfium_platform_library_name_at_path(&dir)
-            .is_file()
-            .then_some(dir)
+        if !Pdfium::pdfium_platform_library_name_at_path(&dir).is_file() {
+            return None;
+        }
+        std::fs::canonicalize(&dir).ok()
     }
 
     fn fixture(name: &str) -> PathBuf {
