@@ -65,27 +65,6 @@ pub fn uninstall(target: &str, home: impl AsRef<Path>) -> io::Result<Vec<PathBuf
     Ok(removed)
 }
 
-#[must_use]
-pub fn redact_sensitive(input: &str) -> String {
-    let mut output = input.to_owned();
-    for key in ["prompt", "ocr", "token", "authorization", "proxy", "url"] {
-        let mut cursor = 0;
-        while let Some(relative) = output[cursor..].to_ascii_lowercase().find(key) {
-            let start = cursor + relative;
-            let Some(separator) = output[start..].find(['=', ':']) else {
-                break;
-            };
-            let value_start = start + separator + 1;
-            let value_end = output[value_start..]
-                .find([',', ' ', '\n'])
-                .map_or(output.len(), |end| value_start + end);
-            output.replace_range(value_start..value_end, "[REDACTED]");
-            cursor = value_start + 10;
-        }
-    }
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,15 +95,5 @@ mod tests {
         assert!(uninstall("codex", &home).unwrap().is_empty());
         assert!(directory.join("SKILL.md").is_file());
         let _ = fs::remove_dir_all(home);
-    }
-
-    #[test]
-    fn redaction_removes_sensitive_values() {
-        let output =
-            redact_sensitive("prompt=secret token:abc proxy=https://u:p@example/a ocr=text");
-        assert!(!output.contains("secret"));
-        assert!(!output.contains("abc"));
-        assert!(!output.contains("https://"));
-        assert!(!output.contains("text"));
     }
 }

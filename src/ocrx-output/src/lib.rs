@@ -65,9 +65,30 @@ fn json_escape(value: &str) -> String {
 }
 
 /// Redacts sensitive values before any diagnostic field is serialized.
+///
+/// Redaction is platform-agnostic: the same structured-event fields are
+/// scrubbed on every operating system, so Windows never introduces its own
+/// redaction call points. Two strategies compose:
+///   1. key-based: a known sensitive key (`prompt`, `ocr`, `token`,
+///      `authorization`, `proxy`, `url`) followed by `=`/`:` scopes its value.
+///      A quoted value is scrubbed to its closing quote so multi-word prompt or
+///      OCR bodies do not leak past the first word; an unquoted value is
+///      scrubbed to the next delimiter.
+///   2. pattern-based: bare bearer tokens, URL userinfo credentials
+///      (`scheme://user:pass@host`), and URL query-parameter values are
+///      scrubbed even without a preceding key, so a stray URL or token in a
+///      free-text message cannot leak.
 #[must_use]
 pub fn redact_sensitive(input: &str) -> String {
     let mut output = input.to_owned();
+    redact_keyed_values(&mut output);
+    redact_url_userinfo(&mut output);
+    redact_url_query_values(&mut output);
+    redact_bearer_tokens(&output)
+}
+
+/// Scrubs values associated with known sensitive keys.
+fn redact_keyed_values(output: &mut String) {
     for key in ["prompt", "ocr", "token", "authorization", "proxy", "url"] {
         let mut cursor = 0;
         while let Some(relative) = output[cursor..].to_ascii_lowercase().find(key) {
@@ -76,14 +97,133 @@ pub fn redact_sensitive(input: &str) -> String {
                 break;
             };
             let value_start = start + separator + 1;
-            let value_end = output[value_start..]
-                .find([',', ' ', '\n'])
-                .map_or(output.len(), |end| value_start + end);
-            output.replace_range(value_start..value_end, "[REDACTED]");
-            cursor = value_start + 10;
+            let value_len = end_of_sensitive_value(&output[value_start..]);
+            output.replace_range(value_start..value_start + value_len, "[REDACTED]");
+            cursor = value_start + "[REDACTED]".len();
         }
     }
-    output
+}
+
+/// Length of a sensitive value beginning at `rest`: a quoted value extends to
+/// its closing quote (inclusive); otherwise up to the next delimiter.
+fn end_of_sensitive_value(rest: &str) -> usize {
+    let Some(&quote) = rest.as_bytes().first() else {
+        return 0;
+    };
+    if quote == b'"' || quote == b'\'' {
+        return rest[1..]
+            .find(char::from(quote))
+            .map_or(rest.len(), |relative| relative + 2);
+    }
+    rest.find([',', ' ', '\n']).map_or(rest.len(), |end| end)
+}
+
+/// Scrubs embedded credentials (`user:pass@`) out of URL authorities.
+fn redact_url_userinfo(output: &mut String) {
+    let mut search_from = 0;
+    while let Some(relative) = output[search_from..].find("://") {
+        let authority_start = search_from + relative + "://".len();
+        let authority = &output[authority_start..];
+        let mut userinfo_end = None;
+        for (index, ch) in authority.char_indices() {
+            if ch == '@' {
+                userinfo_end = Some(index);
+                break;
+            }
+            if matches!(
+                ch,
+                '/' | '?' | '#' | ' ' | '\n' | '\t' | '"' | '\'' | ',' | '\\'
+            ) {
+                break;
+            }
+        }
+        match userinfo_end {
+            Some(end) => {
+                output.replace_range(authority_start..authority_start + end, "[REDACTED]");
+                // Skip past the redaction and the `@` to keep searching.
+                search_from = authority_start + "[REDACTED]".len() + 1;
+            }
+            None => {
+                // No userinfo here; advance past this `://`.
+                search_from = authority_start + 1;
+            }
+        }
+    }
+}
+
+/// Scrubs values out of URL query strings (`?key=value&key=value`).
+fn redact_url_query_values(output: &mut String) {
+    let mut search_from = 0;
+    while let Some(relative) = output[search_from..].find('?') {
+        let query_start = search_from + relative + 1;
+        let query = &output[query_start..];
+        let query_end = query
+            .char_indices()
+            .find(|(_, ch)| matches!(ch, ' ' | '\n' | '\t' | '"' | '\'' | '\\' | '<' | '>'))
+            .map_or(query.len(), |(index, _)| index);
+        if query_end == 0 {
+            // Not a query string (e.g. a literal `?` in prose); skip it.
+            search_from = query_start;
+            continue;
+        }
+        let redacted = redact_query_pairs(&query[..query_end]);
+        output.replace_range(query_start..query_start + query_end, &redacted);
+        search_from = query_start + redacted.len();
+    }
+}
+
+/// Redacts every `value` in a `key=value` query pair list joined by `&`.
+fn redact_query_pairs(pairs: &str) -> String {
+    pairs
+        .split('&')
+        .map(|pair| match pair.find('=') {
+            Some(eq) => {
+                let (key, _) = pair.split_at(eq);
+                format!("{key}=[REDACTED]")
+            }
+            None => pair.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Scrubs bare bearer tokens (`Bearer <token>`) not scoped by a key.
+fn redact_bearer_tokens(input: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    let input_bytes = input.as_bytes();
+    let lower_bytes = lower.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    while i < input_bytes.len() {
+        let bearer = "bearer";
+        let left_boundary = i == 0 || !input_bytes[i - 1].is_ascii_alphanumeric();
+        if left_boundary
+            && i + bearer.len() <= lower_bytes.len()
+            && &lower_bytes[i..i + bearer.len()] == bearer.as_bytes()
+            && i + bearer.len() < input_bytes.len()
+            && input_bytes[i + bearer.len()].is_ascii_whitespace()
+        {
+            out.push_str("bearer");
+            let mut j = i + bearer.len();
+            while j < input_bytes.len() && input_bytes[j].is_ascii_whitespace() {
+                out.push(char::from(input_bytes[j]));
+                j += 1;
+            }
+            let token_start = j;
+            while j < input_bytes.len() && !input_bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j > token_start {
+                out.push_str("[REDACTED]");
+            }
+            i = j;
+        } else {
+            let ch = input[i..].chars().next().expect("non-empty slice");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
 }
 
 /// Formats a report for the selected output channel.
@@ -1316,6 +1456,7 @@ mod tests {
         PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent,
         ProgressMode, ProgressSnapshot, RenderAudit, RenderedPage, ReportFormat, Reporter,
         ResultReport, ResultStatus, ScanController, ScanService, atomic_write, format_report,
+        redact_sensitive,
     };
     use std::fs;
 
@@ -1656,6 +1797,61 @@ mod tests {
         assert!(!error_json.contains("private"));
         assert!(!error_json.contains("Bearer-secret"));
         assert!(!error_json.contains("https://"));
+    }
+
+    #[test]
+    fn redact_sensitive_covers_prompt_ocr_token_proxy_auth_and_query_url() {
+        // prompt body (quoted, multi-word) must not leak past the first word.
+        let prompt = redact_sensitive(r#"prompt:"Recognize all text and reply with JSON""#);
+        assert!(!prompt.contains("Recognize"));
+        assert!(!prompt.contains("reply with JSON"));
+        // OCR body text (quoted, multi-word) must not leak past the first word.
+        let ocr = redact_sensitive(r#"ocr:"INVOICE TOTAL DUE $1,234.56""#);
+        assert!(!ocr.contains("INVOICE"));
+        assert!(!ocr.contains("TOTAL DUE"));
+        // a bare bearer token not preceded by a recognized key must not leak.
+        let token = redact_sensitive("received bearer eyJhbGciOiJIUzI1NiJ9.abc.def from upstream");
+        assert!(!token.contains("eyJhbGciOiJIUzI1NiJ9"));
+        // proxy auth credentials embedded in a URL must not leak.
+        let proxy = redact_sensitive("via http://alice:hunter2@gateway.test:8080 now");
+        assert!(!proxy.contains("hunter2"));
+        assert!(!proxy.contains("alice"));
+        // a URL with query parameters must not leak param values.
+        let query =
+            redact_sensitive("GET https://gateway.internal/ingest?secret=s3cr3tvalue&user=bob");
+        assert!(!query.contains("s3cr3tvalue"));
+        assert!(!query.contains("bob"));
+    }
+
+    #[test]
+    fn reporter_capture_redacts_bare_sensitive_values_on_success_and_error_paths() {
+        let mut reporter = Reporter::default();
+        // success path: a bare proxy URL with embedded credentials in output_dir.
+        reporter.result(
+            &ResultReport {
+                job_id: "job-7".to_owned(),
+                status: ResultStatus::Success,
+                total_pages: 1,
+                completed_pages: 1,
+                failed_pages: 0,
+                output_dir: "uploaded via https://alice:hunter2@gateway.test/u".to_owned(),
+            },
+            ReportFormat::Json,
+        );
+        assert!(!reporter.stdout.contains("hunter2"));
+        // error path (JSON): a bare bearer token in message, query URL in cause.
+        reporter.error(
+            &ErrorReport {
+                code: 5,
+                kind: "upstream".to_owned(),
+                message: "received bearer eyJhbGciOiJIUzI1NiJ9.abc.def from upstream".to_owned(),
+                cause: Some("GET https://gateway.internal/ingest?secret=s3cr3tvalue".to_owned()),
+                suggestion: None,
+            },
+            ReportFormat::Json,
+        );
+        assert!(!reporter.stdout.contains("eyJhbGciOiJIUzI1NiJ9"));
+        assert!(!reporter.stdout.contains("s3cr3tvalue"));
     }
 
     #[test]
