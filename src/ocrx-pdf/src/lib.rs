@@ -37,23 +37,36 @@ pub enum PdfErrorKind {
 }
 
 /// Maps PDFium boundary failures to stable, user-facing error classes.
+///
+/// `pdfium-render`'s `Display` impl prints the `Debug` representation, so error
+/// strings contain variant names like `LoadLibraryError` (a dynamic-library
+/// *loading* failure) and `PdfiumLibraryInternalError(FormatError)` (a content
+/// failure). The broad substring "library" appears in both, so we match the
+/// specific loading variants rather than "library" to avoid misclassifying a
+/// format/password error as a dynamic-library failure.
 #[must_use]
 pub fn classify_pdf_error(message: &str) -> PdfErrorKind {
     let message = message.to_ascii_lowercase();
-    if message.contains("library")
-        || message.contains("dynamic")
+    if message.contains("loadlibraryerror")
+        || message.contains("loadlibraryfunctionnameerror")
         || message.contains("bind_to_library")
+        || message.contains("dynamic library")
     {
         PdfErrorKind::DynamicLibrary
-    } else if message.contains("password")
+    } else if message.contains("passworderror")
+        || message.contains("securityerror")
+        || message.contains("password")
         || message.contains("encrypted")
         || message.contains("security")
     {
         PdfErrorKind::Encrypted
-    } else if message.contains("not a pdf")
+    } else if message.contains("formaterror")
+        || message.contains("not a pdf")
         || message.contains("invalid pdf")
         || message.contains("file header")
     {
+        // pdfium returns FormatError for both non-PDF headers and truncated
+        // structures; without a separate corrupt signal we map both to NonPdf.
         PdfErrorKind::NonPdf
     } else if message.contains("corrupt")
         || message.contains("malformed")
@@ -226,6 +239,11 @@ pub struct PdfWorkerScheduler {
     pub segment_pages: usize,
     pub timeout: Duration,
     pub dpi: u16,
+    /// Extra environment variables applied to each spawned worker process.
+    /// Production scans leave this empty; tests use it to drive a fake worker's
+    /// behavior without touching the process-wide environment (edition 2024
+    /// forbids `std::env::set_var`).
+    pub env: Vec<(String, String)>,
 }
 
 impl PdfWorkerScheduler {
@@ -275,17 +293,21 @@ impl PdfWorkerScheduler {
             }
             fs::create_dir_all(&segment_root)?;
             let began = Instant::now();
-            let mut child = Command::new(&self.worker_executable)
-                .args([
-                    self.library_dir.to_string_lossy().as_ref(),
-                    input.as_ref().to_string_lossy().as_ref(),
-                    &start.to_string(),
-                    &end.to_string(),
-                    segment_root.to_string_lossy().as_ref(),
-                    &self.dpi.to_string(),
-                ])
-                .spawn()?;
+            let mut command = Command::new(&self.worker_executable);
+            command.args([
+                self.library_dir.to_string_lossy().as_ref(),
+                input.as_ref().to_string_lossy().as_ref(),
+                &start.to_string(),
+                &end.to_string(),
+                segment_root.to_string_lossy().as_ref(),
+                &self.dpi.to_string(),
+            ]);
+            for (key, value) in &self.env {
+                command.env(key, value);
+            }
+            let mut child = command.spawn()?;
             let mut peak_rss_kb = 0;
+            let mut tick = 0u32;
             let status = loop {
                 if cancelled() {
                     child.kill()?;
@@ -302,7 +324,13 @@ impl PdfWorkerScheduler {
                 if let Some(status) = child.try_wait()? {
                     break status;
                 }
-                peak_rss_kb = peak_rss_kb.max(child_rss_kb(child.id()));
+                tick = tick.wrapping_add(1);
+                // Sample RSS every ~100ms rather than every 10ms poll: spawning
+                // `ps`/`wmic` each tick dominates the loop on Windows, and the
+                // peak is captured fine at this cadence.
+                if tick % 10 == 0 {
+                    peak_rss_kb = peak_rss_kb.max(child_rss_kb(child.id()));
+                }
                 thread::sleep(Duration::from_millis(10));
             };
             if !status.success() {
@@ -344,14 +372,43 @@ impl PdfWorkerScheduler {
 }
 
 fn child_rss_kb(pid: u32) -> u64 {
-    let pid = pid.to_string();
-    Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid])
-        .output()
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .and_then(|rss| rss.trim().parse::<u64>().ok())
-        .unwrap_or_default()
+    if cfg!(target_os = "windows") {
+        // `wmic` reports WorkingSetSize in bytes; best-effort (returns 0 when
+        // wmic is absent, e.g. on Windows builds that ship without it).
+        Command::new("wmic")
+            .args([
+                "process",
+                "where",
+                &format!("ProcessId={pid}"),
+                "get",
+                "WorkingSetSize",
+                "/value",
+            ])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|stdout| {
+                stdout.lines().find_map(|line| {
+                    line.trim()
+                        .strip_prefix("WorkingSetSize=")?
+                        .trim()
+                        .parse::<u64>()
+                        .ok()
+                })
+            })
+            .map(|bytes| bytes / 1024)
+            .unwrap_or_default()
+    } else {
+        Command::new("ps")
+            .args(["-o", "rss=", "-p", &pid.to_string()])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|rss| rss.trim().parse::<u64>().ok())
+            .unwrap_or_default()
+    }
 }
 
 impl Default for RenderOptions {
@@ -367,15 +424,19 @@ pub struct PdfiumRenderer {
 }
 
 // pdfium-render bindings are process-global; bind once and reuse them for a scan job.
+// The bind happens inside `OnceLock::get_or_init` so concurrent callers never race
+// on `Pdfium::new` (which asserts bindings are uninitialized); the closure runs at
+// most once and the result - success or failure - is cached for the process.
 fn shared_pdfium(library_dir: &Path) -> Result<&'static Pdfium, Box<dyn std::error::Error>> {
     use std::sync::OnceLock;
-    static PDFIUM: OnceLock<Pdfium> = OnceLock::new();
-    if let Some(pdfium) = PDFIUM.get() {
-        return Ok(pdfium);
-    }
-    let library = Pdfium::pdfium_platform_library_name_at_path(library_dir);
-    let pdfium = Pdfium::new(Pdfium::bind_to_library(library)?);
-    Ok(PDFIUM.get_or_init(|| pdfium))
+    static PDFIUM: OnceLock<Result<Pdfium, String>> = OnceLock::new();
+    let result = PDFIUM.get_or_init(|| {
+        let library = Pdfium::pdfium_platform_library_name_at_path(library_dir);
+        Pdfium::bind_to_library(library)
+            .map(Pdfium::new)
+            .map_err(|error| error.to_string())
+    });
+    result.as_ref().map_err(|error| error.clone().into())
 }
 
 impl PdfiumRenderer {
@@ -605,6 +666,7 @@ mod tests {
 
     #[test]
     fn pdfium_errors_map_to_stable_classes() {
+        // Synthetic user-facing messages.
         assert_eq!(
             classify_pdf_error("file is not a PDF document"),
             PdfErrorKind::NonPdf
@@ -624,6 +686,25 @@ mod tests {
         assert_eq!(
             classify_pdf_error("unexpected failure"),
             PdfErrorKind::Unknown
+        );
+        // Real pdfium-render error variants (Display prints {:#?}). The
+        // PdfiumLibraryInternalError variants must NOT match the dynamic-library
+        // class even though they contain the substring "library".
+        assert_eq!(
+            classify_pdf_error("LoadLibraryError(LoadLibraryExW { source: 126 })"),
+            PdfErrorKind::DynamicLibrary
+        );
+        assert_eq!(
+            classify_pdf_error("PdfiumLibraryInternalError(FormatError)"),
+            PdfErrorKind::NonPdf
+        );
+        assert_eq!(
+            classify_pdf_error("PdfiumLibraryInternalError(PasswordError)"),
+            PdfErrorKind::Encrypted
+        );
+        assert_eq!(
+            classify_pdf_error("PdfiumLibraryInternalError(SecurityError)"),
+            PdfErrorKind::Encrypted
         );
     }
 
@@ -645,6 +726,106 @@ mod tests {
         assert!(path.is_file());
         assert!(!root.join("images/.page-0002-figure-001.part.png").exists());
         let _ = fs::remove_dir_all(root);
+    }
+
+    // --- W3.2: bbox/crop mapping cross-platform contract tests ---------------
+    //
+    // These pin the pixel-mapping contract: the near edge uses floor (so the
+    // crop never starts inside the requested region) and the far edge uses ceil
+    // (so the crop never loses the requested region), the result is clamped to
+    // the image bounds (no out-of-bounds access), a valid bbox always yields a
+    // non-empty crop (the area threshold), and an invalid bbox is rejected
+    // before any file is written. Pure logic - runs identically on Windows.
+
+    #[test]
+    fn crop_bbox_uses_floor_for_near_edge_and_ceil_for_far_edge() {
+        // 10x10 image; bbox (150,150,850,850) maps to:
+        //   left  = floor(10*150/1000) = floor(1.5) = 1
+        //   right = ceil (10*850/1000) = ceil (8.5) = 9
+        // so the crop spans columns 1..9 (8 px) - proving floor on the near
+        // edge and ceil on the far edge.
+        let image = RgbImage::from_pixel(10, 10, image::Rgb([0, 0, 0]));
+        let bbox = NormalizedBbox::new(150, 150, 850, 850).unwrap();
+        let crop = crop_bbox(&image, bbox).unwrap();
+        assert_eq!(
+            crop.width(),
+            8,
+            "near edge should floor, far edge should ceil"
+        );
+        assert_eq!(crop.height(), 8);
+    }
+
+    #[test]
+    fn crop_bbox_fits_within_image_bounds_at_the_far_edge_without_overflow() {
+        // bbox reaching the far corner (999) on a 10x10 image maps right/bottom
+        // to 10 (== width/height) and must not overflow or panic.
+        let image = RgbImage::from_pixel(10, 10, image::Rgb([9, 9, 9]));
+        let bbox = NormalizedBbox::new(0, 0, 999, 999).unwrap();
+        let crop = crop_bbox(&image, bbox).unwrap();
+        assert_eq!(crop.width(), 10);
+        assert_eq!(crop.height(), 10);
+        assert_eq!(crop.get_pixel(9, 9), &image::Rgb([9, 9, 9]));
+    }
+
+    #[test]
+    fn crop_bbox_rejects_invalid_bbox_and_valid_bbox_is_always_nonempty() {
+        // An invalid bbox (zero-width) is rejected before cropping.
+        let image = RgbImage::from_pixel(10, 10, image::Rgb([0, 0, 0]));
+        let invalid = NormalizedBbox {
+            left: 50,
+            top: 50,
+            right: 50,
+            bottom: 90,
+        };
+        assert!(crop_bbox(&image, invalid).is_err());
+        // The area threshold: every valid bbox yields a non-empty crop, even on
+        // a tiny image where the normalized region is sub-pixel-wide.
+        let small = RgbImage::from_pixel(3, 3, image::Rgb([0, 0, 0]));
+        for (left, top, right, bottom) in [
+            (0, 0, 1, 1),
+            (1, 1, 2, 2),
+            (0, 0, 999, 999),
+            (500, 500, 501, 501),
+        ] {
+            let bbox = NormalizedBbox::new(left, top, right, bottom).unwrap();
+            let crop = crop_bbox(&small, bbox)
+                .unwrap_or_else(|e| panic!("valid bbox {bbox:?} should crop: {e}"));
+            assert!(
+                crop.width() >= 1 && crop.height() >= 1,
+                "empty crop for {bbox:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn save_bbox_png_rejects_invalid_bbox_without_writing_any_file() {
+        let image = RgbImage::from_pixel(10, 10, image::Rgb([0, 0, 0]));
+        let root = std::env::temp_dir().join(format!("ocrx-png-invalid-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let invalid = NormalizedBbox {
+            left: 10,
+            top: 10,
+            right: 10,
+            bottom: 20,
+        };
+        assert!(save_bbox_png(&image, invalid, &root, 1, 1).is_err());
+        // No images directory or figure file is left behind for an invalid bbox.
+        assert!(!root.join("images").exists());
+        assert!(!root.exists() || fs::read_dir(&root).unwrap().count() == 0);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bbox_iou_is_zero_for_disjoint_one_for_identical_and_expected_for_overlap() {
+        let disjoint_a = NormalizedBbox::new(0, 0, 100, 100).unwrap();
+        let disjoint_b = NormalizedBbox::new(200, 200, 300, 300).unwrap();
+        assert!(bbox_iou(disjoint_a, disjoint_b).abs() < 1e-6);
+        let identical = NormalizedBbox::new(0, 0, 200, 200).unwrap();
+        assert!((bbox_iou(identical, identical) - 1.0).abs() < 1e-6);
+        // a=(0,0,200,200) area 40000, b=(100,100,300,300) area 40000,
+        // intersection (100,100,200,200) area 10000 -> IoU 10000/70000.
+        let partial = NormalizedBbox::new(100, 100, 300, 300).unwrap();
+        assert!((bbox_iou(identical, partial) - 10_000.0_f32 / 70_000.0).abs() < 1e-6);
     }
 
     #[test]
@@ -678,6 +859,7 @@ mod tests {
             segment_pages: 20,
             timeout: Duration::from_secs(1),
             dpi: 300,
+            env: Vec::new(),
         };
         assert!(
             scheduler
@@ -695,100 +877,167 @@ mod tests {
         );
     }
 
-    fn fake_worker(name: &str, body: &str) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("ocrx-worker-test-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        let script = root.join("worker.sh");
-        fs::write(&script, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = fs::metadata(&script).unwrap().permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&script, permissions).unwrap();
-        }
-        script
+    // The portable scheduler-isolation tests live in `tests/worker_scheduler.rs`
+    // as integration tests: only integration tests get the `CARGO_BIN_EXE_*`
+    // env at compile time, which `cargo test` resolves by building the actual
+    // `pdfium-fake-worker` bin artifact (lib unit tests only build the bin's
+    // test harness, never the bin itself). See `tests/worker_scheduler.rs`.
+
+    // --- W2.1: real-PDFium component tests ------------------------------------
+    //
+    // These exercise the frozen pdfium runtime (pdfium-render 0.9.3 +
+    // `pdfium_7881` binding the chromium/7961 native library) against the
+    // committed PDF fixtures. They skip when the native library is absent
+    // (CI without the runtime artifact) so `cargo test` stays green; on a
+    // machine with the library present they verify the Windows loading path,
+    // 300 DPI RGB8 rendering, audit sizes, page selection, pixel-budget
+    // scaling, and real error classification. See
+    // docs/develop/pdfium-windows-release-baseline-2026-08-11.md.
+
+    /// Directory holding the co-located `pdfium.dll`/`libpdfium.dylib`, or
+    /// `None` when the runtime artifact is not present.
+    fn pdfium_lib_dir() -> Option<PathBuf> {
+        let dir = std::env::var_os("OCRX_PDFIUM_LIB_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/pdfium/bin")
+            });
+        Pdfium::pdfium_platform_library_name_at_path(&dir)
+            .is_file()
+            .then_some(dir)
     }
 
-    fn worker_scheduler(worker: PathBuf, timeout: Duration) -> PdfWorkerScheduler {
-        PdfWorkerScheduler {
-            worker_executable: worker,
-            library_dir: PathBuf::from("/library"),
-            segment_pages: 2,
-            timeout,
-            dpi: 300,
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../benchmarks/fixtures/pdf")
+            .join(name)
+    }
+
+    fn ensure_pdfium() -> Option<PathBuf> {
+        let dir = pdfium_lib_dir();
+        if dir.is_none() {
+            eprintln!(
+                "note: pdfium runtime not present at vendor/pdfium/bin; \
+                 skipping real-PDF component test"
+            );
         }
+        dir
     }
 
     #[test]
-    fn worker_scheduler_commits_only_valid_segments_and_reports_resources() {
-        let worker = fake_worker(
-            "success",
-            "out=\"$5\"\nprintf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' | base64 -d > \"$out/page-0001.png\"\nprintf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' | base64 -d > \"$out/page-0002.png\"\nprintf 'original=1x1;rendered=1x1' > \"$out/page-0001.audit\"\nprintf 'original=1x1;rendered=1x1' > \"$out/page-0002.audit\"",
+    fn real_pdf_page_counts_match_fixtures() {
+        let Some(lib) = ensure_pdfium() else {
+            return;
+        };
+        let renderer = PdfiumRenderer::new(lib);
+        assert_eq!(
+            renderer.page_count(fixture("normal-1-page.pdf")).unwrap(),
+            1
         );
-        let output =
-            std::env::temp_dir().join(format!("ocrx-worker-output-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&output);
-        let reports = worker_scheduler(worker.clone(), Duration::from_secs(10))
-            .run("input.pdf", &output, 0, 2)
+        assert_eq!(
+            renderer
+                .page_count(fixture("complex-20-pages.pdf"))
+                .unwrap(),
+            20
+        );
+        assert_eq!(
+            renderer
+                .page_count(fixture("normal-100-pages.pdf"))
+                .unwrap(),
+            100
+        );
+    }
+
+    #[test]
+    fn real_pdf_renders_rgb8_at_300_dpi_with_audit_sizes() {
+        let Some(lib) = ensure_pdfium() else {
+            return;
+        };
+        let renderer = PdfiumRenderer::new(lib);
+        let (image, original_width, original_height) = renderer
+            .render_page_rgb8_with_audit(fixture("normal-1-page.pdf"), 0, RenderOptions::default())
             .unwrap();
-        assert_eq!(reports[0].pages, 2);
-        assert!(output.join("page-0001.png").is_file());
-        assert!(output.join("page-0002.png").is_file());
-        assert!(!output.join(".worker-0000-0002").exists());
-        let _ = fs::remove_dir_all(output);
-        let _ = fs::remove_dir_all(worker.parent().unwrap());
+        // RGB8: exactly 3 bytes per pixel.
+        assert_eq!(
+            image.as_raw().len(),
+            usize::try_from(image.width()).unwrap() * usize::try_from(image.height()).unwrap() * 3
+        );
+        // 300 DPI render = source 72-DPI points * 300/72 (within rounding).
+        let dpi = f32::from(RenderOptions::default().dpi);
+        assert_eq!(
+            image.width(),
+            (original_width as f32 * dpi / 72.0).round() as u32
+        );
+        assert_eq!(
+            image.height(),
+            (original_height as f32 * dpi / 72.0).round() as u32
+        );
     }
 
     #[test]
-    fn worker_scheduler_maps_failure_timeout_cancel_and_invalid_png() {
-        let failed = fake_worker("failed", "exit 7");
+    fn real_pdf_page_selection_maps_to_the_requested_index() {
+        let Some(lib) = ensure_pdfium() else {
+            return;
+        };
+        let renderer = PdfiumRenderer::new(lib);
+        // Page 5 (0-indexed 4) renders and differs from page 1, proving the
+        // selection index maps to the right page rather than always page 0.
+        let first = renderer
+            .render_page_rgb8(fixture("complex-20-pages.pdf"), 0, RenderOptions::default())
+            .unwrap();
+        let fifth = renderer
+            .render_page_rgb8(fixture("complex-20-pages.pdf"), 4, RenderOptions::default())
+            .unwrap();
+        assert_ne!(first.as_raw(), fifth.as_raw());
+    }
+
+    #[test]
+    fn real_render_pixel_budget_scales_proportionally_without_cropping() {
+        let Some(lib) = ensure_pdfium() else {
+            return;
+        };
+        let renderer = PdfiumRenderer::new(lib);
+        let (image, _, _) = renderer
+            .render_page_rgb8_with_audit(fixture("normal-1-page.pdf"), 0, RenderOptions::default())
+            .unwrap();
+        // Force a downscale below the rendered pixel count; the budget must
+        // shrink both dimensions proportionally (no cropping) and stay within
+        // budget, never upscaling.
+        let pixels = u64::from(image.width()) * u64::from(image.height());
+        let budget = pixels / 2;
+        let (width, height, scaled) = fit_pixel_budget(image.width(), image.height(), budget);
+        assert!(scaled);
+        assert!(u64::from(width) * u64::from(height) <= budget);
+        assert!(width <= image.width() && height <= image.height());
+        // Aspect ratio preserved within floor rounding tolerance.
+        let original_ratio = f64::from(image.width()) / f64::from(image.height());
+        let scaled_ratio = f64::from(width) / f64::from(height);
+        assert!((scaled_ratio - original_ratio).abs() < 0.05);
+    }
+
+    #[test]
+    fn real_pdfium_errors_classify_to_stable_content_categories() {
+        let Some(lib) = ensure_pdfium() else {
+            return;
+        };
+        let renderer = PdfiumRenderer::new(lib);
+        // A non-PDF file must classify as NonPdf (the library loaded fine, so
+        // this is a content error, not a DynamicLibrary error).
+        let non_pdf = std::env::temp_dir().join(format!("ocrx-notpdf-{}.txt", std::process::id()));
+        fs::write(&non_pdf, "this is not a pdf document").unwrap();
+        let error = renderer.page_count(&non_pdf).unwrap_err();
+        assert_eq!(classify_pdf_error(&error.to_string()), PdfErrorKind::NonPdf);
+        let _ = fs::remove_file(&non_pdf);
+
+        // A truncated/corrupt fixture must classify as a content error
+        // (NonPdf or Corrupt), never as a DynamicLibrary failure.
+        let error = renderer
+            .page_count(fixture("corrupt-truncated.pdf"))
+            .unwrap_err();
+        let kind = classify_pdf_error(&error.to_string());
         assert!(
-            worker_scheduler(failed.clone(), Duration::from_secs(1))
-                .run(
-                    "input.pdf",
-                    std::env::temp_dir().join("ocrx-worker-fail"),
-                    0,
-                    1
-                )
-                .is_err()
+            matches!(kind, PdfErrorKind::NonPdf | PdfErrorKind::Corrupt),
+            "expected content error for corrupt fixture, got {kind:?}"
         );
-        let timed_out = fake_worker("timeout", "sleep 1");
-        assert!(
-            worker_scheduler(timed_out.clone(), Duration::from_millis(20))
-                .run(
-                    "input.pdf",
-                    std::env::temp_dir().join("ocrx-worker-timeout"),
-                    0,
-                    1
-                )
-                .is_err()
-        );
-        let cancelled = fake_worker("cancel", "sleep 1");
-        assert!(
-            worker_scheduler(cancelled.clone(), Duration::from_secs(1))
-                .run_with_cancel(
-                    "input.pdf",
-                    std::env::temp_dir().join("ocrx-worker-cancel"),
-                    0,
-                    1,
-                    || true,
-                )
-                .is_err()
-        );
-        let invalid = fake_worker("invalid", "touch \"$5/page-0001.png\"");
-        let invalid_output = std::env::temp_dir().join("ocrx-worker-invalid");
-        let _ = fs::remove_dir_all(&invalid_output);
-        assert!(
-            worker_scheduler(invalid.clone(), Duration::from_secs(1))
-                .run("input.pdf", &invalid_output, 0, 1)
-                .is_err()
-        );
-        assert!(!invalid_output.join(".worker-0000-0001").exists());
-        for worker in [failed, timed_out, cancelled, invalid] {
-            let _ = fs::remove_dir_all(worker.parent().unwrap());
-        }
     }
 }

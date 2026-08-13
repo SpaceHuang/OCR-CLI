@@ -9,7 +9,8 @@ pub enum ResultStatus {
 }
 
 impl ResultStatus {
-    fn as_str(self) -> &'static str {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Success => "success",
             Self::Partial => "partial",
@@ -820,6 +821,32 @@ impl JobSummary {
             JobStatus::Running
         }
     }
+
+    /// Maps the job outcome to the stable process exit code:
+    /// cancelled -> 130, completed -> 0, partial -> 10, otherwise 6 (runtime).
+    /// Consolidates the scattered `failed_pages == 0 && truncated_pages == 0`
+    /// checks so the CLI never re-derives the code from raw counts.
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        match self.status() {
+            JobStatus::Cancelled => 130,
+            JobStatus::Completed => 0,
+            JobStatus::Partial => 10,
+            JobStatus::Running => 6,
+        }
+    }
+
+    /// Maps the job outcome to the stable result-report status used in JSON.
+    /// Cancelled or still-running jobs map to `Partial`; the cancelled path
+    /// exits via an error report before a `ResultReport` is built, so this is
+    /// only consulted for non-cancelled finished jobs in practice.
+    #[must_use]
+    pub fn result_status(&self) -> ResultStatus {
+        match self.status() {
+            JobStatus::Completed => ResultStatus::Success,
+            JobStatus::Partial | JobStatus::Cancelled | JobStatus::Running => ResultStatus::Partial,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1174,6 +1201,12 @@ pub fn validate_output_root(
             "output root is the input path",
         ));
     }
+    if is_broad_or_system_path(output) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "output root is a broad or system directory",
+        ));
+    }
     for protected in protected_roots {
         if output == *protected || output.starts_with(protected) || protected.starts_with(output) {
             return Err(io::Error::new(
@@ -1183,6 +1216,36 @@ pub fn validate_output_root(
         }
     }
     Ok(())
+}
+
+/// Returns `true` when `path` is too broad or sensitive to use as an output
+/// root - i.e. a recursive delete into it would be catastrophic. Rejects
+/// filesystem roots (`/`, `C:\`), the process temp dir, the user's home
+/// directory, and the Windows system root (`%SystemRoot%`, e.g. `C:\Windows`).
+/// This is a conservative guard: it only blocks the genuinely dangerous
+/// broad targets, never a normal project output directory.
+fn is_broad_or_system_path(path: &Path) -> bool {
+    // Filesystem root: a path with no parent (e.g. `/`, `C:\`).
+    if path.parent().is_none() {
+        return true;
+    }
+    if path == std::env::temp_dir() {
+        return true;
+    }
+    if let Some(home) = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+    {
+        if path == home {
+            return true;
+        }
+    }
+    if let Some(system_root) = std::env::var_os("SystemRoot").map(PathBuf::from) {
+        if path == system_root || path == system_root.join("System32") {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn remove_for_overwrite(
@@ -1232,7 +1295,12 @@ pub fn commit_page(
     )
 }
 
-fn temporary_path(path: &Path) -> PathBuf {
+pub fn temporary_path(path: &Path) -> PathBuf {
+    // The temp file is co-located in the target's parent directory so that
+    // `fs::rename` never crosses a volume boundary on Windows (`MoveFileEx`
+    // fails with `ERROR_NOT_SAME_DEVICE` across volumes). A `.part` suffix
+    // plus the process id keeps concurrent writers from colliding and marks
+    // the file as incomplete for crash-recovery sweeps.
     let name = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -1244,10 +1312,10 @@ fn temporary_path(path: &Path) -> PathBuf {
 mod tests {
     use super::{
         CancellationToken, CompatibilityKey, ErrorReport, Heartbeat, JobStatus, JobSummary,
-        ModelLoader, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageLifecycle,
-        PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent, ProgressMode,
-        ProgressSnapshot, RenderAudit, RenderedPage, ReportFormat, Reporter, ResultReport,
-        ResultStatus, ScanController, ScanService, atomic_write, format_report,
+        ModelLoader, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic,
+        PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent,
+        ProgressMode, ProgressSnapshot, RenderAudit, RenderedPage, ReportFormat, Reporter,
+        ResultReport, ResultStatus, ScanController, ScanService, atomic_write, format_report,
     };
     use std::fs;
 
@@ -1312,6 +1380,41 @@ mod tests {
                 png: vec![page as u8],
                 markdown: format!("page {page}"),
                 truncated: false,
+                warnings: Vec::new(),
+            })
+        }
+    }
+
+    /// Configurable artifact recognizer for W3.3 state-machine scenarios: it
+    /// can fail recognition, mark a page truncated (max-token), and request
+    /// cancellation after a given page so mid-run cancellation is deterministic
+    /// (no threads, no timing).
+    #[allow(clippy::struct_excessive_bools)]
+    struct ScenarioArtifacts {
+        fail_page: Option<u32>,
+        truncate_page: Option<u32>,
+        cancel_after: Option<u32>,
+        token: CancellationToken,
+        calls: Vec<u32>,
+    }
+    impl PageArtifactRecognizer<u32> for ScenarioArtifacts {
+        fn recognize_artifact(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+        ) -> std::io::Result<PageArtifactResult> {
+            self.calls.push(page);
+            if self.fail_page == Some(page) {
+                return Err(std::io::Error::other("recognition"));
+            }
+            if self.cancel_after == Some(page) {
+                self.token.request_cancel();
+            }
+            Ok(PageArtifactResult {
+                png: vec![page as u8],
+                markdown: format!("page {page}"),
+                truncated: self.truncate_page == Some(page),
                 warnings: Vec::new(),
             })
         }
@@ -1603,24 +1706,111 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    // --- W2.3: Windows temp dir + atomic write contract ----------------------
+    //
+    // The frozen atomic-write implementation must (a) co-locate the temp file
+    // with the target so `fs::rename` never crosses volumes on Windows, and
+    // (b) clean up the `.part` temp when the rename fails. These characterize
+    // the already-shipped behavior so a regression on Windows is caught.
+
+    #[test]
+    fn temporary_path_colocates_with_target_to_avoid_cross_volume_rename() {
+        let target = std::path::Path::new("/tmp/ocrx/page-0001.md");
+        let temp = super::temporary_path(target);
+        assert_eq!(
+            temp.parent(),
+            target.parent(),
+            "temp must share the target's parent dir so fs::rename never crosses volumes"
+        );
+        let name = temp.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with('.'), "temp name should be hidden: {name}");
+        assert!(
+            name.contains(".part"),
+            "temp name should mark .part: {name}"
+        );
+    }
+
+    #[test]
+    fn atomic_write_cleans_part_file_when_rename_fails() {
+        let directory = test_dir("part-cleanup");
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        // Target is an existing directory: renaming a file over a directory
+        // fails on both Windows (`MoveFileEx`) and Unix (`rename`), so the
+        // `.part` temp created moments earlier must be removed, not left behind.
+        let target = directory.join("result");
+        fs::create_dir(&target).unwrap();
+        assert!(atomic_write(&target, b"content").is_err());
+        assert!(target.is_dir(), "directory target must be left untouched");
+        let leftover: Vec<String> = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".part"))
+            .collect();
+        assert!(
+            leftover.is_empty(),
+            "leftover .part files after failed rename: {leftover:?}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn output_root_rejects_broad_and_system_directories() {
+        use std::path::Path;
+        let input = std::env::temp_dir().join(format!("ocrx-input-{}.pdf", std::process::id()));
+        let protected: [&Path; 0] = [];
+        // Filesystem root is never a valid output root.
+        let root = if cfg!(windows) {
+            Path::new("C:\\")
+        } else {
+            Path::new("/")
+        };
+        assert!(
+            super::validate_output_root(&input, root, &protected).is_err(),
+            "filesystem root must be rejected as a broad directory"
+        );
+        // The process temp dir is too broad to recursively delete into.
+        assert!(
+            super::validate_output_root(&input, std::env::temp_dir(), &protected).is_err(),
+            "temp dir must be rejected as a broad directory"
+        );
+        // The user's home directory is too broad.
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(std::path::PathBuf::from);
+        if let Some(home) = home {
+            assert!(
+                super::validate_output_root(&input, &home, &protected).is_err(),
+                "home directory must be rejected as a broad directory"
+            );
+        }
+    }
+
     #[test]
     fn output_root_rejects_relative_and_protected_paths() {
-        let input = std::path::Path::new("/work/input.pdf");
-        let cache = std::path::Path::new("/work/.cache");
-        let workspace = std::path::Path::new("/work");
-        assert!(super::validate_output_root(input, "relative", &[cache, workspace]).is_err());
-        assert!(super::validate_output_root(input, "/work", &[cache, workspace]).is_err());
+        let base = std::env::temp_dir().join(format!("ocrx-output-root-{}", std::process::id()));
+        let input = base.join("work/input.pdf");
+        let cache = base.join("work/.cache");
+        let workspace = base.join("work");
+        let protected = [cache.as_path(), workspace.as_path()];
+        assert!(super::validate_output_root(&input, "relative", &protected).is_err());
+        assert!(super::validate_output_root(&input, &workspace, &protected).is_err());
+        assert!(super::validate_output_root(&input, &cache.join("job"), &protected).is_err());
         assert!(
-            super::validate_output_root(input, "/work/.cache/job", &[cache, workspace]).is_err()
+            super::validate_output_root(&input, &workspace.join("result"), &protected).is_err()
         );
-        assert!(super::validate_output_root(input, "/work/result", &[cache, workspace]).is_err());
     }
 
     #[test]
     fn output_root_accepts_unrelated_absolute_path() {
-        let input = std::path::Path::new("/work/input.pdf");
-        let cache = std::path::Path::new("/work/.cache");
-        assert!(super::validate_output_root(input, "/tmp/ocr-result", &[cache]).is_ok());
+        let base =
+            std::env::temp_dir().join(format!("ocrx-output-unrelated-{}", std::process::id()));
+        let input = base.join("work/input.pdf");
+        let cache = base.join("work/.cache");
+        let protected = [cache.as_path()];
+        assert!(
+            super::validate_output_root(&input, &base.join("tmp/ocr-result"), &protected).is_ok()
+        );
     }
 
     #[test]
@@ -1742,11 +1932,15 @@ mod tests {
         let _ = fs::remove_dir_all(&directory);
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("old"), b"old").unwrap();
-        let input = std::path::Path::new("/work/input.pdf");
-        let protected = std::path::Path::new("/work/.cache");
-        super::remove_for_overwrite(input, &directory, &[protected]).unwrap();
+        let base = std::env::temp_dir().join(format!("ocrx-overwrite-{}", std::process::id()));
+        let input = base.join("work/input.pdf");
+        let protected = base.join("work/.cache");
+        super::remove_for_overwrite(&input, &directory, &[protected.as_path()]).unwrap();
         assert!(!directory.exists());
-        assert!(super::remove_for_overwrite(input, "/work", &[protected]).is_err());
+        assert!(
+            super::remove_for_overwrite(&input, &base.join("work"), &[protected.as_path()])
+                .is_err()
+        );
     }
 
     #[test]
@@ -1859,6 +2053,177 @@ mod tests {
             .status(),
             JobStatus::Running
         );
+    }
+
+    // --- W3.3: cancellation / partial-completion state machine contract -----
+    //
+    // Exit-code and result-status mapping is consolidated on JobSummary so the
+    // CLI doesn't re-derive it from scattered bools; per-page diagnostics
+    // carry a stable stage/error_code for each failure mode; and mid-run
+    // cancellation stops taking new pages while keeping the committed
+    // checkpoint. All deterministic, no runtime, no threads.
+
+    #[test]
+    fn job_summary_exit_code_and_result_status_match_stable_contract() {
+        let completed = JobSummary {
+            selected_pages: 2,
+            completed_pages: 2,
+            failed_pages: 0,
+            truncated_pages: 0,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            cancelled: false,
+        };
+        assert_eq!(completed.status(), JobStatus::Completed);
+        assert_eq!(completed.result_status(), ResultStatus::Success);
+        assert_eq!(completed.exit_code(), 0);
+
+        let partial = JobSummary {
+            selected_pages: 2,
+            completed_pages: 1,
+            failed_pages: 1,
+            truncated_pages: 0,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            cancelled: false,
+        };
+        assert_eq!(partial.status(), JobStatus::Partial);
+        assert_eq!(partial.result_status(), ResultStatus::Partial);
+        assert_eq!(partial.exit_code(), 10);
+
+        // A truncated page counts as completed but still yields partial/10.
+        let truncated = JobSummary {
+            selected_pages: 2,
+            completed_pages: 2,
+            failed_pages: 0,
+            truncated_pages: 1,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            cancelled: false,
+        };
+        assert_eq!(truncated.status(), JobStatus::Partial);
+        assert_eq!(truncated.result_status(), ResultStatus::Partial);
+        assert_eq!(truncated.exit_code(), 10);
+
+        let cancelled = JobSummary {
+            selected_pages: 2,
+            completed_pages: 1,
+            failed_pages: 0,
+            truncated_pages: 0,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            cancelled: true,
+        };
+        assert_eq!(cancelled.status(), JobStatus::Cancelled);
+        assert_eq!(cancelled.exit_code(), 130);
+    }
+
+    #[test]
+    fn scan_service_records_per_page_diagnostics_for_render_recognize_and_truncation() {
+        let root = test_dir("scan-diagnostics");
+        let _ = fs::remove_dir_all(&root);
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "balanced".to_owned(),
+            parameters: "p".to_owned(),
+        };
+        // page 1: render fails; page 2: recognition fails; page 3: truncated;
+        // page 4: success. Remaining pages must continue after each failure.
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: Some(1),
+            },
+            FakeLoader { loads: 0 },
+            ScenarioArtifacts {
+                fail_page: Some(2),
+                truncate_page: Some(3),
+                cancel_after: None,
+                token: CancellationToken::new(),
+                calls: Vec::new(),
+            },
+        );
+        let summary = service
+            .run_with_checkpoints(&[1, 2, 3, 4], &root, &compatibility, false)
+            .unwrap();
+        assert_eq!(summary.completed_pages, 2, "page 3 (truncated) + page 4");
+        assert_eq!(
+            summary.failed_pages, 2,
+            "page 1 (render) + page 2 (recognize)"
+        );
+        assert_eq!(summary.truncated_pages, 1);
+        assert_eq!(summary.status(), JobStatus::Partial);
+        assert!(
+            !root.join("document.md").exists(),
+            "no final merge on partial"
+        );
+
+        let by_page: std::collections::BTreeMap<u32, &PageDiagnostic> = summary
+            .diagnostics
+            .iter()
+            .map(|diag| (diag.page, diag))
+            .collect();
+        assert_eq!(by_page[&1].stage, "render");
+        assert_eq!(by_page[&1].error_code.as_deref(), Some("render_failed"));
+        assert_eq!(by_page[&2].stage, "recognize");
+        assert_eq!(
+            by_page[&2].error_code.as_deref(),
+            Some("recognition_failed")
+        );
+        assert_eq!(
+            by_page[&3].status, "partial",
+            "truncated page reports partial"
+        );
+        assert_eq!(by_page[&4].status, "completed");
+        assert!(service.recognizer.calls == vec![2, 3, 4]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scan_service_mid_run_cancellation_stops_new_pages_and_keeps_checkpoint() {
+        let root = test_dir("scan-mid-cancel");
+        let _ = fs::remove_dir_all(&root);
+        let token = CancellationToken::new();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "balanced".to_owned(),
+            parameters: "p".to_owned(),
+        };
+        // Cancel after page 1 completes: page 2 must not be processed, page 1's
+        // checkpoint stays, and the job is cancelled (exit 130).
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            ScenarioArtifacts {
+                fail_page: None,
+                truncate_page: None,
+                cancel_after: Some(1),
+                token: token.clone(),
+                calls: Vec::new(),
+            },
+        );
+        let summary = service
+            .run_with_checkpoints_cancelled(&[1, 2, 3], &root, &compatibility, false, false, &token)
+            .unwrap();
+        assert!(summary.cancelled);
+        assert_eq!(summary.completed_pages, 1);
+        assert_eq!(summary.status(), JobStatus::Cancelled);
+        assert_eq!(summary.exit_code(), 130);
+        assert!(
+            root.join("page-0001.checkpoint").exists(),
+            "committed checkpoint kept"
+        );
+        assert!(
+            !root.join("page-0002.checkpoint").exists(),
+            "page 2 not started"
+        );
+        assert_eq!(service.recognizer.calls, vec![1]);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

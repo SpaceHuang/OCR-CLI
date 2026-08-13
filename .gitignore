@@ -7,3 +7,6 @@ __pycache__/
 /test-data/
 /dist/
 /docs/review/
+# Frozen native PDFium runtime artifacts (dll/dylib) are environment-supplied
+# build/runtime dependencies, not source. Fetched per the release baseline doc.
+/vendor/

@@ -197,17 +197,27 @@ pub fn parse_page(
     )
 }
 
+/// Normalizes CRLF and lone CR to LF so parsed documents are stable across
+/// platforms regardless of the input's line-ending convention.
+fn normalize_line_endings(input: &str) -> String {
+    input.replace("\r\n", "\n").replace('\r', "\n")
+}
+
 fn parse_page_with_termination(
     page_number: u32,
     raw: &str,
     finish_reason: &str,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     let mut blocks = Vec::new();
-    let markdown = remove_bbox_image_placeholders(raw);
+    // Normalize line endings so the parsed document is stable across platforms,
+    // regardless of whether the raw model output (or a checked-in fixture) uses
+    // CRLF or LF.
+    let raw = normalize_line_endings(raw);
+    let markdown = remove_bbox_image_placeholders(&raw);
     let (markdown, repetition_removed) = remove_confident_tail_repetition(&markdown);
     blocks.extend(parse_structured_blocks(&markdown));
     let mut seen = Vec::new();
-    for bbox in extract_bboxes(raw) {
+    for bbox in extract_bboxes(&raw) {
         if seen.contains(&bbox) {
             continue;
         }
