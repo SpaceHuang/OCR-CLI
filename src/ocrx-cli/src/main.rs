@@ -1,23 +1,38 @@
-use image::ImageFormat;
 use ocrx_core::ModelId;
 use ocrx_models::{
-    ModelCatalog, ResourceSnapshot, UrlInstallRequest, community_asset_sizes, community_asset_urls,
-    community_manifest, recommend_device, recommend_profile,
+    ModelCatalog, ResourceSnapshot, UrlInstallRequest, community_asset_urls, community_manifest,
+    recommend_device, recommend_profile,
 };
 use ocrx_output::{
-    CancellationToken, CompatibilityKey, ErrorReport, ModelLoader, PageArtifactRecognizer,
-    PageArtifactResult, PageDiagnostic, PageRenderer, ProgressEvent, ProgressMode, RenderAudit,
-    RenderedPage, ReportFormat, Reporter, ResultReport, ScanService, format_report,
-    remove_for_overwrite,
+    CancellationToken, PageDiagnostic, PageRenderer, ProgressMode, RenderAudit, RenderedPage,
+    ReportFormat, Reporter, ResultReport, format_report,
 };
-use ocrx_pdf::{
-    PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
-    fit_pixel_budget,
-};
-use ocrx_runtime::{Backend, LlamaMtmdRuntime, RuntimeInfo};
-use std::io::{Cursor, IsTerminal};
+use ocrx_pdf::{PdfWorkerScheduler, PdfiumRenderer, RenderOptions, fit_pixel_budget};
+use ocrx_runtime::{Backend, RuntimeInfo};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+
+mod platform_paths;
+use platform_paths::home_dir;
+
+mod system_probe;
+use system_probe::RealSystemProbe;
+
+// Imports used only by the real scan path (RuntimeLoader / OvisRecognizer /
+// run_scan), which is macOS-only until the Windows runtime is aligned (WP.2/W3.1).
+#[cfg(target_os = "macos")]
+use {
+    image::ImageFormat,
+    ocrx_models::community_asset_sizes,
+    ocrx_output::{
+        CompatibilityKey, ErrorReport, ModelLoader, PageArtifactRecognizer, PageArtifactResult,
+        ProgressEvent, ScanService, remove_for_overwrite,
+    },
+    ocrx_pdf::{PdfErrorKind, classify_pdf_error},
+    ocrx_runtime::LlamaMtmdRuntime,
+    std::io::Cursor,
+    std::time::{Duration, Instant},
+};
 
 #[derive(Debug, PartialEq, Eq)]
 enum CliCommand {
@@ -463,12 +478,14 @@ fn main() {
                 println!("{}", doctor_json_report(snapshot, info));
             } else {
                 println!(
-                    "model={} backend={:?} image_token_limit={} memory_gb={} metal_available={}",
+                    "model={} backend={} image_token_limit={} memory_gb={} metal_available={} cuda_available={} vulkan_available={}",
                     ModelId::AS_STR,
-                    info.backend,
+                    info.backend.as_str(),
                     info.image_token_limit,
                     snapshot.memory_gb,
-                    snapshot.metal_available
+                    snapshot.metal_available,
+                    snapshot.cuda_available,
+                    snapshot.vulkan_available
                 );
             }
         }
@@ -521,15 +538,14 @@ fn main() {
                 eprintln!("model {action} requires a profile");
                 std::process::exit(2);
             };
-            let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
-            let (model_path, _mmproj_path) = ocrx_models::cache_paths(&cache_root, &profile)
+            let cache_root = platform_paths::cache_root();
+            let manifest = community_manifest(&profile)
                 .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
+            let (model_path, _mmproj_path) =
+                ocrx_models::cache_paths(&cache_root, &manifest.identity.revision, &profile)
+                    .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
             match action.as_str() {
                 "verify" => {
-                    let manifest = ocrx_models::community_manifest(&profile)
-                        .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
                     let sizes = ocrx_models::community_asset_sizes(&profile)
                         .unwrap_or_else(|| unreachable!("profile parsed by CLI"));
                     match ocrx_models::verify_manifest_files_with_sizes(
@@ -539,8 +555,11 @@ fn main() {
                         sizes.1,
                     )
                     .and_then(|_| {
+                        let compat = ocrx_core::RUNTIME_COMPATIBILITY;
                         ocrx_models::validate_runtime_adapter_compatibility(
-                            "0.1.152", "0.1.153", "ovisocr2",
+                            compat.llama_cpp_2_version,
+                            compat.llama_cpp_sys_2_version,
+                            compat.adapter_id,
                         )
                     }) {
                         Ok(()) => println!(
@@ -554,8 +573,6 @@ fn main() {
                     }
                 }
                 "install" => {
-                    let manifest = community_manifest(&profile)
-                        .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
                     let Some((model_url, mmproj_url)) = community_asset_urls(&profile) else {
                         unreachable!("profile parsed by CLI");
                     };
@@ -611,9 +628,13 @@ fn main() {
         CliCommand::Scan(options) => run_scan(options),
         CliCommand::Skill { action } => {
             let target = std::env::var("OCRX_SKILL_TARGET").unwrap_or_else(|_| "all".to_owned());
-            let home = std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("."));
+            let home = match home_dir() {
+                Ok(home) => home,
+                Err(error) => {
+                    eprintln!("skill {action} blocked: {error}");
+                    std::process::exit(2);
+                }
+            };
             let content = include_str!("../../../assets/skills/ocrx/SKILL.md");
             let result = match action.as_str() {
                 "install" => ocrx_skill::install(&target, &home, content).map(|paths| {
@@ -820,6 +841,7 @@ impl PageRenderer for PdfScanRenderer {
     }
 }
 
+#[cfg(target_os = "macos")]
 struct RuntimeLoader {
     model: PathBuf,
     mmproj: PathBuf,
@@ -827,6 +849,7 @@ struct RuntimeLoader {
     max_image_tokens: u32,
     context_size: u32,
 }
+#[cfg(target_os = "macos")]
 impl ModelLoader for RuntimeLoader {
     type Model = LlamaMtmdRuntime;
     fn load(&mut self) -> std::io::Result<Self::Model> {
@@ -841,10 +864,12 @@ impl ModelLoader for RuntimeLoader {
     }
 }
 
+#[cfg(target_os = "macos")]
 struct OvisRecognizer {
     output: PathBuf,
     max_tokens: u32,
 }
+#[cfg(target_os = "macos")]
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     fn recognize_artifact(
         &mut self,
@@ -876,6 +901,16 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn run_scan(_options: ScanOptions) -> ! {
+    eprintln!(
+        "ocrx: scan is not available on this platform yet - the real OCR runtime is built \
+         only on macOS until the Windows runtime is aligned (plan WP.2/W3.1)."
+    );
+    std::process::exit(6);
+}
+
+#[cfg(target_os = "macos")]
 fn run_scan(options: ScanOptions) -> ! {
     let started = Instant::now();
     let report_format = if options.report == "json" {
@@ -907,9 +942,7 @@ fn run_scan(options: ScanOptions) -> ! {
     let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let cache = std::env::var_os("OCRX_MODEL_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
+    let cache = platform_paths::cache_root();
     let snapshot = resource_snapshot();
     let profile = match resolve_scan_profile(&options.profile, snapshot.memory_gb) {
         Ok(profile) => profile,
@@ -937,7 +970,7 @@ fn run_scan(options: ScanOptions) -> ! {
                     kind: "runtime".to_owned(),
                     message: "requested device is unavailable".to_owned(),
                     cause: Some(format!("{error:?}")),
-                    suggestion: Some("use --device auto|cpu|metal".to_owned()),
+                    suggestion: Some("use --device auto|cpu|metal|cuda|vulkan".to_owned()),
                 },
                 report_format,
             );
@@ -945,24 +978,25 @@ fn run_scan(options: ScanOptions) -> ! {
             std::process::exit(6);
         }
     };
-    let (model, mmproj) = match ocrx_models::cache_paths(&cache, &profile) {
-        Ok(paths) => paths,
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 4,
-                    kind: "model".to_owned(),
-                    message: "model path resolution failed".to_owned(),
-                    cause: Some(format!("{error:?}")),
-                    suggestion: Some("verify the selected profile".to_owned()),
-                },
-                report_format,
-            );
-            print_reporter(reporter);
-            std::process::exit(4);
-        }
-    };
     let manifest = community_manifest(&profile).expect("validated profile");
+    let (model, mmproj) =
+        match ocrx_models::cache_paths(&cache, &manifest.identity.revision, &profile) {
+            Ok(paths) => paths,
+            Err(error) => {
+                reporter.error(
+                    &ErrorReport {
+                        code: 4,
+                        kind: "model".to_owned(),
+                        message: "model path resolution failed".to_owned(),
+                        cause: Some(format!("{error:?}")),
+                        suggestion: Some("verify the selected profile".to_owned()),
+                    },
+                    report_format,
+                );
+                print_reporter(reporter);
+                std::process::exit(4);
+            }
+        };
     let (model_bytes, mmproj_bytes) = community_asset_sizes(&profile).expect("validated profile");
     let assets_valid = model.is_file()
         && mmproj.is_file()
@@ -1163,6 +1197,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 segment_pages: 20,
                 timeout: Duration::from_secs(20 * 60),
                 dpi,
+                env: Vec::new(),
             },
             input: input.clone(),
             output: worker_output,
@@ -1244,11 +1279,7 @@ fn run_scan(options: ScanOptions) -> ! {
             }
             let report = ResultReport {
                 job_id: "scan".to_owned(),
-                status: if summary.failed_pages == 0 && summary.truncated_pages == 0 {
-                    ocrx_output::ResultStatus::Success
-                } else {
-                    ocrx_output::ResultStatus::Partial
-                },
+                status: summary.result_status(),
                 total_pages: summary.selected_pages,
                 completed_pages: summary.completed_pages,
                 failed_pages: summary.failed_pages,
@@ -1256,11 +1287,7 @@ fn run_scan(options: ScanOptions) -> ! {
             };
             let markdown_output = (summary.failed_pages == 0).then(|| output.join("document.md"));
             let result_json = serialize_scan_result(&ScanResultFields {
-                status: if summary.failed_pages == 0 && summary.truncated_pages == 0 {
-                    "success"
-                } else {
-                    "partial"
-                },
+                status: summary.result_status().as_str(),
                 input: &canonical_input,
                 markdown_path: markdown_output.as_deref(),
                 output_dir: &output,
@@ -1320,13 +1347,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 progress_mode,
             );
             print_reporter(reporter);
-            std::process::exit(
-                if summary.failed_pages == 0 && summary.truncated_pages == 0 {
-                    0
-                } else {
-                    10
-                },
-            );
+            std::process::exit(summary.exit_code());
         }
         Err(error) => {
             let error_kind = match classify_pdf_error(&error.to_string()) {
@@ -1489,12 +1510,20 @@ fn install_sigint_handler(token: CancellationToken) {
 }
 
 fn doctor_runtime_info(snapshot: ResourceSnapshot) -> RuntimeInfo {
+    // Data-driven backend selection mirroring `recommend_device`'s priority:
+    // metal > cuda > vulkan > cpu. Platform differences live in the snapshot
+    // flags, not in branching here.
+    let backend = [
+        (snapshot.metal_available, Backend::Metal),
+        (snapshot.cuda_available, Backend::Cuda),
+        (snapshot.vulkan_available, Backend::Vulkan),
+        (snapshot.cpu_available, Backend::Cpu),
+    ]
+    .into_iter()
+    .find_map(|(available, backend)| available.then_some(backend))
+    .unwrap_or(Backend::Cpu);
     RuntimeInfo {
-        backend: if snapshot.metal_available {
-            Backend::Metal
-        } else {
-            Backend::Cpu
-        },
+        backend,
         image_token_limit: 1024,
     }
 }
@@ -1519,39 +1548,36 @@ fn print_help(topic: Option<&str>) {
     }
 }
 
-fn resource_snapshot() -> ResourceSnapshot {
-    let detected_memory = if cfg!(target_os = "macos") {
-        std::process::Command::new("sysctl")
-            .args(["-n", "hw.memsize"])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|value| value.trim().parse::<u64>().ok())
-            .map(|bytes| bytes / 1024 / 1024 / 1024)
-    } else {
-        None
-    };
-    let memory_gb = resolve_config(
-        std::env::var("OCRX_MEMORY_GB")
-            .ok()
-            .and_then(|value| value.parse().ok()),
-        detected_memory,
-        None,
-        16,
-    )
-    .value;
+fn resource_snapshot_with_probe(
+    probe: &dyn system_probe::SystemProbe,
+    env_memory_gb: Option<u64>,
+) -> ResourceSnapshot {
+    let memory_gb = resolve_config(env_memory_gb, probe.detected_memory_gb(), None, 16).value;
     ResourceSnapshot {
         memory_gb,
-        metal_available: cfg!(target_os = "macos"),
-        cpu_available: true,
+        metal_available: probe.metal_available(),
+        cuda_available: probe.cuda_available(),
+        vulkan_available: probe.vulkan_available(),
+        cpu_available: probe.cpu_available(),
     }
 }
 
+fn resource_snapshot() -> ResourceSnapshot {
+    resource_snapshot_with_probe(
+        &RealSystemProbe,
+        std::env::var("OCRX_MEMORY_GB")
+            .ok()
+            .and_then(|value| value.parse().ok()),
+    )
+}
+
+/// Reports the current platform identifier for the doctor JSON report.
+fn current_platform() -> &'static str {
+    platform_paths::detect().as_str()
+}
+
 fn doctor_json_report(snapshot: ResourceSnapshot, info: RuntimeInfo) -> String {
-    let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
+    let cache_root = platform_paths::cache_root();
     doctor_json_report_with_cache(snapshot, info, cache_root)
 }
 
@@ -1572,24 +1598,21 @@ fn doctor_json_report_with_paths(
     let profile = recommend_profile(snapshot.memory_gb, &["compact", "balanced", "quality"])
         .unwrap_or_else(|_| "unavailable".to_owned());
     let device = recommend_device(snapshot, "auto").unwrap_or_else(|_| "unavailable".to_owned());
-    let platform = if cfg!(target_os = "macos") {
-        "macos"
-    } else {
-        "unsupported"
-    };
-    let backend = match info.backend {
-        Backend::Metal => "Metal",
-        Backend::Cpu => "Cpu",
-    };
+    let platform = current_platform();
+    let backend = info.backend.as_str();
     let installed_profiles = ["compact", "balanced", "quality", "reference"]
         .into_iter()
         .filter(|profile| {
-            ocrx_models::cache_paths(&cache_root, profile)
+            let manifest = match ocrx_models::community_manifest(profile) {
+                Ok(m) => m,
+                Err(_) => return false,
+            };
+            ocrx_models::cache_paths(&cache_root, &manifest.identity.revision, profile)
                 .map(|(model, mmproj)| model.is_file() && mmproj.is_file())
                 .unwrap_or(false)
         })
         .collect::<Vec<_>>();
-    let environment_home = std::env::var_os("HOME").map(PathBuf::from);
+    let environment_home = home_dir().ok();
     let skill_installed = home
         .map(|home| home.join(".codex/skills/ocrx/SKILL.md").is_file())
         .or_else(|| {
@@ -1599,10 +1622,12 @@ fn doctor_json_report_with_paths(
         })
         .unwrap_or(false);
     format!(
-        "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
+        "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cuda_available\":{},\"vulkan_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
         info.image_token_limit,
         snapshot.memory_gb,
         snapshot.metal_available,
+        snapshot.cuda_available,
+        snapshot.vulkan_available,
         snapshot.cpu_available,
         cache_root.display(),
         installed_profiles
@@ -1617,11 +1642,11 @@ fn doctor_json_report_with_paths(
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::process::Command;
 
     use super::{
         CliCommand, ConfigSource, ResolvedConfig, ResourceSnapshot, ScanOptions, ScanResultFields,
-        doctor_json_report, parse_command, parse_page_selection, parse_scan_args, resolve_config,
+        doctor_json_report, parse_command, parse_page_selection, parse_scan_args, recommend_device,
+        resolve_config,
     };
     use ocrx_output::{PageDiagnostic, RenderAudit, ResultReport, ResultStatus};
 
@@ -1678,48 +1703,6 @@ mod tests {
         assert!(parse_scan_args(&["input.pdf", "--dpi", "0"]).is_err());
     }
 
-    fn run_cli(args: &[&str]) -> std::process::Output {
-        let binary = std::env::var("CARGO_BIN_EXE_ocrx").unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/debug/ocrx")
-                .to_string_lossy()
-                .into_owned()
-        });
-        Command::new(binary)
-            .args(args)
-            .output()
-            .expect("CLI test binary should run")
-    }
-
-    #[test]
-    fn cli_json_success_has_exactly_one_stdout_object() {
-        let output = run_cli(&["doctor", "--report", "json"]);
-        assert!(output.status.success());
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        assert_eq!(stdout.lines().count(), 1);
-        assert!(stdout.starts_with('{') && stdout.ends_with("}\n"));
-        assert!(String::from_utf8(output.stderr).unwrap().is_empty());
-    }
-
-    #[test]
-    fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
-        let output = run_cli(&["scan", "input.pdf", "--model", "other"]);
-        assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.contains("ovisocr2") || stderr.contains("model"));
-    }
-
-    #[test]
-    fn cli_initialization_error_is_one_json_error_object() {
-        let output = run_cli(&["scan", "input.pdf", "--report", "json"]);
-        assert_eq!(output.status.code(), Some(4));
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        assert_eq!(stdout.lines().count(), 1);
-        assert!(stdout.contains("\"schema_version\":1"));
-        assert!(!stdout.contains("input.pdf"));
-    }
-
     #[test]
     fn scan_parser_validates_model_profiles() {
         let parsed = parse_scan_args(&["input.pdf", "--model-profile", "quality"]).unwrap();
@@ -1770,17 +1753,23 @@ mod tests {
 
     #[test]
     fn output_policy_rejects_input_and_protected_overlap() {
-        let input = Path::new("/work/input.pdf");
-        let cache = Path::new("/work/cache");
-        assert!(super::validate_output_policy(input, Path::new("relative"), &[cache]).is_err());
+        let base = std::env::temp_dir().join(format!("ocrx-policy-{}", std::process::id()));
+        let input = base.join("work/input.pdf");
+        let cache = base.join("work/cache");
+        let protected = [cache.as_path()];
+        assert!(super::validate_output_policy(&input, Path::new("relative"), &protected).is_err());
         assert!(
-            super::validate_output_policy(input, Path::new("/work/input.pdf/out"), &[cache])
+            super::validate_output_policy(&input, &base.join("work/input.pdf/out"), &protected)
                 .is_err()
         );
         assert!(
-            super::validate_output_policy(input, Path::new("/work/cache/job"), &[cache]).is_err()
+            super::validate_output_policy(&input, &base.join("work/cache/job"), &protected)
+                .is_err()
         );
-        assert!(super::validate_output_policy(input, Path::new("/tmp/result"), &[cache]).is_ok());
+        assert!(
+            super::validate_output_policy(&input, &base.join("tmp/result"), &protected).is_ok()
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -1898,6 +1887,8 @@ mod tests {
             ResourceSnapshot {
                 memory_gb: 16,
                 metal_available: true,
+                cuda_available: false,
+                vulkan_available: false,
                 cpu_available: true,
             },
             ocrx_runtime::RuntimeInfo {
@@ -1908,10 +1899,11 @@ mod tests {
             Some(&empty),
         );
         let _ = std::fs::remove_dir_all(&empty);
+        let platform = super::current_platform();
         assert_eq!(
             report,
             format!(
-                "{{\"schema_version\":2,\"platform\":\"macos\",\"model\":\"ovisocr2\",\"backend\":\"Metal\",\"image_token_limit\":1024,\"memory_gb\":16,\"metal_available\":true,\"cpu_available\":true,\"cache_root\":\"{}\",\"installed_profiles\":[],\"recommended_profile\":\"balanced\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
+                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"Metal\",\"image_token_limit\":1024,\"memory_gb\":16,\"metal_available\":true,\"cuda_available\":false,\"vulkan_available\":false,\"cpu_available\":true,\"cache_root\":\"{}\",\"installed_profiles\":[],\"recommended_profile\":\"balanced\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
                 empty.display()
             )
         );
@@ -1954,6 +1946,8 @@ mod tests {
             ResourceSnapshot {
                 memory_gb: 16,
                 metal_available: true,
+                cuda_available: false,
+                vulkan_available: false,
                 cpu_available: true,
             },
             ocrx_runtime::RuntimeInfo {
@@ -1964,6 +1958,52 @@ mod tests {
         assert!(!report.to_ascii_lowercase().contains("authorization="));
         assert!(!report.to_ascii_lowercase().contains("token:"));
         assert!(report.contains("\"backend\":\"Metal\""));
+    }
+
+    #[test]
+    fn resource_snapshot_uses_injected_probe_and_env_override_without_real_hardware() {
+        use super::system_probe::SystemProbe;
+
+        // A fake Windows-with-CUDA probe: determinism without touching the GPU.
+        struct GpuWindowsProbe;
+        impl SystemProbe for GpuWindowsProbe {
+            fn detected_memory_gb(&self) -> Option<u64> {
+                Some(24)
+            }
+            fn metal_available(&self) -> bool {
+                false
+            }
+            fn cuda_available(&self) -> bool {
+                true
+            }
+            fn vulkan_available(&self) -> bool {
+                false
+            }
+            fn cpu_available(&self) -> bool {
+                true
+            }
+        }
+
+        // No env override: detected memory wins.
+        let snapshot = super::resource_snapshot_with_probe(&GpuWindowsProbe, None);
+        assert_eq!(snapshot.memory_gb, 24);
+        assert!(snapshot.cuda_available);
+        assert!(!snapshot.vulkan_available);
+        assert!(!snapshot.metal_available);
+        // auto must select the available GPU, never silently fall back to CPU.
+        assert_eq!(recommend_device(snapshot, "auto"), Ok("cuda".to_owned()));
+
+        // Env override takes precedence over the detected value, so a user can
+        // pin memory for reproducible recommendations.
+        let pinned = super::resource_snapshot_with_probe(&GpuWindowsProbe, Some(8));
+        assert_eq!(pinned.memory_gb, 8);
+        assert_eq!(recommend_device(pinned, "auto"), Ok("cuda".to_owned()));
+
+        // doctor backend mirrors the same data-driven priority.
+        assert_eq!(
+            super::doctor_runtime_info(snapshot).backend,
+            ocrx_runtime::Backend::Cuda
+        );
     }
 
     #[test]

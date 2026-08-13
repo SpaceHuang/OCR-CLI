@@ -540,6 +540,38 @@ impl ModelId {
     }
 }
 
+/// Frozen runtime binding compatibility for the community OvisOCR2 asset.
+///
+/// Single source of truth shared across macOS and Windows: the `llama-cpp-2`
+/// wrapper version, the `llama-cpp-sys-2` sys crate version, the embedded
+/// `llama.cpp` upstream commit, and the adapter id. The per-target
+/// `Cargo.toml` dependencies in `ocrx-runtime` and
+/// `ocrx_models::validate_runtime_adapter_compatibility` must agree with these
+/// values; platform differences live only in build features and probing, never
+/// in scattered version constants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeCompatibility {
+    /// `llama-cpp-2` wrapper crate version.
+    pub llama_cpp_2_version: &'static str,
+    /// `llama-cpp-sys-2` sys crate version.
+    pub llama_cpp_sys_2_version: &'static str,
+    /// Embedded `llama.cpp` upstream commit (short SHA), recorded by the
+    /// WP.2 build freeze (`docs/develop/runtime-windows-alignment-*.md`).
+    pub llama_cpp_commit: &'static str,
+    /// Adapter id this runtime binding serves (`ovisocr2`).
+    pub adapter_id: &'static str,
+}
+
+/// The pinned runtime binding shared by macOS and Windows builds.
+pub const RUNTIME_COMPATIBILITY: RuntimeCompatibility = RuntimeCompatibility {
+    llama_cpp_2_version: "0.1.152",
+    llama_cpp_sys_2_version: "0.1.153",
+    // Filled/verified by the WP.2 build freeze; empty until the Windows build
+    // is aligned and the embedded commit is recorded.
+    llama_cpp_commit: "",
+    adapter_id: ModelId::AS_STR,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
     Auto,

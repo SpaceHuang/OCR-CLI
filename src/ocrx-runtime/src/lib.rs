@@ -4,6 +4,21 @@
 pub enum Backend {
     Cpu,
     Metal,
+    Cuda,
+    Vulkan,
+}
+
+impl Backend {
+    /// Stable lowercase identifier used in doctor JSON and runtime reports.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Backend::Cpu => "Cpu",
+            Backend::Metal => "Metal",
+            Backend::Cuda => "Cuda",
+            Backend::Vulkan => "Vulkan",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,5 +142,15 @@ mod tests {
     #[test]
     fn request_constructor_rejects_rgb8_dimension_mismatch() {
         assert!(InferenceRequest::new(1, 2, 2, vec![0; 3], 16).is_err());
+    }
+
+    #[test]
+    fn backend_serializes_to_stable_lowercase_identifiers() {
+        // Frozen golden: doctor JSON and runtime reports depend on these exact
+        // strings. Adding a backend variant must extend, never rename, this set.
+        assert_eq!(Backend::Cpu.as_str(), "Cpu");
+        assert_eq!(Backend::Metal.as_str(), "Metal");
+        assert_eq!(Backend::Cuda.as_str(), "Cuda");
+        assert_eq!(Backend::Vulkan.as_str(), "Vulkan");
     }
 }

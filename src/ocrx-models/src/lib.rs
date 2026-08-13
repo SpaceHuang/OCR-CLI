@@ -127,6 +127,7 @@ pub enum ManifestError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalModelState {
     pub profile: String,
+    pub revision: String,
     pub model_path: std::path::PathBuf,
     pub mmproj_path: std::path::PathBuf,
     pub model_present: bool,
@@ -152,20 +153,45 @@ impl LocalModelState {
     }
 }
 
-/// Resolves the two cache asset paths for a supported profile.
+/// Resolves the two cache asset paths for a supported profile and revision.
+///
+/// The layout is `<cache_root>/ocrx/models/ovisocr2/<revision>/<profile>/model.gguf`
+/// and `<cache_root>/ocrx/models/ovisocr2/<revision>/mmproj.gguf`: the projector
+/// lives at the revision layer and is shared across profiles, while different
+/// revisions are fully isolated.
 ///
 /// # Errors
 ///
-/// Returns [`ManifestError::UnsupportedProfile`] for an unknown profile.
+/// Returns [`ManifestError::UnsupportedProfile`] for an unknown profile and
+/// [`ManifestError::InvalidAsset`] when the `revision` is empty, absolute, or
+/// contains path separators / traversal segments (path escape).
 pub fn cache_paths(
     cache_root: impl AsRef<std::path::Path>,
+    revision: &str,
     profile: &str,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), ManifestError> {
     if !matches!(profile, "compact" | "balanced" | "quality" | "reference") {
         return Err(ManifestError::UnsupportedProfile);
     }
-    let directory = cache_root.as_ref().join("ovisocr2").join(profile);
-    Ok((directory.join("model.gguf"), directory.join("mmproj.gguf")))
+    if revision.is_empty()
+        || std::path::Path::new(revision).is_absolute()
+        || revision.contains('/')
+        || revision.contains('\\')
+        || revision == ".."
+        || revision == "."
+    {
+        return Err(ManifestError::InvalidAsset);
+    }
+    let revision_dir = cache_root
+        .as_ref()
+        .join("ocrx")
+        .join("models")
+        .join("ovisocr2")
+        .join(revision);
+    Ok((
+        revision_dir.join(profile).join("model.gguf"),
+        revision_dir.join("mmproj.gguf"),
+    ))
 }
 
 /// Verifies that local model state matches the canonical cache layout.
@@ -177,7 +203,8 @@ pub fn verify_local_state(
     state: &LocalModelState,
     cache_root: impl AsRef<std::path::Path>,
 ) -> Result<(), ManifestError> {
-    let (expected_model, expected_mmproj) = cache_paths(cache_root, &state.profile)?;
+    let (expected_model, expected_mmproj) =
+        cache_paths(cache_root, &state.revision, &state.profile)?;
     if state.model_path != expected_model
         || state.mmproj_path != expected_mmproj
         || !state.is_installed()
@@ -198,7 +225,7 @@ pub fn verify_manifest_files(
     cache_root: impl AsRef<std::path::Path>,
 ) -> Result<(), ManifestError> {
     manifest.validate()?;
-    let (model, mmproj) = cache_paths(cache_root, &manifest.profile)?;
+    let (model, mmproj) = cache_paths(cache_root, &manifest.identity.revision, &manifest.profile)?;
     let model_hash = file_sha256(&model)?;
     let mmproj_hash = file_sha256(&mmproj)?;
     if model_hash != manifest.model_sha256.to_ascii_lowercase()
@@ -221,7 +248,7 @@ pub fn verify_manifest_files_with_sizes(
     mmproj_bytes: u64,
 ) -> Result<(), ManifestError> {
     verify_manifest_files(manifest, &cache_root)?;
-    let (model, mmproj) = cache_paths(cache_root, &manifest.profile)?;
+    let (model, mmproj) = cache_paths(&cache_root, &manifest.identity.revision, &manifest.profile)?;
     let model_size = std::fs::metadata(model)
         .map_err(|_| ManifestError::MissingAsset)?
         .len();
@@ -236,6 +263,9 @@ pub fn verify_manifest_files_with_sizes(
 
 /// Checks the runtime/adapter versions locked by the community OvisOCR2 asset.
 ///
+/// The accepted tuple is the shared [`ocrx_core::RUNTIME_COMPATIBILITY`] single
+/// source of truth, so macOS and Windows enforce the same binding.
+///
 /// # Errors
 ///
 /// Returns [`ManifestError::InvalidAsset`] when the supplied compatibility tuple differs.
@@ -244,7 +274,11 @@ pub fn validate_runtime_adapter_compatibility(
     sys_version: &str,
     adapter_id: &str,
 ) -> Result<(), ManifestError> {
-    if runtime_version != "0.1.152" || sys_version != "0.1.153" || adapter_id != "ovisocr2" {
+    let compat = ocrx_core::RUNTIME_COMPATIBILITY;
+    if runtime_version != compat.llama_cpp_2_version
+        || sys_version != compat.llama_cpp_sys_2_version
+        || adapter_id != compat.adapter_id
+    {
         return Err(ManifestError::InvalidAsset);
     }
     Ok(())
@@ -445,7 +479,11 @@ pub fn install_from_urls(request: &UrlInstallRequest) -> Result<(), ManifestErro
     if request.non_interactive && !request.license_accepted {
         return Err(ManifestError::LicenseRequired);
     }
-    let (model, mmproj) = cache_paths(&request.cache_root, &request.manifest.profile)?;
+    let (model, mmproj) = cache_paths(
+        &request.cache_root,
+        &request.manifest.identity.revision,
+        &request.manifest.profile,
+    )?;
     let transaction = transaction_id();
     let model_part = model.with_extension(format!("gguf{transaction}.part"));
     let mmproj_part = mmproj.with_extension(format!("gguf{transaction}.part"));
@@ -507,7 +545,11 @@ pub fn install_from_files(request: &InstallRequest) -> Result<(), ManifestError>
     {
         return Err(ManifestError::InsufficientDisk);
     }
-    let (model, mmproj) = cache_paths(&request.cache_root, &request.manifest.profile)?;
+    let (model, mmproj) = cache_paths(
+        &request.cache_root,
+        &request.manifest.identity.revision,
+        &request.manifest.profile,
+    )?;
     let directory = model.parent().ok_or(ManifestError::TransactionFailed)?;
     std::fs::create_dir_all(directory).map_err(|_| ManifestError::TransactionFailed)?;
     let transaction = transaction_id();
@@ -634,14 +676,25 @@ pub fn recommend_profile(
     Err(ManifestError::NoPassingProfile)
 }
 
+/// Availability flags are intentionally one bool per backend so `recommend_device`
+/// can stay a data-driven table; collapsing them would hide the frozen contract.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceSnapshot {
     pub memory_gb: u64,
     pub metal_available: bool,
+    pub cuda_available: bool,
+    pub vulkan_available: bool,
     pub cpu_available: bool,
 }
 
 /// Selects a usable device, honoring an explicit request.
+///
+/// `auto` follows the frozen platform priority `metal > cuda > vulkan > cpu`,
+/// picking the first backend whose availability flag is set. An explicitly
+/// requested backend that is unavailable is rejected with
+/// [`ManifestError::DeviceUnavailable`] (exit 6) rather than silently falling
+/// back, so a missing GPU is always observable.
 ///
 /// # Errors
 ///
@@ -651,10 +704,24 @@ pub fn recommend_device(
     snapshot: ResourceSnapshot,
     requested: &str,
 ) -> Result<String, ManifestError> {
+    // Data-driven priority table: platform differences are expressed purely via
+    // the availability flags, never via platform branching in the matcher.
+    let auto_priority: [(&str, bool); 4] = [
+        ("metal", snapshot.metal_available),
+        ("cuda", snapshot.cuda_available),
+        ("vulkan", snapshot.vulkan_available),
+        ("cpu", snapshot.cpu_available),
+    ];
     match requested {
-        "auto" | "metal" if snapshot.metal_available => Ok("metal".to_owned()),
-        "auto" | "cpu" if snapshot.cpu_available => Ok("cpu".to_owned()),
-        "auto" | "metal" | "cpu" => Err(ManifestError::DeviceUnavailable),
+        "auto" => auto_priority
+            .into_iter()
+            .find_map(|(device, available)| available.then_some(device.to_owned()))
+            .ok_or(ManifestError::DeviceUnavailable),
+        "metal" if snapshot.metal_available => Ok("metal".to_owned()),
+        "cuda" if snapshot.cuda_available => Ok("cuda".to_owned()),
+        "vulkan" if snapshot.vulkan_available => Ok("vulkan".to_owned()),
+        "cpu" if snapshot.cpu_available => Ok("cpu".to_owned()),
+        "metal" | "cuda" | "vulkan" | "cpu" => Err(ManifestError::DeviceUnavailable),
         _ => Err(ManifestError::InvalidDevice),
     }
 }
@@ -743,14 +810,18 @@ mod tests {
     #[test]
     fn verify_manifest_recomputes_both_asset_hashes() {
         let root = std::env::temp_dir().join(format!("ocrx-model-verify-{}", std::process::id()));
-        let directory = root.join("ovisocr2/compact");
-        std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("model.gguf"), b"model").unwrap();
-        std::fs::write(directory.join("mmproj.gguf"), b"projector").unwrap();
-        let hash = |name: &str| ocrx_core::sha256_file(&directory.join(name)).unwrap();
+        // Layout: <root>/ocrx/models/ovisocr2/<revision>/<profile>/model.gguf and
+        // <root>/ocrx/models/ovisocr2/<revision>/mmproj.gguf (shared projector).
+        let revision_dir = root.join("ocrx/models/ovisocr2/rev-1");
+        let profile_dir = revision_dir.join("compact");
+        let model_path = profile_dir.join("model.gguf");
+        let mmproj_path = revision_dir.join("mmproj.gguf");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::write(&model_path, b"model").unwrap();
+        std::fs::write(&mmproj_path, b"projector").unwrap();
         let mut valid = manifest();
-        valid.model_sha256 = hash("model.gguf");
-        valid.mmproj_sha256 = hash("mmproj.gguf");
+        valid.model_sha256 = ocrx_core::sha256_file(&model_path).unwrap();
+        valid.mmproj_sha256 = ocrx_core::sha256_file(&mmproj_path).unwrap();
         assert!(verify_manifest_files(&valid, &root).is_ok());
         valid.mmproj_sha256 = "a".repeat(64);
         assert_eq!(
@@ -897,9 +968,38 @@ mod tests {
     }
 
     #[test]
+    fn runtime_compatibility_is_a_shared_single_source_of_truth() {
+        // The shared compatibility tuple lives in ocrx_core so macOS and Windows
+        // share one source of truth; validate_runtime_adapter_compatibility must
+        // agree with it exactly (no scattered platform-specific constants).
+        let compat = ocrx_core::RUNTIME_COMPATIBILITY;
+        assert!(!compat.llama_cpp_2_version.is_empty());
+        assert!(!compat.llama_cpp_sys_2_version.is_empty());
+        assert!(!compat.adapter_id.is_empty());
+        assert_eq!(
+            validate_runtime_adapter_compatibility(
+                compat.llama_cpp_2_version,
+                compat.llama_cpp_sys_2_version,
+                compat.adapter_id,
+            ),
+            Ok(())
+        );
+        // Any deviation from the shared tuple is rejected.
+        assert_eq!(
+            validate_runtime_adapter_compatibility(
+                "0.0.0",
+                compat.llama_cpp_sys_2_version,
+                compat.adapter_id,
+            ),
+            Err(ManifestError::InvalidAsset)
+        );
+    }
+
+    #[test]
     fn local_state_requires_model_and_mmproj_and_protects_shared_asset() {
         let state = LocalModelState {
             profile: "compact".to_owned(),
+            revision: "rev-1".to_owned(),
             model_path: "compact.gguf".into(),
             mmproj_path: "shared-mmproj.gguf".into(),
             model_present: true,
@@ -924,16 +1024,17 @@ mod tests {
     #[test]
     fn cache_paths_are_program_generated_and_verify_requires_a_complete_pair() {
         let root = std::path::Path::new("/cache");
-        let (model, mmproj) = cache_paths(root, "compact").unwrap();
+        let (model, mmproj) = cache_paths(root, COMMUNITY_REVISION, "compact").unwrap();
         let state = LocalModelState {
             profile: "compact".to_owned(),
+            revision: COMMUNITY_REVISION.to_owned(),
             model_path: model,
             mmproj_path: mmproj,
             model_present: true,
             mmproj_present: true,
         };
         assert_eq!(verify_local_state(&state, root), Ok(()));
-        assert!(cache_paths(root, "../escape").is_err());
+        assert!(cache_paths(root, "../escape", "compact").is_err());
         assert!(
             verify_local_state(
                 &LocalModelState {
@@ -944,6 +1045,50 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn cache_paths_lay_out_assets_under_revision_with_shared_mmproj() {
+        let root = std::path::Path::new("/cache");
+        let revision = "8a22290a0c42dbcf84739d6d4c2763f877494ae0";
+        let (model, mmproj) = cache_paths(root, revision, "compact").unwrap();
+        assert_eq!(
+            model,
+            std::path::Path::new(
+                "/cache/ocrx/models/ovisocr2/8a22290a0c42dbcf84739d6d4c2763f877494ae0/compact/model.gguf"
+            )
+        );
+        assert_eq!(
+            mmproj,
+            std::path::Path::new(
+                "/cache/ocrx/models/ovisocr2/8a22290a0c42dbcf84739d6d4c2763f877494ae0/mmproj.gguf"
+            )
+        );
+    }
+
+    #[test]
+    fn cache_paths_share_mmproj_across_profiles_but_isolate_revisions() {
+        let root = std::path::Path::new("/cache");
+        let (compact_model, compact_mmproj) = cache_paths(root, "rev-a", "compact").unwrap();
+        let (quality_model, quality_mmproj) = cache_paths(root, "rev-a", "quality").unwrap();
+        // mmproj lives at the revision layer and is shared across profiles.
+        assert_eq!(compact_mmproj, quality_mmproj);
+        // model is per-profile.
+        assert_ne!(compact_model, quality_model);
+        // different revisions produce independent directories.
+        let (compact_b_model, compact_b_mmproj) = cache_paths(root, "rev-b", "compact").unwrap();
+        assert_ne!(compact_model, compact_b_model);
+        assert_ne!(compact_mmproj, compact_b_mmproj);
+    }
+
+    #[test]
+    fn cache_paths_rejects_path_escape_and_unknown_profiles() {
+        let root = std::path::Path::new("/cache");
+        assert!(cache_paths(root, "../escape", "compact").is_err());
+        assert!(cache_paths(root, "/absolute/revision", "compact").is_err());
+        assert!(cache_paths(root, "rev/with/slash", "compact").is_err());
+        assert!(cache_paths(root, "", "compact").is_err());
+        assert!(cache_paths(root, "rev-1", "unknown-profile").is_err());
     }
 
     #[test]
@@ -996,36 +1141,89 @@ mod tests {
     }
 
     #[test]
-    fn device_recommendation_prefers_metal_and_rejects_unavailable_explicit_device() {
-        let snapshot = ResourceSnapshot {
+    #[allow(clippy::similar_names)] // platform-prefixed fixture names are intentionally parallel
+    fn recommend_device_uses_platform_aware_priority_and_rejects_unavailable_devices() {
+        // Snapshots model each platform/device situation via the availability
+        // flags rather than branching on the platform string, so the priority
+        // table stays data-driven.
+        let macos = ResourceSnapshot {
             memory_gb: 16,
             metal_available: true,
+            cuda_available: false,
+            vulkan_available: false,
             cpu_available: true,
         };
-        assert_eq!(recommend_device(snapshot, "auto"), Ok("metal".to_owned()));
+        let windows_gpu = ResourceSnapshot {
+            memory_gb: 24,
+            metal_available: false,
+            cuda_available: true,
+            vulkan_available: true,
+            cpu_available: true,
+        };
+        let windows_vulkan_only = ResourceSnapshot {
+            cuda_available: false,
+            ..windows_gpu
+        };
+        let windows_cpu = ResourceSnapshot {
+            cuda_available: false,
+            vulkan_available: false,
+            ..windows_gpu
+        };
+
+        // `auto` follows the frozen priority: metal > cuda > vulkan > cpu.
+        assert_eq!(recommend_device(macos, "auto"), Ok("metal".to_owned()));
+        assert_eq!(recommend_device(windows_gpu, "auto"), Ok("cuda".to_owned()));
         assert_eq!(
-            recommend_device(
-                ResourceSnapshot {
-                    metal_available: false,
-                    ..snapshot
-                },
-                "auto"
-            ),
-            Ok("cpu".to_owned())
+            recommend_device(windows_vulkan_only, "auto"),
+            Ok("vulkan".to_owned())
         );
+        assert_eq!(recommend_device(windows_cpu, "auto"), Ok("cpu".to_owned()));
         assert_eq!(
             recommend_device(
                 ResourceSnapshot {
                     metal_available: false,
+                    cuda_available: false,
+                    vulkan_available: false,
                     cpu_available: false,
-                    ..snapshot
+                    ..macos
                 },
                 "auto"
             ),
             Err(ManifestError::DeviceUnavailable)
         );
+
+        // Explicit device honors availability; an explicitly requested but
+        // unavailable GPU backend is rejected (exit 6), never silently
+        // falling back to another backend.
+        assert_eq!(recommend_device(macos, "metal"), Ok("metal".to_owned()));
+        assert_eq!(recommend_device(windows_gpu, "cuda"), Ok("cuda".to_owned()));
         assert_eq!(
-            recommend_device(snapshot, "cuda"),
+            recommend_device(windows_gpu, "vulkan"),
+            Ok("vulkan".to_owned())
+        );
+        assert_eq!(recommend_device(windows_cpu, "cpu"), Ok("cpu".to_owned()));
+        assert_eq!(
+            recommend_device(windows_cpu, "cuda"),
+            Err(ManifestError::DeviceUnavailable)
+        );
+        assert_eq!(
+            recommend_device(windows_cpu, "vulkan"),
+            Err(ManifestError::DeviceUnavailable)
+        );
+        assert_eq!(
+            recommend_device(
+                ResourceSnapshot {
+                    metal_available: false,
+                    ..macos
+                },
+                "metal"
+            ),
+            Err(ManifestError::DeviceUnavailable)
+        );
+
+        // Unknown device string is a parse-level rejection, not availability.
+        assert_eq!(
+            recommend_device(macos, "tpu"),
             Err(ManifestError::InvalidDevice)
         );
     }
