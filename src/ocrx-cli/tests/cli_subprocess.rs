@@ -32,6 +32,45 @@ fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
     assert!(stderr.contains("ovisocr2") || stderr.contains("model"));
 }
 
+#[test]
+fn cli_skill_project_scope_installs_and_uninstalls_under_project_dir() {
+    let project =
+        std::env::temp_dir().join(format!("ocrx-skill-cli-project-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&project);
+
+    let install = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args(["skill", "install"])
+        .env("OCRX_SKILL_SCOPE", "project")
+        .env("OCRX_SKILL_PROJECT", &project)
+        .output()
+        .expect("CLI test binary should run");
+    assert!(
+        install.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&install.stdout);
+    assert!(stdout.contains("scope=project") && stdout.contains("status=installed"));
+    assert!(project.join(".codex/skills/ocrx/SKILL.md").is_file());
+    assert!(project.join(".claude/skills/ocrx/SKILL.md").is_file());
+
+    let uninstall = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args(["skill", "uninstall"])
+        .env("OCRX_SKILL_SCOPE", "project")
+        .env("OCRX_SKILL_PROJECT", &project)
+        .output()
+        .expect("CLI test binary should run");
+    assert!(
+        uninstall.status.success(),
+        "uninstall failed: {}",
+        String::from_utf8_lossy(&uninstall.stderr)
+    );
+    assert!(!project.join(".codex/skills/ocrx/SKILL.md").exists());
+    assert!(!project.join(".claude/skills/ocrx/SKILL.md").exists());
+
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn cli_initialization_error_is_one_json_error_object() {

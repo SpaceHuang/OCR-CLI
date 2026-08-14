@@ -628,29 +628,67 @@ fn main() {
         CliCommand::Scan(options) => run_scan(options),
         CliCommand::Skill { action } => {
             let target = std::env::var("OCRX_SKILL_TARGET").unwrap_or_else(|_| "all".to_owned());
-            let home = match home_dir() {
-                Ok(home) => home,
+            let scope = match ocrx_skill::SkillScope::parse(
+                &std::env::var("OCRX_SKILL_SCOPE").unwrap_or_else(|_| "user".to_owned()),
+            ) {
+                Ok(scope) => scope,
                 Err(error) => {
                     eprintln!("skill {action} blocked: {error}");
                     std::process::exit(2);
                 }
             };
+            // User scope resolves the home directory; project scope resolves the
+            // project root (explicit OCRX_SKILL_PROJECT, else the current dir).
+            // Only the needed root is resolved, so project scope never depends on
+            // a home variable being set (decision 5).
+            let (home, project): (Option<PathBuf>, Option<PathBuf>) = match scope {
+                ocrx_skill::SkillScope::User => match home_dir() {
+                    Ok(home) => (Some(home), None),
+                    Err(error) => {
+                        eprintln!("skill {action} blocked: {error}");
+                        std::process::exit(2);
+                    }
+                },
+                ocrx_skill::SkillScope::Project => (
+                    None,
+                    Some(
+                        std::env::var_os("OCRX_SKILL_PROJECT")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| {
+                                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                            }),
+                    ),
+                ),
+            };
             let content = include_str!("../../../assets/skills/ocrx/SKILL.md");
             let result = match action.as_str() {
-                "install" => ocrx_skill::install(&target, &home, content).map(|paths| {
+                "install" => ocrx_skill::install(
+                    &target,
+                    scope,
+                    home.as_deref(),
+                    project.as_deref(),
+                    content,
+                )
+                .map(|paths| {
                     format!(
-                        "skill=ocrx status=installed targets={} files={}",
+                        "skill=ocrx status=installed scope={} targets={} files={}",
+                        scope.as_str(),
                         target,
                         paths.len()
                     )
                 }),
-                "uninstall" => ocrx_skill::uninstall(&target, &home).map(|paths| {
-                    format!(
-                        "skill=ocrx status=uninstalled targets={} files={}",
-                        target,
-                        paths.len()
+                "uninstall" => {
+                    ocrx_skill::uninstall(&target, scope, home.as_deref(), project.as_deref()).map(
+                        |paths| {
+                            format!(
+                                "skill=ocrx status=uninstalled scope={} targets={} files={}",
+                                scope.as_str(),
+                                target,
+                                paths.len()
+                            )
+                        },
                     )
-                }),
+                }
                 _ => unreachable!("skill action parsed by CLI"),
             };
             match result {
