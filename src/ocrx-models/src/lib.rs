@@ -418,16 +418,16 @@ fn process_liveness(pid: u32) -> ProcessLiveness {
         Ok(output) if output.status.success() => output,
         _ => return ProcessLiveness::Unknown,
     };
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .any(|line| {
-            line.split_whitespace()
-                .nth(1)
-                .and_then(|value| value.parse::<u32>().ok())
-                == Some(pid)
-        })
-        .then_some(ProcessLiveness::Alive)
-        .unwrap_or(ProcessLiveness::Dead)
+    if String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+        line.split_whitespace()
+            .nth(1)
+            .and_then(|value| value.parse::<u32>().ok())
+            == Some(pid)
+    }) {
+        ProcessLiveness::Alive
+    } else {
+        ProcessLiveness::Dead
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
