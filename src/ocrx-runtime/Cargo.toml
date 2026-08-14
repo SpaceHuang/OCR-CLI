@@ -15,3 +15,9 @@ metal = ["llama-cpp-sys-2/metal"]
 [target.'cfg(target_os = "macos")'.dependencies]
 llama-cpp-2 = { version = "=0.1.152", default-features = false, features = ["mtmd"] }
 llama-cpp-sys-2 = { version = "=0.1.153", default-features = false, features = ["mtmd"] }
+
+# WP.2 freeze: Windows shares the same pinned wrapper/sys binding as macOS
+# (mtmd required; a Windows build without mtmd cannot compile LlamaMtmdRuntime).
+[target.'cfg(target_os = "windows")'.dependencies]
+llama-cpp-2 = { version = "=0.1.152", default-features = false, features = ["mtmd"] }
+llama-cpp-sys-2 = { version = "=0.1.153", default-features = false, features = ["mtmd"] }

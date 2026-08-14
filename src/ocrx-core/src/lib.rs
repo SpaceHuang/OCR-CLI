@@ -568,9 +568,10 @@ pub struct RuntimeCompatibility {
 pub const RUNTIME_COMPATIBILITY: RuntimeCompatibility = RuntimeCompatibility {
     llama_cpp_2_version: "0.1.152",
     llama_cpp_sys_2_version: "0.1.153",
-    // Filled/verified by the WP.2 build freeze; empty until the Windows build
-    // is aligned and the embedded commit is recorded.
-    llama_cpp_commit: "",
+    // llama.cpp commit embedded in llama-cpp-sys-2 0.1.153, verified by
+    // file-hash match against upstream; frozen by the WP.2 Windows build
+    // (docs/develop/runtime-windows-alignment-2026-08-14.md).
+    llama_cpp_commit: "9e3b928",
     adapter_id: ModelId::AS_STR,
 };
 
@@ -682,6 +683,28 @@ impl AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_compatibility_records_frozen_llama_cpp_commit() {
+        // WP.2 build freeze: the shared binding must name the llama.cpp commit
+        // embedded in llama-cpp-sys-2 0.1.153, so W0.1's structured comparison
+        // and every compatibility report reference one pinned runtime.
+        let compat = RUNTIME_COMPATIBILITY;
+        assert!(
+            !compat.llama_cpp_commit.is_empty(),
+            "llama_cpp_commit is filled by the WP.2 Windows build freeze"
+        );
+        assert!(
+            compat
+                .llama_cpp_commit
+                .chars()
+                .all(|c| c.is_ascii_hexdigit()),
+            "llama_cpp_commit is a hex SHA fragment, not free text"
+        );
+        assert_eq!(compat.llama_cpp_2_version, "0.1.152");
+        assert_eq!(compat.llama_cpp_sys_2_version, "0.1.153");
+        assert_eq!(compat.adapter_id, "ovisocr2");
+    }
 
     #[test]
     fn only_ovisocr2_is_a_valid_model() {

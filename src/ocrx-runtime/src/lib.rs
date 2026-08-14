@@ -82,10 +82,10 @@ pub trait Runtime {
     fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String>;
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod llama_mtmd;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub use llama_mtmd::LlamaMtmdRuntime;
 
 #[derive(Debug, Default)]
@@ -117,6 +117,43 @@ impl Runtime for FakeRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B1 guard (moved here from W0.1): the Windows target must declare the
+    /// same pinned llama.cpp bindings as macOS, each with the `mtmd` feature.
+    /// A Windows build without `mtmd` cannot compile `LlamaMtmdRuntime`, so a
+    /// Cargo.toml that drops either crate or the feature is a build break the
+    /// tests must catch before CI does.
+    #[test]
+    fn windows_target_declares_pinned_llama_bindings_with_mtmd() {
+        let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+            .expect("ocrx-runtime Cargo.toml must be readable");
+        let windows_section = manifest
+            .split("[target.'cfg(target_os = \"windows\")'.dependencies]")
+            .nth(1)
+            .map(|rest| {
+                rest.lines()
+                    // The section ends at the next table header, not at any
+                    // `[` (inline arrays like features = [...] also use one).
+                    .take_while(|line| !line.trim_start().starts_with('['))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+        for crate_name in ["llama-cpp-2", "llama-cpp-sys-2"] {
+            let declaration = windows_section
+                .lines()
+                .find(|line| line.starts_with(crate_name))
+                .unwrap_or_else(|| panic!("Windows target must declare {crate_name} (B1)"));
+            assert!(
+                declaration.contains("mtmd"),
+                "{crate_name} must enable the mtmd feature on Windows"
+            );
+            assert!(
+                !declaration.contains("workspace = true"),
+                "{crate_name} stays a direct pinned dependency, not workspace-inherited"
+            );
+        }
+    }
 
     #[test]
     fn fake_runtime_has_deterministic_inference_contract() {
