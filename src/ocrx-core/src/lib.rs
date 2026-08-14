@@ -1,5 +1,7 @@
 //! Stable domain contracts shared by the OCR pipeline.
 
+pub mod resource_sampler;
+
 use std::io::{self, Read};
 use std::path::Path;
 
