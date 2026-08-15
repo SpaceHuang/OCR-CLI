@@ -1,10 +1,105 @@
 # OCR CLI Windows 平台开发计划
 
-状态：待执行（前置可行性尚未冻结；已据 2026-08-11 两轮评审修订，新增 WP 前置阶段）  
-日期：2026-08-11  
+状态：执行中（分支 `windows-platform-dev`，详见 §0 执行状态：WP/W1 完成，W2/W5 CPU 侧完成，W0/W3/W4 剩余项阻塞在外部依赖）  
+日期：2026-08-11（创建）/ 2026-08-15（状态更新）  
 依据：`docs/requirement/requirements-v0.1.md`、`docs/develop/technical-design-v0.1.md`、`docs/plan/v0.1-tdd-development-plan.md`、`docs/develop/runtime-macos-candidate-2026-08-02.md`  
 需求追踪：`docs/requirement/requirements-v0.1.md` 第 3、13、15、16、17、18 节  
 对应 macOS 基线：`docs/develop/p0-validation-macos-2026-08-02.md`、`docs/develop/local-machine-validation-2026-08-06.md`
+
+## 0. 执行状态
+
+更新：2026-08-15，分支 `windows-platform-dev`（worktree `.worktree/windows-tdd`）。图例：✅ 完成｜◐ 部分完成｜⛔ 阻塞（外部依赖）｜⬜ 未开始。每个合并点均通过门禁：`fmt --all -- --check`、`test --workspace`、clippy 零警告（Windows 实机）。
+
+### 0.1 里程碑总览
+
+| 里程碑 | 状态 | 已冻结/已交付 | 待做/阻塞 |
+|---|---|---|---|
+| WP 公共契约补齐 | ✅ | WP.1 缓存布局、WP.2 runtime 对齐冻结 | — |
+| W0 可行性/对齐/冻结 | ◐/⛔ | W0.2 渲染大部通过 | W0.1、W0.4 缺权重；W0.3 缺基准设备 |
+| W1 跨平台抽象与设备探测 | ✅ | Backend、探测、路径、recommend_device | — |
+| W2 PDF 渲染、缩放与 worker | ◐ | W2.1 加载渲染、W2.3 原子写 | W2.2 真实复杂 PDF 资源采集 |
+| W3 CPU 推理与裁图接入 | ◐ | 编译/纯逻辑/CLI 取消骨架 | 生成 heartbeat、页面状态机、真实 E2E |
+| W4 GPU 后端 | ⛔ | — | Vulkan SDK、CUDA toolkit 缺失 |
+| W5 诊断、Skill、安装包 | ✅ | doctor、Skill、package/install 脚本 | — |
+| W6 发布验收 | ⬜ | — | 待前序完成 + 干净环境 |
+
+### 0.2 详细任务状态
+
+| 任务 | 状态 | 提交 | 说明与证据 | 下一步 / 解除条件 |
+|---|---|---|---|---|
+| WP.1 缓存布局对齐 | ✅ | `424d9cd` | `cache_paths(cache_root, revision, profile)` 布局 + 平台标准缓存根；`ocrx_core::RUNTIME_COMPATIBILITY` 共享契约；macOS 同步 | — |
+| WP.2 runtime 对齐冻结 | ✅ | `f56f225` | llama-cpp-2 =0.1.152 / llama-cpp-sys-2 =0.1.153 + `mtmd` 在 Windows x86_64 构建通过（MSVC BuildTools 2022）；内嵌 llama.cpp `9e3b928`（文件 SHA-256 与 upstream 比对验证）；B1 guard 测试；B3 回退未触发。冻结记录：`docs/develop/runtime-windows-alignment-2026-08-14.md` | — |
+| W0.1 CPU runtime 对齐 | ⛔ | — | 绑定/构建已由 WP.2 冻结 | 取得 OvisOCR2 GGUF 权重后，完成 model/mmproj 加载、生成、`llama-mtmd-cli` 结构化比对 |
+| W0.2 PDFium 实机验证 | ◐ | `18e7004` | DLL 加载防护（缺失/路径逃逸/错误架构不静默成功）+ 实机渲染验证全绿：页数、300 DPI RGB8、审计尺寸、选页映射、像素预算等比缩放、损坏/非 PDF 分类 | 补加密/密码恢复实机用例；与 macOS 像素/hash 级比对 |
+| W0.3 资源基线 | ◐ | `8b811b0` | 跨平台 RSS 采样器（Windows tasklist / Unix ps，纯安全实现）+ 100 页回归骨架；本机试运行 43 样本/12.4s，RSS 回落基线（峰值 40 MB / 末值 12 MB） | 16 GB CPU-only 基准设备官方测量（真实复杂 PDF、worker 页段峰值、退出状态）；与 macOS 曲线对比记录 |
+| W0.4 质量回归 | ⛔ | — | — | 取得 OvisOCR2 GGUF 权重后，按需求 17.2.3 跑 BF16 对照与四 profile 评分 |
+| W1.1 Backend/feature 扩展 | ✅ | `23c9cfd` | `vulkan`/`cuda` cargo 特性（保留 `mtmd`）；`Backend::is_compiled()` 编译集契约；快照与编译集求交（实测：CUDA 机器 + CPU-only 构建 → `cuda_available:false`，auto 选 CPU）；macOS 行为不变 | — |
+| W1.2 探测/ResourceSnapshot | ✅ | `424d9cd` | `SystemProbe` trait 注入 + GPU 字段；doctor Windows 报告离线、不下载模型 | — |
+| W1.3 平台路径解析 | ✅ | `424d9cd` | `platform_paths`（home 回退链 HOME→USERPROFILE→HOMEDRIVE+HOMEPATH、缓存/配置目录） | — |
+| W1.4 recommend_device 分支 | ✅ | `424d9cd` | 优先级表数据化；显式不可用 device 拒绝；auto 回退 CPU 可审计 | — |
+| W2.1 PDFium 加载与渲染 | ✅ | `18e7004` | 加载防护 + 渲染/缩放/分类（实机验证同 W0.2） | — |
+| W2.2 worker 进程隔离 | ◐ | `731dae4` | 跨平台 worker 协议/调度器 + 子进程级测试（`pdfium-fake-worker`）完成 | 真实复杂 PDF 资源采集随 W0.3 测量同步补全 |
+| W2.3 临时目录与原子写 | ✅ | `731dae4` | `temporary_path` 同目录原子写、`.part` 清理、宽目录删除防护 | — |
+| W3.1 llama_mtmd 跨平台化 | ◐ | `f56f225`(编译) / `6444518`(契约) | `llama_mtmd.rs` cfg 放宽至 any(macos, windows)，Windows 编译通过；CLI 层 Ctrl+C→CancellationToken、二次 130、`run_with_checkpoints_cancelled` 已存在；`Runtime::generate_with_progress` 生成循环取消轮询 + 每秒进度回调 + 共享 `CancellationToken` 已落地 | 真实生成路径需权重；CLI recognizer/页面状态机接线归 W3.3 |
+| W3.2 bbox 裁图 | ◐ | `731dae4` | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试 | 真实模型 E2E 待权重 |
+| W3.3 取消/部分完成/恢复 | ◐ | 既有 / `6444518`(runtime 契约) | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有（`failed_pages`、checkpoint 提交）；runtime 内取消契约已由 W3.1 落地 | 显式页面状态机复核；真实 E2E 待权重 |
+| W4.1 Vulkan 构建 | ⛔ | — | Red 测试尚未补全 | 安装 Vulkan SDK ≥1.3（`VULKAN_SDK` + glslc）后可写 Green |
+| W4.2 Vulkan E2E | ⛔ | — | — | 依赖 W4.1 + 真实 GPU 硬件 |
+| W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
+| W4.4 GPU 资源报告 | ⛔ | — | — | 依赖 W4.1/W4.3 |
+| W5.1 日志/隐私/doctor | ✅ | `f20ba05` | 脱敏统一收敛到 `ocrx-output::redact_sensitive`（单一来源，无平台分支调用点）；doctor 离线 | — |
+| W5.2 Skill Windows 安装 | ✅ | `83da793` | `SkillScope { User, Project }`，用户级/项目级与待决策项 5 冻结结论一致；原子写 + 卸载边界测试 | — |
+| W5.3 Windows 安装包 | ✅ | `c1f3ef1` | `package-windows-x64.ps1` + `install.ps1` + 脚本测试；烟测矩阵 7 项（安装 0/哈希不符 5/缺档 4/offline 6 等）、归档 20 文件 `sha256sum -c` 全过；干净环境安装烟测属 W6 | — |
+| W6 发布验收 | ⬜ | — | — | 待前序完成 + 干净 Windows 环境 |
+
+### 0.3 部分完成项细分
+
+#### W0.2 PDFium 实机验证（◐）
+- ✅ DLL 加载防护：缺失、错误架构、ABI 不兼容、路径逃逸均不静默成功。
+- ✅ 实机渲染：页数、300 DPI RGB8、审计尺寸、选页映射、像素预算等比缩放、损坏/非 PDF 分类。
+- ⬜ 加密/密码恢复实机用例（需构造带密码的 PDF fixture）。
+- ⬜ 与 macOS 在受控 fixture 上的像素/hash 级比对。
+
+#### W0.3 资源基线（◐）
+- ✅ 跨平台 RSS 采样器（Windows `tasklist` / Unix `ps`，纯安全 Rust 实现）。
+- ✅ 100 页回归骨架与本地试运行（43 样本/12.4s，峰值 40 MB / 末值 12 MB）。
+- ⬜ 16 GB CPU-only 基准设备官方测量窗口。
+- ⬜ 真实复杂 PDF 的 worker 页段峰值、退出状态采集。
+- ⬜ 与 macOS 资源曲线对比记录。
+
+#### W2.2 worker 进程隔离（◐）
+- ✅ 跨平台 worker 协议/调度器实现。
+- ✅ 子进程级测试（`pdfium-fake-worker`）覆盖空/倒序/越界段、异常退出、超时、取消、缺页、PNG 损坏、`.part` 残留及 hash 不符。
+- ⬜ 真实复杂 PDF 上的 RSS/footprint、页段峰值与退出状态采集（随 W0.3 补全）。
+
+#### W3.1 llama_mtmd 跨平台化（◐）
+- ✅ `llama_mtmd.rs` cfg 放宽至 `any(macos, windows)`，Windows 编译通过。
+- ✅ CLI 层 Ctrl+C→`CancellationToken`、二次 130、`run_with_checkpoints_cancelled` 已存在。
+- ✅ 生成循环内取消轮询 + 每秒进度回调（`Runtime::generate_with_progress`，`6444518`）；`CancellationToken` 提升至 `ocrx-core` 共享；`FakeRuntime` 与 `LlamaMtmdRuntime` 覆盖契约并补充测试。
+- ⬜ 真实生成路径验证（需权重）。
+
+#### W3.2 bbox 裁图（◐）
+- ✅ 纯逻辑：floor/ceil 映射、clamp、面积阈值、IoU/完全重复去重、源顺序保留、恶意 `src` 拒绝、路径逃逸防护、无效 bbox 占位移除。
+- ✅ fake 测试覆盖。
+- ⬜ 真实模型 E2E 裁图验证（需权重）。
+
+#### W3.3 取消/部分完成/恢复（◐）
+- ✅ CLI 层失败继续、`partial`/10、130、checkpoint/恢复已有实现（`failed_pages`、checkpoint 提交）。
+- ✅ runtime 内取消契约（同 W3.1，`6444518`）。
+- ⬜ 显式页面状态机复核，替代散落 bool。
+
+### 0.4 待解除的外部依赖（按解锁任务数排序）
+
+1. **OvisOCR2 GGUF 权重** → W0.1、W0.4、W3.1-Green、W3.2-real、W3.3-real。
+2. **Vulkan SDK ≥1.3**（本机安装即可）→ W4.1-Green，进而 W4.2/W4.4。
+3. **CUDA toolkit ≥12.x**（升级或换机）→ W4.3。
+4. **16 GB CPU-only 基准设备官方测量窗口** → W0.3-Green（及 W2.2 资源采集）。
+5. **干净 Windows 10/11 环境** → W6。
+
+### 0.5 已知问题
+
+- ocrx-pdf `real_pdf_*` 测试在 `--workspace` 全量运行中间歇性失败（`PdfiumLibraryInternalError(FormatError)`，与本次改动无关，孤立重跑稳定通过）；疑似多测试二进制并发下的 DLL 加载/页缓存竞争，若频率上升需专项调查。
+- W4.1 Red 测试（未编译 Vulkan 时 `--device vulkan` 返回 `InvalidDevice`）尚未补写，可在无 SDK 环境下先行落地。
 
 ## 1. 背景、范围与目标
 
