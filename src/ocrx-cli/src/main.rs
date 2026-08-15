@@ -18,9 +18,9 @@ use platform_paths::home_dir;
 mod system_probe;
 use system_probe::RealSystemProbe;
 
-// Imports used only by the real scan path (RuntimeLoader / OvisRecognizer /
-// run_scan), which is macOS-only until the Windows runtime is aligned (WP.2/W3.1).
-#[cfg(target_os = "macos")]
+// Imports used by the real scan path (RuntimeLoader / OvisRecognizer /
+// run_scan) on macOS and Windows (WP.2/W3.1).
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use {
     image::ImageFormat,
     ocrx_models::community_asset_sizes,
@@ -879,7 +879,7 @@ impl PageRenderer for PdfScanRenderer {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 struct RuntimeLoader {
     model: PathBuf,
     mmproj: PathBuf,
@@ -887,7 +887,7 @@ struct RuntimeLoader {
     max_image_tokens: u32,
     context_size: u32,
 }
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 impl ModelLoader for RuntimeLoader {
     type Model = LlamaMtmdRuntime;
     fn load(&mut self) -> std::io::Result<Self::Model> {
@@ -902,12 +902,12 @@ impl ModelLoader for RuntimeLoader {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 struct OvisRecognizer {
     output: PathBuf,
     max_tokens: u32,
 }
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     fn recognize_artifact(
         &mut self,
@@ -958,7 +958,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn run_scan(_options: ScanOptions) -> ! {
     eprintln!(
         "ocrx: scan is not available on this platform yet - the real OCR runtime is built \
@@ -967,7 +967,7 @@ fn run_scan(_options: ScanOptions) -> ! {
     std::process::exit(6);
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn run_scan(options: ScanOptions) -> ! {
     let started = Instant::now();
     let report_format = if options.report == "json" {
