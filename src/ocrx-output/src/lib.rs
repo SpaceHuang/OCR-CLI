@@ -369,8 +369,8 @@ impl ErrorReport {
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+
+pub use ocrx_core::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
@@ -458,11 +458,6 @@ pub struct ProgressSnapshot {
     pub total: u32,
     pub elapsed_seconds: u64,
     pub eta_seconds: Option<u64>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CancellationToken {
-    requests: Arc<AtomicU8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -901,31 +896,6 @@ impl Heartbeat {
             }
             Some(_) => false,
         }
-    }
-}
-
-impl CancellationToken {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn request_cancel(&self) {
-        self.requests
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
-                Some(value.saturating_add(1))
-            })
-            .ok();
-    }
-
-    #[must_use]
-    pub fn is_cancelled(&self) -> bool {
-        self.requests.load(Ordering::SeqCst) >= 1
-    }
-
-    #[must_use]
-    pub fn force_exit(&self) -> bool {
-        self.requests.load(Ordering::SeqCst) >= 2
     }
 }
 

@@ -1,8 +1,9 @@
 //! OvisOCR2 adapter boundary. Prompt and MTMD implementation follows runtime freeze.
 
-use ocrx_core::{ModelId, NormalizedBbox, PageBlock, PageDocument, PageWarning, Termination};
-use ocrx_runtime::InferenceResponse;
-use ocrx_runtime::{InferenceRequest, Runtime};
+use ocrx_core::{
+    CancellationToken, ModelId, NormalizedBbox, PageBlock, PageDocument, PageWarning, Termination,
+};
+use ocrx_runtime::{GenerationProgress, InferenceRequest, InferenceResponse, Runtime};
 use std::path::Path;
 
 pub const ADAPTER_ID: &str = "ovisocr2";
@@ -49,14 +50,42 @@ pub fn write_page_artifacts_with_status(
     max_output_tokens: u32,
     output_root: impl AsRef<Path>,
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
-    let request = request(max_output_tokens);
-    let response = runtime.generate(InferenceRequest::new(
+    write_page_artifacts_with_status_cancelled(
+        runtime,
         page,
         width,
         height,
-        rgb8.clone(),
-        request.max_output_tokens,
-    )?)?;
+        rgb8,
+        max_output_tokens,
+        output_root,
+        &CancellationToken::new(),
+        &mut |_| {},
+    )
+}
+
+/// Cancellation-aware variant of [`write_page_artifacts_with_status`].
+///
+/// The runtime polls `cancellation` between generated tokens and forwards
+/// `progress` (token count + elapsed seconds) to the caller so the CLI can
+/// emit the per-second heartbeat contract.
+#[allow(clippy::too_many_arguments)]
+pub fn write_page_artifacts_with_status_cancelled(
+    runtime: &mut impl Runtime,
+    page: u32,
+    width: u32,
+    height: u32,
+    rgb8: Vec<u8>,
+    max_output_tokens: u32,
+    output_root: impl AsRef<Path>,
+    cancellation: &CancellationToken,
+    progress: &mut dyn FnMut(GenerationProgress),
+) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
+    let request = request(max_output_tokens);
+    let response = runtime.generate_with_progress(
+        InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?,
+        cancellation,
+        progress,
+    )?;
     let truncated = response.finish_reason == "max_tokens";
     let document =
         adapt_response(page, &response).map_err(|error| format!("adapter: {error:?}"))?;

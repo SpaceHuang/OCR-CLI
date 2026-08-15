@@ -17,6 +17,9 @@ metal = ["llama-cpp-sys-2/metal"]
 vulkan = ["llama-cpp-sys-2/vulkan"]
 cuda = ["llama-cpp-sys-2/cuda"]
 
+[dependencies]
+ocrx-core = { path = "../ocrx-core" }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 llama-cpp-2 = { version = "=0.1.152", default-features = false, features = ["mtmd"] }
 llama-cpp-sys-2 = { version = "=0.1.153", default-features = false, features = ["mtmd"] }

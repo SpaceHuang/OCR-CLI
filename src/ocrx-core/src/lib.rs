@@ -4,6 +4,44 @@ pub mod resource_sampler;
 
 use std::io::{self, Read};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
+
+/// Cooperative cancellation token shared by runtime, scan, and CLI layers.
+///
+/// The first cancellation request marks the current job as cancelled (used by
+/// the CLI to stop taking new pages and return exit code 130). A second request
+/// escalates to force-exit, mirroring the frozen Ctrl+C contract where the
+/// first interrupt is graceful and the second is immediate.
+#[derive(Debug, Clone, Default)]
+pub struct CancellationToken {
+    requests: Arc<AtomicU8>,
+}
+
+impl CancellationToken {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn request_cancel(&self) {
+        self.requests
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
+                Some(value.saturating_add(1))
+            })
+            .ok();
+    }
+
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.requests.load(Ordering::SeqCst) >= 1
+    }
+
+    #[must_use]
+    pub fn force_exit(&self) -> bool {
+        self.requests.load(Ordering::SeqCst) >= 2
+    }
+}
 
 #[allow(clippy::large_stack_arrays)]
 pub fn sha256_file(path: &Path) -> io::Result<String> {

@@ -1,7 +1,11 @@
 use std::num::NonZeroU32;
 use std::path::Path;
+use std::time::Instant;
 
-use super::{Backend, InferenceRequest, InferenceResponse, Runtime, RuntimeInfo};
+use super::{
+    Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, Runtime,
+    RuntimeInfo,
+};
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -82,6 +86,15 @@ impl Runtime for LlamaMtmdRuntime {
     }
 
     fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String> {
+        self.generate_with_progress(request, &CancellationToken::new(), &mut |_| {})
+    }
+
+    fn generate_with_progress(
+        &mut self,
+        request: InferenceRequest,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> Result<InferenceResponse, String> {
         if request.width == 0
             || request.height == 0
             || request.image_rgb8.len() != request.width as usize * request.height as usize * 3
@@ -115,7 +128,23 @@ impl Runtime for LlamaMtmdRuntime {
             .eval_chunks(&self.mtmd, &context, 0, 0, 512, true)
             .map_err(|error| error.to_string())?;
         let mut output = String::new();
+        let started = Instant::now();
+        let mut last_emitted_second = None;
         for (generated, _) in (0..request.max_output_tokens).enumerate() {
+            if cancellation.is_cancelled() {
+                return Ok(InferenceResponse {
+                    raw_output: output,
+                    finish_reason: "cancelled".to_owned(),
+                });
+            }
+            let elapsed_seconds = started.elapsed().as_secs();
+            if last_emitted_second != Some(elapsed_seconds) {
+                last_emitted_second = Some(elapsed_seconds);
+                progress(GenerationProgress {
+                    generated_tokens: generated as u32,
+                    elapsed_seconds,
+                });
+            }
             let logits = context.get_logits();
             let (index, _) = logits
                 .iter()

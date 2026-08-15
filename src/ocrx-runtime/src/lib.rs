@@ -1,5 +1,7 @@
 //! Runtime boundary shared by fake and real inference implementations.
 
+use ocrx_core::CancellationToken;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
     Cpu,
@@ -105,6 +107,18 @@ pub struct InferenceResponse {
     pub finish_reason: String,
 }
 
+/// Progress emitted by a runtime while it generates one page.
+///
+/// `elapsed_seconds` is the monotonic time since generation started. A runtime
+/// must call the progress observer at least once per elapsed second (and may
+/// call it more often); the CLI maps those calls to the visible
+/// heartbeat/page_progress contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GenerationProgress {
+    pub generated_tokens: u32,
+    pub elapsed_seconds: u64,
+}
+
 pub trait Runtime {
     fn info(&self) -> RuntimeInfo;
     /// Generates one deterministic response for a validated image request.
@@ -113,6 +127,23 @@ pub trait Runtime {
     ///
     /// Returns an error when the request is invalid or inference fails.
     fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String>;
+
+    /// Generates one response while polling `cancellation` and reporting
+    /// `progress` at least once per elapsed second.
+    ///
+    /// The default implementation delegates to [`Runtime::generate`] and is
+    /// suitable for fake runtimes that cannot observe cancellation. Real
+    /// runtimes must override this so Ctrl+C stops token generation promptly
+    /// instead of only at page boundaries.
+    fn generate_with_progress(
+        &mut self,
+        request: InferenceRequest,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> Result<InferenceResponse, String> {
+        let _ = (cancellation, progress);
+        self.generate(request)
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -133,12 +164,31 @@ impl Runtime for FakeRuntime {
     }
 
     fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String> {
+        self.generate_with_progress(request, &CancellationToken::new(), &mut |_| {})
+    }
+
+    fn generate_with_progress(
+        &mut self,
+        request: InferenceRequest,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> Result<InferenceResponse, String> {
         if request.width == 0
             || request.height == 0
             || request.image_rgb8.len() != (request.width as usize * request.height as usize * 3)
             || request.max_output_tokens == 0
         {
             return Err("invalid inference request".to_owned());
+        }
+        progress(GenerationProgress {
+            generated_tokens: 1,
+            elapsed_seconds: 0,
+        });
+        if cancellation.is_cancelled() {
+            return Ok(InferenceResponse {
+                raw_output: format!("page {}", request.page),
+                finish_reason: "cancelled".to_owned(),
+            });
         }
         Ok(InferenceResponse {
             raw_output: format!("page {}", request.page),
@@ -206,6 +256,42 @@ mod tests {
                     max_output_tokens: 128,
                 })
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn generate_with_progress_honors_cancellation() {
+        let mut runtime = FakeRuntime;
+        let cancellation = CancellationToken::new();
+        cancellation.request_cancel();
+        let response = runtime
+            .generate_with_progress(
+                InferenceRequest::new(1, 1, 1, vec![1, 2, 3], 128).unwrap(),
+                &cancellation,
+                &mut |_| {},
+            )
+            .unwrap();
+        assert_eq!(response.finish_reason, "cancelled");
+    }
+
+    #[test]
+    fn generate_with_progress_emits_progress_observer() {
+        let mut runtime = FakeRuntime;
+        let mut progress = Vec::new();
+        let response = runtime
+            .generate_with_progress(
+                InferenceRequest::new(1, 1, 1, vec![1, 2, 3], 128).unwrap(),
+                &CancellationToken::new(),
+                &mut |event| progress.push(event),
+            )
+            .unwrap();
+        assert_eq!(response.finish_reason, "eos");
+        assert_eq!(
+            progress,
+            vec![GenerationProgress {
+                generated_tokens: 1,
+                elapsed_seconds: 0,
+            }]
         );
     }
 
