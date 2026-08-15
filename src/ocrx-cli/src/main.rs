@@ -1591,11 +1591,15 @@ fn resource_snapshot_with_probe(
     env_memory_gb: Option<u64>,
 ) -> ResourceSnapshot {
     let memory_gb = resolve_config(env_memory_gb, probe.detected_memory_gb(), None, 16).value;
+    // W1.1: hardware presence is intersected with the compiled-in backend set.
+    // A backend reports available only when the probe sees it AND this binary
+    // was built with its cargo feature, so `auto` and `doctor` can never
+    // select a backend that is not compiled in.
     ResourceSnapshot {
         memory_gb,
-        metal_available: probe.metal_available(),
-        cuda_available: probe.cuda_available(),
-        vulkan_available: probe.vulkan_available(),
+        metal_available: probe.metal_available() && ocrx_runtime::Backend::Metal.is_compiled(),
+        cuda_available: probe.cuda_available() && ocrx_runtime::Backend::Cuda.is_compiled(),
+        vulkan_available: probe.vulkan_available() && ocrx_runtime::Backend::Vulkan.is_compiled(),
         cpu_available: probe.cpu_available(),
     }
 }
@@ -2022,25 +2026,51 @@ mod tests {
             }
         }
 
-        // No env override: detected memory wins.
+        // No env override: detected memory wins. W1.1: hardware presence is
+        // necessary but not sufficient - a backend reports available only when
+        // it is also compiled into this binary (cargo feature gated), so a
+        // CUDA rig still yields cuda_available=false on a CPU-only build.
         let snapshot = super::resource_snapshot_with_probe(&GpuWindowsProbe, None);
         assert_eq!(snapshot.memory_gb, 24);
-        assert!(snapshot.cuda_available);
-        assert!(!snapshot.vulkan_available);
+        assert_eq!(
+            snapshot.cuda_available,
+            ocrx_runtime::Backend::Cuda.is_compiled()
+        );
+        assert_eq!(
+            snapshot.vulkan_available,
+            ocrx_runtime::Backend::Vulkan.is_compiled()
+        );
         assert!(!snapshot.metal_available);
-        // auto must select the available GPU, never silently fall back to CPU.
-        assert_eq!(recommend_device(snapshot, "auto"), Ok("cuda".to_owned()));
+        // auto never selects a backend that is not compiled in; on the default
+        // CPU-only Windows build it falls through to cpu.
+        let expected_auto = if ocrx_runtime::Backend::Cuda.is_compiled() {
+            "cuda"
+        } else {
+            "cpu"
+        };
+        assert_eq!(
+            recommend_device(snapshot, "auto"),
+            Ok(expected_auto.to_owned())
+        );
 
         // Env override takes precedence over the detected value, so a user can
         // pin memory for reproducible recommendations.
         let pinned = super::resource_snapshot_with_probe(&GpuWindowsProbe, Some(8));
         assert_eq!(pinned.memory_gb, 8);
-        assert_eq!(recommend_device(pinned, "auto"), Ok("cuda".to_owned()));
+        assert_eq!(
+            recommend_device(pinned, "auto"),
+            Ok(expected_auto.to_owned())
+        );
 
-        // doctor backend mirrors the same data-driven priority.
+        // doctor backend mirrors the same data-driven priority over the
+        // compiled-and-available set.
         assert_eq!(
             super::doctor_runtime_info(snapshot).backend,
-            ocrx_runtime::Backend::Cuda
+            if ocrx_runtime::Backend::Cuda.is_compiled() {
+                ocrx_runtime::Backend::Cuda
+            } else {
+                ocrx_runtime::Backend::Cpu
+            }
         );
     }
 

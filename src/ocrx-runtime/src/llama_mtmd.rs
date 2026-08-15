@@ -67,9 +67,13 @@ impl LlamaMtmdRuntime {
 
 impl Runtime for LlamaMtmdRuntime {
     fn info(&self) -> RuntimeInfo {
+        // W1.1: GPU offload is attributed to the highest-priority backend that
+        // is actually compiled into this binary (metal > cuda > vulkan); a
+        // CPU-only build reports Cpu even when use_gpu was requested, because
+        // llama.cpp ignores n_gpu_layers without a GPU backend.
         RuntimeInfo {
             backend: if self.use_gpu {
-                Backend::Metal
+                Backend::first_compiled_gpu().unwrap_or(Backend::Cpu)
             } else {
                 Backend::Cpu
             },

@@ -19,6 +19,39 @@ impl Backend {
             Backend::Vulkan => "Vulkan",
         }
     }
+
+    /// Whether this backend is compiled into the current binary (W1.1).
+    ///
+    /// The compiled set is decided by cargo features, not by hardware: CPU is
+    /// always compiled in; Metal ships in every llama.cpp Apple build (the
+    /// `metal` feature only forces the sys flag, so macOS behavior is
+    /// unchanged); CUDA/Vulkan require their opt-in features. Availability
+    /// probing must intersect hardware presence with this set - `auto` may
+    /// never select a backend that is not compiled in.
+    #[must_use]
+    pub const fn is_compiled(self) -> bool {
+        match self {
+            Backend::Cpu => true,
+            Backend::Metal => cfg!(target_os = "macos"),
+            Backend::Cuda => cfg!(feature = "cuda"),
+            Backend::Vulkan => cfg!(feature = "vulkan"),
+        }
+    }
+
+    /// First compiled-in GPU backend in the frozen priority order
+    /// `metal > cuda > vulkan`, or `None` on a CPU-only build.
+    #[must_use]
+    pub const fn first_compiled_gpu() -> Option<Self> {
+        if Backend::Metal.is_compiled() {
+            Some(Backend::Metal)
+        } else if Backend::Cuda.is_compiled() {
+            Some(Backend::Cuda)
+        } else if Backend::Vulkan.is_compiled() {
+            Some(Backend::Vulkan)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,5 +222,35 @@ mod tests {
         assert_eq!(Backend::Metal.as_str(), "Metal");
         assert_eq!(Backend::Cuda.as_str(), "Cuda");
         assert_eq!(Backend::Vulkan.as_str(), "Vulkan");
+    }
+
+    #[test]
+    fn backend_compiled_set_is_cargo_feature_gated() {
+        // W1.1: the backends compiled into the binary are decided by cargo
+        // features, not by hardware presence. The workspace test gate builds
+        // with default features, so this binary is CPU-only on Windows.
+        assert!(Backend::Cpu.is_compiled(), "CPU is always compiled in");
+        // Metal ships in every llama.cpp Apple build; the explicit `metal`
+        // feature only forces the sys flag, so macOS keeps reporting it.
+        assert_eq!(Backend::Metal.is_compiled(), cfg!(target_os = "macos"));
+        assert!(
+            !Backend::Cuda.is_compiled(),
+            "cuda requires the cuda cargo feature"
+        );
+        assert!(
+            !Backend::Vulkan.is_compiled(),
+            "vulkan requires the vulkan cargo feature"
+        );
+    }
+
+    #[test]
+    fn first_compiled_gpu_backend_respects_feature_gates() {
+        // Default (CPU-only) build: no GPU backend on Windows, Metal kept on
+        // macOS so v0.1 Metal-only behavior is unchanged.
+        if cfg!(target_os = "macos") {
+            assert_eq!(Backend::first_compiled_gpu(), Some(Backend::Metal));
+        } else {
+            assert_eq!(Backend::first_compiled_gpu(), None);
+        }
     }
 }
