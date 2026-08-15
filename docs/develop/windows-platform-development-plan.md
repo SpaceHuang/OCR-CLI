@@ -40,9 +40,9 @@
 | W2.1 PDFium 加载与渲染 | ✅ | `18e7004` | 加载防护 + 渲染/缩放/分类（实机验证同 W0.2） | — |
 | W2.2 worker 进程隔离 | ◐ | `731dae4` | 跨平台 worker 协议/调度器 + 子进程级测试（`pdfium-fake-worker`）完成 | 真实复杂 PDF 资源采集随 W0.3 测量同步补全 |
 | W2.3 临时目录与原子写 | ✅ | `731dae4` | `temporary_path` 同目录原子写、`.part` 清理、宽目录删除防护 | — |
-| W3.1 llama_mtmd 跨平台化 | ◐ | `f56f225`(编译) / `6444518`(契约) | `llama_mtmd.rs` cfg 放宽至 any(macos, windows)，Windows 编译通过；CLI 层 Ctrl+C→CancellationToken、二次 130、`run_with_checkpoints_cancelled` 已存在；`Runtime::generate_with_progress` 生成循环取消轮询 + 每秒进度回调 + 共享 `CancellationToken` 已落地 | 真实生成路径需权重；CLI recognizer/页面状态机接线归 W3.3 |
+| W3.1 llama_mtmd 跨平台化 | ◐ | `f56f225`(编译) / `6444518`(契约) | `llama_mtmd.rs` cfg 放宽至 any(macos, windows)，Windows 编译通过；CLI 层 Ctrl+C→CancellationToken、二次 130、`run_with_checkpoints_cancelled` 已存在；`Runtime::generate_with_progress` 生成循环取消轮询 + 每秒进度回调 + 共享 `CancellationToken` 已落地 | 真实生成路径需权重 |
 | W3.2 bbox 裁图 | ◐ | `731dae4` | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试 | 真实模型 E2E 待权重 |
-| W3.3 取消/部分完成/恢复 | ◐ | 既有 / `6444518`(runtime 契约) | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有（`failed_pages`、checkpoint 提交）；runtime 内取消契约已由 W3.1 落地 | 显式页面状态机复核；真实 E2E 待权重 |
+| W3.3 取消/部分完成/恢复 | ◐ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有（`failed_pages`、checkpoint 提交）；runtime 内取消契约已由 W3.1 落地；真实 scan 路径已改为显式 `PageLifecycle` 状态机，并接线 `recognize_artifact_cancelled` 与取消清理 | 真实 E2E 待权重 |
 | W4.1 Vulkan 构建 | ⛔ | — | Red 测试尚未补全 | 安装 Vulkan SDK ≥1.3（`VULKAN_SDK` + glslc）后可写 Green |
 | W4.2 Vulkan E2E | ⛔ | — | — | 依赖 W4.1 + 真实 GPU 硬件 |
 | W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
@@ -86,7 +86,7 @@
 #### W3.3 取消/部分完成/恢复（◐）
 - ✅ CLI 层失败继续、`partial`/10、130、checkpoint/恢复已有实现（`failed_pages`、checkpoint 提交）。
 - ✅ runtime 内取消契约（同 W3.1，`6444518`）。
-- ⬜ 显式页面状态机复核，替代散落 bool。
+- ✅ 显式页面状态机复核（`e0ad31f`）：真实 scan 路径用 `PageLifecycle` 替代散落计数器，所有选页均落 `Pending/Processing/Completed/Truncated/Failed/Cancelled` 终态；取消中的当前页不提交。
 
 ### 0.4 待解除的外部依赖（按解锁任务数排序）
 
