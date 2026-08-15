@@ -90,7 +90,7 @@
 
 ### 0.4 待解除的外部依赖（按解锁任务数排序）
 
-1. **OvisOCR2 GGUF 权重** → W0.1、W0.4、W3.1-Green、W3.2-real、W3.3-real。
+1. **OvisOCR2 GGUF 权重** → W0.1、W0.4、W3.1-Green、W3.2-real、W3.3-real。（本机已通过 hf-mirror.com 下载并校验 `compact` 与 `reference`；`balanced`/`quality` 尚未下载。）
 2. **Vulkan SDK ≥1.3**（本机安装即可）→ W4.1-Green，进而 W4.2/W4.4。
 3. **CUDA toolkit ≥12.x**（升级或换机）→ W4.3。
 4. **16 GB CPU-only 基准设备官方测量窗口** → W0.3-Green（及 W2.2 资源采集）。
