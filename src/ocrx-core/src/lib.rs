@@ -43,6 +43,18 @@ impl CancellationToken {
     }
 }
 
+/// Progress emitted by a runtime while it generates one page.
+///
+/// `elapsed_seconds` is the monotonic time since generation started. A runtime
+/// must call the progress observer at least once per elapsed second (and may
+/// call it more often); the CLI maps those calls to the visible
+/// heartbeat/page_progress contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GenerationProgress {
+    pub generated_tokens: u32,
+    pub elapsed_seconds: u64,
+}
+
 #[allow(clippy::large_stack_arrays)]
 pub fn sha256_file(path: &Path) -> io::Result<String> {
     let mut file = std::fs::File::open(path)?;

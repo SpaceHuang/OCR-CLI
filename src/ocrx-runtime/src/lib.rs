@@ -1,6 +1,7 @@
 //! Runtime boundary shared by fake and real inference implementations.
 
 use ocrx_core::CancellationToken;
+pub use ocrx_core::GenerationProgress;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
@@ -105,18 +106,6 @@ impl InferenceRequest {
 pub struct InferenceResponse {
     pub raw_output: String,
     pub finish_reason: String,
-}
-
-/// Progress emitted by a runtime while it generates one page.
-///
-/// `elapsed_seconds` is the monotonic time since generation started. A runtime
-/// must call the progress observer at least once per elapsed second (and may
-/// call it more often); the CLI maps those calls to the visible
-/// heartbeat/page_progress contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GenerationProgress {
-    pub generated_tokens: u32,
-    pub elapsed_seconds: u64,
 }
 
 pub trait Runtime {

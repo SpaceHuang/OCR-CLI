@@ -370,7 +370,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-pub use ocrx_core::CancellationToken;
+pub use ocrx_core::{CancellationToken, GenerationProgress};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
@@ -471,6 +471,8 @@ pub struct ScanController {
     pages: Vec<PageLifecycle>,
     cancellation: CancellationToken,
     heartbeat: Heartbeat,
+    warnings: std::collections::BTreeSet<String>,
+    diagnostics: Vec<PageDiagnostic>,
 }
 
 /// Application ports used by the fake-first scan service.
@@ -582,6 +584,24 @@ pub trait PageArtifactRecognizer<M> {
         page: u32,
         image: &RenderedPage,
     ) -> io::Result<PageArtifactResult>;
+
+    /// Cancellation-aware variant used by the real scan path.
+    ///
+    /// The default implementation delegates to [`PageArtifactRecognizer::recognize_artifact`]
+    /// for fake/test recognizers. Real recognizers must override it so the
+    /// runtime can poll cancellation between tokens and report generation
+    /// progress for the per-second heartbeat contract.
+    fn recognize_artifact_cancelled(
+        &mut self,
+        model: &mut M,
+        page: u32,
+        image: &RenderedPage,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> io::Result<PageArtifactResult> {
+        let _ = (cancellation, progress);
+        self.recognize_artifact(model, page, image)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -629,46 +649,63 @@ where
         let mut model = self.loader.load()?;
         let root = output_root.as_ref();
         fs::create_dir_all(root)?;
-        let mut completed = 0_u32;
-        let mut failed = 0_u32;
-        let mut truncated = 0_u32;
-        let mut warnings = std::collections::BTreeSet::new();
-        let mut diagnostics = Vec::new();
-        for &page in page_numbers {
-            if cancellation.is_cancelled() {
-                break;
-            }
+        let mut controller = ScanController::with_cancellation(page_numbers, cancellation)?;
+        while let Some(page) = controller.start_next()? {
             let checkpoint_path = root.join(format!("page-{page:04}.checkpoint"));
             if resume {
                 if let Ok(checkpoint) = read_checkpoint(&checkpoint_path)
                     && checkpoint.is_reusable_at(compatibility, root, page)
                 {
-                    if checkpoint.truncated {
-                        truncated += 1;
-                    }
-                    warnings.extend(checkpoint.warnings.iter().cloned());
-                    diagnostics.push(checkpoint.diagnostic());
-                    completed += 1;
+                    controller.record_warnings(checkpoint.warnings.iter().cloned());
+                    controller.record_diagnostic(checkpoint.diagnostic());
+                    controller.finish(
+                        page,
+                        if checkpoint.truncated {
+                            PageStatus::Truncated
+                        } else {
+                            PageStatus::Completed
+                        },
+                    )?;
                     continue;
                 }
             }
             let image = match self.renderer.render(page) {
                 Ok(image) => image,
                 Err(_) => {
-                    failed += 1;
-                    diagnostics.push(PageDiagnostic {
+                    controller.record_diagnostic(PageDiagnostic {
                         page,
-                        status: "failed".to_owned(),
+                        status: if cancellation.is_cancelled() {
+                            "cancelled".to_owned()
+                        } else {
+                            "failed".to_owned()
+                        },
                         stage: "render".to_owned(),
                         error_code: Some("render_failed".to_owned()),
                         message: Some("page rendering failed".to_owned()),
                         audit: None,
                         warnings: Vec::new(),
                     });
+                    controller.finish(
+                        page,
+                        if cancellation.is_cancelled() {
+                            PageStatus::Cancelled
+                        } else {
+                            PageStatus::Failed
+                        },
+                    )?;
+                    if cancellation.is_cancelled() {
+                        break;
+                    }
                     continue;
                 }
             };
-            match self.recognizer.recognize_artifact(&mut model, page, &image) {
+            match self.recognizer.recognize_artifact_cancelled(
+                &mut model,
+                page,
+                &image,
+                cancellation,
+                &mut |_| {},
+            ) {
                 Ok(artifact) => {
                     let mut artifact_warnings = artifact.warnings;
                     if image.audit.scaled
@@ -678,10 +715,7 @@ where
                     {
                         artifact_warnings.push("render_scaled".to_owned());
                     }
-                    if artifact.truncated {
-                        truncated += 1;
-                    }
-                    warnings.extend(artifact_warnings.iter().cloned());
+                    controller.record_warnings(artifact_warnings.iter().cloned());
                     write_render_audit(root, page, image.audit)?;
                     let checkpoint = PageCheckpoint {
                         page_number: page,
@@ -692,27 +726,49 @@ where
                         warnings: artifact_warnings,
                         audit: Some(image.audit),
                     };
-                    diagnostics.push(checkpoint.diagnostic());
+                    controller.record_diagnostic(checkpoint.diagnostic());
                     commit_page(root, page, &artifact.png, &artifact.markdown, &checkpoint)?;
-                    completed += 1;
+                    controller.finish(
+                        page,
+                        if artifact.truncated {
+                            PageStatus::Truncated
+                        } else {
+                            PageStatus::Completed
+                        },
+                    )?;
                 }
                 Err(_) => {
-                    failed += 1;
-                    diagnostics.push(PageDiagnostic {
+                    controller.record_diagnostic(PageDiagnostic {
                         page,
-                        status: "failed".to_owned(),
+                        status: if cancellation.is_cancelled() {
+                            "cancelled".to_owned()
+                        } else {
+                            "failed".to_owned()
+                        },
                         stage: "recognize".to_owned(),
                         error_code: Some("recognition_failed".to_owned()),
                         message: Some("page recognition failed".to_owned()),
                         audit: Some(image.audit),
                         warnings: Vec::new(),
                     });
+                    controller.finish(
+                        page,
+                        if cancellation.is_cancelled() {
+                            PageStatus::Cancelled
+                        } else {
+                            PageStatus::Failed
+                        },
+                    )?;
+                    if cancellation.is_cancelled() {
+                        break;
+                    }
                 }
             }
         }
-        if failed == 0
+        let summary = controller.summary();
+        if summary.failed_pages == 0
             && !cancellation.is_cancelled()
-            && completed == u32::try_from(page_numbers.len()).unwrap_or(u32::MAX)
+            && summary.completed_pages == u32::try_from(page_numbers.len()).unwrap_or(u32::MAX)
         {
             let pages = page_numbers
                 .iter()
@@ -728,15 +784,7 @@ where
                 cleanup_full_page_images(root, page_numbers)?;
             }
         }
-        Ok(JobSummary {
-            selected_pages: u32::try_from(page_numbers.len()).unwrap_or(u32::MAX),
-            completed_pages: completed,
-            failed_pages: failed,
-            truncated_pages: truncated,
-            warnings: warnings.into_iter().collect(),
-            diagnostics,
-            cancelled: cancellation.is_cancelled(),
-        })
+        Ok(summary)
     }
 }
 
@@ -797,13 +845,22 @@ where
 
 impl ScanController {
     pub fn new(page_numbers: &[u32]) -> io::Result<Self> {
+        Self::with_cancellation(page_numbers, &CancellationToken::new())
+    }
+
+    pub fn with_cancellation(
+        page_numbers: &[u32],
+        cancellation: &CancellationToken,
+    ) -> io::Result<Self> {
         Ok(Self {
             pages: page_numbers
                 .iter()
                 .map(|&page| PageLifecycle::new(page))
                 .collect::<io::Result<Vec<_>>>()?,
-            cancellation: CancellationToken::new(),
+            cancellation: cancellation.clone(),
             heartbeat: Heartbeat::default(),
+            warnings: std::collections::BTreeSet::new(),
+            diagnostics: Vec::new(),
         })
     }
 
@@ -831,6 +888,14 @@ impl ScanController {
         page.transition(status)
     }
 
+    pub fn record_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
+        self.warnings.extend(warnings);
+    }
+
+    pub fn record_diagnostic(&mut self, diagnostic: PageDiagnostic) {
+        self.diagnostics.push(diagnostic);
+    }
+
     pub fn cancel(&self) {
         self.cancellation.request_cancel();
     }
@@ -847,7 +912,7 @@ impl ScanController {
             completed_pages: self
                 .pages
                 .iter()
-                .filter(|page| page.status == PageStatus::Completed)
+                .filter(|page| matches!(page.status, PageStatus::Completed | PageStatus::Truncated))
                 .count() as u32,
             failed_pages: self
                 .pages
@@ -859,8 +924,8 @@ impl ScanController {
                 .iter()
                 .filter(|page| page.status == PageStatus::Truncated)
                 .count() as u32,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
+            warnings: self.warnings.iter().cloned().collect(),
+            diagnostics: self.diagnostics.clone(),
             cancelled: self.cancellation.is_cancelled(),
         }
     }
@@ -1421,12 +1486,12 @@ pub fn temporary_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        CancellationToken, CompatibilityKey, ErrorReport, Heartbeat, JobStatus, JobSummary,
-        ModelLoader, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic,
-        PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent,
-        ProgressMode, ProgressSnapshot, RenderAudit, RenderedPage, ReportFormat, Reporter,
-        ResultReport, ResultStatus, ScanController, ScanService, atomic_write, format_report,
-        redact_sensitive,
+        CancellationToken, CompatibilityKey, ErrorReport, GenerationProgress, Heartbeat, JobStatus,
+        JobSummary, ModelLoader, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint,
+        PageDiagnostic, PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus,
+        ProgressEvent, ProgressMode, ProgressSnapshot, RenderAudit, RenderedPage, ReportFormat,
+        Reporter, ResultReport, ResultStatus, ScanController, ScanService, atomic_write,
+        format_report, redact_sensitive,
     };
     use std::fs;
 
@@ -1528,6 +1593,35 @@ mod tests {
                 truncated: self.truncate_page == Some(page),
                 warnings: Vec::new(),
             })
+        }
+    }
+
+    struct CancellingArtifacts;
+    impl PageArtifactRecognizer<u32> for CancellingArtifacts {
+        fn recognize_artifact(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+        ) -> std::io::Result<PageArtifactResult> {
+            Ok(PageArtifactResult {
+                png: vec![page as u8],
+                markdown: format!("page {page}"),
+                truncated: false,
+                warnings: Vec::new(),
+            })
+        }
+
+        fn recognize_artifact_cancelled(
+            &mut self,
+            _model: &mut u32,
+            _page: u32,
+            _image: &RenderedPage,
+            cancellation: &CancellationToken,
+            _progress: &mut dyn FnMut(GenerationProgress),
+        ) -> std::io::Result<PageArtifactResult> {
+            cancellation.request_cancel();
+            Err(std::io::Error::other("cancelled"))
         }
     }
 
@@ -2389,6 +2483,42 @@ mod tests {
             "page 2 not started"
         );
         assert_eq!(service.recognizer.calls, vec![1]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scan_service_cancellation_during_recognition_marks_page_cancelled_and_skips_commit() {
+        let root = test_dir("scan-recognition-cancel");
+        let _ = fs::remove_dir_all(&root);
+        let token = CancellationToken::new();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "balanced".to_owned(),
+            parameters: "p".to_owned(),
+        };
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            CancellingArtifacts,
+        );
+        let summary = service
+            .run_with_checkpoints_cancelled(&[1, 2], &root, &compatibility, false, false, &token)
+            .unwrap();
+        assert!(summary.cancelled);
+        assert_eq!(summary.completed_pages, 0);
+        assert_eq!(summary.failed_pages, 0);
+        assert!(
+            !root.join("page-0001.checkpoint").exists(),
+            "the in-flight page must not be committed"
+        );
+        assert_eq!(summary.diagnostics.len(), 1);
+        assert_eq!(summary.diagnostics[0].page, 1);
+        assert_eq!(summary.diagnostics[0].status, "cancelled");
+        assert_eq!(summary.diagnostics[0].stage, "recognize");
         let _ = fs::remove_dir_all(root);
     }
 

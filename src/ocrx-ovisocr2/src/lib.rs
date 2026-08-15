@@ -86,6 +86,9 @@ pub fn write_page_artifacts_with_status_cancelled(
         cancellation,
         progress,
     )?;
+    if cancellation.is_cancelled() {
+        return Err(std::io::Error::other("cancelled").into());
+    }
     let truncated = response.finish_reason == "max_tokens";
     let document =
         adapt_response(page, &response).map_err(|error| format!("adapter: {error:?}"))?;

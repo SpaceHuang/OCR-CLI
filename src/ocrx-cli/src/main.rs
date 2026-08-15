@@ -25,8 +25,8 @@ use {
     image::ImageFormat,
     ocrx_models::community_asset_sizes,
     ocrx_output::{
-        CompatibilityKey, ErrorReport, ModelLoader, PageArtifactRecognizer, PageArtifactResult,
-        ProgressEvent, ScanService, remove_for_overwrite,
+        CompatibilityKey, ErrorReport, GenerationProgress, ModelLoader, PageArtifactRecognizer,
+        PageArtifactResult, ProgressEvent, ScanService, remove_for_overwrite,
     },
     ocrx_pdf::{PdfErrorKind, classify_pdf_error},
     ocrx_runtime::LlamaMtmdRuntime,
@@ -915,7 +915,24 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         page: u32,
         image: &RenderedPage,
     ) -> std::io::Result<PageArtifactResult> {
-        let artifact = ocrx_ovisocr2::write_page_artifacts_with_status(
+        self.recognize_artifact_cancelled(
+            model,
+            page,
+            image,
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+    }
+
+    fn recognize_artifact_cancelled(
+        &mut self,
+        model: &mut LlamaMtmdRuntime,
+        page: u32,
+        image: &RenderedPage,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> std::io::Result<PageArtifactResult> {
+        let artifact = ocrx_ovisocr2::write_page_artifacts_with_status_cancelled(
             model,
             page,
             image.width,
@@ -923,6 +940,8 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             image.rgb8.clone(),
             self.max_tokens,
             &self.output,
+            cancellation,
+            progress,
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;
         let mut png = Cursor::new(Vec::new());
