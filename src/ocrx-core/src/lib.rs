@@ -55,6 +55,42 @@ pub struct GenerationProgress {
     pub elapsed_seconds: u64,
 }
 
+/// Stable GPU resource/performance report (W4.4).
+///
+/// The same schema is used for Vulkan and CUDA. Platform/backend differences
+/// are values, not field names, so downstream reporting and golden tests stay
+/// backend-agnostic.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpuResourceReport {
+    pub backend: &'static str,
+    pub vram_peak_bytes: Option<u64>,
+    pub unified_memory_peak_bytes: Option<u64>,
+    pub load_time_ms: Option<u64>,
+    pub first_token_ms: Option<u64>,
+    pub output_tokens: u32,
+    pub output_tokens_per_sec: f64,
+    pub peak_memory_bytes: Option<u64>,
+}
+
+impl GpuResourceReport {
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        let optional =
+            |value: Option<u64>| value.map_or_else(|| "null".to_owned(), |value| value.to_string());
+        format!(
+            "{{\"schema_version\":1,\"backend\":\"{}\",\"vram_peak_bytes\":{},\"unified_memory_peak_bytes\":{},\"load_time_ms\":{},\"first_token_ms\":{},\"output_tokens\":{},\"output_tokens_per_sec\":{:.3},\"peak_memory_bytes\":{}}}",
+            self.backend,
+            optional(self.vram_peak_bytes),
+            optional(self.unified_memory_peak_bytes),
+            optional(self.load_time_ms),
+            optional(self.first_token_ms),
+            self.output_tokens,
+            self.output_tokens_per_sec,
+            optional(self.peak_memory_bytes),
+        )
+    }
+}
+
 #[allow(clippy::large_stack_arrays)]
 pub fn sha256_file(path: &Path) -> io::Result<String> {
     let mut file = std::fs::File::open(path)?;
@@ -754,6 +790,24 @@ mod tests {
         assert_eq!(compat.llama_cpp_2_version, "0.1.152");
         assert_eq!(compat.llama_cpp_sys_2_version, "0.1.153");
         assert_eq!(compat.adapter_id, "ovisocr2");
+    }
+
+    #[test]
+    fn gpu_resource_report_json_has_stable_schema_golden() {
+        let report = GpuResourceReport {
+            backend: "vulkan",
+            vram_peak_bytes: Some(862_000_000),
+            unified_memory_peak_bytes: None,
+            load_time_ms: Some(1_234),
+            first_token_ms: Some(2_345),
+            output_tokens: 128,
+            output_tokens_per_sec: 12.5,
+            peak_memory_bytes: Some(456_000_000),
+        };
+        assert_eq!(
+            report.to_json(),
+            "{\"schema_version\":1,\"backend\":\"vulkan\",\"vram_peak_bytes\":862000000,\"unified_memory_peak_bytes\":null,\"load_time_ms\":1234,\"first_token_ms\":2345,\"output_tokens\":128,\"output_tokens_per_sec\":12.500,\"peak_memory_bytes\":456000000}"
+        );
     }
 
     #[test]
