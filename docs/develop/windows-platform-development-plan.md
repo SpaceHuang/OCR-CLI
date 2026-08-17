@@ -43,7 +43,7 @@
 | W3.1 llama_mtmd 跨平台化 | ◐ | `f56f225`(编译) / `6444518`(契约) / `b6c9280`(CLI un-gate) | `llama_mtmd.rs` cfg 放宽至 any(macos, windows)，Windows 编译通过；CLI 层 Ctrl+C→CancellationToken、二次 130、`run_with_checkpoints_cancelled` 已存在；`Runtime::generate_with_progress` 生成循环取消轮询 + 每秒进度回调 + 共享 `CancellationToken` 已落地；Windows 真实 scan 入口已 un-gate，compact CPU 单页 E2E 冒烟通过（model/mmproj 加载、MTMD 编码、生成、result/checkpoint 输出） | 与 W0.4 质量回归一致需 reference；W3.2/W3.3 real 待图例/故障注入 fixture |
 | W3.2 bbox 裁图 | ◐ | `731dae4` | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试 | 真实模型 E2E 待权重 |
 | W3.3 取消/部分完成/恢复 | ◐ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有（`failed_pages`、checkpoint 提交）；runtime 内取消契约已由 W3.1 落地；真实 scan 路径已改为显式 `PageLifecycle` 状态机，并接线 `recognize_artifact_cancelled` 与取消清理 | 真实 E2E 待权重 |
-| W4.1 Vulkan 构建 | ⛔ | — | Red 测试尚未补全 | 安装 Vulkan SDK ≥1.3（`VULKAN_SDK` + glslc）后可写 Green |
+| W4.1 Vulkan 构建 | ⛔ | `4017d1f`(Red) | Red 测试已补全：Windows CPU-only 构建 `--device vulkan` 返回 exit 6 的 JSON runtime 错误，不静默回退 CPU | 安装 Vulkan SDK ≥1.3（`VULKAN_SDK` + glslc）后可写 Green |
 | W4.2 Vulkan E2E | ⛔ | — | — | 依赖 W4.1 + 真实 GPU 硬件 |
 | W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
 | W4.4 GPU 资源报告 | ⛔ | — | — | 依赖 W4.1/W4.3 |
@@ -57,7 +57,7 @@
 #### W0.2 PDFium 实机验证（◐）
 - ✅ DLL 加载防护：缺失、错误架构、ABI 不兼容、路径逃逸均不静默成功。
 - ✅ 实机渲染：页数、300 DPI RGB8、审计尺寸、选页映射、像素预算等比缩放、损坏/非 PDF 分类。
-- ⬜ 加密/密码恢复实机用例（需构造带密码的 PDF fixture）。
+- ✅ 加密/密码恢复实机用例（`4017d1f`）：新增 `encrypted-1-page.pdf`，无密码失败、带密码 `pages=1`。
 - ⬜ 与 macOS 在受控 fixture 上的像素/hash 级比对。
 
 #### W0.3 资源基线（◐）
@@ -81,7 +81,7 @@
 #### W3.2 bbox 裁图（◐）
 - ✅ 纯逻辑：floor/ceil 映射、clamp、面积阈值、IoU/完全重复去重、源顺序保留、恶意 `src` 拒绝、路径逃逸防护、无效 bbox 占位移除。
 - ✅ fake 测试覆盖。
-- ⬜ 真实模型 E2E 裁图验证（需权重）。
+- ✅ 带图 fixture 与跨平台 gated 测试就绪（`4017d1f`）：新增 `figure-1-page.pdf`，`gated_real_model_writes_at_least_one_figure_png` 放宽到 Windows 并修正缓存路径；真实运行待统一 E2E 批次。
 
 #### W3.3 取消/部分完成/恢复（◐）
 - ✅ CLI 层失败继续、`partial`/10、130、checkpoint/恢复已有实现（`failed_pages`、checkpoint 提交）。
