@@ -880,25 +880,47 @@ impl PageRenderer for PdfScanRenderer {
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-struct RuntimeLoader {
-    model: PathBuf,
-    mmproj: PathBuf,
+struct PreloadedLoader {
+    model: Option<LlamaMtmdRuntime>,
+}
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+impl ModelLoader for PreloadedLoader {
+    type Model = LlamaMtmdRuntime;
+    fn load(&mut self) -> std::io::Result<Self::Model> {
+        self.model
+            .take()
+            .ok_or_else(|| std::io::Error::other("runtime already loaded"))
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn load_runtime_with_fallback(
+    model: &Path,
+    mmproj: &Path,
     gpu: bool,
     max_image_tokens: u32,
     context_size: u32,
-}
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-impl ModelLoader for RuntimeLoader {
-    type Model = LlamaMtmdRuntime;
-    fn load(&mut self) -> std::io::Result<Self::Model> {
-        LlamaMtmdRuntime::load(
-            &self.model,
-            &self.mmproj,
-            self.gpu,
-            self.max_image_tokens,
-            self.context_size,
-        )
-        .map_err(std::io::Error::other)
+) -> std::io::Result<(LlamaMtmdRuntime, Option<String>)> {
+    if !gpu {
+        return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size)
+            .map(|runtime| (runtime, None))
+            .map_err(std::io::Error::other);
+    }
+    match LlamaMtmdRuntime::load(model, mmproj, true, max_image_tokens, context_size) {
+        Ok(runtime) => Ok((runtime, None)),
+        Err(gpu_error) => {
+            let cpu_runtime =
+                LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size)
+                    .map_err(|cpu_error| {
+                        std::io::Error::other(format!(
+                            "gpu load failed: {gpu_error}; cpu fallback failed: {cpu_error}"
+                        ))
+                    })?;
+            Ok((
+                cpu_runtime,
+                Some(format!("gpu init failed; fallback to cpu: {gpu_error}")),
+            ))
+        }
     }
 }
 
@@ -1268,12 +1290,33 @@ fn run_scan(options: ScanOptions) -> ! {
             options: RenderOptions { dpi },
         })
     };
-    let loader = RuntimeLoader {
-        model,
-        mmproj,
-        gpu: device != "cpu",
-        max_image_tokens: options.max_image_tokens.unwrap_or(1024),
-        context_size: options.context_size.unwrap_or(16_384),
+    let (loaded_model, gpu_fallback_warning) = match load_runtime_with_fallback(
+        &model,
+        &mmproj,
+        device != "cpu",
+        options.max_image_tokens.unwrap_or(1024),
+        options.context_size.unwrap_or(16_384),
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            reporter.error(
+                &ErrorReport {
+                    code: 6,
+                    kind: "runtime".to_owned(),
+                    message: "runtime initialization failed".to_owned(),
+                    cause: Some(error.to_string()),
+                    suggestion: Some(
+                        "verify model/runtime compatibility or use --device cpu".to_owned(),
+                    ),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(6);
+        }
+    };
+    let loader = PreloadedLoader {
+        model: Some(loaded_model),
     };
     let recognizer = OvisRecognizer {
         output: output.clone(),
@@ -1319,7 +1362,10 @@ fn run_scan(options: ScanOptions) -> ! {
         &cancellation,
     );
     match summary {
-        Ok(summary) => {
+        Ok(mut summary) => {
+            if let Some(warning) = gpu_fallback_warning {
+                summary.warnings.push(warning);
+            }
             if summary.cancelled {
                 reporter.error(
                     &ErrorReport {
