@@ -64,13 +64,13 @@
 - ✅ 跨平台 RSS 采样器（Windows `tasklist` / Unix `ps`，纯安全 Rust 实现）。
 - ✅ 100 页回归骨架与本地试运行（43 样本/12.4s，峰值 40 MB / 末值 12 MB）。
 - ⬜ 16 GB CPU-only 基准设备官方测量窗口。
-- ⬜ 真实复杂 PDF 的 worker 页段峰值、退出状态采集。
+- ✅ 真实复杂 PDF 的 worker 本机采集：`complex-20-pages.pdf` exit 0、峰值 106,652 KB、末值 35,448 KB、54.1s；`normal-100-pages.pdf` exit 0、峰值 40,444 KB、末值 18,924 KB、54.1s。
 - ⬜ 与 macOS 资源曲线对比记录。
 
 #### W2.2 worker 进程隔离（◐）
 - ✅ 跨平台 worker 协议/调度器实现。
 - ✅ 子进程级测试（`pdfium-fake-worker`）覆盖空/倒序/越界段、异常退出、超时、取消、缺页、PNG 损坏、`.part` 残留及 hash 不符。
-- ⬜ 真实复杂 PDF 上的 RSS/footprint、页段峰值与退出状态采集（随 W0.3 补全）。
+- ✅ 真实复杂 PDF 上的 RSS/footprint、页段峰值与退出状态本机采集（同 W0.3）。
 
 #### W3.1 llama_mtmd 跨平台化（◐）
 - ✅ `llama_mtmd.rs` cfg 放宽至 `any(macos, windows)`，Windows 编译通过。
