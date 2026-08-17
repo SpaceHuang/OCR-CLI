@@ -2118,6 +2118,35 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_does_not_cross_reuse_between_platform_backends() {
+        // W3.3 acceptance: a checkpoint produced by one platform/backend must
+        // not be reused under another platform/backend, even if the input,
+        // model, profile, and DPI are identical. The compatibility key is the
+        // only trust boundary; the stable checkpoint format itself is shared.
+        let windows_cpu = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "compact".to_owned(),
+            parameters: "dpi=300;device=cpu".to_owned(),
+        };
+        let macos_metal = CompatibilityKey {
+            parameters: "dpi=300;device=metal".to_owned(),
+            ..windows_cpu.clone()
+        };
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: windows_cpu.clone(),
+            complete: true,
+            output_sha256: "output".to_owned(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        assert!(checkpoint.is_reusable(&windows_cpu));
+        assert!(!checkpoint.is_reusable(&macos_metal));
+    }
+
+    #[test]
     fn checkpoint_round_trip_is_atomic_and_versioned() {
         let directory = test_dir("checkpoint");
         let _ = fs::remove_dir_all(&directory);

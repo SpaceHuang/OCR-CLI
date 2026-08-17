@@ -87,6 +87,7 @@
 - ✅ CLI 层失败继续、`partial`/10、130、checkpoint/恢复已有实现（`failed_pages`、checkpoint 提交）。
 - ✅ runtime 内取消契约（同 W3.1，`6444518`）。
 - ✅ 显式页面状态机复核（`e0ad31f`）：真实 scan 路径用 `PageLifecycle` 替代散落计数器，所有选页均落 `Pending/Processing/Completed/Truncated/Failed/Cancelled` 终态；取消中的当前页不提交。
+- ✅ 跨平台 checkpoint 兼容键校验（`4017d1f` 后续）：Windows CPU 与 macOS Metal 的 checkpoint 不互相恢复，输入/模型/profile 相同也按 platform/backend 参数隔离。
 
 ### 0.4 待解除的外部依赖（按解锁任务数排序）
 
