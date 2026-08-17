@@ -62,7 +62,7 @@ pub struct GenerationProgress {
 /// backend-agnostic.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpuResourceReport {
-    pub backend: &'static str,
+    pub backend: String,
     pub vram_peak_bytes: Option<u64>,
     pub unified_memory_peak_bytes: Option<u64>,
     pub load_time_ms: Option<u64>,
@@ -79,7 +79,7 @@ impl GpuResourceReport {
             |value: Option<u64>| value.map_or_else(|| "null".to_owned(), |value| value.to_string());
         format!(
             "{{\"schema_version\":1,\"backend\":\"{}\",\"vram_peak_bytes\":{},\"unified_memory_peak_bytes\":{},\"load_time_ms\":{},\"first_token_ms\":{},\"output_tokens\":{},\"output_tokens_per_sec\":{:.3},\"peak_memory_bytes\":{}}}",
-            self.backend,
+            json_escape(&self.backend),
             optional(self.vram_peak_bytes),
             optional(self.unified_memory_peak_bytes),
             optional(self.load_time_ms),
@@ -795,7 +795,7 @@ mod tests {
     #[test]
     fn gpu_resource_report_json_has_stable_schema_golden() {
         let report = GpuResourceReport {
-            backend: "vulkan",
+            backend: "vulkan".to_owned(),
             vram_peak_bytes: Some(862_000_000),
             unified_memory_peak_bytes: None,
             load_time_ms: Some(1_234),

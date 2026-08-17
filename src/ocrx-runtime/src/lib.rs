@@ -3,6 +3,44 @@
 use ocrx_core::CancellationToken;
 pub use ocrx_core::GenerationProgress;
 
+/// Runtime telemetry used by the W4.4 GPU/performance report.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RuntimeTelemetry {
+    pub load_time_ms: u64,
+    pub first_token_ms: u64,
+    pub generated_tokens: u64,
+    pub generation_time_ms: u64,
+}
+
+impl RuntimeTelemetry {
+    #[must_use]
+    pub fn output_tokens_per_sec(&self) -> f64 {
+        if self.generation_time_ms == 0 {
+            0.0
+        } else {
+            self.generated_tokens as f64 / (self.generation_time_ms as f64 / 1_000.0)
+        }
+    }
+
+    #[must_use]
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            load_time_ms: self.load_time_ms.max(other.load_time_ms),
+            first_token_ms: if self.first_token_ms == 0 {
+                other.first_token_ms
+            } else if other.first_token_ms == 0 {
+                self.first_token_ms
+            } else {
+                self.first_token_ms.min(other.first_token_ms)
+            },
+            generated_tokens: self.generated_tokens.saturating_add(other.generated_tokens),
+            generation_time_ms: self
+                .generation_time_ms
+                .saturating_add(other.generation_time_ms),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
     Cpu,
@@ -110,6 +148,16 @@ pub struct InferenceResponse {
 
 pub trait Runtime {
     fn info(&self) -> RuntimeInfo;
+
+    /// Returns aggregated generation telemetry collected by this runtime.
+    ///
+    /// Fake/test runtimes use the default empty value; the real runtime keeps
+    /// load, first-token, token-count, and generation-time counters updated
+    /// across the pages it generates.
+    fn telemetry(&self) -> RuntimeTelemetry {
+        RuntimeTelemetry::default()
+    }
+
     /// Generates one deterministic response for a validated image request.
     ///
     /// # Errors

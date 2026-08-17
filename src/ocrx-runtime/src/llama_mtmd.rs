@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use super::{
     Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, Runtime,
-    RuntimeInfo,
+    RuntimeInfo, RuntimeTelemetry,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -23,6 +23,7 @@ pub struct LlamaMtmdRuntime {
     mtmd: MtmdContext,
     use_gpu: bool,
     context_size: u32,
+    telemetry: RuntimeTelemetry,
 }
 
 impl LlamaMtmdRuntime {
@@ -38,6 +39,7 @@ impl LlamaMtmdRuntime {
         image_tokens: u32,
         context_size: u32,
     ) -> Result<Self, String> {
+        let started = Instant::now();
         let image_tokens = i32::try_from(image_tokens)
             .map_err(|_| "image token limit exceeds runtime range".to_owned())?;
         let backend = LlamaBackend::init().map_err(|error| error.to_string())?;
@@ -65,7 +67,27 @@ impl LlamaMtmdRuntime {
             mtmd,
             use_gpu,
             context_size,
+            telemetry: RuntimeTelemetry {
+                load_time_ms: started.elapsed().as_millis() as u64,
+                ..RuntimeTelemetry::default()
+            },
         })
+    }
+
+    fn record_generation(&mut self, generated_tokens: u64, elapsed_ms: u64, first_token_ms: u64) {
+        self.telemetry.generated_tokens = self
+            .telemetry
+            .generated_tokens
+            .saturating_add(generated_tokens);
+        self.telemetry.generation_time_ms =
+            self.telemetry.generation_time_ms.saturating_add(elapsed_ms);
+        self.telemetry.first_token_ms = if self.telemetry.first_token_ms == 0 {
+            first_token_ms
+        } else if first_token_ms == 0 {
+            self.telemetry.first_token_ms
+        } else {
+            self.telemetry.first_token_ms.min(first_token_ms)
+        };
     }
 }
 
@@ -83,6 +105,10 @@ impl Runtime for LlamaMtmdRuntime {
             },
             image_token_limit: 1024,
         }
+    }
+
+    fn telemetry(&self) -> RuntimeTelemetry {
+        self.telemetry
     }
 
     fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String> {
@@ -130,8 +156,19 @@ impl Runtime for LlamaMtmdRuntime {
         let mut output = String::new();
         let started = Instant::now();
         let mut last_emitted_second = None;
+        let mut generated_tokens = 0_u64;
+        let mut first_token_ms = 0_u64;
         for (generated, _) in (0..request.max_output_tokens).enumerate() {
+            if first_token_ms == 0 {
+                first_token_ms = started.elapsed().as_millis() as u64;
+            }
             if cancellation.is_cancelled() {
+                drop(context);
+                self.record_generation(
+                    generated_tokens,
+                    started.elapsed().as_millis() as u64,
+                    first_token_ms,
+                );
                 return Ok(InferenceResponse {
                     raw_output: output,
                     finish_reason: "cancelled".to_owned(),
@@ -155,6 +192,12 @@ impl Runtime for LlamaMtmdRuntime {
                 i32::try_from(index).map_err(|_| "logits index exceeds token range".to_owned())?,
             );
             if token == self.model.token_eos() {
+                drop(context);
+                self.record_generation(
+                    generated_tokens,
+                    started.elapsed().as_millis() as u64,
+                    first_token_ms,
+                );
                 return Ok(InferenceResponse {
                     raw_output: output,
                     finish_reason: "eos".to_owned(),
@@ -176,7 +219,14 @@ impl Runtime for LlamaMtmdRuntime {
             context
                 .decode(&mut batch)
                 .map_err(|error| error.to_string())?;
+            generated_tokens += 1;
         }
+        drop(context);
+        self.record_generation(
+            generated_tokens,
+            started.elapsed().as_millis() as u64,
+            first_token_ms,
+        );
         Ok(InferenceResponse {
             raw_output: output,
             finish_reason: "max_tokens".to_owned(),

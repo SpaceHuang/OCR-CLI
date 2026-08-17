@@ -1,4 +1,4 @@
-use ocrx_core::ModelId;
+use ocrx_core::{GpuResourceReport, ModelId};
 use ocrx_models::{
     ModelCatalog, ResourceSnapshot, UrlInstallRequest, community_asset_urls, community_manifest,
     recommend_device, recommend_profile,
@@ -8,7 +8,7 @@ use ocrx_output::{
     ReportFormat, Reporter, ResultReport, format_report,
 };
 use ocrx_pdf::{PdfWorkerScheduler, PdfiumRenderer, RenderOptions, fit_pixel_budget};
-use ocrx_runtime::{Backend, RuntimeInfo};
+use ocrx_runtime::{Backend, Runtime, RuntimeInfo, RuntimeTelemetry};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
@@ -30,7 +30,9 @@ use {
     },
     ocrx_pdf::{PdfErrorKind, classify_pdf_error},
     ocrx_runtime::LlamaMtmdRuntime,
+    std::cell::RefCell,
     std::io::Cursor,
+    std::rc::Rc,
     std::time::{Duration, Instant},
 };
 
@@ -928,6 +930,7 @@ fn load_runtime_with_fallback(
 struct OvisRecognizer {
     output: PathBuf,
     max_tokens: u32,
+    telemetry: Rc<RefCell<RuntimeTelemetry>>,
 }
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
@@ -966,6 +969,8 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             progress,
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let previous = *self.telemetry.borrow();
+        *self.telemetry.borrow_mut() = previous.merge(model.telemetry());
         let mut png = Cursor::new(Vec::new());
         image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
             .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
@@ -1318,9 +1323,11 @@ fn run_scan(options: ScanOptions) -> ! {
     let loader = PreloadedLoader {
         model: Some(loaded_model),
     };
+    let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let recognizer = OvisRecognizer {
         output: output.clone(),
         max_tokens: options.max_output_tokens.unwrap_or(4096),
+        telemetry: Rc::clone(&telemetry),
     };
     let input_sha256 = match file_sha256(&input) {
         Ok(hash) => hash,
@@ -1365,6 +1372,36 @@ fn run_scan(options: ScanOptions) -> ! {
         Ok(mut summary) => {
             if let Some(warning) = gpu_fallback_warning {
                 summary.warnings.push(warning);
+            }
+            if device != "cpu" {
+                let telemetry = *telemetry.borrow();
+                let gpu_report = GpuResourceReport {
+                    backend: device.clone(),
+                    vram_peak_bytes: None,
+                    unified_memory_peak_bytes: None,
+                    load_time_ms: Some(telemetry.load_time_ms),
+                    first_token_ms: Some(telemetry.first_token_ms),
+                    output_tokens: u32::try_from(telemetry.generated_tokens).unwrap_or(u32::MAX),
+                    output_tokens_per_sec: telemetry.output_tokens_per_sec(),
+                    peak_memory_bytes: None,
+                };
+                if let Err(error) = ocrx_output::atomic_write(
+                    output.join("gpu-resource.json"),
+                    gpu_report.to_json().as_bytes(),
+                ) {
+                    reporter.error(
+                        &ErrorReport {
+                            code: 6,
+                            kind: "output".to_owned(),
+                            message: "gpu-resource.json commit failed".to_owned(),
+                            cause: Some(error.to_string()),
+                            suggestion: None,
+                        },
+                        report_format,
+                    );
+                    print_reporter(reporter);
+                    std::process::exit(6);
+                }
             }
             if summary.cancelled {
                 reporter.error(
