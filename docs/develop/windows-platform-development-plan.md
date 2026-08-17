@@ -88,6 +88,8 @@
 - ✅ runtime 内取消契约（同 W3.1，`6444518`）。
 - ✅ 显式页面状态机复核（`e0ad31f`）：真实 scan 路径用 `PageLifecycle` 替代散落计数器，所有选页均落 `Pending/Processing/Completed/Truncated/Failed/Cancelled` 终态；取消中的当前页不提交。
 - ✅ 跨平台 checkpoint 兼容键校验（`4017d1f` 后续）：Windows CPU 与 macOS Metal 的 checkpoint 不互相恢复，输入/模型/profile 相同也按 platform/backend 参数隔离。
+- ✅ 真实模型 E2E 冒烟：compact CPU 两页 `varied-page-sizes.pdf` 成功；同输出 `--resume` 复用 checkpoint；单页 `--max-output-tokens 128` 得到 partial/truncated。
+- ⬜ 真实模型渲染/推理失败注入与真实 Ctrl+C 信号自动化（当前由 fake 状态机/取消契约测试覆盖）。
 
 ### 0.4 待解除的外部依赖（按解锁任务数排序）
 
