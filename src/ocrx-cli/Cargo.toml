@@ -18,3 +18,8 @@ ocrx-pdf = { path = "../ocrx-pdf" }
 ocrx-ovisocr2 = { path = "../ocrx-ovisocr2" }
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 ctrlc = "3.5.2"
+vulkano = { version = "=0.35.2", optional = true }
+
+[features]
+default = []
+vulkan = ["ocrx-runtime/vulkan", "dep:vulkano"]

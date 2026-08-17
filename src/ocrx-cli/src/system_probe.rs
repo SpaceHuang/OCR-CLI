@@ -49,7 +49,17 @@ impl SystemProbe for RealSystemProbe {
     }
 
     fn vulkan_available(&self) -> bool {
-        cfg!(target_os = "windows") && system_dll_present("vulkan-1.dll")
+        if !cfg!(target_os = "windows") {
+            return false;
+        }
+        #[cfg(feature = "vulkan")]
+        {
+            detect_vulkan_device()
+        }
+        #[cfg(not(feature = "vulkan"))]
+        {
+            system_dll_present("vulkan-1.dll")
+        }
     }
 
     fn cpu_available(&self) -> bool {
@@ -100,6 +110,27 @@ fn system_dll_present(name: &str) -> bool {
     std::env::var_os("SystemRoot")
         .map(|root| std::path::Path::new(&root).join("System32").join(name))
         .map(|path| path.is_file())
+        .unwrap_or(false)
+}
+
+/// Real Vulkan instance/device probe used when the `vulkan` cargo feature is
+/// compiled in. The workspace forbids `unsafe`, so this uses `vulkano`, a safe
+/// Vulkan wrapper, to create an instance and check for at least one physical
+/// device. The instance is dropped by `vulkano` at scope exit.
+#[cfg(feature = "vulkan")]
+fn detect_vulkan_device() -> bool {
+    use vulkano::VulkanLibrary;
+    use vulkano::instance::{Instance, InstanceCreateInfo};
+
+    let Ok(library) = VulkanLibrary::new() else {
+        return false;
+    };
+    let Ok(instance) = Instance::new(library, InstanceCreateInfo::default()) else {
+        return false;
+    };
+    instance
+        .enumerate_physical_devices()
+        .map(|mut devices| devices.next().is_some())
         .unwrap_or(false)
 }
 

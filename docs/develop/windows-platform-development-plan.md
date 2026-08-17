@@ -43,7 +43,7 @@
 | W3.1 llama_mtmd 跨平台化 | ◐ | `f56f225`(编译) / `6444518`(契约) / `b6c9280`(CLI un-gate) | `llama_mtmd.rs` cfg 放宽至 any(macos, windows)，Windows 编译通过；CLI 层 Ctrl+C→CancellationToken、二次 130、`run_with_checkpoints_cancelled` 已存在；`Runtime::generate_with_progress` 生成循环取消轮询 + 每秒进度回调 + 共享 `CancellationToken` 已落地；Windows 真实 scan 入口已 un-gate，compact CPU 单页 E2E 冒烟通过（model/mmproj 加载、MTMD 编码、生成、result/checkpoint 输出） | 与 W0.4 质量回归一致需 reference；W3.2/W3.3 real 待图例/故障注入 fixture |
 | W3.2 bbox 裁图 | ◐ | `731dae4` | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试 | 真实模型 E2E 待权重 |
 | W3.3 取消/部分完成/恢复 | ◐ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有（`failed_pages`、checkpoint 提交）；runtime 内取消契约已由 W3.1 落地；真实 scan 路径已改为显式 `PageLifecycle` 状态机，并接线 `recognize_artifact_cancelled` 与取消清理 | 真实 E2E 待权重 |
-| W4.1 Vulkan 构建 | ◐ | `4017d1f`(Red) | Vulkan SDK 1.4.357.0 已安装；`--features ocrx-runtime/vulkan` 短 `CARGO_TARGET_DIR` 构建通过；doctor 报告 `backend=Vulkan`、`vulkan_available=true`、`recommended_device=vulkan` | 仍需真实实例/设备枚举与初始化失败回退（当前为 `vulkan-1.dll` 存在性代理） |
+| W4.1 Vulkan 构建 | ◐ | `4017d1f`(Red) | Vulkan SDK 1.4.357.0 已安装；`--features vulkan` 短 `CARGO_TARGET_DIR` 构建通过；`RealSystemProbe` 已用 `vulkano` 做安全 instance + physical-device 枚举；doctor 报告 `backend=Vulkan`、`vulkan_available=true`、`recommended_device=vulkan` | 仍需 runtime 初始化失败回退与 CI 无 GPU 环境的 `DeviceUnavailable` 验证 |
 | W4.2 Vulkan E2E | ⛔ | — | — | 依赖 W4.1 + 真实 GPU 硬件 |
 | W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
 | W4.4 GPU 资源报告 | ⛔ | — | — | 依赖 W4.1/W4.3 |

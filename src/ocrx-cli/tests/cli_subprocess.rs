@@ -82,7 +82,7 @@ fn cli_initialization_error_is_one_json_error_object() {
     assert!(!stdout.contains("input.pdf"));
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(feature = "vulkan")))]
 #[test]
 fn cli_scan_rejects_vulkan_on_cpu_only_build() {
     // W4.1 Red: a Windows CPU-only binary has `vulkan` compiled out, so an
