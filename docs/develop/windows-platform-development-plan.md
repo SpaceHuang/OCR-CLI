@@ -41,10 +41,10 @@
 | W2.2 worker 进程隔离 | ◐ | `731dae4` | 跨平台 worker 协议/调度器 + 子进程级测试（`pdfium-fake-worker`）完成 | 真实复杂 PDF 资源采集随 W0.3 测量同步补全 |
 | W2.3 临时目录与原子写 | ✅ | `731dae4` | `temporary_path` 同目录原子写、`.part` 清理、宽目录删除防护 | — |
 | W3.1 llama_mtmd 跨平台化 | ◐ | `f56f225`(编译) / `6444518`(契约) / `b6c9280`(CLI un-gate) | `llama_mtmd.rs` cfg 放宽至 any(macos, windows)，Windows 编译通过；CLI 层 Ctrl+C→CancellationToken、二次 130、`run_with_checkpoints_cancelled` 已存在；`Runtime::generate_with_progress` 生成循环取消轮询 + 每秒进度回调 + 共享 `CancellationToken` 已落地；Windows 真实 scan 入口已 un-gate，compact CPU 单页 E2E 冒烟通过（model/mmproj 加载、MTMD 编码、生成、result/checkpoint 输出） | 与 W0.4 质量回归一致需 reference；W3.2/W3.3 real 待图例/故障注入 fixture |
-| W3.2 bbox 裁图 | ◐ | `731dae4` | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试 | 真实模型 E2E 待权重 |
+| W3.2 bbox 裁图 | ✅ | `731dae4` / `90e74ba`(Vulkan) | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试；真实模型 E2E 已在 Windows CPU/Vulkan 跑通，`figure-1-page.pdf` 产出 `images.count=1` | — |
 | W3.3 取消/部分完成/恢复 | ◐ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有（`failed_pages`、checkpoint 提交）；runtime 内取消契约已由 W3.1 落地；真实 scan 路径已改为显式 `PageLifecycle` 状态机，并接线 `recognize_artifact_cancelled` 与取消清理 | 真实 E2E 待权重 |
 | W4.1 Vulkan 构建 | ✅ | `4017d1f`(Red) / `90e74ba`(enum) / `8622114`(fallback) | Vulkan SDK 1.4.357.0 已安装；`--features vulkan` 短 `CARGO_TARGET_DIR` 构建通过；`RealSystemProbe` 已用 `vulkano` 做安全 instance + physical-device 枚举；`run_scan` 已实现 GPU 初始化失败自动回退 CPU 并写入 warning；doctor 报告 `backend=Vulkan`、`vulkan_available=true`、`recommended_device=vulkan`；无 GPU 回退分支由注入式 `SystemProbe`/`ResourceSnapshot` 测试覆盖 | — |
-| W4.2 Vulkan E2E | ⛔ | — | — | 依赖 W4.1 + 真实 GPU 硬件 |
+| W4.2 Vulkan E2E | ◐ | `90e74ba`(Vulkan) | 本机 RTX 2070 真实 E2E 冒烟通过：`normal-1-page.pdf` partial/truncated、`figure-1-page.pdf` success 且 `images.count=1`；Vulkan 编码约 2.2s，单页总耗时约 57s（CPU 同参数约 388s） | 与 CPU 输出的结构化质量对照仍待 W0.4/质量基准 |
 | W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
 | W4.4 GPU 资源报告 | ⛔ | — | — | 依赖 W4.1/W4.3 |
 | W5.1 日志/隐私/doctor | ✅ | `f20ba05` | 脱敏统一收敛到 `ocrx-output::redact_sensitive`（单一来源，无平台分支调用点）；doctor 离线 | — |
@@ -78,10 +78,10 @@
 - ✅ 生成循环内取消轮询 + 每秒进度回调（`Runtime::generate_with_progress`，`6444518`）；`CancellationToken` 提升至 `ocrx-core` 共享；`FakeRuntime` 与 `LlamaMtmdRuntime` 覆盖契约并补充测试。
 - ✅ Windows CPU 真实生成路径冒烟（`b6c9280`）：compact + mmproj 加载、MTMD 图像编码、贪婪生成、result.json/checkpoint/document.md 输出全通；单页正常 fixture 为 partial/truncated，质量门禁仍归 W0.4。
 
-#### W3.2 bbox 裁图（◐）
+#### W3.2 bbox 裁图（✅）
 - ✅ 纯逻辑：floor/ceil 映射、clamp、面积阈值、IoU/完全重复去重、源顺序保留、恶意 `src` 拒绝、路径逃逸防护、无效 bbox 占位移除。
 - ✅ fake 测试覆盖。
-- ✅ 带图 fixture 与跨平台 gated 测试就绪（`4017d1f`）：新增 `figure-1-page.pdf`，`gated_real_model_writes_at_least_one_figure_png` 放宽到 Windows 并修正缓存路径；真实运行待统一 E2E 批次。
+- ✅ 真实模型 E2E 裁图通过（`90e74ba`/Vulkan）：`figure-1-page.pdf` 产出 `images/page-0001-figure-001.png`，result JSON `images.count=1`。
 
 #### W3.3 取消/部分完成/恢复（◐）
 - ✅ CLI 层失败继续、`partial`/10、130、checkpoint/恢复已有实现（`failed_pages`、checkpoint 提交）。
