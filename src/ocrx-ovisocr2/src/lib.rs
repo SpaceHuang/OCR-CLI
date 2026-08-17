@@ -613,7 +613,7 @@ mod tests {
         )));
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[test]
     #[ignore = "set OCRX_E2E_MODEL=1 with installed community compact assets"]
     fn gated_real_model_writes_at_least_one_figure_png() {
@@ -624,15 +624,20 @@ mod tests {
         );
         let cache = std::env::var_os("OCRX_MODEL_CACHE")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from(".ocrx-model-cache"));
-        let model = cache.join("ovisocr2/compact/model.gguf");
-        let mmproj = cache.join("ovisocr2/compact/mmproj.gguf");
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let manifest =
+            ocrx_models::community_manifest("compact").expect("compact manifest is pinned");
+        let (model, mmproj) =
+            ocrx_models::cache_paths(&cache, &manifest.identity.revision, &manifest.profile)
+                .expect("compact cache paths");
         assert!(
             model.is_file() && mmproj.is_file(),
             "compact profile assets must be installed under {cache:?}"
         );
-        let mut runtime = ocrx_runtime::LlamaMtmdRuntime::load(&model, &mmproj, true, 1024, 16_384)
-            .expect("real runtime load");
+        let use_gpu = cfg!(target_os = "macos");
+        let mut runtime =
+            ocrx_runtime::LlamaMtmdRuntime::load(&model, &mmproj, use_gpu, 1024, 16_384)
+                .expect("real runtime load");
         let root = std::env::temp_dir().join(format!("ocrx-e2e-figure-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         // Minimal RGB page; real model may or may not emit a bbox — assert pipeline completes.

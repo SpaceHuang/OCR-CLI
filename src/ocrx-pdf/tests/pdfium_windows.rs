@@ -28,6 +28,11 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn pdfium_lib_dir() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/pdfium/bin");
+    std::fs::canonicalize(&dir).unwrap_or(dir)
+}
+
 #[test]
 fn missing_library_does_not_silently_succeed() {
     // A directory with no pdfium library must fail (non-zero exit), not
@@ -67,4 +72,42 @@ fn path_escape_library_dir_is_rejected() {
         !output.status.success(),
         "a path-escaping library_dir must not silently succeed"
     );
+}
+
+#[test]
+fn encrypted_pdf_requires_password_and_recovers_with_password() {
+    let library = pdfium_lib_dir();
+    let encrypted = fixture("encrypted-1-page.pdf");
+
+    // Without a password the encrypted PDF must fail and mention the password
+    // boundary, not be silently treated as an empty or corrupt document.
+    let without_password = Command::new(pdfium_check())
+        .arg(&library)
+        .arg(&encrypted)
+        .output()
+        .expect("pdfium-check should run");
+    assert!(
+        !without_password.status.success(),
+        "encrypted PDF must not render without a password"
+    );
+    let stderr = String::from_utf8_lossy(&without_password.stderr).to_ascii_lowercase();
+    assert!(
+        stderr.contains("password") || stderr.contains("encrypted"),
+        "encrypted-PDF failure should mention password/encrypted, got: {stderr}"
+    );
+
+    // With the correct password the same PDF must render successfully.
+    let with_password = Command::new(pdfium_check())
+        .arg(&library)
+        .arg(&encrypted)
+        .env("OCRX_PDFIUM_PASSWORD", "test")
+        .output()
+        .expect("pdfium-check should run");
+    assert!(
+        with_password.status.success(),
+        "encrypted PDF should render with its password: {}",
+        String::from_utf8_lossy(&with_password.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&with_password.stdout);
+    assert!(stdout.contains("pages=1"));
 }

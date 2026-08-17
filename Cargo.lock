@@ -592,6 +592,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "ocrx-core",
+ "ocrx-models",
  "ocrx-pdf",
  "ocrx-runtime",
 ]
