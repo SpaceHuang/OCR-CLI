@@ -46,7 +46,7 @@
 | W4.1 Vulkan 构建 | ✅ | `4017d1f`(Red) / `90e74ba`(enum) / `8622114`(fallback) | Vulkan SDK 1.4.357.0 已安装；`--features vulkan` 短 `CARGO_TARGET_DIR` 构建通过；`RealSystemProbe` 已用 `vulkano` 做安全 instance + physical-device 枚举；`run_scan` 已实现 GPU 初始化失败自动回退 CPU 并写入 warning；doctor 报告 `backend=Vulkan`、`vulkan_available=true`、`recommended_device=vulkan`；无 GPU 回退分支由注入式 `SystemProbe`/`ResourceSnapshot` 测试覆盖 | — |
 | W4.2 Vulkan E2E | ◐ | `90e74ba`(Vulkan) | 本机 RTX 2070 真实 E2E 冒烟通过：`normal-1-page.pdf` partial/truncated、`figure-1-page.pdf` success 且 `images.count=1`；Vulkan 编码约 2.2s，单页总耗时约 57s（CPU 同参数约 388s） | 与 CPU 输出的结构化质量对照仍待 W0.4/质量基准 |
 | W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
-| W4.4 GPU 资源报告 | ◐ | `83066f6`(schema) | 本机 RTX 2070 Vulkan 基线：`figure-1-page.pdf` 总耗时约 58.5s、峰值显存 862 MB、`images.count=1`、后端 `vulkan`；`GpuResourceReport` schema/golden 与 `RuntimeTelemetry` 已接线，GPU 扫描会写 `gpu-resource.json`（load/first-token/tokens/s） | 显存峰值自动采集与官方基准设备数据仍待补 |
+| W4.4 GPU 资源报告 | ◐ | `83066f6`(schema) | 本机 RTX 2070 Vulkan 基线：`figure-1-page.pdf` 总耗时约 58.5s、峰值显存 862 MB、`images.count=1`、后端 `vulkan`；`GpuResourceReport` schema/golden、`RuntimeTelemetry` 与后台 `nvidia-smi` 显存采样已接线，GPU 扫描会写 `gpu-resource.json`（load/first-token/tokens/s/vram_peak） | 官方基准设备数据仍待补 |
 | W5.1 日志/隐私/doctor | ✅ | `f20ba05` | 脱敏统一收敛到 `ocrx-output::redact_sensitive`（单一来源，无平台分支调用点）；doctor 离线 | — |
 | W5.2 Skill Windows 安装 | ✅ | `83da793` | `SkillScope { User, Project }`，用户级/项目级与待决策项 5 冻结结论一致；原子写 + 卸载边界测试 | — |
 | W5.3 Windows 安装包 | ✅ | `c1f3ef1` | `package-windows-x64.ps1` + `install.ps1` + 脚本测试；烟测矩阵 7 项（安装 0/哈希不符 5/缺档 4/offline 6 等）、归档 20 文件 `sha256sum -c` 全过；干净环境安装烟测属 W6 | — |

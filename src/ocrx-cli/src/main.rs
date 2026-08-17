@@ -927,6 +927,50 @@ fn load_runtime_with_fallback(
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
+fn start_vram_sampler() -> Option<(
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+    std::thread::JoinHandle<u64>,
+)> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let done_worker = std::sync::Arc::clone(&done);
+    let handle = std::thread::spawn(move || {
+        let mut peak_mb = 0_u64;
+        while !done_worker.load(std::sync::atomic::Ordering::SeqCst) {
+            if let Ok(output) = std::process::Command::new("nvidia-smi")
+                .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
+                .output()
+                && output.status.success()
+            {
+                if let Some(first) = String::from_utf8_lossy(&output.stdout).lines().next()
+                    && let Ok(mb) = first.trim().parse::<u64>()
+                {
+                    peak_mb = peak_mb.max(mb);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        peak_mb.saturating_mul(1024 * 1024)
+    });
+    Some((done, handle))
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn stop_vram_sampler(
+    sampler: Option<(
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+        std::thread::JoinHandle<u64>,
+    )>,
+) -> Option<u64> {
+    let (done, handle) = sampler?;
+    done.store(true, std::sync::atomic::Ordering::SeqCst);
+    let bytes = handle.join().unwrap_or(0);
+    (bytes > 0).then_some(bytes)
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 struct OvisRecognizer {
     output: PathBuf,
     max_tokens: u32,
@@ -1360,6 +1404,11 @@ fn run_scan(options: ScanOptions) -> ! {
     let cancellation = CancellationToken::new();
     install_sigint_handler(cancellation.clone());
     let mut service = ScanService::new(renderer, loader, recognizer);
+    let vram_sampler = if device == "cpu" {
+        None
+    } else {
+        start_vram_sampler()
+    };
     let summary = service.run_with_checkpoints_cancelled(
         &pages.iter().map(|p| *p as u32).collect::<Vec<_>>(),
         &output,
@@ -1368,6 +1417,7 @@ fn run_scan(options: ScanOptions) -> ! {
         options.keep_pages,
         &cancellation,
     );
+    let vram_peak_bytes = stop_vram_sampler(vram_sampler);
     match summary {
         Ok(mut summary) => {
             if let Some(warning) = gpu_fallback_warning {
@@ -1377,7 +1427,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 let telemetry = *telemetry.borrow();
                 let gpu_report = GpuResourceReport {
                     backend: device.clone(),
-                    vram_peak_bytes: None,
+                    vram_peak_bytes,
                     unified_memory_peak_bytes: None,
                     load_time_ms: Some(telemetry.load_time_ms),
                     first_token_ms: Some(telemetry.first_token_ms),
