@@ -32,7 +32,7 @@
 | W0.1 CPU runtime 对齐 | ⛔ | — | 绑定/构建已由 WP.2 冻结 | 取得 OvisOCR2 GGUF 权重后，完成 model/mmproj 加载、生成、`llama-mtmd-cli` 结构化比对 |
 | W0.2 PDFium 实机验证 | ◐ | `18e7004` | DLL 加载防护（缺失/路径逃逸/错误架构不静默成功）+ 实机渲染验证全绿：页数、300 DPI RGB8、审计尺寸、选页映射、像素预算等比缩放、损坏/非 PDF 分类 | 补加密/密码恢复实机用例；与 macOS 像素/hash 级比对 |
 | W0.3 资源基线 | ◐ | `8b811b0` | 跨平台 RSS 采样器（Windows tasklist / Unix ps，纯安全实现）+ 100 页回归骨架；本机试运行 43 样本/12.4s，RSS 回落基线（峰值 40 MB / 末值 12 MB） | 16 GB CPU-only 基准设备官方测量（真实复杂 PDF、worker 页段峰值、退出状态）；与 macOS 曲线对比记录 |
-| W0.4 质量回归 | ⛔ | — | — | 取得 OvisOCR2 GGUF 权重后，按需求 17.2.3 跑 BF16 对照与四 profile 评分 |
+| W0.4 质量回归 | ◐ | 官方 BF16 权重已落地、参考生成器已交付 | 官方 BF16 权重已下载并 SHA-256 校验（`benchmarks/official-bf16/manifest.json`）；`scripts/generate-official-bf16-reference.py` 已实现、单页冒烟通过，且解析输出与 `page-01.page.json` golden 完全一致 | 补齐 30 页回归集后跑 BF16 对照与四 profile 评分 |
 | W1.1 Backend/feature 扩展 | ✅ | `23c9cfd` | `vulkan`/`cuda` cargo 特性（保留 `mtmd`）；`Backend::is_compiled()` 编译集契约；快照与编译集求交（实测：CUDA 机器 + CPU-only 构建 → `cuda_available:false`，auto 选 CPU）；macOS 行为不变 | — |
 | W1.2 探测/ResourceSnapshot | ✅ | `424d9cd` | `SystemProbe` trait 注入 + GPU 字段；doctor Windows 报告离线、不下载模型 | — |
 | W1.3 平台路径解析 | ✅ | `424d9cd` | `platform_paths`（home 回退链 HOME→USERPROFILE→HOMEDRIVE+HOMEPATH、缓存/配置目录） | — |
@@ -66,6 +66,12 @@
 - ⬜ 16 GB CPU-only 基准设备官方测量窗口。
 - ✅ 真实复杂 PDF 的 worker 本机采集：`complex-20-pages.pdf` exit 0、峰值 106,652 KB、末值 35,448 KB、54.1s；`normal-100-pages.pdf` exit 0、峰值 40,444 KB、末值 18,924 KB、54.1s。
 - ⬜ 与 macOS 资源曲线对比记录。
+
+#### W0.4 质量回归（◐）
+- ✅ 官方 BF16 权重取得（`ATH-MaaS/OvisOCR2`，revision `65c619d374b55d4152e85150fc1b003700bc1f0c`）：10 个文件全部下载并经 SHA-256 校验；`model.safetensors`（1,706,030,496 B）哈希与 Hugging Face LFS oid 一致。冻结记录：`benchmarks/official-bf16/manifest.json`、`scripts/download-official-bf16.ps1`。
+- ✅ 官方 BF16 参考生成器（`scripts/generate-official-bf16-reference.py`）：`AutoModelForMultimodalLM` + `AutoProcessor` 加载 BF16 checkpoint；prompt、adapter 解析、bbox 提取、termination/warning 映射均 1:1 移植自 `ocrx-ovisocr2`；对 `page-01.raw.md` 的解析输出与 `page-01.page.json` golden 完全一致；`figure-1-page.pdf` 单页 BF16 冒烟生成成功产出 `page-0001.json`。
+- ⬜ 30 页以上回归集（manifest/truth、8 类各至少 2 页）尚未构造。
+- ⬜ Windows CPU 四 profile（reference/quality/balanced/compact）与官方 BF16 对照评分、需求 17.2.3 门禁尚未执行。
 
 #### W2.2 worker 进程隔离（◐）
 - ✅ 跨平台 worker 协议/调度器实现。

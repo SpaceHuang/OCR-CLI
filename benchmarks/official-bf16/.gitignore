@@ -1,0 +1,5 @@
+# Official BF16 weights are external, non-distributable artifacts. The pinned
+# provenance lives in manifest.json; download them separately via
+# scripts/download-official-bf16.ps1 before running the reference generator.
+ATH-MaaS-OvisOCR2-*/
+reference/
