@@ -45,6 +45,26 @@ python scripts/generate-official-bf16-reference.py `
 It emits scorer-compatible `page-0001.json` files. The prompt and adapter parsing
 rules are ported 1:1 from `src/ocrx-ovisocr2/src/lib.rs`.
 
+## GPU
+
+The generator supports `--device cuda`. On the RTX 2070 (Turing, sm_75) used as the
+Windows NVIDIA benchmark device, BF16 has no native tensor-core support and is
+emulated, so `--dtype float32` is the practical one-time-baseline choice (it upcasts
+the BF16 checkpoint and runs ~6x faster than emulated BF16):
+
+```powershell
+python scripts/generate-official-bf16-reference.py `
+  --model-dir benchmarks/official-bf16/ATH-MaaS-OvisOCR2-65c619d374b55d4152e85150fc1b003700bc1f0c `
+  --input benchmarks/fixtures/pdf/figure-1-page.pdf `
+  --output-dir benchmarks/official-bf16/reference `
+  --device cuda --dtype float32
+```
+
+Measured on the local RTX 2070: `float32` ≈ 2.5 tok/s, emulated `bfloat16` ≈ 0.4
+tok/s. The remaining gap versus the Vulkan GGUF path comes from the Qwen3.5
+linear-attention blocks falling back to the pure-PyTorch recurrent kernel
+(no `causal_conv1d`/`mamba_ssm`/Triton kernels installed), not from GPU selection.
+
 ## Rendering parity note
 
 `ocrx` renders pages with PDFium at the requested DPI and then scales them to the

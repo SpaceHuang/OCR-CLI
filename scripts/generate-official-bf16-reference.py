@@ -244,14 +244,14 @@ def render_pdf_page(
     return image
 
 
-def load_model(model_dir: str, device: str):
+def load_model(model_dir: str, device: str, dtype_name: str):
     import torch
     from transformers import AutoModelForMultimodalLM, AutoProcessor
 
     processor = AutoProcessor.from_pretrained(model_dir, local_files_only=True)
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16
+    dtype = torch.float32 if dtype_name == "float32" else torch.bfloat16
     model = AutoModelForMultimodalLM.from_pretrained(
         model_dir,
         dtype=dtype,
@@ -319,6 +319,14 @@ def main() -> int:
     parser.add_argument("--min-pixels", type=int, default=MIN_PIXELS)
     parser.add_argument("--max-pixels", type=int, default=MAX_PIXELS)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument(
+        "--dtype",
+        choices=("bfloat16", "float32"),
+        default="bfloat16",
+        help="Inference dtype. Turing GPUs (sm_75) lack native BF16, so float32 "
+        "is ~6x faster there and is the recommended practical choice for the "
+        "one-time reference baseline (BF16 weights are upcast).",
+    )
     args = parser.parse_args()
 
     model_dir = Path(args.model_dir)
@@ -329,8 +337,11 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    processor, model, device = load_model(str(model_dir), args.device)
-    print(f"reference generator: device={device}", file=sys.stderr)
+    processor, model, device = load_model(str(model_dir), args.device, args.dtype)
+    print(
+        f"reference generator: device={device} dtype={args.dtype}",
+        file=sys.stderr,
+    )
 
     input_path = Path(args.input)
     if input_path.is_dir():

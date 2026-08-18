@@ -70,6 +70,7 @@
 #### W0.4 质量回归（◐）
 - ✅ 官方 BF16 权重取得（`ATH-MaaS/OvisOCR2`，revision `65c619d374b55d4152e85150fc1b003700bc1f0c`）：10 个文件全部下载并经 SHA-256 校验；`model.safetensors`（1,706,030,496 B）哈希与 Hugging Face LFS oid 一致。冻结记录：`benchmarks/official-bf16/manifest.json`、`scripts/download-official-bf16.ps1`。
 - ✅ 官方 BF16 参考生成器（`scripts/generate-official-bf16-reference.py`）：`AutoModelForMultimodalLM` + `AutoProcessor` 加载 BF16 checkpoint；prompt、adapter 解析、bbox 提取、termination/warning 映射均 1:1 移植自 `ocrx-ovisocr2`；对 `page-01.raw.md` 的解析输出与 `page-01.page.json` golden 完全一致；`figure-1-page.pdf` 单页 BF16 冒烟生成成功产出 `page-0001.json`。
+- ✅ 生成器已支持 GPU（`--device cuda`）：本机 RTX 2070 实测 CUDA 可用；Turing（sm_75）无原生 BF16，`--dtype float32` 约为 2.5 tok/s，emulated bfloat16 约 0.4 tok/s；剩余吞吐差距来自 Qwen3.5 linear-attention 无 `causal_conv1d`/`mamba_ssm`/Triton 内核的纯 PyTorch fallback，而非 GPU 选路。
 - ⬜ 30 页以上回归集（manifest/truth、8 类各至少 2 页）尚未构造。
 - ⬜ Windows CPU 四 profile（reference/quality/balanced/compact）与官方 BF16 对照评分、需求 17.2.3 门禁尚未执行。
 
