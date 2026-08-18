@@ -832,6 +832,51 @@ fn gcd(mut left: u64, mut right: u64) -> u64 {
     }
     left.max(1)
 }
+
+/// Parses the page number from a W3.3 test-only fault-injection env value.
+///
+/// The value is `None` when the env var is unset. Zero and non-numeric values are
+/// rejected so a misconfigured test never injects a fault into page 0.
+#[must_use]
+fn parse_injected_failure_page(value: Option<&str>) -> Option<u32> {
+    value
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|page| *page > 0)
+}
+
+/// Returns an error when the injected page matches, otherwise `Ok(())`.
+///
+/// This is the deterministic test seam for W3.3 real-model fault injection.
+/// Production scans leave the env vars unset, so the seam is a no-op in normal use.
+fn injected_failure(value: Option<&str>, page: u32, description: &str) -> std::io::Result<()> {
+    if parse_injected_failure_page(value) == Some(page) {
+        return Err(std::io::Error::other(description.to_owned()));
+    }
+    Ok(())
+}
+
+/// Injects a real render failure for `page` when `OCRX_E2E_INJECT_RENDER_FAIL_PAGE` matches.
+fn inject_render_failure(page: u32) -> std::io::Result<()> {
+    injected_failure(
+        std::env::var("OCRX_E2E_INJECT_RENDER_FAIL_PAGE")
+            .ok()
+            .as_deref(),
+        page,
+        "injected render failure",
+    )
+}
+
+/// Injects a real inference failure for `page` when `OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE` matches.
+fn inject_inference_failure(page: u32) -> std::io::Result<()> {
+    injected_failure(
+        std::env::var("OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE")
+            .ok()
+            .as_deref(),
+        page,
+        "injected inference failure",
+    )
+}
+
 impl PageRenderer for PdfScanRenderer {
     fn preflight(&mut self) -> std::io::Result<()> {
         self.renderer
@@ -840,6 +885,7 @@ impl PageRenderer for PdfScanRenderer {
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+        inject_render_failure(page)?;
         const PIXEL_BUDGET: u64 = 2880 * 2880;
         let (image, original_width, original_height) = self
             .renderer
@@ -1001,6 +1047,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         cancellation: &CancellationToken,
         progress: &mut dyn FnMut(GenerationProgress),
     ) -> std::io::Result<PageArtifactResult> {
+        inject_inference_failure(page)?;
         let artifact = ocrx_ovisocr2::write_page_artifacts_with_status_cancelled(
             model,
             page,
@@ -1839,8 +1886,8 @@ mod tests {
 
     use super::{
         CliCommand, ConfigSource, ResolvedConfig, ResourceSnapshot, ScanOptions, ScanResultFields,
-        doctor_json_report, parse_command, parse_page_selection, parse_scan_args, recommend_device,
-        resolve_config,
+        doctor_json_report, injected_failure, parse_command, parse_injected_failure_page,
+        parse_page_selection, parse_scan_args, recommend_device, resolve_config,
     };
     use ocrx_output::{PageDiagnostic, RenderAudit, ResultReport, ResultStatus};
 
@@ -2299,5 +2346,21 @@ mod tests {
         assert!(parse_page_selection("0").is_err());
         assert!(parse_page_selection("4-2").is_err());
         assert!(parse_page_selection("1,,3").is_err());
+    }
+
+    #[test]
+    fn injected_failure_page_parser_accepts_positive_and_rejects_invalid() {
+        assert_eq!(parse_injected_failure_page(Some("3")), Some(3));
+        assert_eq!(parse_injected_failure_page(Some("0")), None);
+        assert_eq!(parse_injected_failure_page(Some("abc")), None);
+        assert_eq!(parse_injected_failure_page(None), None);
+    }
+
+    #[test]
+    fn injected_failure_errors_only_for_the_matching_page() {
+        assert!(injected_failure(Some("2"), 1, "render").is_ok());
+        assert!(injected_failure(Some("2"), 2, "render").is_err());
+        assert!(injected_failure(None, 2, "render").is_ok());
+        assert!(injected_failure(Some("0"), 0, "render").is_ok());
     }
 }
