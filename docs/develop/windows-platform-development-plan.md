@@ -42,7 +42,7 @@
 | W2.3 临时目录与原子写 | ✅ | `731dae4` | `temporary_path` 同目录原子写、`.part` 清理、宽目录删除防护 | — |
 | W3.1 llama_mtmd 跨平台化 | ◐ | `f56f225`(编译) / `6444518`(契约) / `b6c9280`(CLI un-gate) | `llama_mtmd.rs` cfg 放宽至 any(macos, windows)，Windows 编译通过；CLI 层 Ctrl+C→CancellationToken、二次 130、`run_with_checkpoints_cancelled` 已存在；`Runtime::generate_with_progress` 生成循环取消轮询 + 每秒进度回调 + 共享 `CancellationToken` 已落地；Windows 真实 scan 入口已 un-gate，compact CPU 单页 E2E 冒烟通过（model/mmproj 加载、MTMD 编码、生成、result/checkpoint 输出） | 与 W0.4 质量回归一致需 reference；W3.2/W3.3 real 待图例/故障注入 fixture |
 | W3.2 bbox 裁图 | ✅ | `731dae4` / `90e74ba`(Vulkan) | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试；真实模型 E2E 已在 Windows CPU/Vulkan 跑通，`figure-1-page.pdf` 产出 `images.count=1` | — |
-| W3.3 取消/部分完成/恢复 | ◐ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) / 真实故障注入测试 | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有（`failed_pages`、checkpoint 提交）；runtime 内取消契约已由 W3.1 落地；真实 scan 路径已改为显式 `PageLifecycle` 状态机，并接线 `recognize_artifact_cancelled` 与取消清理 | 真实 Ctrl+C 信号自动化 |
+| W3.3 取消/部分完成/恢复 | ✅ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) / `587d88c`(真实故障注入) / `windows-ctrl-c-smoke.ps1` | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有；runtime 内取消契约已由 W3.1 落地；真实 scan 路径用 `PageLifecycle` 状态机；真实 render/inference 失败注入 E2E 与真实 Ctrl+C 信号自动化均通过 | — |
 | W4.1 Vulkan 构建 | ✅ | `4017d1f`(Red) / `90e74ba`(enum) / `8622114`(fallback) | Vulkan SDK 1.4.357.0 已安装；`--features vulkan` 短 `CARGO_TARGET_DIR` 构建通过；`RealSystemProbe` 已用 `vulkano` 做安全 instance + physical-device 枚举；`run_scan` 已实现 GPU 初始化失败自动回退 CPU 并写入 warning；doctor 报告 `backend=Vulkan`、`vulkan_available=true`、`recommended_device=vulkan`；无 GPU 回退分支由注入式 `SystemProbe`/`ResourceSnapshot` 测试覆盖 | — |
 | W4.2 Vulkan E2E | ◐ | `90e74ba`(Vulkan) | 本机 RTX 2070 已登记为官方 NVIDIA GPU 基准设备；Vulkan 真实 E2E 与 CPU 对照完成（`docs/develop/windows-gpu-baseline-2026-08-18.md`），结构一致且 speedup 约 7.02x | 结构化质量评分仍待 W0.4/官方 BF16 |
 | W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
@@ -90,14 +90,14 @@
 - ✅ fake 测试覆盖。
 - ✅ 真实模型 E2E 裁图通过（`90e74ba`/Vulkan）：`figure-1-page.pdf` 产出 `images/page-0001-figure-001.png`，result JSON `images.count=1`。
 
-#### W3.3 取消/部分完成/恢复（◐）
+#### W3.3 取消/部分完成/恢复（✅）
 - ✅ CLI 层失败继续、`partial`/10、130、checkpoint/恢复已有实现（`failed_pages`、checkpoint 提交）。
 - ✅ runtime 内取消契约（同 W3.1，`6444518`）。
 - ✅ 显式页面状态机复核（`e0ad31f`）：真实 scan 路径用 `PageLifecycle` 替代散落计数器，所有选页均落 `Pending/Processing/Completed/Truncated/Failed/Cancelled` 终态；取消中的当前页不提交。
 - ✅ 跨平台 checkpoint 兼容键校验（`4017d1f` 后续）：Windows CPU 与 macOS Metal 的 checkpoint 不互相恢复，输入/模型/profile 相同也按 platform/backend 参数隔离。
 - ✅ 真实模型 E2E 冒烟：compact CPU 两页 `varied-page-sizes.pdf` 成功；同输出 `--resume` 复用 checkpoint；单页 `--max-output-tokens 128` 得到 partial/truncated。
 - ✅ 真实模型渲染/推理失败注入：`OCRX_E2E_INJECT_RENDER_FAIL_PAGE` / `OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE` 两个 env-gated 测试缝，接线到 `PdfScanRenderer::render` 与 `OvisRecognizer::recognize_artifact_cancelled`；纯逻辑单元测试 + `src/ocrx-cli/tests/real_scan_fault_injection.rs` 真实 E2E（`OCRX_E2E_MODEL=1`）验证 render/recognize 失败 → `partial`/10、`failed=1`、`stage=render/recognize`。
-- ⬜ 真实 Ctrl+C 信号自动化（进程组 `GenerateConsoleCtrlEvent` 发真实信号 → 130、当前页清理、checkpoint 保留、`--resume` 继续）。
+- ✅ 真实 Ctrl+C 信号自动化：`scripts/windows-ctrl-c-smoke.ps1` 用 `CreateProcess(CREATE_NEW_PROCESS_GROUP)` + `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT)` 发真实信号；实测取消 → 130、已完成 checkpoint 保留、无 `.part` 残留、`--resume` 复用 checkpoint 完成后续页（exit 10 因 `--max-output-tokens 128` 截断）。
 
 ### 0.4 待解除的外部依赖（按解锁任务数排序）
 
