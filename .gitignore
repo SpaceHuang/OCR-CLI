@@ -14,3 +14,4 @@ __pycache__/
 # Bootstrap working artifacts (large page PNGs); keep truth/selection/manifest
 /assets/regression/*/preview/
 /assets/regression/*/work/
+/assets/regression/*/inputs/*.pdf
