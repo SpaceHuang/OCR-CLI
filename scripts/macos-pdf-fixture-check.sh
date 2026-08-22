@@ -13,6 +13,15 @@ for pdf in "$root/normal-1-page.pdf" "$root/normal-100-pages.pdf" "$root/varied-
     "$binary" "$library_dir" "$pdf"
 done
 
+echo "RUN encrypted fixture without password (must fail)"
+if "$binary" "$library_dir" "$root/encrypted-password-required.pdf"; then
+    echo "ERROR encrypted PDF unexpectedly opened without password" >&2
+    exit 1
+fi
+
+echo "RUN encrypted fixture with password (must pass)"
+OCRX_PDFIUM_PASSWORD=ocrx-test "$binary" "$library_dir" "$root/encrypted-password-required.pdf"
+
 png_dir="${TMPDIR:-/tmp}/ocrx-pdf-png-check"
 rm -rf "$png_dir"
 OCRX_PDFIUM_SAVE_DIR="$png_dir" "$binary" "$library_dir" "$root/complex-20-pages.pdf"

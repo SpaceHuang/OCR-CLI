@@ -1,0 +1,32 @@
+# Selection rationale
+
+- page-0001 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p1: cats=[visual,truncated] probe=[scanned,embedded-images] layout=[-] note=quota:visual
+- page-0002 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p2: cats=[visual] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0003 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p4: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=quota:truncated
+- page-0004 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p34: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0005 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p65: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0006 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p96: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0007 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p127: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0008 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p158: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0009 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p189: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0010 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p220: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0011 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p251: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0012 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p282: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0013 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p313: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0014 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p344: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0015 ← test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf p375: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0016 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p3: cats=[table,failure] probe=[no-text,garbled] layout=[table-likely] note=quota:table
+- page-0017 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p4: cats=[table,truncated,failure] probe=[scanned,garbled] layout=[table-likely] note=quota:failure
+- page-0018 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p5: cats=[blank] probe=[no-text] layout=[-] note=quota:blank
+- page-0019 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p10: cats=[table,visual,mixed] probe=[no-text,embedded-images] layout=[table-likely] note=quota:mixed
+- page-0020 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p18: cats=[table,visual,mixed] probe=[no-text,embedded-images] layout=[table-likely] note=quota:mixed
+- page-0021 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p29: cats=[visual] probe=[no-text,embedded-images] layout=[-] note=top-up
+- page-0022 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p60: cats=[visual,failure] probe=[no-text,embedded-images,garbled] layout=[dense-graphics] note=top-up
+- page-0023 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p91: cats=[table,visual,mixed,failure] probe=[sparse-text,embedded-images,garbled] layout=[table-likely,dense-graphics] note=top-up
+- page-0024 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p117: cats=[text] probe=[sparse-text] layout=[-] note=quota:text
+- page-0025 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p123: cats=[visual,failure] probe=[no-text,embedded-images,garbled] layout=[-] note=top-up
+- page-0026 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p131: cats=[visual,truncated] probe=[no-text,embedded-images] layout=[-] note=quota:truncated
+- page-0027 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p148: cats=[table,visual,mixed,failure] probe=[no-text,embedded-images,garbled] layout=[table-likely,dense-graphics] note=quota:table
+- page-0028 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p156: cats=[blank,failure] probe=[no-text,garbled] layout=[-] note=quota:failure
+- page-0029 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p157: cats=[blank] probe=[no-text] layout=[-] note=quota:blank
+- page-0030 ← test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf p158: cats=[visual] probe=[sparse-text,embedded-images] layout=[-] note=quota:visual

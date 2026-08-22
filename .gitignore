@@ -10,3 +10,8 @@ __pycache__/
 # Frozen native PDFium runtime artifacts (dll/dylib) are environment-supplied
 # build/runtime dependencies, not source. Fetched per the release baseline doc.
 /vendor/
+.venv-liteparse/
+# Bootstrap working artifacts (large page PNGs); keep truth/selection/manifest
+/assets/regression/*/preview/
+/assets/regression/*/work/
+/assets/regression/*/inputs/*.pdf

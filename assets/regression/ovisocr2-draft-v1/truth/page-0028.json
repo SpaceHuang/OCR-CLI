@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "page_number": 28,
+  "categories": ["mixed"],
+  "blocks": [
+    {"type":"markdown","content":"后记","bbox":{"left":0.42,"top":0.08,"right":0.58,"bottom":0.14},"source_order":1},
+    {"type":"markdown","content":"本套教材是以《义务教育数学课程标准（2011年版）》为依据，在广泛听取专家、实验区师生的意见和建议的基础上，对《义务教育课程标准实验教科书数学（苏科版）》（以下简称“实验本”）进行修订而成的，供义务教育7～9年级使用。","bbox":{"left":0.12,"top":0.20,"right":0.89,"bottom":0.29},"source_order":2},
+    {"type":"markdown","content":"本套教材每章的开头部分设置：章头图，章头语，章头问题，本章内容概述。","bbox":{"left":0.15,"top":0.31,"right":0.87,"bottom":0.36},"source_order":3},
+    {"type":"markdown","content":"每章的内容部分设置：","bbox":{"left":0.15,"top":0.38,"right":0.44,"bottom":0.42},"source_order":4},
+    {"type":"markdown","content":"“数学实验室”——通过“做”数学，感悟、理解数学知识；\n“数学活动”——运用本章知识解决一些简单的问题；\n“阅读”和“读一读”——介绍数学思想方法、拓展课本内容；\n“练一练”——按课时编写，供课堂练习用；\n“习题”——按节编写，供本节各个课时课后作业用。","bbox":{"left":0.15,"top":0.43,"right":0.87,"bottom":0.57},"source_order":5},
+    {"type":"markdown","content":"每章的末尾部分设置：","bbox":{"left":0.15,"top":0.59,"right":0.44,"bottom":0.63},"source_order":6},
+    {"type":"markdown","content":"“小结与思考”——梳理本章知识的结构、提炼基本思想；\n“复习题”（分为复习巩固、灵活应用、探索研究三个层次）——供本章复习时用，其中“灵活应用”、“探索研究”部分的习题可根据实际情况选用。","bbox":{"left":0.15,"top":0.64,"right":0.88,"bottom":0.75},"source_order":7},
+    {"type":"markdown","content":"本套教材的每册课本设置一个“课题学习”——综合运用有关知识解决实际问题。全书使用了卡通人物“小明”、“小丽”，并根据课程内容展开的需要，编写了一些卡通语。","bbox":{"left":0.15,"top":0.76,"right":0.88,"bottom":0.84},"source_order":8},
+    {"type":"markdown","content":"“实验本”教材由杨裕前、董林伟任主编，丁伟明、李善良曾任副主编。","bbox":{"left":0.15,"top":0.85,"right":0.88,"bottom":0.88},"source_order":9},
+    {"type":"markdown","content":"参与本册各章（“实验本”）编写的有朱建明、周凯、孔凡海。","bbox":{"left":0.15,"top":0.88,"right":0.88,"bottom":0.91},"source_order":10},
+    {"type":"markdown","content":"修订后的本套教材由杨裕前、董林伟任主编。参与本册修订的编写人员有周凯、杨秋萍、徐延觉、朱建明、荆福仁；参与修订讨论的有王永建、周学祁、陈志康。","bbox":{"left":0.15,"top":0.91,"right":0.88,"bottom":0.96},"source_order":11},
+    {"type":"markdown","content":"史宁中教授、顾泠沅教授、张英伯教授等专家、同行，对本套教材的修订给予了热情的帮助和指导，提出了许多宝贵的意见和建议，在此表示衷心感谢！","bbox":{"left":0.15,"top":0.96,"right":0.88,"bottom":0.995},"source_order":12}
+  ],
+  "termination": "eos",
+  "warnings": [],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "generated_at": "2026-08-19T00:00:00+08:00",
+    "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+    "source_page": 161,
+    "needs_human": []
+  }
+}

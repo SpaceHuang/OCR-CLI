@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "page_number": 24,
+  "categories": ["visual", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"第3章　数据的集中趋势和离散程度","bbox":{"left":0.08,"top":0.04,"right":0.45,"bottom":0.08},"source_order":1},
+    {"type":"markdown","content":"2．某校九年级（1）班学生的身高如图所示（单位：cm）：","bbox":{"left":0.20,"top":0.10,"right":0.73,"bottom":0.14},"source_order":2},
+    {"type":"visual_region","content":null,"bbox":{"left":0.30,"top":0.15,"right":0.87,"bottom":0.31},"source_order":3},
+    {"type":"markdown","content":"人数","bbox":{"left":0.30,"top":0.14,"right":0.35,"bottom":0.17},"source_order":4},
+    {"type":"markdown","content":"10","bbox":{"left":0.32,"top":0.17,"right":0.35,"bottom":0.19},"source_order":5},
+    {"type":"markdown","content":"8","bbox":{"left":0.33,"top":0.19,"right":0.35,"bottom":0.21},"source_order":6},
+    {"type":"markdown","content":"6","bbox":{"left":0.33,"top":0.21,"right":0.35,"bottom":0.23},"source_order":7},
+    {"type":"markdown","content":"4","bbox":{"left":0.33,"top":0.23,"right":0.35,"bottom":0.25},"source_order":8},
+    {"type":"markdown","content":"2","bbox":{"left":0.33,"top":0.25,"right":0.35,"bottom":0.27},"source_order":9},
+    {"type":"markdown","content":"0","bbox":{"left":0.33,"top":0.27,"right":0.35,"bottom":0.29},"source_order":10},
+    {"type":"markdown","content":"152","bbox":{"left":0.38,"top":0.28,"right":0.42,"bottom":0.30},"source_order":11},
+    {"type":"markdown","content":"154","bbox":{"left":0.43,"top":0.28,"right":0.47,"bottom":0.30},"source_order":12},
+    {"type":"markdown","content":"158","bbox":{"left":0.48,"top":0.28,"right":0.52,"bottom":0.30},"source_order":13},
+    {"type":"markdown","content":"160","bbox":{"left":0.53,"top":0.28,"right":0.57,"bottom":0.30},"source_order":14},
+    {"type":"markdown","content":"162","bbox":{"left":0.58,"top":0.28,"right":0.62,"bottom":0.30},"source_order":15},
+    {"type":"markdown","content":"164","bbox":{"left":0.63,"top":0.28,"right":0.67,"bottom":0.30},"source_order":16},
+    {"type":"markdown","content":"168","bbox":{"left":0.68,"top":0.28,"right":0.72,"bottom":0.30},"source_order":17},
+    {"type":"markdown","content":"172","bbox":{"left":0.74,"top":0.28,"right":0.78,"bottom":0.30},"source_order":18},
+    {"type":"markdown","content":"175","bbox":{"left":0.81,"top":0.28,"right":0.85,"bottom":0.30},"source_order":19},
+    {"type":"markdown","content":"身高","bbox":{"left":0.85,"top":0.28,"right":0.89,"bottom":0.31},"source_order":20},
+    {"type":"markdown","content":"（第2题）","bbox":{"left":0.55,"top":0.33,"right":0.64,"bottom":0.36},"source_order":21},
+    {"type":"markdown","content":"用计算器计算该班学生的平均身高。","bbox":{"left":0.20,"top":0.37,"right":0.56,"bottom":0.41},"source_order":22},
+    {"type":"markdown","content":"112","bbox":{"left":0.10,"top":0.98,"right":0.17,"bottom":1.0},"source_order":23}
+  ],
+  "termination": "eos",
+  "warnings": [],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "generated_at": "2026-08-19T00:00:00+08:00",
+    "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+    "source_page": 112,
+    "needs_human": []
+  }
+}

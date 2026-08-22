@@ -1,0 +1,4 @@
+# 每行一个 PDF；# 开头为注释
+# 脚本会用 LiteParse lit is-complex 扫描后自动选页
+test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf
+test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf

@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-REQUIRED = {"text", "formula", "table", "visual", "mixed", "blank", "truncated", "failure"}
+DEFAULT_REQUIRED = {"text", "formula", "table", "visual", "mixed", "blank"}
 
 def main() -> int:
     if len(sys.argv) != 2:
@@ -22,12 +22,16 @@ def main() -> int:
     if not manifest.get("input_sha256") or not manifest.get("prompt_revision") or not manifest.get("adapter_revision"):
         print("manifest is missing provenance fields", file=sys.stderr)
         return 3
+    required = set(manifest.get("required_categories") or DEFAULT_REQUIRED)
+    if not required or not required <= DEFAULT_REQUIRED:
+        print("normal regression set has unsupported required_categories", file=sys.stderr)
+        return 3
     truth = root / "truth"
     files = sorted(truth.glob("page-*.json"))
     if len(files) != manifest["page_count"]:
         print("truth page count does not match manifest", file=sys.stderr)
         return 3
-    categories = {category: 0 for category in REQUIRED}
+    categories = {category: 0 for category in required}
     for path in files:
         page = json.loads(path.read_text())
         if page.get("schema_version") != 1 or not page.get("page_number"):

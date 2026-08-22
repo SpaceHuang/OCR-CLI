@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "page_number": 10,
+  "categories": ["text", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"美国出口增加而进口减少，这两种变化都增加了美国的净出口。相反，美国实际汇率的上升意味着与外国物品相比，美国物品变得昂贵了。因此，美国的净出口减少了。","bbox":{"left":0.24,"top":0.18,"right":0.80,"bottom":0.25},"source_order":0},
+    {"type":"markdown","content":"即问即答\n• 给出名义汇率与实际汇率的定义，并解释它们如何相关。\n• 如果名义汇率从1美元兑100日元上升到120日元，美元升值了还是贬值了？","bbox":{"left":0.24,"top":0.27,"right":0.80,"bottom":0.34},"source_order":1},
+    {"type":"markdown","content":"新闻摘录","bbox":{"left":0.24,"top":0.36,"right":0.40,"bottom":0.39},"source_order":2},
+    {"type":"markdown","content":"疲软的美元如何刺激出口","bbox":{"left":0.24,"top":0.39,"right":0.56,"bottom":0.42},"source_order":3},
+    {"type":"markdown","content":"2007年，美元在外汇市场走弱，这使来自国外的买家受益。","bbox":{"left":0.24,"top":0.43,"right":0.81,"bottom":0.455},"source_order":4},
+    {"type":"markdown","content":"随着美元走低，美国成了一间大卖场；欧洲人成群结队来买便宜货。","bbox":{"left":0.24,"top":0.455,"right":0.81,"bottom":0.48},"source_order":5},
+    {"type":"markdown","content":"Jenn Abelson","bbox":{"left":0.43,"top":0.48,"right":0.55,"bottom":0.50},"source_order":6},
+    {"type":"markdown","content":"感恩节从都柏林飞抵波士顿几小时之后，Alice Kinsella就和12个亲友乘一辆白色面包车径直前往Wrentham Village Premium Outlets（大型季后折扣店）。36岁的Kinsella第一次来波士顿，但是她略过景点，只想有个疯狂购物的长周末。","bbox":{"left":0.24,"top":0.50,"right":0.81,"bottom":0.57},"source_order":7},
+    {"type":"markdown","content":"对Kinsella和其他欧洲人来说，要感谢这一周又创下新低的疲软美元，这使美国成为一个巨大的折扣店。结果旅游者花上千美元来到美国，大都包括从iPod到设计师时装和手袋的便宜货。截至昨天凌晨4点，Kinsella已经买了将近2000美元的圣诞礼物和冬装，包括一件Guess品牌的79美元黑色皮夹克，她估计它在爱尔兰要卖到250美元以上。\n\n“这些东西真是太便宜了，”Kinsella说，她花了1000美元在机票和酒店上，但是期望能从购物中节省更多。","bbox":{"left":0.24,"top":0.57,"right":0.81,"bottom":0.70},"source_order":8},
+    {"type":"markdown","content":"Kinsella是昨天组织结队而来Wrentham Village Premium Outlets进行购物的1000名国际旅客之一，这个数字比去年翻了一番。据商店的总经理Beth Winbourne说，预计还会有数百人会自行前来。外国游客很久以来都在美国进行节日购物。毕竟，像Tommy Hilfiger、Ralph Lauren和Guess这些设计师品牌在美国要便宜些，因为这里销售税较低，而且美国大市场使物品更具有竞争性价格。","bbox":{"left":0.24,"top":0.70,"right":0.81,"bottom":0.82},"source_order":9},
+    {"type":"markdown","content":"现在，由于美国经济减缓削弱了美元，美国货就更便宜了。同时，由于美联储降低利率来刺激经济，美元贬值更多，全世界的投资者都认识到靠美元不再那么赚钱了。结果是自从2002年以来，欧元对美元升值了33%，也就是欧洲人现在用1000欧元可以换到将近1500美元，并且加拿大元也是30年来第一次和美元一样值钱了。","bbox":{"left":0.24,"top":0.82,"right":0.81,"bottom":0.94},"source_order":10},
+    {"type":"markdown","content":"第31章  开放经济的宏观经济学：基本概念  ▶  207","bbox":{"left":0.60,"top":0.96,"right":0.88,"bottom":0.99},"source_order":11},
+    {"type":"markdown","content":"706","bbox":{"left":0.84,"top":0.35,"right":0.88,"bottom":0.38},"source_order":12},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":13}
+  ],
+  "termination":"eos",
+  "warnings":["Bottom-right download-site watermark is included because it is visibly present in the source preview.","News excerpt and small-print transcription require final human verification."],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-12T23:08:43+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":220,"needs_human":[]}
+}

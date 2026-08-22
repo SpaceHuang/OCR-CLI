@@ -1,127 +1,95 @@
 # 真值集半自动引导脚本 — 需求说明
 
-状态：需求已细化，待实现  
+状态：需求已改版（去掉 ocrx 自测自）  
 关联：`docs/test/p0-30-page-truth-quality-gate.md`、`assets/regression/README.md`  
-目标脚本（拟定）：`scripts/bootstrap-truth-set.py`（实现语言可改为 Rust 子命令，接口保持一致）
+外部工具：[run-llama/liteparse](https://github.com/run-llama/liteparse)（CLI：`lit`）  
+目标脚本（拟定）：`scripts/bootstrap-truth-set.py`
 
-## 1. 要解决什么问题
+## 1. 为什么改方案
 
-人工从零写 30 页 `PageDocument` 真值太慢。
+旧方案用 **ocrx 扫页 → 当草稿真值 → 再评 ocrx**，等于自己测自己：
+
+- 模型常犯的错会写进「真值」，分数虚高  
+- 漏检的公式/表/图，真值里也可能没有，门禁测不到  
+
+新原则：
+
+| 角色 | 工具 | 干什么 |
+|---|---|---|
+| 选页 + 页面特征 | **LiteParse**（独立第三方） | 扫一批 PDF，挑出覆盖各类场景的候选页 |
+| 预览图 | **LiteParse** `lit screenshot` | 给人校对用 |
+| 草稿正文/表/图线索 | **LiteParse** `lit parse`（可选） | 独立解析器出初稿，**不是** ocrx |
+| 最终真值 | **人** | 对图改 JSON，标 `approved` |
+| 被测系统 | **ocrx** | 只在质量门禁阶段对已校准真值跑分 |
+
+一句话：**LiteParse 帮你挑页并给独立草稿；人改成真值；ocrx 只当考生。**
+
+---
+
+## 2. 要解决什么问题
+
+人工翻 PDF 找「公式页 / 表页 / 双栏 / 扫描噪声 / 空白」太慢。
 
 期望流程：
 
-1. 你给出一批 PDF，并指定要从哪些页取样。  
-2. 脚本调用当前 `ocrx` 扫这些页，把能自动填的字段先填进草稿真值集。  
-3. 你对着**整页预览图**改草稿 JSON，改完标记为已校准。  
-4. 校准通过后的文件才进入正式质量门禁（不是把 OCR 输出直接当真值）。
-
-一句话：**OCR 出草稿，人改成真值。**
+1. 你给出一批 PDF（不必手写完整选页表）。  
+2. 脚本用 LiteParse **廉价复杂度检测**扫全书，按规则自动挑 ≥30 页候选，并标建议类别。  
+3. 你可改选页结果；脚本再渲预览图，可选跑 LiteParse 全文解析填草稿 JSON。  
+4. 你对着预览图校准；`approved` 后才进质量门禁。  
+5. 门禁里用 ocrx 四档 profile 对真值打分——此时才第一次让 ocrx 碰这些页。
 
 ---
 
-## 2. 明确不做的事
+## 3. 明确不做的事
 
 | 不做 | 原因 |
 |---|---|
-| 不声称输出已是“真值” | 草稿未经人工校准，不能用于发布门禁 |
-| 不根据评分结果反向改真值 | 会造假抬分 |
-| 不自动凑齐 8 类覆盖并宣称合格 | 类别只能**建议**，最终由人确认 |
-| 不替代 `validate-regression-set.py` | 正式校验仍走现有脚本 |
-| 不在本需求里实现完整 GUI 标注器 | v1 用目录 + JSON + 预览图 + 清单即可 |
+| **不用 ocrx 生成真值草稿或选页** | 避免自测自 |
+| 不声称 LiteParse 输出已是真值 | 仍须人工校准 |
+| 不把 LiteParse 分数当成 ocrx 发布阈值 | 两者模型/路径不同，不可混算 |
+| 不根据 ocrx 跑分结果回改真值 | 会造假抬分 |
+| 不自动宣称 8 类覆盖已合格 | 类别可建议，须人确认 |
+| 不实现完整 GUI 标注器 | v1：目录 + JSON + 预览图 + 清单 |
 
 ---
 
-## 3. 你怎么用（目标命令）
+## 4. LiteParse 在本流程里怎么用
 
-### 3.1 输入：选页清单
+依赖：本机安装 `lit`（`pip install liteparse` / `cargo install liteparse` / `npm i -g @llamaindex/liteparse` 任一即可）。  
+文档：https://developers.llamaindex.ai/liteparse/  
+仓库：https://github.com/run-llama/liteparse
 
-你先准备一个选页文件（CSV 或 JSON 二选一，脚本两种都认）。CSV 示例：
-
-```csv
-source_pdf,source_page,note
-test-data/教材A.pdf,3,公式多
-test-data/教材A.pdf,12,表格
-test-data/论文B.pdf,1,双栏英文
-test-data/论文B.pdf,8,空白页候选
-```
-
-规则：
-
-- `source_pdf`：相对仓库根或绝对路径。  
-- `source_page`：PDF 内页码，从 **1** 开始。  
-- 一行 = 回归集里的一页；行顺序决定真值页号 `page-0001`、`page-0002`…  
-- 至少 30 行才建议导出正式集；脚本在行数 < 30 时警告，但不强制失败（方便你先试跑 5 页）。
-
-### 3.2 一键引导（推荐）
+### 4.1 选页主信号：`lit is-complex`（便宜、全书可扫）
 
 ```bash
-python3 scripts/bootstrap-truth-set.py \
-  --selection docs/test/script/examples/selection.example.csv \
-  --set-id ovisocr2-draft-v1 \
-  --out assets/regression/ovisocr2-draft-v1 \
-  --ocrx target/release/ocrx \
-  --profile compact \
-  --dpi 300
+lit is-complex textbook.pdf --compact
 ```
 
-做完这些事：
+stdout 是**逐页 JSON**。每页至少用这些字段做挑选（字段名以本机 `lit` 实际输出为准，实现时对一下版本）：
 
-1. 把各 PDF 选中页拷贝/记录进 `inputs/`（见 §5）  
-2. 渲染每页预览 PNG（给人看的）  
-3. 调 `ocrx scan` 生成 baseline OCR  
-4. 把 OCR 结果转成草稿 `truth/page-NNNN.json`  
-5. 写 `manifest.json` 草稿  
-6. 写 `review/checklist.md`（你按这个改）
-
-### 3.3 分步命令（长任务可拆开）
-
-| 子命令 | 作用 |
+| 信号 | 用来建议哪类页 |
 |---|---|
-| `init` | 建目录、写空 manifest、校验选页文件 |
-| `render` | 只出预览图（不跑模型，快） |
-| `ocr` | 调 `ocrx scan` 跑选中页 |
-| `draft` | 把 OCR 产物转成 `truth/*.json` 草稿 |
-| `status` | 打印：多少页草稿 / 已校准 / 缺预览 / 类别覆盖缺口 |
-| `export-gate` | 仅导出 `review_status=approved` 的页到可跑门禁的目录 |
+| `needs_ocr` + `reasons` 含 `scanned` / `no-text` / `sparse-text` / `garbled` | 扫描噪声、难页；也可能是 `blank` / `failure` 候选 |
+| `layout.reasons` 含 `multi-column` 或 `column_count` ≥ 2 | 双栏论文类 |
+| `layout.reasons` 含 `table-likely`，或 `ruled_table_count` / `text_table_run_count` > 0 | `table` |
+| `layout.reasons` 含 `dense-graphics`，或 `figure_count` > 0 | `visual` |
+| 文本很少 / `is_solid_fill` 类空白信号（若 screenshot 侧有） | `blank` |
+| 文本层正常、无表无图、单栏 | `text` |
 
-默认 `bootstrap` = `init → render → ocr → draft → status`。
+公式页：`is-complex` 不一定直接标「公式」。v1 做法：
 
----
+1. 对 `is-complex` 筛出的候选子集，再跑一次  
+   `lit parse <pdf> --target-pages "..." --format markdown`（或 json）  
+2. 在输出里用启发式找 `$...$` / `$$...$$` / 常见公式 Unicode（∑∫√²ₓ 等）→ 建议 `formula`  
+3. 仍不够时，在 `review/coverage.md` 里写「公式类还差 N 页」，你手动补选页。
 
-## 4. 当前 `ocrx` 能提供什么、缺什么
+### 4.2 预览图：`lit screenshot`
 
-### 4.1 现有产物（本机已验证）
+```bash
+lit screenshot textbook.pdf --target-pages "3,12,20-22" --dpi 300 -o <out>/work/screenshots/<source-id>
+```
 
-对每个输出目录，`ocrx scan` 会写出：
-
-| 文件 | 内容 |
-|---|---|
-| `page-NNNN.md` | 该页 Markdown（正文、`<table>`、`$$...$$`、图片引用） |
-| `page-NNNN.checkpoint` | 兼容键、是否完成 |
-| `page-NNNN.render-audit` | 渲染审计 |
-| `images/page-NNNN.png` | 整页图（任务结束可能被清理，见下） |
-| `images/page-NNNN-figure-MMM.png` | 裁切插图 |
-| `document.md` | 合并 Markdown |
-
-**没有**按页写出 `PageDocument` JSON。这是本脚本必须自己补的一环。
-
-### 4.2 草稿 JSON 怎么从 OCR 来（v1 策略）
-
-优先级从高到低：
-
-1. **优先（若实现期 CLI 已支持）**：`ocrx scan` 增加按页写出 `page-NNNN.page.json`（即 adapter 解析后的 `PageDocument`）。脚本直接拷贝为草稿，再补 `categories` / `review_*` 字段。  
-2. **兜底（当前即可做）**：读 `page-NNNN.md`，按与 `ocrx-ovisocr2` 相同规则拆块：  
-   - `$$...$$` → `formula`（`display: true`）  
-   - `<table>...</table>` → `html_table`  
-   - `<img src="images/page-NNNN-figure-MMM.png" />` → `visual_region`（bbox 先填占位或从文件名关联；**坐标不可信，必须人改**）  
-   - 其余 → `markdown`  
-   - `termination`：checkpoint 成功则 `eos`；失败页 `invalid` 或按扫描结果标记  
-
-无论走哪条路径，草稿文件必须带元数据标明来源是 OCR，见 §6。
-
-### 4.3 整页预览图
-
-人工校准必须能看图。脚本 `render` 阶段要保证：
+脚本把选中页拷到统一命名：
 
 ```text
 preview/page-0001.png
@@ -129,85 +97,205 @@ preview/page-0002.png
 ...
 ```
 
-实现方式二选一（实现时选稳的）：
+### 4.3 草稿内容（可选，仍独立于 ocrx）：`lit parse`
 
-- 直接调现有 PDFium / `pdfium-worker` 按选页渲 PNG；或  
-- 从 `ocrx` 输出的 `images/page-*.png` **在清理前拷贝**到 `preview/`（`ocrx` 成功结束后会删整页 PNG，所以必须在 scan 后立刻拷，或开 `keep-pages` 类选项）。
+```bash
+lit parse textbook.pdf \
+  --target-pages "3,12" \
+  --format markdown \
+  --extract-images \
+  --image-output-dir <out>/work/liteparse/<source-id>/images \
+  -o <out>/work/liteparse/<source-id>/page-bundle.md
+```
 
-校准人只需要打开 `preview/page-NNNN.png` 对照改 `truth/page-NNNN.json`。
+或 `--format json` 拿 bbox。脚本把 LiteParse 结果映射成 `PageDocument` **草稿**：
+
+| LiteParse 线索 | 草稿 block |
+|---|---|
+| 普通段落 / 标题 | `markdown` |
+| Markdown 表或可识别表结构 | `html_table`（尽力；不行就整段放 markdown 并标 needs_human） |
+| `$$` / 公式启发式命中 | `formula` |
+| 嵌入图 / figure 区 | `visual_region`（bbox 从 LiteParse 坐标归一化到 `[0,1000)`；不准就占位并标 needs_human） |
+
+`bootstrap.source` 必须写 `liteparse`，并记录 `lit` 版本。
 
 ---
 
-## 5. 输出目录结构
+## 5. 你怎么用（目标命令）
+
+### 5.1 输入：PDF 列表（主路径）
+
+不必先手写 30 行选页。准备：
+
+```text
+docs/test/script/examples/sources.example.txt
+# 每行一个 PDF；# 开头为注释
+test-data/教材A.pdf
+test-data/论文B.pdf
+```
+
+或 CSV：
+
+```csv
+source_pdf,max_pages_scan,note
+test-data/教材A.pdf,200,苏科数学
+test-data/论文B.pdf,40,双栏英文
+```
+
+### 5.2 一键引导
+
+```bash
+python3 scripts/bootstrap-truth-set.py \
+  --sources docs/test/script/examples/sources.example.txt \
+  --set-id ovisocr2-draft-v1 \
+  --out assets/regression/ovisocr2-draft-v1 \
+  --lit lit \
+  --target-pages 30 \
+  --dpi 300
+```
+
+默认流水线：
+
+`probe → select → screenshot → draft → status`
+
+| 阶段 | 做什么 |
+|---|---|
+| `probe` | 对各 PDF 跑 `lit is-complex`，落盘 `work/probe/<source-id>.json` |
+| `select` | 按覆盖规则自动凑页，写出 `selection.csv` + `page-map.json` |
+| `screenshot` | `lit screenshot` → `preview/` |
+| `draft` | `lit parse` 填 `truth/page-NNNN.json`（`review_status=draft`） |
+| `status` | 类别缺口、校准进度 |
+
+### 5.3 仍支持手改 / 手写选页
+
+自动选完后你可以改 `selection.csv`，再：
+
+```bash
+python3 scripts/bootstrap-truth-set.py select --from-csv ...   # 跳过自动挑，用你的表
+python3 scripts/bootstrap-truth-set.py screenshot --out ...
+python3 scripts/bootstrap-truth-set.py draft --out ...
+```
+
+手写 CSV 格式不变：
+
+```csv
+source_pdf,source_page,note
+test-data/教材A.pdf,3,公式多
+```
+
+### 5.4 子命令一览
+
+| 子命令 | 作用 |
+|---|---|
+| `init` | 建目录、写 manifest 占位 |
+| `probe` | LiteParse 复杂度扫描 |
+| `select` | 自动选页或导入 CSV |
+| `screenshot` | 预览图 |
+| `draft` | LiteParse → 真值草稿 |
+| `status` | 进度与覆盖 |
+| `export-gate` | 只导出 `approved` 页 |
+
+**禁止出现的子命令 / 标志：** `ocr`、`--ocrx`、调用 `ocrx scan` 写 truth。
+
+---
+
+## 6. 自动选页规则（v1 必须可测）
+
+目标：在全部 probe 结果里挑约 `--target-pages`（默认 30）页，尽量满足质量门禁 8 类 **每类 ≥2**。
+
+### 6.1 配额（默认）
+
+| 建议类别 | 至少页数 | 优先匹配的 LiteParse 信号 |
+|---|---:|---|
+| `table` | 2 | `table-likely` / 表计数 > 0 |
+| `visual` | 2 | `dense-graphics` / `figure_count` > 0 |
+| `mixed` | 2 | 同时有表或图 + 足够正文 |
+| `text` | 2 | 单栏、无表无图、文本充足 |
+| `blank` | 2 | 几乎无字 / 纯色页 |
+| `formula` | 2 | parse 启发式命中；不够则留缺口给人补 |
+| `truncated` | 2 | 文本极长页（字符数或块数排名靠前）作**候选**；是否真截断由门禁测 ocrx 时验证，真值侧先标建议 |
+| `failure` | 2 | 加密失败、解析失败、或 `garbled` 且无法出字；可另备损坏/加密 PDF |
+
+同一页可带多个 `categories`。`select` 写 `review/selection-rationale.md`：每页为什么入选。
+
+### 6.2 选不够时
+
+- 不伪造页。  
+- `status` / `coverage.md` 明确列出缺口，例如：`formula: 有 0，还差 2`。  
+- 退出码：自动选页阶段用警告码（如 0 + stderr 警告，或约定 4 = 覆盖不足）；**不得**在覆盖不足时静默 `export-gate` 成功。
+
+### 6.3 去重
+
+同一 PDF 相邻页若特征几乎相同，默认隔页取样（可配置 `--min-page-gap 2`），避免 30 页全是目录。
+
+---
+
+## 7. 输出目录结构
 
 ```text
 assets/regression/<set-id>/
-  manifest.json                 # 草稿，校准完成后人补齐 license/revision
-  selection.csv                 # 你提供的选页清单副本
-  page-map.json                 # 回归页号 → 源 PDF + 源页码
+  manifest.json
+  sources.txt                     # 或 sources.csv 副本
+  selection.csv                   # 最终选页（可人手改）
+  page-map.json
   inputs/
-    acquisition.md              # 自动生成：各 PDF 路径、sha256、是否可再分发（默认 false）
-    # 可选：复制或硬链接源 PDF；大文件默认只记路径+hash，不复制
+    acquisition.md                # 路径、sha256、redistributable=false
   work/
-    ocr/<source-id>/            # 各源 PDF 的 ocrx 原始输出（可删）
+    probe/<source-id>.json        # lit is-complex 原始结果
+    liteparse/<source-id>/        # lit parse / 图片
+    screenshots/<source-id>/      # lit screenshot 原始输出
   preview/
     page-0001.png
     ...
   truth/
-    page-0001.json              # 草稿或已校准
+    page-0001.json
     ...
   review/
-    checklist.md                # 逐页待办
-    coverage.md                 # 类别覆盖统计与缺口
-  bootstrap-report.json         # 本次引导运行记录
+    checklist.md
+    coverage.md
+    selection-rationale.md
+  bootstrap-report.json
 ```
 
-`page-map.json` 示例：
+`page-map.json` 增加选页依据（便于审计）：
 
 ```json
 {
   "schema_version": 1,
+  "selector": "liteparse",
+  "liteparse_version": "<lit --version>",
   "pages": [
     {
       "page_number": 1,
       "source_pdf": "test-data/教材A.pdf",
       "source_page": 3,
-      "source_sha256": "..."
+      "source_sha256": "...",
+      "suggested_categories": ["table", "mixed"],
+      "probe_reasons": ["table-likely"]
     }
   ]
 }
 ```
 
-说明：正式门禁文档里写的是「一个 source.pdf」。多 PDF 取样时：
-
-- **引导阶段**允许多源（本脚本的核心价值）。  
-- **导出门禁集**时二选一（实现期选定并写进 README）：  
-  - A. 拼成单一 PDF 再算一个 `input_sha256`；或  
-  - B. manifest 扩展为多文件清单（需同步改 `validate-regression-set.py`）。  
-
-本需求默认采用 **A（拼页导出）**，少改现有校验脚本；拼页发生在 `export-gate`，不在日常校准路径里打断你。
+多源 PDF：引导期支持；`export-gate` 默认拼成单 PDF（v1.1），与门禁 `input_sha256` 对齐。
 
 ---
 
-## 6. 草稿真值文件格式
-
-在 `PageDocument` v1 上增加引导专用字段（评分器应忽略未知字段；若现有 scorer 过严，导出时剥掉这些字段）。
+## 8. 草稿真值文件格式
 
 ```json
 {
   "schema_version": 1,
   "page_number": 1,
-  "categories": ["formula", "mixed"],
-  "blocks": [ ],
+  "categories": ["table", "mixed"],
+  "blocks": [],
   "termination": "eos",
   "warnings": [],
-
   "review_status": "draft",
   "bootstrap": {
-    "source": "ocrx",
-    "ocrx_profile": "compact",
-    "ocrx_commit": "<可选>",
-    "generated_at": "2026-08-06T12:00:00+08:00",
+    "source": "liteparse",
+    "liteparse_version": "x.y.z",
+    "generated_at": "2026-08-12T22:00:00+08:00",
     "needs_human": [
       "reading_order",
       "formula_latex",
@@ -219,189 +307,117 @@ assets/regression/<set-id>/
 }
 ```
 
-### 6.1 `review_status` 取值
+### 8.1 `review_status`
 
 | 值 | 含义 |
 |---|---|
-| `draft` | 脚本刚生成，未人工看 |
+| `draft` | 脚本生成，未人工看 |
 | `in_review` | 正在改 |
-| `approved` | 人确认可进门禁 |
-| `rejected` | 该页作废，换页重来 |
+| `approved` | 可进门禁 |
+| `rejected` | 作废换页 |
 
-只有 `approved` 能进 `export-gate`。
+只有 `approved` 能 `export-gate`。
 
-### 6.2 脚本能自动填 vs 必须人改
+### 8.2 自动填 vs 人改
 
-| 字段 | 脚本 | 人 |
+| 字段 | 脚本（LiteParse） | 人 |
 |---|---|---|
-| `schema_version` / `page_number` | 自动 | 一般不动 |
-| `blocks[].markdown` | OCR 填初稿 | **必校**：错字、漏行、阅读顺序 |
-| `blocks[].formula.latex` | 有则填 | **必校**：符号、上下标 |
-| `blocks[].html_table` | 有则填 | **必校**：合并单元格、行列 |
-| `blocks[].visual_region.bbox` | 常不可靠/占位 | **必校**：对着 preview 改到 `[0,1000)` |
-| `termination` / `warnings` | 按 OCR 结果填 | 失败/截断页再确认 |
-| `categories` | 按规则**建议** | **必确认**；可改可增删 |
-| `review_status` | 初始 `draft` | 改完设 `approved` |
-| manifest 的 license / revision | 写占位 | 发布前人手补齐 |
+| 页号 / schema | 自动 | 一般不动 |
+| `markdown` / 表 / 公式初稿 | 有则填 | **必校** |
+| `visual_region.bbox` | 尽力归一化或占位 | **必校** |
+| `categories` | 按 probe+parse **建议** | **必确认** |
+| `review_status` | `draft` | 改完 → `approved` |
+| manifest license / ocrx revision | 占位 | 发布前补齐 |
 
-### 6.3 `categories` 自动建议规则（可改，须可测）
-
-对一页草稿扫描 `blocks` 后建议：
-
-| 条件 | 建议标签 |
-|---|---|
-| 有 `formula` | `formula` |
-| 有 `html_table` | `table` |
-| 有 `visual_region` 或 figure 图文件 | `visual` |
-| 同时命中以上 ≥2 类，或正文+任一结构 | `mixed` |
-| 仅正文、无公式表图 | `text` |
-| Markdown 去空白后长度 < 20 | `blank`（建议，人确认） |
-| `termination == max_tokens` 或 warnings 含 truncated | `truncated` |
-| OCR 失败 / 无 md / termination invalid | `failure` |
-
-一页可多个标签。脚本写进 JSON，并在 `review/coverage.md` 统计「建议覆盖」与「距每类 ≥2 页还差几个」。
+注意：manifest 里的 `model_revision` / `adapter_revision` 等是**门禁跑 ocrx 时**填的元数据，不是 LiteParse 的版本。LiteParse 版本只写在 `bootstrap` / `page-map.selector`。
 
 ---
 
-## 7. 对 `ocrx` 的调用约定
+## 9. 人工校准（不变，工具换了）
 
-```bash
-ocrx scan <pdf> \
-  --output-dir <work/ocr/<source-id>> \
-  --pages <逗号与区间，如 3,12,20-22> \
-  --model-profile <profile> \
-  --overwrite
-```
-
-要求：
-
-- 默认 profile：`compact`（本机已有）；可用 `--profile` 改。  
-- 同一 `source_pdf` 的多页合并成一次 `--pages`，少启进程。  
-- 扫描失败的页：仍生成草稿 JSON（`blocks` 可空，`review_status=draft`，`categories` 含建议 `failure`），并在 checklist 标红。  
-- 环境变量 / PDFium 路径与本机现有用法一致；脚本把实际命令记进 `bootstrap-report.json`，方便复现。
-
-若实现期给 CLI 加 `--emit-page-json`，脚本优先用它。
+1. 打开 `preview/page-NNNN.png`。  
+2. 改 `truth/page-NNNN.json`。  
+3. `review_status` → `approved`。  
+4. `status` 看覆盖。  
+5. `export-gate` → 再跑 `validate-regression-set.py` 与质量门禁（此时才用 ocrx）。
 
 ---
 
-## 8. 人工校准工作流（脚本配合的部分）
-
-### 8.1 `review/checklist.md`（自动生成）
-
-每页一行，例如：
-
-```markdown
-# 校准清单 — ovisocr2-draft-v1
-
-进度：approved 0 / 30 · draft 30 · rejected 0
-
-| 回归页 | 预览 | 真值 JSON | 建议类别 | 状态 | 你要做的事 |
-|---:|---|---|---|---|---|
-| 1 | preview/page-0001.png | truth/page-0001.json | formula,mixed | draft | 对图改公式与 bbox，确认阅读顺序 |
-| 2 | ... | ... | text | draft | 校对正文 |
-```
-
-### 8.2 人怎么改
-
-1. 打开对应 `preview/page-NNNN.png`。  
-2. 编辑 `truth/page-NNNN.json` 的 `blocks` / `categories`。  
-3. 把 `review_status` 改为 `approved`。  
-4. 跑：
-
-```bash
-python3 scripts/bootstrap-truth-set.py status --out assets/regression/<set-id>
-```
-
-5. 全员 `approved` 且类别覆盖够之后：
-
-```bash
-python3 scripts/bootstrap-truth-set.py export-gate \
-  --out assets/regression/<set-id> \
-  --gate-out assets/regression/<set-id>-gate
-```
-
-`export-gate` 输出：
-
-- 去掉 `bootstrap` / 或保留但 scorer 可忽略  
-- 拼好的单一输入 PDF（若采用方案 A）  
-- 可直接喂给 `validate-regression-set.py` 的目录  
-
----
-
-## 9. 验收标准（脚本本身怎么算做完）
-
-用仓库内小样本（例如已有 10 页教材 OCR 结果，或 3 个 PDF 各抽 2 页）跑通：
+## 10. 验收标准（脚本本身）
 
 | # | 验收项 | 通过标准 |
 |---|---|---|
-| 1 | 选页文件非法 | 非空路径、页码 ≥1；错误信息可读，退出码 ≠0 |
-| 2 | `init` | 目录与 `page-map.json` 生成正确 |
-| 3 | `render` | `preview/page-*.png` 数量 = 选页行数，能打开 |
-| 4 | `ocr` | 对可扫页写出 `page-*.md`；失败页有记录不中断整批（除非 `--fail-fast`） |
-| 5 | `draft` | 每页有 `truth/page-NNNN.json`，含 `review_status=draft` 与 `blocks` |
-| 6 | 公式/表回填 | 对含 `$$` / `<table>` 的 md，草稿里出现对应 block 类型 |
-| 7 | `status` | 打印类别建议计数与距「每类 2 页」的缺口 |
-| 8 | 覆盖不误报合格 | 即使建议标签齐全，未全部 `approved` 时 `export-gate` 拒绝 |
-| 9 | `export-gate` | 仅导出 approved；导出目录能通过 `validate-regression-set.py`（页数与类别由测试夹具构造） |
-| 10 | 报告 | `bootstrap-report.json` 含命令、profile、时间、成功/失败页列表 |
+| 1 | 无 `lit` | 清晰报错，告诉如何安装，退出码 ≠0 |
+| 2 | `probe` | 每个源 PDF 有 `work/probe/*.json` |
+| 3 | `select` | 写出 `selection.csv`；`selection-rationale.md` 非空 |
+| 4 | 不调用 ocrx | 代码与报告中不得出现 `ocrx scan` 写 truth |
+| 5 | `screenshot` | `preview/page-*.png` 数 = 选页行数 |
+| 6 | `draft` | 每页草稿 `bootstrap.source == "liteparse"` |
+| 7 | 覆盖缺口可见 | 缺类时 `coverage.md` 写明还差几页 |
+| 8 | 未校准不能导出 | 存在非 `approved` 时 `export-gate` 失败 |
+| 9 | 小样本 | 用 1～2 个本地 PDF、`--target-pages 6` 跑通全流程 |
+| 10 | 报告 | `bootstrap-report.json` 含 `lit` 版本、命令、选页统计 |
 
 ---
 
-## 10. 实现分期
+## 11. 实现分期
 
-### v1（先做，立刻减负）
+### v1
 
-- 选页 CSV/JSON  
-- `init` / `render` / `ocr` / `draft` / `status`  
-- Markdown → `PageDocument` 草稿  
-- 类别建议 + checklist  
-- 不强制拼 PDF；`export-gate` 可暂要求单源 PDF，或多源时只导出 truth + page-map 并提示「拼 PDF 待 v1.1」
+- `probe`（`lit is-complex`）+ `select` + `screenshot` + `status`  
+- 手写/改 `selection.csv`  
+- 类别建议与覆盖缺口  
+- **不**调用 ocrx  
 
 ### v1.1
 
-- 多源拼成单一 gate PDF + 正确 `input_sha256`  
-- 可选：`ocrx --emit-page-json` 对接  
-- bbox：若 md 无坐标，提供「从 figure 裁切框反推占位」的尽力而为逻辑（仍标 `needs_human`）
+- `draft`：`lit parse` → `PageDocument` 映射  
+- 公式启发式  
+- 多源拼 gate PDF  
 
-### 不做进脚本的（另工具）
+### v1.2（可选）
 
-- 可视化拖拽改 bbox  
-- 多人标注冲突合并  
-- 自动调用质量门禁四档跑分  
+- 对「公式类缺口」提供交互：列出 parse 命中公式的页供你勾选  
+
+### 明确不做
+
+- 用 ocrx 填真值  
+- 可视化拖拽 bbox  
+- 在本脚本里跑四档质量门禁  
 
 ---
 
-## 11. 与质量门禁的关系
+## 12. 与质量门禁的关系
 
 ```text
-一批 PDF + 选页
-    → bootstrap-truth-set（本需求）
-    → 人工校准 review_status=approved
-    → export-gate
-    → validate-regression-set.py
-    → 四档预测 + score / run-quality-gate
-    → GO / NO-GO
+一批 PDF
+  → lit is-complex（选页）
+  → lit screenshot（预览）
+  → lit parse（可选草稿）
+  → 人工校准 approved
+  → export-gate
+  → validate-regression-set.py
+  → ocrx 四档预测 + score / run-quality-gate   ← 这里才出现 ocrx
+  → GO / NO-GO
 ```
 
-引导脚本产出的是**草稿流水线**；`docs/test/p0-30-page-truth-quality-gate.md` 里的正式门禁，只吃校准后的导出结果。
+---
+
+## 13. 已拍板的默认假设
+
+1. 选页与草稿来源：**LiteParse**，不是 ocrx。  
+2. CLI 依赖：本机 `lit`；脚本用 `--lit` 指路径。  
+3. 默认目标页数：30。  
+4. 预览 DPI：300。  
+5. 版权默认不可再分发，只记路径与 hash。  
+6. 未 `approved` 不得进门禁。  
 
 ---
 
-## 12. 已拍板的默认假设（实现按此做；要改先改本文档）
+## 14. LiteParse 的能力边界（写进预期，避免误用）
 
-1. 脚本入口：`scripts/bootstrap-truth-set.py`（Python3，少依赖；需要 PDF 渲图时调仓库已有二进制/库）。  
-2. 默认 OCR profile：`compact`。  
-3. 默认 DPI：`300`。  
-4. 多 PDF 选页：引导期支持；门禁导出默认拼成单 PDF（v1.1）。  
-5. 草稿带 `review_status`；未 `approved` 不得当真值。  
-6. 版权字段默认 `redistributable: false`，只记 provenance 路径与 hash。  
-7. 不把模型输出静默当成最终真值写入无标记文件。
+- 本地、非 LLM；复杂扫描件/密表质量有限——所以必须人校。  
+- Markdown/表是启发式，公式识别弱——`formula` 类可能要你手补选页。  
+- 它**不能**替代人工真值，也**不能**替代 ocrx 发布阈值测试。  
 
----
-
-## 13. 实现前仍可微调的两点（不影响先写 v1）
-
-1. 选页格式最终以 CSV 为主还是 JSON 为主（建议 CSV 给人填，JSON 给程序）。  
-2. bbox 占位：全零无效框 vs 缺省不写 visual_region（建议：**有 figure 文件则写 block，bbox 用明显占位如 0,0,1,1 并列入 needs_human**，避免人漏标图）。
-
-确认本需求后，下一步就是按 §10 实现 v1 脚本，并在 `docs/test/script/examples/` 放一份示例选页文件。
+若本机 `lit is-complex` 字段名与上文不完全一致，实现时以 `lit is-complex --help` / 实际 JSON 为准，并在 `bootstrap-report.json` 记录所用版本。

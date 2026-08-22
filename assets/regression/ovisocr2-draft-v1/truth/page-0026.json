@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "page_number": 26,
+  "categories": [
+    "formula",
+    "visual",
+    "mixed"
+  ],
+  "blocks": [
+    {
+      "type": "markdown",
+      "content": "第4章 等可能条件下的概率",
+      "bbox": {
+        "left": 0.08,
+        "top": 0.06,
+        "right": 0.36,
+        "bottom": 0.10
+      },
+      "source_order": 1
+    },
+    {
+      "type": "markdown",
+      "content": "摸球、抛硬币……试验的结果具有等可能性，列举法帮助我们计算这类简单事件的概率。",
+      "bbox": {
+        "left": 0.30,
+        "top": 0.18,
+        "right": 0.86,
+        "bottom": 0.25
+      },
+      "source_order": 2
+    },
+    {
+      "type": "formula",
+      "latex": "P(摸到白球)=\\frac{3}{5}",
+      "bbox": {
+        "left": 0.14,
+        "top": 0.28,
+        "right": 0.52,
+        "bottom": 0.38
+      },
+      "source_order": 3
+    },
+    {
+      "type": "visual_region",
+      "content": "① ⑤ ④ ② ③",
+      "bbox": {
+        "left": 0.05,
+        "top": 0.40,
+        "right": 0.50,
+        "bottom": 0.90
+      },
+      "source_order": 4
+    },
+    {
+      "type": "visual_region",
+      "bbox": {
+        "left": 0.52,
+        "top": 0.40,
+        "right": 0.95,
+        "bottom": 0.90
+      },
+      "source_order": 5
+    },
+    {
+      "type": "markdown",
+      "content": "1元",
+      "bbox": {
+        "left": 0.68,
+        "top": 0.69,
+        "right": 0.82,
+        "bottom": 0.88
+      },
+      "source_order": 6
+    },
+    {
+      "type": "markdown",
+      "content": "中国人民银行",
+      "bbox": {
+        "left": 0.68,
+        "top": 0.69,
+        "right": 0.82,
+        "bottom": 0.88
+      },
+      "source_order": 7
+    },
+    {
+      "type": "markdown",
+      "content": "1999年",
+      "bbox": {
+        "left": 0.68,
+        "top": 0.69,
+        "right": 0.82,
+        "bottom": 0.88
+      },
+      "source_order": 8
+    },
+    {
+      "type": "markdown",
+      "content": "开始",
+      "bbox": {
+        "left": 0.54,
+        "top": 0.76,
+        "right": 0.62,
+        "bottom": 0.79
+      },
+      "source_order": 9
+    },
+    {
+      "type": "markdown",
+      "content": "第一次抛掷",
+      "bbox": {
+        "left": 0.67,
+        "top": 0.66,
+        "right": 0.78,
+        "bottom": 0.69
+      },
+      "source_order": 10
+    },
+    {
+      "type": "markdown",
+      "content": "第二次抛掷",
+      "bbox": {
+        "left": 0.67,
+        "top": 0.82,
+        "right": 0.78,
+        "bottom": 0.85
+      },
+      "source_order": 11
+    },
+    {
+      "type": "markdown",
+      "content": "所有可能出现的结果",
+      "bbox": {
+        "left": 0.83,
+        "top": 0.66,
+        "right": 0.95,
+        "bottom": 0.86
+      },
+      "source_order": 12
+    }
+  ],
+  "termination": "eos",
+  "warnings": [],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "generated_at": "2026-08-19T00:00:00+08:00",
+    "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+    "source_page": 142,
+    "needs_human": []
+  }
+}

@@ -6,6 +6,10 @@
 
 ## 1. 测什么、怎样算过
 
+### Truth 可见元素纳入规则
+
+本回归集采用“可见即纳入”规则：封面元素、图标/插画、页码和水印只要在页面上可见，就必须进入 truth（作为文字 block 或 `visual_region`）。它们不能因为被认为是装饰性内容而从真值中省略；人工复核时必须逐页检查这些元素。
+
 本门禁回答一件事：**OvisOCR2 四个 GGUF profile，在同一份 ≥30 页人工校对真值上，是否达到发布阈值。**
 
 | 结果 | 条件 |
@@ -103,8 +107,11 @@ assets/regression/<set-id>/
 | `visual` | 至少 1 个插图/图表，需标 bbox |
 | `mixed` | 正文+公式+表或图混排 |
 | `blank` | 几乎无字或空白页（真值 blocks 可为空或仅极少内容） |
-| `truncated` | 故意选超长页，或标注为截断场景（用于压测 token 上限） |
-| `failure` | 加密页、损坏页、或预期应失败/告警的页 |
+
+`truncated` 与 `failure` 不属于这个准确率评分集：它们由
+`benchmarks/fixtures/pdf/` 中的合成异常输入和
+`scripts/macos-cli-negative-scan-check.sh` 覆盖。这样正常质量集的“失败/截断
+应为零”与异常行为测试的“必须正确失败/截断”不会互相矛盾。
 
 **需求还要求覆盖这些内容（可叠在上面各类里）**：
 
@@ -140,7 +147,7 @@ assets/regression/<set-id>/
   },
   "required_categories": [
     "text", "formula", "table", "visual",
-    "mixed", "blank", "truncated", "failure"
+    "mixed", "blank"
   ]
 }
 ```
@@ -187,7 +194,8 @@ shasum -a 256 assets/regression/<set-id>/inputs/source.pdf
 4. **表格**：写结构清晰的 HTML `<table>...</table>`；去掉纯样式属性。  
 5. **插图 bbox**：坐标系与产品一致，归一化到 `[0,1000)`；`left < right`，`top < bottom`，面积 > 0。  
 6. **空白页**：`blocks` 可以为 `[]`，`categories` 含 `blank`。  
-7. **失败页**：可标 `termination` 为预期状态，并在页备注/报告里写“预期失败原因”。  
+7. **异常输入**：加密、损坏和输出截断使用独立合成 fixture，不写进这 30 页
+   正常 OCR 真值。
 8. **禁止**：根据模型输出“倒着改真值”来抬分；真值只对原图/PDF。
 
 参考样例：`src/ocrx-ovisocr2/tests/fixtures/reference/page-01.page.json`（无 `categories`，真值集需自行加上）。

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "page_number": 9,
+  "categories": ["text", "visual", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"答案是，这些国家的政府把货币创造作为支付其支出的一种方法。当政府想要修公路、支付军人薪水，或者对穷人或老年人进行转移支付时，它首先必须筹集必要的资金。在正常的情况下，政府可以通过征收所得税和销售税来筹资，也可以通过出售政府债券向公众借债来筹资。然而政府也可以简单地通过印发它需要的货币来为其支出进行支付。","bbox":{"left":0.28,"top":0.18,"right":0.80,"bottom":0.34},"source_order":0},
+    {"type":"markdown","content":"当政府通过印发货币筹集收入时，可以说是在征收一种通货膨胀税（inflation tax）。但是，通货膨胀税和其他税并不完全一样，因为没有一个人从政府那里收到这种税的税单。相反，通货膨胀税是较为隐蔽的。当政府印发货币时，物价水平就会上升，你钱包里的美元就不值钱了。因此，通货膨胀税就像是一种向每个持有货币的人征收的税。","bbox":{"left":0.28,"top":0.34,"right":0.80,"bottom":0.48},"source_order":1},
+    {"type":"markdown","content":"674  通货膨胀税：政府通过创造货币而筹集的收入。","bbox":{"left":0.18,"top":0.37,"right":0.31,"bottom":0.46},"source_order":2},
+    {"type":"markdown","content":"通货膨胀税的重要性在不同国家和不同时期并不相同。近年来，通货膨胀税一直不是美国主要的收入来源，由此取得的收入估计不到政府收入的3%。但在18世纪70年代期间，对刚成立不久的美国来说，美国国会主要依靠通货膨胀税来支付其军事支出。因为新政府通过正常税收或借款筹资的能力有限，所以印发美元就成为向美国军人支付工资的一种简单易行的方法。正如货币数量论所预言的，结果导致了高通货膨胀：在短短几年间，按大陆美元衡量的物价上涨了100多倍。","bbox":{"left":0.28,"top":0.49,"right":0.80,"bottom":0.62},"source_order":3},
+    {"type":"markdown","content":"几乎所有超速通货膨胀都遵循了与美国独立战争时期超速通货膨胀相同的模式。政府面临高额支出，税收不足，而且借款能力有限，结果就只能通过印发钞票来为其支出进行支付。最终，货币量的大量增加引起了高通货膨胀。当政府实行消除通货膨胀税所需的财政改革措施时——例如，削减政府支出——通货膨胀就结束了。","bbox":{"left":0.28,"top":0.62,"right":0.80,"bottom":0.73},"source_order":4},
+    {"type":"markdown","content":"新闻摘录\n一份面对经济灾难的处方","bbox":{"left":0.34,"top":0.73,"right":0.60,"bottom":0.79},"source_order":5},
+    {"type":"visual_region","bbox":{"left":0.18,"top":0.79,"right":0.31,"bottom":0.94},"source_order":6},
+    {"type":"markdown","content":"第一步，印大量的钱；第二步，试图通过控制物价来阻止通货膨胀；第三步，等着看经济规律奏效。\n\n冻结工资是津巴布韦减轻通货膨胀的最后一招\nMichael Wines\n\n周五津巴布韦政府尝试了冻结工资、租金以及服务费6个月，这被一些分析家称作一场为维护高通货膨胀经济而疯狂的战役的最后一招。在穆加贝总统（Robert G. Mugabe）宣布冻结之后，津巴布韦报纸评论说，这样缩小政府运转所需的税收与2个月以来政府反通货膨胀的努力事与愿违。新的冻结命令由政府控制的报纸周五发布，本意是要对付政府所说的超过7600%的年通货膨胀率，不过非官方的经济学家认为实际的年通货膨胀率是这个数字的两倍。这项冻结政策禁止企业通过按通货膨胀调整的指数工资或者费用，这是很多工资合同通常采用的方法。","bbox":{"left":0.33,"top":0.78,"right":0.82,"bottom":0.95},"source_order":7},
+    {"type":"markdown","content":"图片来源：© AP IMAGES。","bbox":{"left":0.18,"top":0.94,"right":0.32,"bottom":0.97},"source_order":8},
+    {"type":"markdown","content":"170  ◀  经济学原理","bbox":{"left":0.18,"top":0.97,"right":0.34,"bottom":0.99},"source_order":9},
+    {"type":"markdown","content":"675","bbox":{"left":0.16,"top":0.73,"right":0.20,"bottom":0.76},"source_order":10},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":11}
+  ],
+  "termination":"eos",
+  "warnings":["Bottom-right download-site watermark is included because it is visibly present in the source preview.","News excerpt, image caption, and lower-page text require final human verification."],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-12T23:08:37+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":189,"needs_human":[]}
+}

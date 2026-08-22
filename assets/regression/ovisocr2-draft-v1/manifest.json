@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "set_id": "ovisocr2-draft-v1",
+  "page_count": 30,
+  "input_sha256": "ab3235512ef1f60122c3b060c5cf43c12947839e82875d940e10c36e37963477",
+  "renderer": {
+    "dpi": 300,
+    "pixel_budget": 1048576
+  },
+  "prompt_revision": "ovisocr2-prompt-schema-1",
+  "adapter_revision": "ovisocr2-adapter-0.1.0",
+  "runtime_revision": "llama.cpp@0.1.152",
+  "model_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+  "license": {
+    "redistributable": false,
+    "provenance": "Private 30-page composite from the two local PDFs recorded in inputs/acquisition.md; source PDFs and composite are not redistributable."
+  },
+  "required_categories": [
+    "text",
+    "formula",
+    "table",
+    "visual",
+    "mixed",
+    "blank"
+  ],
+  "truth_inclusion_policy": {
+    "visible_cover_elements": true,
+    "visible_icons_and_illustrations": true,
+    "visible_page_numbers": true,
+    "visible_watermarks": true,
+    "note": "Any visibly present element is included in truth, even when decorative or peripheral."
+  },
+  "bootstrap": {
+    "selector": "liteparse",
+    "liteparse_version": "lit 2.11.1",
+    "status": "approved",
+    "updated_at": "2026-08-21T00:00:00+08:00"
+  }
+}

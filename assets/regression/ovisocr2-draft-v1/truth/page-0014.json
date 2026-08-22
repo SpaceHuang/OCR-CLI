@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "page_number": 14,
+  "categories": ["text", "mixed", "truncated"],
+  "blocks": [
+    {"type":"markdown","content":"的做法是任命优秀人才实施货币政策，并给他们自由以使其尽可能做得最好。","bbox":{"left":0.24,"top":0.18,"right":0.78,"bottom":0.23},"source_order":0},
+    {"type":"markdown","content":"此外，所谓的相机抉择问题很大程度上是臆想的。例如，政治性经济周期的重要性在实践中并不明显。在某些情况下，情况看来正好相反。例如，1979年，卡特总统任命保罗·沃尔克为联邦储备的领导人。然而，在那一年10月，沃尔克转向紧缩性货币政策，以便应对他从前任那里接手的高通货膨胀率。沃尔克决策的可预期结果是衰退，而且这种预期的衰退结果使卡特的支持率下降。沃尔克并没有用货币政策去帮助任命他的美国总统，而是出于国家利益采取了一些行动，即使这些行动使卡特在1980年11月的大选中被罗纳德·里根击败。","bbox":{"left":0.24,"top":0.24,"right":0.78,"bottom":0.41},"source_order":1},
+    {"type":"markdown","content":"前后一致性的重要性在实践中也很不明显。虽然大多数人怀疑中央银行的声明，但中央银行领导人可以通过实现自己的诺言而在长期中赢得信任。在20世纪90年代，尽管有利用通货膨胀与失业之间短期权衡取舍的诱惑，但美联储实现并维持了低通货膨胀率。这个经验表明，低通货膨胀并不要求美联储服从于一个政策规则。","bbox":{"left":0.24,"top":0.42,"right":0.78,"bottom":0.56},"source_order":2},
+    {"type":"markdown","content":"任何一种以规则替代相机抉择的努力都必然面临详细说明准确规则的艰难任务。尽管有许多研究考察了可供选择的不同规则的成本与收益，但经济学家们对于什么是好规则并没有达成共识。在没有达成这种共识之前，社会除了让中央银行领导人相机抉择地实施他们认为合适的货币政策之外别无选择。","bbox":{"left":0.24,"top":0.57,"right":0.78,"bottom":0.70},"source_order":3},
+    {"type":"markdown","content":"即问即答\n举出一个货币政策规则的例子。为什么你的规则可能会比相机抉择的政策更好？为什么可能更糟？","bbox":{"left":0.24,"top":0.71,"right":0.78,"bottom":0.77},"source_order":4},
+    {"type":"markdown","content":"36.3  中央银行应该把零通货膨胀作为目标吗","bbox":{"left":0.24,"top":0.79,"right":0.74,"bottom":0.86},"source_order":5},
+    {"type":"markdown","content":"在第1章中讨论过并在货币增长与通货膨胀这一章中更充分地揭示的经济学十大原理之一是：当政府发行了过多货币时，物价上升。在第1章中讨论过并在上一章更充分地揭示的经济学十大原理中的另一个是，社会面临通货膨胀与失业之间的短期权衡取舍。把这两个原理放在一起就向决策者提出了一个问题：中央银行应该容忍的通货膨胀应该是多少？我们的一些争论问题就是：通货膨胀率的适当目标是否为零。","bbox":{"left":0.24,"top":0.87,"right":0.78,"bottom":0.94},"source_order":6},
+    {"type":"markdown","content":"36.3.1  赞成：中央银行应该把零通货膨胀作为目标","bbox":{"left":0.24,"top":0.93,"right":0.75,"bottom":0.98},"source_order":7},
+    {"type":"markdown","content":"通货膨胀并没有给社会带来什么好处，却引起了一些实际成本。正","bbox":{"left":0.24,"top":0.98,"right":0.78,"bottom":1.0},"source_order":8},
+    {"type":"markdown","content":"第36章  宏观经济政策的五个争论问题  ▶  325","bbox":{"left":0.55,"top":0.96,"right":0.84,"bottom":0.99},"source_order":9},
+    {"type":"markdown","content":"835","bbox":{"left":0.84,"top":0.46,"right":0.87,"bottom":0.48},"source_order":10},
+    {"type":"markdown","content":"836","bbox":{"left":0.84,"top":0.90,"right":0.87,"bottom":0.92},"source_order":11},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":12}
+  ],
+  "termination": "eos",
+  "warnings": ["Bottom-right download-site watermark is included because it is visibly present in the source preview.","The final paragraph continues beyond the visible page crop and requires final human verification."],
+  "review_status": "approved",
+  "bootstrap": {"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-18T00:00:00+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":344,"needs_human":[]}
+}

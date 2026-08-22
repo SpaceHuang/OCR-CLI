@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "page_number": 17,
+  "categories": ["text", "visual", "mixed"],
+  "blocks": [
+    {"type":"visual_region","bbox":{"left":0.08,"top":0.08,"right":0.66,"bottom":0.20},"source_order":0},
+    {"type":"markdown","content":"致","bbox":{"left":0.29,"top":0.11,"right":0.37,"bottom":0.17},"source_order":1},
+    {"type":"markdown","content":"同","bbox":{"left":0.43,"top":0.11,"right":0.51,"bottom":0.17},"source_order":2},
+    {"type":"markdown","content":"学","bbox":{"left":0.56,"top":0.11,"right":0.64,"bottom":0.17},"source_order":3},
+    {"type":"markdown","content":"亲爱的伙伴：\n祝贺你升入九年级！\n两年来我们在数学王国里探索，翻过了一座座“山峰”，当你蓦然回首时，会发现自己“长高”了。这册课本将陪伴你继续攀登，进一步领略数学王国里的多姿多彩。","bbox":{"left":0.20,"top":0.22,"right":0.82,"bottom":0.36},"source_order":4},
+    {"type":"markdown","content":"“一元二次方程”是又一个刻画现实世界数量关系的数学模型，你将在学习一元二次方程各种解法的过程中，进一步体会转化的思想，并尝试应用一元二次方程的知识解决一些实际问题。","bbox":{"left":0.20,"top":0.37,"right":0.82,"bottom":0.49},"source_order":5},
+    {"type":"markdown","content":"红日、车轮、硬币……圆象征着完美、和谐，“对称图形——圆”将引导你运用圆的对称性探索圆的一些性质，运用图形运动和推理的方法证实圆的有关性质。","bbox":{"left":0.20,"top":0.50,"right":0.82,"bottom":0.61},"source_order":6},
+    {"type":"markdown","content":"“数据的集中趋势和离散程度”将介绍平均数、中位数、众数和方差，并引导你根据具体问题，选用这些统计量来描述、分析数据。","bbox":{"left":0.20,"top":0.62,"right":0.82,"bottom":0.70},"source_order":7},
+    {"type":"markdown","content":"袋子中装有红球、白球、黑球各1个，这些球除颜色外都相同。搅匀后从中摸出1个球，摸到红球、白球、黑球的可能性相同吗？学习了“等可能条件下的概率”以后，你将会计算这样的一类事件发生的概率。","bbox":{"left":0.20,"top":0.71,"right":0.82,"bottom":0.82},"source_order":8},
+    {"type":"markdown","content":"“实践与探索”、“观察与思考”、“操作与思考”、“尝试与交流”、“思考与探索”、“拓展与延伸”等，本册课本设计的这些栏目，不仅有助于你学懂知识、学会技能，而且能引导你体会数学的本质，感悟基本数学思想。","bbox":{"left":0.20,"top":0.83,"right":0.82,"bottom":0.94},"source_order":9}
+  ],
+  "termination":"eos",
+  "warnings":[],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","generated_at":"2026-08-19T00:00:00+08:00","needs_human":["text_transcription","reading_order","bbox"]}
+}

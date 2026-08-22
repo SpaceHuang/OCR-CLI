@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "page_number": 13,
+  "categories": ["text", "visual", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"正如萨缪尔森和索洛的文章题目所表明的，他们关心菲利普斯曲线是因为他们相信这对决策者来说是一个重要的结论。特别是，他们说明了菲利普斯曲线给决策者提供了一个有各种可能的经济结果的菜单。通过改变货币政策与财政政策来影响总需求，决策者可以选择这条曲线上的任意一点。A点提供了高失业和低通货膨胀。B点提供了低失业和高通货膨胀。决策者可能会偏好低通货膨胀和低失业，但正如菲利普斯曲线概括的历史数据所表明的，这种组合是不可能的。根据萨缪尔森和索洛的看法，决策者面临着通货膨胀和失业之间的权衡取舍，并且菲利普斯曲线说明了这种权衡取舍。","bbox":{"left":0.24,"top":0.18,"right":0.78,"bottom":0.38},"source_order":0},
+    {"type":"markdown","content":"35.1.2  总需求、总供给和菲利普斯曲线","bbox":{"left":0.24,"top":0.40,"right":0.72,"bottom":0.45},"source_order":1},
+    {"type":"markdown","content":"总需求与总供给模型为菲利普斯曲线所描述的各种可能结果的菜单提供了一个简单的解释。菲利普斯曲线说明了，短期中出现的通货膨胀与失业的组合是由于总需求曲线的移动使经济沿着短期总供给曲线变动。正如我们在前两章中所看到的，在短期中物品与劳务总需求的增加引起产量增加，物价总水平上升。产量越多，意味着就业越多，从而失业率越低。此外，高物价水平转变为高通货膨胀率。因此，总需求变动在短期中使通货膨胀和失业反方向变动，这正是菲利普斯曲线所说明的一种关系。","bbox":{"left":0.24,"top":0.47,"right":0.78,"bottom":0.65},"source_order":2},
+    {"type":"markdown","content":"为了更充分地说明这是如何发生作用的，我们来看一个例子。为了使数字简化，设想物价水平（例如，用消费物价指数衡量）在2020年等于100。图35-2表示由于总需求的力量在2021年可能出现的两种结果：一种结果是在总需求高时出现的，另一种结果是在总需求低时出现的。其中，（a）幅用总需求与总供给模型表示这两种结果；（b）幅用菲利普斯曲线表示同样的两种结果。","bbox":{"left":0.32,"top":0.66,"right":0.78,"bottom":0.78},"source_order":3},
+    {"type":"markdown","content":"假设2020年的物价水平为100，并画出了2021年的可能结果。（a）幅表示总需求与总供给模型。如果总需求低，经济在A点，产量低（15 000）且物价水平也低（102）。如果总需求高，经济在B点，产量高（16 000）且物价水平也高（106）。（b）幅显示了菲利普斯曲线的含义：当总需求低时得出A点，失业率高（7%），而通货膨胀率低（2%）；当总需求高时得出B点，失业率低（4%），而通货膨胀率高（6%）。","bbox":{"left":0.16,"top":0.69,"right":0.29,"bottom":0.91},"source_order":4},
+    {"type":"markdown","content":"图35-2  菲利普斯曲线如何和总需求与总供给模型相关","bbox":{"left":0.32,"top":0.76,"right":0.79,"bottom":0.79},"source_order":5},
+    {"type":"visual_region","bbox":{"left":0.32,"top":0.78,"right":0.80,"bottom":0.94},"source_order":6},
+    {"type":"markdown","content":"图35-2(a)幅显示了2021年产量和物价水平发生的变动。如果物","bbox":{"left":0.32,"top":0.94,"right":0.80,"bottom":0.97},"source_order":7},
+    {"type":"markdown","content":"294  ◀  经济学原理","bbox":{"left":0.18,"top":0.96,"right":0.32,"bottom":0.99},"source_order":8},
+    {"type":"markdown","content":"物价水平\n106\n102","bbox":{"left":0.32,"top":0.79,"right":0.39,"bottom":0.88},"source_order":9},
+    {"type":"markdown","content":"0\n15 000（失业率为7%）\n16 000（失业率为4%）\n产量","bbox":{"left":0.35,"top":0.87,"right":0.55,"bottom":0.93},"source_order":10},
+    {"type":"markdown","content":"短期总供给\n高总需求\n低总需求","bbox":{"left":0.48,"top":0.79,"right":0.62,"bottom":0.89},"source_order":11},
+    {"type":"markdown","content":"A\nB","bbox":{"left":0.50,"top":0.82,"right":0.57,"bottom":0.86},"source_order":12},
+    {"type":"markdown","content":"通货膨胀率（年百分比）\n6\n2","bbox":{"left":0.60,"top":0.79,"right":0.70,"bottom":0.88},"source_order":13},
+    {"type":"markdown","content":"0\n4（产量是16 000）\n7（产量是15 000）\n失业率（百分比）","bbox":{"left":0.63,"top":0.87,"right":0.79,"bottom":0.93},"source_order":14},
+    {"type":"markdown","content":"菲利普斯曲线","bbox":{"left":0.74,"top":0.84,"right":0.80,"bottom":0.89},"source_order":15},
+    {"type":"markdown","content":"A\nB","bbox":{"left":0.68,"top":0.81,"right":0.74,"bottom":0.86},"source_order":16},
+    {"type":"markdown","content":"（a）总需求与总供给模型\n（b）菲利普斯曲线","bbox":{"left":0.43,"top":0.91,"right":0.73,"bottom":0.95},"source_order":17},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":18}
+  ],
+  "termination": "eos",
+  "warnings": ["Bottom-right download-site watermark is included because it is visibly present in the source preview.","Figure labels and the continuation of the figure caption require final human verification."],
+  "review_status": "approved",
+  "bootstrap": {"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-18T00:00:00+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":313,"needs_human":[]}
+}

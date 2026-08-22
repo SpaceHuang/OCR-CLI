@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "page_number": 19,
+  "categories": ["formula", "table", "visual", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"一块石头从离海面45 m高的绝壁上落下，试估计这块石头经过多少时间落到海面。","bbox":{"left":0.15,"top":0.12,"right":0.86,"bottom":0.17},"source_order":0},
+    {"type":"visual_region","bbox":{"left":0.27,"top":0.19,"right":0.72,"bottom":0.60},"source_order":1},
+    {"type":"markdown","content":"设石头在下落过程中离海面的高度 h 与下落的时间 t 有如下的关系：","bbox":{"left":0.15,"top":0.62,"right":0.85,"bottom":0.66},"source_order":2},
+    {"type":"formula","latex":"h=-5t^2+45","bbox":{"left":0.40,"top":0.66,"right":0.60,"bottom":0.70},"source_order":3},
+    {"type":"markdown","content":"1．填表：","bbox":{"left":0.15,"top":0.72,"right":0.28,"bottom":0.75},"source_order":4},
+    {"type":"html_table","html":"<table><tr><th><i>t</i>/s</th><th>0</th><th>0.5</th><th>1</th><th>1.5</th><th>2</th><th>2.5</th><th>…</th></tr><tr><th><i>h</i>/m</th><td></td><td></td><td></td><td></td><td></td><td></td><td>…</td></tr></table>","bbox":{"left":0.15,"top":0.77,"right":0.82,"bottom":0.88},"source_order":5},
+    {"type":"markdown","content":"2．石头经过多少时间落到海面？","bbox":{"left":0.15,"top":0.90,"right":0.62,"bottom":0.94},"source_order":6},
+    {"type":"markdown","content":"本章将学习一元二次方程的概念、解法和应用。","bbox":{"left":0.15,"top":0.96,"right":0.60,"bottom":0.99},"source_order":7}
+  ],
+  "termination":"eos",
+  "warnings":[],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","generated_at":"2026-08-19T00:00:00+08:00","needs_human":[]}
+}

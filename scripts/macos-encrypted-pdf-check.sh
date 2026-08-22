@@ -1,9 +1,13 @@
 #!/bin/sh
 set -eu
 
-encrypted="${OCRX_ENCRYPTED_PDF:-/private/tmp/ocrx-p0-20260802/encrypted.pdf}"
+root="${OCRX_PDF_FIXTURE_ROOT:-benchmarks/fixtures/pdf}"
+encrypted="${OCRX_ENCRYPTED_PDF:-$root/encrypted-password-required.pdf}"
 library_dir="${OCRX_PDFIUM_LIBRARY_DIR:-/private/tmp/ocrx-p0-20260802/pdfium-chromium-7961/lib}"
 binary="${OCRX_PDFIUM_CHECK_BIN:-target/release/pdfium-check}"
+if [ -z "${OCRX_ENCRYPTED_PDF:-}" ]; then
+    python3 scripts/generate-pdf-fixtures.py "$root"
+fi
 test -f "$encrypted"
 cargo build -p ocrx-pdf --release >/dev/null
 

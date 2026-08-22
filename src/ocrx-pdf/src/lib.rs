@@ -49,6 +49,7 @@ pub fn classify_pdf_error(message: &str) -> PdfErrorKind {
     let message = message.to_ascii_lowercase();
     if message.contains("loadlibraryerror")
         || message.contains("loadlibraryfunctionnameerror")
+        || message.contains("dlopen")
         || message.contains("bind_to_library")
         || message.contains("dynamic library")
     {
@@ -450,12 +451,19 @@ fn shared_pdfium(library_dir: &Path) -> Result<&'static Pdfium, Box<dyn std::err
     use std::sync::OnceLock;
     static PDFIUM: OnceLock<Result<Pdfium, String>> = OnceLock::new();
     let result = PDFIUM.get_or_init(|| {
-        let library = match pdfium_library_path(library_dir) {
-            Ok(path) => path,
-            Err(_) => {
-                return Err(
-                    "library_dir contains parent-dir (..) traversal; refused to load".to_owned(),
-                );
+        // OCRX_PDFIUM_LIBRARY may point at the library file itself or its
+        // containing directory; accept both forms at this boundary.
+        let library = if library_dir.is_file() {
+            library_dir.to_path_buf()
+        } else {
+            match pdfium_library_path(library_dir) {
+                Ok(path) => path,
+                Err(_) => {
+                    return Err(
+                        "library_dir contains parent-dir (..) traversal; refused to load"
+                            .to_owned(),
+                    );
+                }
             }
         };
         Pdfium::bind_to_library(library)
@@ -703,6 +711,10 @@ mod tests {
         );
         assert_eq!(
             classify_pdf_error("document is encrypted and requires a password"),
+            PdfErrorKind::Encrypted
+        );
+        assert_eq!(
+            classify_pdf_error("PdfiumLibraryInternalError(PasswordError)"),
             PdfErrorKind::Encrypted
         );
         assert_eq!(

@@ -7,9 +7,12 @@ use ocrx_output::{
     CancellationToken, PageDiagnostic, PageRenderer, ProgressMode, RenderAudit, RenderedPage,
     ReportFormat, Reporter, ResultReport, format_report,
 };
-use ocrx_pdf::{PdfWorkerScheduler, PdfiumRenderer, RenderOptions, fit_pixel_budget};
+use ocrx_pdf::{
+    PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
+    fit_pixel_budget,
+};
 use ocrx_runtime::{Backend, Runtime, RuntimeInfo, RuntimeTelemetry};
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
 mod platform_paths;
@@ -28,7 +31,6 @@ use {
         CompatibilityKey, ErrorReport, GenerationProgress, ModelLoader, PageArtifactRecognizer,
         PageArtifactResult, ProgressEvent, ScanService, remove_for_overwrite,
     },
-    ocrx_pdf::{PdfErrorKind, classify_pdf_error},
     ocrx_runtime::LlamaMtmdRuntime,
     std::cell::RefCell,
     std::io::Cursor,
@@ -1070,6 +1072,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         Ok(PageArtifactResult {
             png: png.into_inner(),
             markdown: artifact.markdown,
+            page_json: artifact.page_json,
             truncated: artifact.truncated,
             warnings: artifact.warnings,
         })
@@ -1312,7 +1315,7 @@ fn run_scan(options: ScanOptions) -> ! {
     let page_count = match PdfiumRenderer::new(library.clone()).page_count(&input) {
         Ok(count) => count,
         Err(error) => {
-            let error_kind = match classify_pdf_error(&error.to_string()) {
+            let error_kind = match classify_input_error(&input, &error.to_string()) {
                 PdfErrorKind::NonPdf => "pdf_non_pdf",
                 PdfErrorKind::Corrupt => "pdf_corrupt",
                 PdfErrorKind::Encrypted => "pdf_encrypted",
@@ -1607,6 +1610,26 @@ fn run_scan(options: ScanOptions) -> ! {
             print_reporter(reporter);
             std::process::exit(6);
         }
+    }
+}
+
+fn classify_input_error(input: &Path, message: &str) -> PdfErrorKind {
+    let classified = classify_pdf_error(message);
+    if classified != PdfErrorKind::Unknown || !message.to_ascii_lowercase().contains("formaterror")
+    {
+        return classified;
+    }
+    let mut header = [0_u8; 1024];
+    let bytes_read = std::fs::File::open(input)
+        .and_then(|mut file| file.read(&mut header))
+        .unwrap_or_default();
+    if header[..bytes_read]
+        .windows(b"%PDF-".len())
+        .any(|window| window == b"%PDF-")
+    {
+        PdfErrorKind::Corrupt
+    } else {
+        PdfErrorKind::NonPdf
     }
 }
 
