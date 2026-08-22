@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "page_number": 6,
+  "categories": ["formula", "visual", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"说明的，组成这个体系的机构——债券市场、股票市场、银行和共同基金——有协调经济中储蓄与投资的作用。而且，正如我们在前一章中说明的，储蓄与投资是长期GDP增长和生活水平提高的重要决定因素。因此，宏观经济学家需要知道金融市场如何运行以及各种事件和政策如何影响金融市场。","bbox":{"left":0.23,"top":0.18,"right":0.79,"bottom":0.32},"source_order":0},
+    {"type":"markdown","content":"作为分析金融市场的出发点，这一节我们将讨论在这些市场中衡量经济活动的关键宏观经济变量。在这里，我们的重点不是行为而是核算。核算是指如何确定并加总各种数字。独立会计师会帮助个人加总收入与支出；国民收入会计师对整个经济做同样的事。国民收入账户特别包括了GDP以及许多相关的统计数字。","bbox":{"left":0.23,"top":0.33,"right":0.79,"bottom":0.45},"source_order":1},
+    {"type":"markdown","content":"国民收入账户的规则包括几个重要的恒等式。我们还记得，恒等式是由于公式中定义变量的方式而必然正确的公式。记住这些恒等式是有用的，因为它们能清楚地说明不同变量相互之间的关系。我们先考虑一些说明金融市场宏观经济作用的会计恒等式。","bbox":{"left":0.23,"top":0.45,"right":0.79,"bottom":0.53},"source_order":2},
+    {"type":"markdown","content":"26.2.1  一些重要的恒等式","bbox":{"left":0.23,"top":0.54,"right":0.60,"bottom":0.59},"source_order":3},
+    {"type":"markdown","content":"我们还记得，国内生产总值（GDP）既是一个经济的总收入，又是用于经济中物品与劳务产出的总支出。GDP（用Y表示）分为四部分支出：消费（C）、投资（I）、政府购买（G）和净出口（NX）。我们将其写为：","bbox":{"left":0.23,"top":0.60,"right":0.80,"bottom":0.68},"source_order":4},
+    {"type":"formula","formula_latex":"Y=C+I+G+NX","bbox":{"left":0.42,"top":0.68,"right":0.60,"bottom":0.71},"source_order":5},
+    {"type":"markdown","content":"这个等式之所以是恒等式，是因为左边列示的每一美元支出也列示在右边四个组成部分中的一个部分里。由于每一个变量定义与衡量的方式，这个等式必定总能成立。","bbox":{"left":0.23,"top":0.71,"right":0.80,"bottom":0.77},"source_order":6},
+    {"type":"markdown","content":"在本章中，我们通过假设所考察的经济是封闭的而把分析简化。封闭经济是一个不与其他经济相互交易的经济。特别是，一个封闭经济既不进行物品与劳务的国际贸易，也不进行国际借贷。现实经济是开放经济——也就是说，它们与世界上其他经济相互交易。但是，假设一个封闭经济是一个有用的简化，利用这种简化我们可以了解一些适用于所有经济的结论，而且这个假设完全适用于世界经济（因为星际贸易尚未普及）。","bbox":{"left":0.23,"top":0.77,"right":0.80,"bottom":0.86},"source_order":7},
+    {"type":"markdown","content":"由于一个封闭经济不进行国际贸易，进口与出口正好是零。因此，净出口（NX）也为零。在这种情况下，我们可以写出：","bbox":{"left":0.23,"top":0.86,"right":0.80,"bottom":0.91},"source_order":8},
+    {"type":"formula","formula_latex":"Y=C+I+G","bbox":{"left":0.43,"top":0.91,"right":0.59,"bottom":0.94},"source_order":9},
+    {"type":"markdown","content":"这个等式表明，GDP是消费、投资和政府购买的总和。一个封闭经济中出售的每一单位产出都被消费、投资，或由政府购买。为了说明这个恒等式对于金融市场的意义，从这个等式两边减去C和G，我们得出：","bbox":{"left":0.23,"top":0.94,"right":0.80,"bottom":0.97},"source_order":10},
+    {"type":"formula","formula_latex":"Y-C-G=I","bbox":{"left":0.43,"top":0.97,"right":0.59,"bottom":0.99},"source_order":11},
+    {"type":"markdown","content":"等式的左边（Y-C-G）是在用于消费和政府购买后剩下的一个经济","bbox":{"left":0.24,"top":0.99,"right":0.80,"bottom":0.998},"source_order":12},
+    {"type":"markdown","content":"第26章  储蓄、投资和金融体系  ▶  77","bbox":{"left":0.64,"top":0.98,"right":0.88,"bottom":0.995},"source_order":13},
+    {"type":"markdown","content":"582","bbox":{"left":0.84,"top":0.73,"right":0.87,"bottom":0.76},"source_order":14},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":15}
+  ],
+  "termination":"eos",
+  "warnings":["Bottom-right download-site watermark is included because it is visibly present in the source preview.","Formula transcription and bottom-of-page continuation require final human verification."],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-12T23:08:22+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":96,"needs_human":[]}
+}

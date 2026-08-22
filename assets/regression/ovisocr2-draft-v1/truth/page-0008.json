@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "page_number": 8,
+  "categories": ["text", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"第29章\n货币制度","bbox":{"left":0.23,"top":0.18,"right":0.43,"bottom":0.27},"source_order":0},
+    {"type":"markdown","content":"当你走进一家餐馆点了一份饭时，你得到了某种有价值的东西——饱餐一顿。为了对这种服务付费，你会递给餐馆老板几张破旧的、上面印有奇特符号、政府大楼和已故美国名人肖像的淡绿色纸片。或者，你也可以拿出一张载有银行名称和你的签名的纸片。无论你是支付现金还是支票，餐馆老板都乐于为满足你的食欲而辛勤工作，以换取这些本身没有什么价值的纸片。","bbox":{"left":0.23,"top":0.46,"right":0.80,"bottom":0.59},"source_order":1},
+    {"type":"markdown","content":"对于任何一个生活在现代经济中的人来说，这种社会习惯一点也不奇怪。尽管纸币没有内在价值，但餐馆老板相信未来会有第三个人接受它，由此餐馆老板可以换取他认为有价值的东西。而且，这第三个人也相信会有第四个人接受这些纸币，并知道还有第五个人也将接受它，如此等等。对餐馆老板和我们社会中的其他人来说，你的现金或支票代表了对未来物品与劳务的索取权。","bbox":{"left":0.23,"top":0.59,"right":0.80,"bottom":0.72},"source_order":2},
+    {"type":"markdown","content":"使用货币进行交易的社会习惯在一个大而复杂的社会中是极其有用的。假设经济中没有这种在交换物品与劳务时被广泛接受的媒介，人们就不得不依靠物物交换——用一种物品或劳务交换另一种物品或劳务——来得到他们需要的东西。例如，你为了得到餐馆的一顿饭，就必须提供对餐馆老板有直接价值的东西。你可以洗一些盘子、给他修剪草坪、给他提供汽车，或者把你家的肉酱秘方给他。一个依靠物物交换的经济，难以有效地配置其稀缺资源。","bbox":{"left":0.23,"top":0.72,"right":0.80,"bottom":0.86},"source_order":3},
+    {"type":"markdown","content":"在这种经济中，交易要求双向一致性——一种很大的偶然巧合，即两个人中每个人都想要对方可提供的物品或劳务。","bbox":{"left":0.23,"top":0.86,"right":0.80,"bottom":0.90},"source_order":4},
+    {"type":"markdown","content":"货币的存在使贸易变得容易。餐馆老板并不关心你是生产对他有价值的物品或劳务，他乐于接受你的货币，因为他知道其他人也会接受他的货币。这种惯例使交易循环地进行：餐馆老板接受你的货币，并把它支付给他的教师；教师又用她的工资支票送孩子上托儿所；托儿所用这些学费支付教师的工资；教师又把支票支付给修剪草坪的人。随着货币在经济中从一个人手中流到另一个人手中，它便利了生产和贸易，从而使","bbox":{"left":0.23,"top":0.90,"right":0.80,"bottom":0.96},"source_order":5},
+    {"type":"markdown","content":"第29章  货币制度  ▶  139","bbox":{"left":0.66,"top":0.97,"right":0.87,"bottom":0.99},"source_order":6},
+    {"type":"markdown","content":"641","bbox":{"left":0.84,"top":0.45,"right":0.87,"bottom":0.48},"source_order":7},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":8}
+  ],
+  "termination":"eos",
+  "warnings":["Bottom-right download-site watermark is included because it is visibly present in the source preview.","Chapter-opening text and bottom continuation require final human verification."],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-12T23:08:30+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":158,"needs_human":[]}
+}

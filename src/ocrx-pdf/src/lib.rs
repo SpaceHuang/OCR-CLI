@@ -40,8 +40,9 @@ pub enum PdfErrorKind {
 #[must_use]
 pub fn classify_pdf_error(message: &str) -> PdfErrorKind {
     let message = message.to_ascii_lowercase();
-    if message.contains("library")
-        || message.contains("dynamic")
+    if message.contains("loadlibraryerror")
+        || message.contains("dlopen")
+        || message.contains("dynamic library")
         || message.contains("bind_to_library")
     {
         PdfErrorKind::DynamicLibrary
@@ -373,7 +374,13 @@ fn shared_pdfium(library_dir: &Path) -> Result<&'static Pdfium, Box<dyn std::err
     if let Some(pdfium) = PDFIUM.get() {
         return Ok(pdfium);
     }
-    let library = Pdfium::pdfium_platform_library_name_at_path(library_dir);
+    // OCRX_PDFIUM_LIBRARY is documented as either the dylib itself or its
+    // containing directory; accept both forms at this boundary.
+    let library = if library_dir.is_file() {
+        library_dir.to_path_buf()
+    } else {
+        Pdfium::pdfium_platform_library_name_at_path(library_dir)
+    };
     let pdfium = Pdfium::new(Pdfium::bind_to_library(library)?);
     Ok(PDFIUM.get_or_init(|| pdfium))
 }
@@ -615,6 +622,10 @@ mod tests {
         );
         assert_eq!(
             classify_pdf_error("document is encrypted and requires a password"),
+            PdfErrorKind::Encrypted
+        );
+        assert_eq!(
+            classify_pdf_error("PdfiumLibraryInternalError(PasswordError)"),
             PdfErrorKind::Encrypted
         );
         assert_eq!(

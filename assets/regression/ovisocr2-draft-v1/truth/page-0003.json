@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "page_number": 3,
+  "categories": ["text", "visual", "mixed"],
+  "blocks": [
+    {
+      "type": "visual_region",
+      "bbox": {"left": 0.24, "top": 0.09, "right": 0.76, "bottom": 0.25},
+      "source_order": 0
+    },
+    {
+      "type": "markdown",
+      "content": "这本教科书的最大特点是它的“学生导向”。如作者自己指出的，他要写的是一本学生喜欢看的经济学教科书。与其他同类教科书相比，本书强调得更多的是经济学原理的应用和政策分析，而不是正式的经济学模型。为此，作者在大部分章节里都提供了案例，以说明经济学原理如何应用于现实经济问题的分析。此外，作者在书中还提供了大量的“新闻摘录”，以便读者懂得什么是生活中的经济学。",
+      "bbox": {"left": 0.24, "top": 0.27, "right": 0.78, "bottom": 0.38},
+      "source_order": 1
+    },
+    {
+      "type": "markdown",
+      "content": "曼昆的书面让你觉得，学经济学原来也是一种享受。",
+      "bbox": {"left": 0.28, "top": 0.39, "right": 0.61, "bottom": 0.42},
+      "source_order": 2
+    },
+    {
+      "type": "markdown",
+      "content": "——张维迎",
+      "bbox": {"left": 0.69, "top": 0.37, "right": 0.77, "bottom": 0.40},
+      "source_order": 3
+    },
+    {
+      "type": "markdown",
+      "content": "——梁小民",
+      "bbox": {"left": 0.69, "top": 0.41, "right": 0.77, "bottom": 0.44},
+      "source_order": 4
+    },
+    {
+      "type": "markdown",
+      "content": "本书创造了两项吉尼斯世界纪录",
+      "bbox": {"left": 0.25, "top": 0.44, "right": 0.77, "bottom": 0.47},
+      "source_order": 5
+    },
+    {
+      "type": "markdown",
+      "content": "一是本书尚未完稿时，出版商就出价140万美元买下其版权，从而创下经济学著作卖价的吉尼斯世界纪录。\n\n二是本书一出版便很快风行美国，出版仅3个月就被300多所大学采用为教材。其英文版发行量在1998年出版当年就高达20万册，成为世界上首版最成功的经济学教材。其畅销性又创下吉尼斯世界纪录。",
+      "bbox": {"left": 0.24, "top": 0.49, "right": 0.79, "bottom": 0.59},
+      "source_order": 6
+    },
+    {
+      "type": "markdown",
+      "content": "Principles of Economics",
+      "bbox": {"left": 0.32, "top": 0.65, "right": 0.69, "bottom": 0.68},
+      "source_order": 7
+    },
+    {
+      "type": "markdown",
+      "content": "CENGAGE Learning",
+      "bbox": {"left": 0.72, "top": 0.69, "right": 0.85, "bottom": 0.73},
+      "source_order": 8
+    },
+    {
+      "type": "markdown",
+      "content": "上架建议：经济学",
+      "bbox": {"left": 0.72, "top": 0.735, "right": 0.86, "bottom": 0.755},
+      "source_order": 9
+    },
+    {
+      "type": "markdown",
+      "content": "ISBN 978-7-301-15090-0\n9787301150900\n定价：42.00元",
+      "bbox": {"left": 0.70, "top": 0.75, "right": 0.86, "bottom": 0.85},
+      "source_order": 10
+    },
+    {
+      "type": "markdown",
+      "content": "www.cengageasia.com",
+      "bbox": {"left": 0.70, "top": 0.85, "right": 0.88, "bottom": 0.87},
+      "source_order": 11
+    },
+    {
+      "type": "markdown",
+      "content": "网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk",
+      "bbox": {"left": 0.845, "top": 0.906, "right": 0.955, "bottom": 0.992},
+      "source_order": 12
+    }
+  ],
+  "termination": "eos",
+  "warnings": [
+    "Bottom-right download-site watermark is included because it is visibly present in the source preview.",
+    "Back-cover small-print transcription and bboxes require final human verification."
+  ],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "liteparse_version": "lit 2.11.1",
+    "generated_at": "2026-08-12T23:08:05+08:00",
+    "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+    "source_page": 4,
+    "needs_human": []
+  }
+}

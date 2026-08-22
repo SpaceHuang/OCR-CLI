@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "page_number": 4,
+  "categories": ["formula", "visual", "mixed"],
+  "blocks": [
+    {
+      "type": "markdown",
+      "content": "的百分比。如果用GDP平减指数，两个相连年份的通货膨胀率用如下方法计算。",
+      "bbox": {"left": 0.23, "top": 0.18, "right": 0.78, "bottom": 0.22},
+      "source_order": 0
+    },
+    {
+      "type": "formula",
+      "formula_latex": "\\text{第二年的通货膨胀率}=100\\%\\times\\frac{\\text{第二年的GDP平减指数}-\\text{第一年的GDP平减指数}}{\\text{第一年的GDP平减指数}}",
+      "bbox": {"left": 0.25, "top": 0.22, "right": 0.75, "bottom": 0.31},
+      "source_order": 1
+    },
+    {
+      "type": "markdown",
+      "content": "由于2009年的GDP平减指数从100上升到171，所以通货膨胀率就是100%×(171−100)/100，即71%。在2010年，GDP平减指数从前一年的171上升到240，因此通货膨胀率是100%×(240−171)/171，即40%。GDP平减指数是经济学家用来监测经济中平均物价水平，从而监测通货膨胀率的一个衡量指标。GDP平减指数的得名是因为它可以用来从名义GDP中剔除通货膨胀——也就是说，“平减”名义GDP中由于物价上升而引起的上升。在下一章中，我们将考察经济中物价水平的另一个衡量指标，称为消费物价指数，届时我们还要说明这两个衡量指标之间的差别。",
+      "bbox": {"left": 0.23, "top": 0.32, "right": 0.78, "bottom": 0.48},
+      "source_order": 2
+    },
+    {
+      "type": "markdown",
+      "content": "案例研究\n近年来的真实GDP",
+      "bbox": {"left": 0.23, "top": 0.49, "right": 0.52, "bottom": 0.56},
+      "source_order": 3
+    },
+    {
+      "type": "markdown",
+      "content": "既然我们知道了如何定义和衡量真实GDP，那么我们就来考虑这个宏观经济变量说明了近年来美国经济的什么情况。图23-2显示了1965年以来美国经济真实GDP的季度数据。",
+      "bbox": {"left": 0.24, "top": 0.56, "right": 0.78, "bottom": 0.63},
+      "source_order": 4
+    },
+    {
+      "type": "visual_region",
+      "bbox": {"left": 0.23, "top": 0.58, "right": 0.75, "bottom": 0.86},
+      "source_order": 6
+    },
+    {
+      "type": "markdown",
+      "content": "该图显示了1965年以来美国经济真实GDP的季度数据。衰退——真实GDP下降的时期——用垂直的阴影条表示。",
+      "bbox": {"left": 0.73, "top": 0.66, "right": 0.86, "bottom": 0.78},
+      "source_order": 7
+    },
+    {
+      "type": "markdown",
+      "content": "图23-2 美国的真实GDP\n资料来源：U.S. Department of Commerce。",
+      "bbox": {"left": 0.23, "top": 0.57, "right": 0.76, "bottom": 0.78},
+      "source_order": 5
+    },
+    {
+      "type": "markdown",
+      "content": "这些数据最明显的特点是真实GDP一直在增长。美国经济2007年的真实GDP几乎是1965年水平的4倍。换言之，美国生产的物品与劳务的产量平均每年增长3.2%左右。这种真实GDP的持续增长使普通美国",
+      "bbox": {"left": 0.24, "top": 0.86, "right": 0.78, "bottom": 0.97},
+      "source_order": 8
+    },
+    {
+      "type": "markdown",
+      "content": "第23章  一国收入的衡量  ▶  15",
+      "bbox": {"left": 0.62, "top": 0.96, "right": 0.86, "bottom": 0.99},
+      "source_order": 9
+    },
+    {
+      "type": "markdown",
+      "content": "2005年的10亿美元",
+      "bbox": {"left": 0.23, "top": 0.68, "right": 0.31, "bottom": 0.73},
+      "source_order": 10
+    },
+    {
+      "type": "markdown",
+      "content": "11 000\n10 000\n9 000\n8 000\n7 000\n6 000\n5 000\n4 000\n3 000\n2 000",
+      "bbox": {"left": 0.23, "top": 0.72, "right": 0.30, "bottom": 0.84},
+      "source_order": 11
+    },
+    {
+      "type": "markdown",
+      "content": "1965\n1970\n1975\n1980\n1985\n1990\n1995\n2000\n2005\n2010",
+      "bbox": {"left": 0.27, "top": 0.83, "right": 0.72, "bottom": 0.87},
+      "source_order": 12
+    },
+    {
+      "type": "markdown",
+      "content": "真实GDP",
+      "bbox": {"left": 0.49, "top": 0.75, "right": 0.55, "bottom": 0.78},
+      "source_order": 13
+    },
+    {
+      "type": "markdown",
+      "content": "网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk",
+      "bbox": {"left": 0.845, "top": 0.906, "right": 0.955, "bottom": 0.992},
+      "source_order": 14
+    }
+  ],
+  "termination": "eos",
+  "warnings": [
+    "Bottom-right download-site watermark is included because it is visibly present in the source preview.",
+    "Formula, chart labels, and reading order require final human verification."
+  ],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "liteparse_version": "lit 2.11.1",
+    "generated_at": "2026-08-12T23:08:10+08:00",
+    "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+    "source_page": 34,
+    "needs_human": []
+  }
+}

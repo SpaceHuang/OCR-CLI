@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "page_number": 23,
+  "categories": [
+    "formula",
+    "visual",
+    "mixed"
+  ],
+  "blocks": [
+    {
+      "type": "markdown",
+      "content": "第2章　对称图形——圆",
+      "bbox": {
+        "left": 0.08,
+        "top": 0.03,
+        "right": 0.34,
+        "bottom": 0.08
+      },
+      "source_order": 1
+    },
+    {
+      "type": "markdown",
+      "content": "2.8　圆锥的侧面积",
+      "bbox": {
+        "left": 0.13,
+        "top": 0.10,
+        "right": 0.53,
+        "bottom": 0.15
+      },
+      "source_order": 2
+    },
+    {
+      "type": "markdown",
+      "content": "我们把连接圆锥的顶点和底面圆上一点的线段叫做圆锥的母线。",
+      "bbox": {
+        "left": 0.23,
+        "top": 0.21,
+        "right": 0.89,
+        "bottom": 0.27
+      },
+      "source_order": 3
+    },
+    {
+      "type": "markdown",
+      "content": "如图2－62，线段SA是圆锥的母线。",
+      "bbox": {
+        "left": 0.19,
+        "top": 0.28,
+        "right": 0.53,
+        "bottom": 0.32
+      },
+      "source_order": 4
+    },
+    {
+      "type": "visual_region",
+      "content": "图2－62",
+      "bbox": {
+        "left": 0.62,
+        "top": 0.25,
+        "right": 0.90,
+        "bottom": 0.42
+      },
+      "source_order": 5
+    },
+    {
+      "type": "markdown",
+      "content": "S",
+      "bbox": {"left": 0.745, "top": 0.285, "right": 0.765, "bottom": 0.305},
+      "source_order": 6
+    },
+    {
+      "type": "markdown",
+      "content": "A",
+      "bbox": {"left": 0.704, "top": 0.365, "right": 0.724, "bottom": 0.385},
+      "source_order": 7
+    },
+    {
+      "type": "markdown",
+      "content": "O",
+      "bbox": {"left": 0.744, "top": 0.365, "right": 0.765, "bottom": 0.385},
+      "source_order": 8
+    },
+    {
+      "type": "markdown",
+      "content": "l",
+      "bbox": {"left": 0.724, "top": 0.335, "right": 0.738, "bottom": 0.355},
+      "source_order": 9
+    },
+    {
+      "type": "markdown",
+      "content": "r",
+      "bbox": {"left": 0.789, "top": 0.375, "right": 0.805, "bottom": 0.395},
+      "source_order": 10
+    },
+    {
+      "type": "visual_region",
+      "bbox": {
+        "left": 0.08,
+        "top": 0.35,
+        "right": 0.18,
+        "bottom": 0.43
+      },
+      "source_order": 11
+    },
+    {
+      "type": "markdown",
+      "content": "思考与探索",
+      "bbox": {
+        "left": 0.08,
+        "top": 0.43,
+        "right": 0.19,
+        "bottom": 0.46
+      },
+      "source_order": 12
+    },
+    {
+      "type": "markdown",
+      "content": "在图2－62中，设圆锥的母线长为l，圆锥的底面圆半径为r，你能计算圆锥的侧面积吗？",
+      "bbox": {
+        "left": 0.19,
+        "top": 0.35,
+        "right": 0.62,
+        "bottom": 0.46
+      },
+      "source_order": 13
+    },
+    {
+      "type": "markdown",
+      "content": "圆锥的侧面展开图是一个扇形。",
+      "bbox": {
+        "left": 0.28,
+        "top": 0.47,
+        "right": 0.53,
+        "bottom": 0.52
+      },
+      "source_order": 14
+    },
+    {
+      "type": "markdown",
+      "content": "这个扇形的弧长是圆锥底面圆周长，半径是圆锥的母线长，圆锥的侧面积为\n\nS=\\frac{1}{2}\\cdot2\\pi r\\cdot l=\\pi rl。",
+      "bbox": {
+        "left": 0.58,
+        "top": 0.47,
+        "right": 0.86,
+        "bottom": 0.59
+      },
+      "source_order": 15
+    },
+    {
+      "type": "markdown",
+      "content": "例　用铁皮制作的圆锥形容器盖如图2－63所示，求这个容器盖铁皮的面积（精确到1 cm²）。",
+      "bbox": {
+        "left": 0.20,
+        "top": 0.62,
+        "right": 0.73,
+        "bottom": 0.68
+      },
+      "source_order": 16
+    },
+    {
+      "type": "visual_region",
+      "content": "图2－63",
+      "bbox": {
+        "left": 0.68,
+        "top": 0.64,
+        "right": 0.90,
+        "bottom": 0.78
+      },
+      "source_order": 17
+    },
+    {
+      "type": "markdown",
+      "content": "50 cm",
+      "bbox": {"left": 0.80, "top": 0.68, "right": 0.86, "bottom": 0.71},
+      "source_order": 18
+    },
+    {
+      "type": "markdown",
+      "content": "80 cm",
+      "bbox": {"left": 0.75, "top": 0.76, "right": 0.84, "bottom": 0.79},
+      "source_order": 19
+    },
+    {
+      "type": "markdown",
+      "content": "解：圆锥形容器盖的底面圆周长为2π×40=80π。",
+      "bbox": {
+        "left": 0.20,
+        "top": 0.69,
+        "right": 0.66,
+        "bottom": 0.74
+      },
+      "source_order": 20
+    },
+    {
+      "type": "markdown",
+      "content": "容器盖的面积",
+      "bbox": {
+        "left": 0.20,
+        "top": 0.75,
+        "right": 0.38,
+        "bottom": 0.79
+      },
+      "source_order": 21
+    },
+    {
+      "type": "formula",
+      "latex": "S=\\frac{1}{2}\\times80\\pi\\times50",
+      "bbox": {
+        "left": 0.32,
+        "top": 0.79,
+        "right": 0.60,
+        "bottom": 0.83
+      },
+      "source_order": 22
+    },
+    {
+      "type": "formula",
+      "latex": "\\approx 6\\,280。",
+      "bbox": {
+        "left": 0.35,
+        "top": 0.84,
+        "right": 0.52,
+        "bottom": 0.87
+      },
+      "source_order": 23
+    },
+    {
+      "type": "markdown",
+      "content": "答：这个圆锥形容器盖铁皮的面积约为6 280 cm²。",
+      "bbox": {
+        "left": 0.20,
+        "top": 0.88,
+        "right": 0.72,
+        "bottom": 0.92
+      },
+      "source_order": 24
+    },
+    {
+      "type": "visual_region",
+      "bbox": {
+        "left": 0.08,
+        "top": 0.91,
+        "right": 0.18,
+        "bottom": 0.98
+      },
+      "source_order": 25
+    },
+    {
+      "type": "markdown",
+      "content": "拓展与延伸",
+      "bbox": {
+        "left": 0.08,
+        "top": 0.98,
+        "right": 0.19,
+        "bottom": 1.0
+      },
+      "source_order": 26
+    },
+    {
+      "type": "markdown",
+      "content": "在半径为√2的圆形纸片中，剪一个圆心角为90°的扇形（图2－64中的阴影部分）。",
+      "bbox": {
+        "left": 0.19,
+        "top": 0.93,
+        "right": 0.68,
+        "bottom": 0.98
+      },
+      "source_order": 27
+    },
+    {
+      "type": "markdown",
+      "content": "（1）求这个扇形的面积（结果保留π）；\n（2）若用剪得的扇形纸片围成一个圆锥的侧面，能否从剪下的3块余料中选取一块，剪出一个圆作为这个圆锥的底面？",
+      "bbox": {
+        "left": 0.19,
+        "top": 0.98,
+        "right": 0.70,
+        "bottom": 0.995
+      },
+      "source_order": 28
+    },
+    {
+      "type": "visual_region",
+      "content": "图2－64",
+      "bbox": {
+        "left": 0.72,
+        "top": 0.91,
+        "right": 0.91,
+        "bottom": 0.99
+      },
+      "source_order": 29
+    },
+    {
+      "type": "markdown",
+      "content": "O",
+      "bbox": {"left": 0.79, "top": 0.945, "right": 0.81, "bottom": 0.96},
+      "source_order": 30
+    },
+    {
+      "type": "markdown",
+      "content": "86",
+      "bbox": {
+        "left": 0.10,
+        "top": 0.99,
+        "right": 0.16,
+        "bottom": 1.0
+      },
+      "source_order": 31
+    }
+  ],
+  "termination": "eos",
+  "warnings": [],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "generated_at": "2026-08-19T00:00:00+08:00",
+    "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+    "source_page": 86,
+    "needs_human": [ ]
+  }
+}

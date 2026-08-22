@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "page_number": 30,
+  "categories": [
+    "visual",
+    "mixed"
+  ],
+  "blocks": [
+    {
+      "type": "visual_region",
+      "bbox": {
+        "left": 0.03,
+        "top": 0.03,
+        "right": 0.35,
+        "bottom": 0.28
+      },
+      "source_order": 1
+    },
+    {
+      "type": "markdown",
+      "content": "A",
+      "bbox": {"left": 0.115, "top": 0.19, "right": 0.135, "bottom": 0.21},
+      "source_order": 2
+    },
+    {
+      "type": "markdown",
+      "content": "B",
+      "bbox": {"left": 0.30, "top": 0.19, "right": 0.32, "bottom": 0.21},
+      "source_order": 3
+    },
+    {
+      "type": "markdown",
+      "content": "C",
+      "bbox": {"left": 0.205, "top": 0.265, "right": 0.225, "bottom": 0.285},
+      "source_order": 4
+    },
+    {
+      "type": "markdown",
+      "content": "O",
+      "bbox": {"left": 0.205, "top": 0.125, "right": 0.225, "bottom": 0.145},
+      "source_order": 5
+    },
+    {
+      "type": "markdown",
+      "content": "数学\nSHU XUE\n九年级 上册",
+      "bbox": {
+        "left": 0.08,
+        "top": 0.28,
+        "right": 0.34,
+        "bottom": 0.57
+      },
+      "source_order": 6
+    },
+    {
+      "type": "visual_region",
+      "bbox": {
+        "left": 0.03,
+        "top": 0.78,
+        "right": 0.32,
+        "bottom": 0.94
+      },
+      "source_order": 7
+    },
+    {
+      "type": "markdown",
+      "content": "中国环境标志",
+      "bbox": {"left": 0.10, "top": 0.80, "right": 0.25, "bottom": 0.83},
+      "source_order": 8
+    },
+    {
+      "type": "markdown",
+      "content": "CHINA ENVIRONMENTAL LABELING",
+      "bbox": {"left": 0.08, "top": 0.84, "right": 0.27, "bottom": 0.88},
+      "source_order": 9
+    },
+    {
+      "type": "markdown",
+    "content": "绿色印刷产品",
+    "bbox": {
+      "left": 0.08,
+      "top": 0.88,
+      "right": 0.25,
+      "bottom": 0.92
+    },
+      "source_order": 10
+  },
+  {
+    "type": "markdown",
+      "content": "审批号：苏费核(2021年)0097号\n举报电话：12315",
+    "bbox": {
+      "left": 0.03,
+      "top": 0.92,
+      "right": 0.50,
+      "bottom": 0.98
+    },
+      "source_order": 11
+    },
+    {
+      "type": "visual_region",
+      "bbox": {
+        "left": 0.68,
+        "top": 0.76,
+        "right": 0.94,
+        "bottom": 0.94
+      },
+      "source_order": 12
+    },
+    {
+      "type": "markdown",
+      "content": "ISBN 978-7-5537-2974-9",
+      "bbox": {
+        "left": 0.70,
+        "top": 0.76,
+        "right": 0.92,
+        "bottom": 0.79
+      },
+      "source_order": 13
+    },
+    {
+      "type": "visual_region",
+      "bbox": {
+        "left": 0.68,
+        "top": 0.79,
+        "right": 0.94,
+        "bottom": 0.93
+      },
+      "source_order": 14
+    },
+    {
+      "type": "markdown",
+      "content": "9 7 8 7 5 5 3 7 2 9 7 4 9",
+      "bbox": {
+        "left": 0.70,
+        "top": 0.92,
+        "right": 0.91,
+        "bottom": 0.95
+      },
+      "source_order": 15
+    },
+    {
+      "type": "markdown",
+      "content": "定价：9.65元",
+      "bbox": {
+        "left": 0.73,
+        "top": 0.93,
+        "right": 0.88,
+        "bottom": 0.99
+      },
+      "source_order": 16
+    }
+  ],
+  "termination": "eos",
+  "warnings": [],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "generated_at": "2026-08-19T00:00:00+08:00",
+    "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+    "source_page": 146,
+    "needs_human": []
+  }
+}

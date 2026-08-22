@@ -36,6 +36,7 @@ pub fn write_page_artifacts(
 
 pub struct PageArtifactOutput {
     pub markdown: String,
+    pub page_json: String,
     pub truncated: bool,
     pub warnings: Vec<String>,
 }
@@ -82,6 +83,9 @@ pub fn write_page_artifacts_with_status(
     validate_markdown_image_links(&markdown, &output_root)?;
     Ok(PageArtifactOutput {
         markdown,
+        page_json: document
+            .to_json()
+            .map_err(|error| format!("serialize page: {error:?}"))?,
         truncated,
         warnings: document
             .warnings
@@ -246,11 +250,11 @@ fn parse_structured_blocks(markdown: &str) -> Vec<PageBlock> {
     let mut remaining = markdown;
     while !remaining.is_empty() {
         let table_position = remaining.find("<table");
-        let formula_position = remaining.find("$$");
-        let next = match (table_position, formula_position) {
-            (Some(table), Some(formula)) if formula < table => Some((formula, false)),
+        let formula = find_formula_start(remaining);
+        let next = match (table_position, formula) {
+            (Some(table), Some((formula, _))) if formula < table => Some((formula, false)),
             (Some(table), _) => Some((table, true)),
-            (None, Some(formula)) => Some((formula, false)),
+            (None, Some((formula, _))) => Some((formula, false)),
             (None, None) => None,
         };
         if let Some((start, is_table)) = next {
@@ -260,14 +264,16 @@ fn parse_structured_blocks(markdown: &str) -> Vec<PageBlock> {
                 });
             }
             if !is_table {
-                let formula_start = &remaining[start + 2..];
-                if let Some(end) = formula_start.find("$$") {
-                    blocks.push(PageBlock::Formula {
-                        latex: formula_start[..end].trim().to_owned(),
-                        display: true,
-                    });
-                    remaining = &formula_start[end + 2..];
-                    continue;
+                if let Some((open_len, close)) = formula_delimiter(&remaining[start..]) {
+                    let formula_start = &remaining[start + open_len..];
+                    if let Some(end) = formula_start.find(close) {
+                        blocks.push(PageBlock::Formula {
+                            latex: formula_start[..end].trim().to_owned(),
+                            display: remaining[start..].starts_with("$$"),
+                        });
+                        remaining = &formula_start[end + close.len()..];
+                        continue;
+                    }
                 }
                 blocks.push(PageBlock::Markdown {
                     content: remaining.to_owned(),
@@ -296,6 +302,29 @@ fn parse_structured_blocks(markdown: &str) -> Vec<PageBlock> {
         break;
     }
     blocks
+}
+
+fn find_formula_start(value: &str) -> Option<(usize, bool)> {
+    ["$$", "$", "\\("]
+        .into_iter()
+        .filter_map(|delimiter| {
+            value
+                .find(delimiter)
+                .map(|index| (index, delimiter == "$$"))
+        })
+        .min_by_key(|(index, _)| *index)
+}
+
+fn formula_delimiter(value: &str) -> Option<(usize, &'static str)> {
+    if value.starts_with("$$") {
+        Some((2, "$$"))
+    } else if value.starts_with("\\(") {
+        Some((2, "\\)"))
+    } else if value.starts_with('$') {
+        Some((1, "$"))
+    } else {
+        None
+    }
 }
 
 fn remove_confident_tail_repetition(markdown: &str) -> (String, bool) {
@@ -416,6 +445,23 @@ mod tests {
             block,
             PageBlock::HtmlTable { html } if html.contains("<td>A</td>")
         )));
+    }
+
+    #[test]
+    fn parser_maps_inline_formula_delimiters_to_formula_blocks() {
+        let page = parse_page(1, "before $\\angle A=30^\\circ$ after \\(x^2\\)", false).unwrap();
+        let formulas = page
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                PageBlock::Formula { latex, display } => Some((latex.as_str(), *display)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            formulas,
+            vec![(r"\angle A=30^\circ", false), ("x^2", false)]
+        );
     }
 
     #[test]

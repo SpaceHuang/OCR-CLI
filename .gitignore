@@ -7,3 +7,8 @@ __pycache__/
 /test-data/
 /dist/
 /docs/review/
+.venv-liteparse/
+# Bootstrap working artifacts (large page PNGs); keep truth/selection/manifest
+/assets/regression/*/preview/
+/assets/regression/*/work/
+/assets/regression/*/inputs/*.pdf

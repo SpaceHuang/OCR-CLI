@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "page_number": 29,
+  "categories": [
+    "blank"
+  ],
+  "blocks": [],
+  "termination": "eos",
+  "warnings": [],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "generated_at": "2026-08-19T00:00:00+08:00",
+    "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+    "source_page": 145,
+    "needs_human": []
+  }
+}

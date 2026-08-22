@@ -452,6 +452,7 @@ pub trait PageArtifactRecognizer<M> {
 pub struct PageArtifactResult {
     pub png: Vec<u8>,
     pub markdown: String,
+    pub page_json: String,
     pub truncated: bool,
     pub warnings: Vec<String>,
 }
@@ -557,7 +558,14 @@ where
                         audit: Some(image.audit),
                     };
                     diagnostics.push(checkpoint.diagnostic());
-                    commit_page(root, page, &artifact.png, &artifact.markdown, &checkpoint)?;
+                    commit_page(
+                        root,
+                        page,
+                        &artifact.png,
+                        &artifact.markdown,
+                        &artifact.page_json,
+                        &checkpoint,
+                    )?;
                     completed += 1;
                 }
                 Err(_) => {
@@ -1203,6 +1211,7 @@ pub fn commit_page(
     page_number: u32,
     png: &[u8],
     markdown: &str,
+    page_json: &str,
     checkpoint: &PageCheckpoint,
 ) -> io::Result<()> {
     if page_number == 0 || checkpoint.page_number != page_number {
@@ -1220,6 +1229,10 @@ pub fn commit_page(
     atomic_write(
         root.join(format!("page-{page_number:04}.md")),
         normalize_lf(markdown).as_bytes(),
+    )?;
+    atomic_write(
+        root.join(format!("page-{page_number:04}.json")),
+        page_json.as_bytes(),
     )?;
     let output_sha256 = artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
     write_checkpoint(
@@ -1311,6 +1324,9 @@ mod tests {
             Ok(PageArtifactResult {
                 png: vec![page as u8],
                 markdown: format!("page {page}"),
+                page_json: format!(
+                    r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]}}"#
+                ),
                 truncated: false,
                 warnings: Vec::new(),
             })
@@ -1767,7 +1783,7 @@ mod tests {
             warnings: Vec::new(),
             audit: None,
         };
-        super::commit_page(&directory, 1, b"png", "page\r\ntext", &checkpoint).unwrap();
+        super::commit_page(&directory, 1, b"png", "page\r\ntext", "{}", &checkpoint).unwrap();
         assert_eq!(
             fs::read(directory.join("page-0001.md")).unwrap(),
             b"page\ntext"

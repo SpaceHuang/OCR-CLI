@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "page_number": 12,
+  "categories": ["text", "visual", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"案例研究\n石油与经济","bbox":{"left":0.24,"top":0.18,"right":0.43,"bottom":0.25},"source_order":0},
+    {"type":"markdown","content":"1970年以来，美国经济中一些最大的经济波动起源于中东的产油地区。原油是生产许多物品与劳务的关键要素，而且世界大部分石油来自沙特阿拉伯、科威特和其他中东国家。当某个事件（通常起源于政治）减少了来自这个地区的原油供给时，世界石油价格就会上升。美国生产汽油、轮胎和许多其他产品的企业的成本就会增加，而且这些企业发现在任何一种既定的价格水平时供给它们的物品与劳务是无利可图的。结果总供给曲线向左移动，这又会引起滞胀。","bbox":{"left":0.24,"top":0.28,"right":0.72,"bottom":0.43},"source_order":1},
+    {"type":"markdown","content":"第一次这种事件发生在20世纪70年代中期。石油储藏丰富的国家作为石油输出国组织成员（the Organization of Petroleum Exporting Countries，OPEC）走到了一起。OPEC是一个卡特尔——一个企图阻止竞争并减少生产以提高价格的卖者集团。而且，石油价格的确大幅度上升了。从1973年到1975年，石油价格几乎翻了一番。世界石油进口国都同时经历了通货膨胀和衰退。在美国，按CPI衡量的通货膨胀率几十年来第一次超过了10%，失业率也从1973年的4.9%上升到1975年的8.5%。","bbox":{"left":0.24,"top":0.44,"right":0.72,"bottom":0.59},"source_order":2},
+    {"type":"markdown","content":"几乎完全相同的事件在几年后又发生了。在20世纪70年代末期，OPEC国家再一次限制石油的供给以提高价格。从1978年到1981年，石油价格翻了一个还要多的倍数，结果又是滞胀。第一次OPEC事件引起的通货膨胀本已渐渐平息，但现在每年的通货膨胀率又上升到10%以上。由于美联储不愿意抵消这种通货膨胀的大幅度上升，所以经济很快又进入了衰退。失业从1978年和1979年的6%左右上升到几年后的10%左右。","bbox":{"left":0.24,"top":0.60,"right":0.72,"bottom":0.75},"source_order":3},
+    {"type":"markdown","content":"世界石油市场也是总供给有利移动的来源。1986年OPEC成员之间爆发了争执，成员国违背了限制石油生产的协议。在世界原油市场上，价格几乎下降了一半。石油价格的下降减少了美国企业的成本，企业现在发现在任何一种既定的物价水平时供给物品和劳务都是更有利可图的。结果，总供给曲线向右移动。美国经济经历了滞胀的反面：产量迅速增长，失业率减少，而且通货膨胀率达到了多年来的最低水平。","bbox":{"left":0.24,"top":0.76,"right":0.72,"bottom":0.89},"source_order":4},
+    {"type":"markdown","content":"近年来，世界石油市场并没有成为经济波动的重要来源。部分原因是节油的努力和技术变革降低了经济对石油的依赖程度。生产一单位真实GDP所需的石油量自从20世纪70年代的OPEC冲击以来已下降了40%左右。结果，今天石油价格的任何变动对经济的影响都比过去小。","bbox":{"left":0.24,"top":0.90,"right":0.72,"bottom":0.98},"source_order":5},
+    {"type":"visual_region","bbox":{"left":0.73,"top":0.28,"right":0.84,"bottom":0.44},"source_order":7},
+    {"type":"markdown","content":"图33-1\n中东石油生产的变化是美国经济波动的一个原因。","bbox":{"left":0.73,"top":0.45,"right":0.84,"bottom":0.52},"source_order":8},
+    {"type":"markdown","content":"图片来源：© KARIM SAHIB/AFP/GETTY IMAGES.","bbox":{"left":0.73,"top":0.53,"right":0.84,"bottom":0.61},"source_order":9},
+    {"type":"markdown","content":"但是，不能过早地得出美国不再需要担心油价格的结论。如果石油价格上升得足够高，宏观经济的结果就很可能类似于20世纪70年代的情形。在2008年，当本书即将付印时，世界石油价格的确在大幅度上升，部分是由于迅速增长的中国的需求增加。这种石油价格上升使一些观察家担心，美国经济很可能又一次遭遇滞胀。","bbox":{"left":0.24,"top":0.99,"right":0.72,"bottom":1.0},"source_order":6},
+    {"type":"markdown","content":"第33章  总需求与总供给  ▶  263","bbox":{"left":0.61,"top":0.94,"right":0.84,"bottom":0.97},"source_order":10},
+    {"type":"markdown","content":"771","bbox":{"left":0.84,"top":0.43,"right":0.88,"bottom":0.46},"source_order":11},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":12}
+  ],
+  "termination": "eos",
+  "warnings": ["Bottom-right download-site watermark is included because it is visibly present in the source preview.","The final paragraph continues below the visible page crop and requires final human verification."],
+  "review_status": "approved",
+  "bootstrap": {"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-18T00:00:00+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":282,"needs_human":[]}
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "page_number": 21,
+  "categories": ["formula", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"第1章　一元二次方程","bbox":{"left":0.13,"top":0.045,"right":0.33,"bottom":0.08},"source_order":0},
+    {"type":"markdown","content":"1.4 用一元二次方程解决问题","bbox":{"left":0.08,"top":0.04,"right":0.92,"bottom":0.10},"source_order":1},
+    {"type":"markdown","content":"我们已经知道，生活中的一些实际问题，有时可以用一元二次方程来描述其中数量之间的相等关系。运用一元二次方程的有关知识，常常可以使这些实际问题得到解决。","bbox":{"left":0.08,"top":0.12,"right":0.92,"bottom":0.21},"source_order":2},
+    {"type":"markdown","content":"问题1：用一根长22 cm的铁丝，能否围成面积是30 cm²的矩形？能否围成面积是32 cm²的矩形？","bbox":{"left":0.08,"top":0.22,"right":0.92,"bottom":0.30},"source_order":3},
+    {"type":"markdown","content":"解：设矩形的长是x cm，则宽是(11−x) cm。","bbox":{"left":0.08,"top":0.31,"right":0.92,"bottom":0.41},"source_order":4},
+    {"type":"formula","latex":"x(11-x)=30","bbox":{"left":0.18,"top":0.42,"right":0.55,"bottom":0.47},"source_order":5},
+    {"type":"formula","latex":"x^2-11x+30=0","bbox":{"left":0.18,"top":0.48,"right":0.58,"bottom":0.53},"source_order":6},
+    {"type":"markdown","content":"解这个方程，得\n\nx₁=5，x₂=6。\n\n当x₁=5时，11−x₁=6；\n\n当x₂=6时，11−x₂=5。\n\n答：用一根长22 cm的铁丝能围成面积是30 cm²的矩形。","bbox":{"left":0.08,"top":0.54,"right":0.92,"bottom":0.69},"source_order":7},
+    {"type":"markdown","content":"（2）根据题意，得","bbox":{"left":0.08,"top":0.70,"right":0.42,"bottom":0.75},"source_order":8},
+    {"type":"formula","latex":"x(11-x)=32","bbox":{"left":0.18,"top":0.76,"right":0.55,"bottom":0.81},"source_order":9},
+    {"type":"markdown","content":"即","bbox":{"left":0.20,"top":0.82,"right":0.25,"bottom":0.86},"source_order":10},
+    {"type":"formula","latex":"x^2-11x+32=0","bbox":{"left":0.18,"top":0.87,"right":0.58,"bottom":0.92},"source_order":11},
+    {"type":"markdown","content":"因为b²−4ac=(−11)²−4×1×32=121−128=−7<0，","bbox":{"left":0.08,"top":0.93,"right":0.92,"bottom":0.96},"source_order":12},
+    {"type":"markdown","content":"所以此方程没有实数根。","bbox":{"left":0.08,"top":0.96,"right":0.55,"bottom":0.98},"source_order":13},
+    {"type":"markdown","content":"答：用一根长22 cm的铁丝不能围成面积是32 cm²的矩形。","bbox":{"left":0.08,"top":0.98,"right":0.92,"bottom":0.995},"source_order":14}
+  ],
+  "termination":"eos",
+  "warnings":[],
+  "review_status":"approved",
+  "bootstrap":{
+    "source":"manual-draft",
+    "generated_at":"2026-08-19T00:00:00+08:00",
+    "source_pdf":"test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+    "source_page":29,
+    "needs_human":["text_transcription","reading_order","bbox","formula_latex"]
+  }
+}

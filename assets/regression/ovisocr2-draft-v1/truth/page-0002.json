@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "page_number": 2,
+  "categories": [
+    "text"
+  ],
+  "blocks": [
+    {
+      "type": "markdown",
+      "content": "网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk",
+      "bbox": {"left": 0.845, "top": 0.906, "right": 0.955, "bottom": 0.992},
+      "source_order": 0
+    }
+  ],
+  "termination": "eos",
+  "warnings": [
+    "Page has no book content, but the bottom-right download-site watermark is visibly present and included in truth."
+  ],
+  "review_status": "approved",
+  "bootstrap": {
+    "source": "manual-draft",
+    "liteparse_version": "lit 2.11.1",
+    "generated_at": "2026-08-12T23:08:02+08:00",
+    "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+    "source_page": 2,
+    "needs_human": [
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "page_number": 16,
+  "categories": ["text", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"义务教育教科书\n数学  九年级上册","bbox":{"left":0.20,"top":0.49,"right":0.40,"bottom":0.56},"source_order":0},
+    {"type":"markdown","content":"主编  杨裕前  董林伟\n责任编辑  许礼光  闵正年  沈琼\n责任校对  仲敏","bbox":{"left":0.20,"top":0.58,"right":0.50,"bottom":0.66},"source_order":1},
+    {"type":"markdown","content":"出版  江苏凤凰科学技术出版社\n出版地地址  南京市湖南路1号A楼，邮编：210009\n重印  江苏凤凰出版传媒股份有限公司\n发行  江苏凤凰出版传媒股份有限公司\n照排  江苏凤凰制版有限公司\n印刷  江苏凤凰新华印务集团有限公司","bbox":{"left":0.20,"top":0.68,"right":0.65,"bottom":0.80},"source_order":2},
+    {"type":"markdown","content":"开本  787 mm×1092 mm  1/16\n印张  9.75\n版次  2006年6月第1版　2014年6月第3版\n印次  2021年5月第16次印刷","bbox":{"left":0.20,"top":0.81,"right":0.68,"bottom":0.88},"source_order":3},
+    {"type":"markdown","content":"标准书号  ISBN 978-7-5537-2974-9\n定价  9.65元","bbox":{"left":0.20,"top":0.89,"right":0.55,"bottom":0.94},"source_order":4},
+    {"type":"markdown","content":"如发现印装质量问题，请与凤凰传媒联系，电话：400-828-1132","bbox":{"left":0.20,"top":0.95,"right":0.72,"bottom":0.98},"source_order":5}
+  ],
+  "termination":"eos",
+  "warnings":[],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","generated_at":"2026-08-19T00:00:00+08:00","needs_human":[]}
+}

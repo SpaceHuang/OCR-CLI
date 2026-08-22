@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "page_number": 5,
+  "categories": ["table", "visual", "mixed"],
+  "blocks": [
+    {"type":"markdown","content":"素。在本书的后面，我们将研究围绕真实GDP长期趋势的短期波动。","bbox":{"left":0.34,"top":0.18,"right":0.79,"bottom":0.21},"source_order":0},
+    {"type":"markdown","content":"在本章我们分三步进行研究：第一，考察人均真实GDP的国际数据。这些数据使我们对世界各国生活水平与增长的差别大小有一个大体了解；第二，考察生产率——一个工人每小时生产的物品与劳务量——的作用，特别是说明一国的生活水平是由其工人的生产率决定的，并且考虑决定一国生产率的因素；第三，考虑生产率和一国采取的经济政策之间的联系。","bbox":{"left":0.33,"top":0.21,"right":0.80,"bottom":0.34},"source_order":1},
+    {"type":"markdown","content":"25.1  世界各国的经济增长","bbox":{"left":0.32,"top":0.37,"right":0.70,"bottom":0.42},"source_order":2},
+    {"type":"markdown","content":"作为研究长期增长的出发点，我们先考察世界上一些国家的经济发展历程。表25-1说明了13个国家人均真实GDP的数据。对于每一个国家，数据都涵盖一个世纪的历史。该表的第一栏和第二栏列出了国家与时期（各国的时期略有不同，这是因为数据的可获得性不同），第三栏和第四栏列出了一个世纪前和最近一年的 人均真实GDP的估计值。","bbox":{"left":0.33,"top":0.43,"right":0.80,"bottom":0.55},"source_order":3},
+    {"type":"markdown","content":"表25-1  不同的增长经历","bbox":{"left":0.32,"top":0.56,"right":0.53,"bottom":0.59},"source_order":4},
+    {"type":"html_table","html":"<table><thead><tr><th>国家</th><th>时期</th><th>期初人均真实GDP*（美元）</th><th>期末人均真实GDP*（美元）</th><th>年增长率（%）</th></tr></thead><tbody><tr><td>日本</td><td>1890—2006</td><td>1 408</td><td>33 150</td><td>2.76</td></tr><tr><td>巴西</td><td>1900—2006</td><td>729</td><td>8 880</td><td>2.39</td></tr><tr><td>中国</td><td>1900—2006</td><td>670</td><td>7 740</td><td>2.34</td></tr><tr><td>墨西哥</td><td>1900—2006</td><td>1 085</td><td>11 410</td><td>2.24</td></tr><tr><td>德国</td><td>1870—2006</td><td>2 045</td><td>31 830</td><td>2.04</td></tr><tr><td>加拿大</td><td>1870—2006</td><td>2 224</td><td>34 610</td><td>2.04</td></tr><tr><td>阿根廷</td><td>1900—2006</td><td>2 147</td><td>15 390</td><td>1.88</td></tr><tr><td>美国</td><td>1870—2006</td><td>3 752</td><td>44 260</td><td>1.83</td></tr><tr><td>印度</td><td>1900—2006</td><td>632</td><td>3 800</td><td>1.71</td></tr><tr><td>英国</td><td>1870—2006</td><td>4 502</td><td>35 580</td><td>1.53</td></tr><tr><td>印度尼西亚</td><td>1900—2006</td><td>834</td><td>3 950</td><td>1.48</td></tr><tr><td>孟加拉国</td><td>1900—2006</td><td>583</td><td>2 340</td><td>1.32</td></tr><tr><td>巴基斯坦</td><td>1900—2006</td><td>690</td><td>2 500</td><td>1.22</td></tr></tbody></table>","bbox":{"left":0.33,"top":0.59,"right":0.80,"bottom":0.84},"source_order":5},
+    {"type":"markdown","content":"*真实GDP以2006年美元衡量。\n资料来源：Robert J. Barro and Xavier Sala-i-Martin, Economic Growth（New York: McGraw-Hill, 1995），tables 10.2 and 10.3；World Development Report 2008，Table 1；and author's calculations。","bbox":{"left":0.34,"top":0.84,"right":0.80,"bottom":0.90},"source_order":6},
+    {"type":"markdown","content":"人均真实GDP数据表明各国生活水平差别很大。例如，美国的人均收入约为中国的6倍、印度的12倍。最穷国家的人均收入水平是发达国家几十年来所未见的。2006年普通印度人的真实收入比1870年普通英","bbox":{"left":0.33,"top":0.90,"right":0.80,"bottom":0.97},"source_order":7},
+    {"type":"markdown","content":"46  ◀  经济学原理","bbox":{"left":0.18,"top":0.96,"right":0.33,"bottom":0.99},"source_order":8},
+    {"type":"markdown","content":"网络加速器\nt.tizi8.com\nt.it520.cc\nt.hi6.uk","bbox":{"left":0.845,"top":0.906,"right":0.955,"bottom":0.992},"source_order":9}
+  ],
+  "termination":"eos",
+  "warnings":["Bottom-right download-site watermark is included because it is visibly present in the source preview.","Table values, footnote transcription, and bottom paragraph are based on the visible preview and require final human verification."],
+  "review_status":"approved",
+  "bootstrap":{"source":"manual-draft","liteparse_version":"lit 2.11.1","generated_at":"2026-08-12T23:08:15+08:00","source_pdf":"test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf","source_page":65,"needs_human":[]}
+}

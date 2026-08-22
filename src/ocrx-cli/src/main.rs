@@ -15,7 +15,7 @@ use ocrx_pdf::{
     fit_pixel_budget,
 };
 use ocrx_runtime::{Backend, LlamaMtmdRuntime, RuntimeInfo};
-use std::io::{Cursor, IsTerminal};
+use std::io::{Cursor, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -870,6 +870,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         Ok(PageArtifactResult {
             png: png.into_inner(),
             markdown: artifact.markdown,
+            page_json: artifact.page_json,
             truncated: artifact.truncated,
             warnings: artifact.warnings,
         })
@@ -907,6 +908,33 @@ fn run_scan(options: ScanOptions) -> ! {
     let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
+    // Validate the input before resolving or downloading model assets. Invalid,
+    // encrypted, and corrupt PDFs are input errors even on a machine with no
+    // installed OCR model.
+    let page_count = match PdfiumRenderer::new(library.clone()).page_count(&input) {
+        Ok(count) => count,
+        Err(error) => {
+            let error_kind = match classify_input_error(&input, &error.to_string()) {
+                PdfErrorKind::NonPdf => "pdf_non_pdf",
+                PdfErrorKind::Corrupt => "pdf_corrupt",
+                PdfErrorKind::Encrypted => "pdf_encrypted",
+                PdfErrorKind::DynamicLibrary => "pdf_dynamic_library",
+                PdfErrorKind::Unknown => "input",
+            };
+            reporter.error(
+                &ErrorReport {
+                    code: 3,
+                    kind: error_kind.to_owned(),
+                    message: "unable to read PDF page count".to_owned(),
+                    cause: Some(error.to_string()),
+                    suggestion: Some("check the input PDF path".to_owned()),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(3);
+        }
+    };
     let cache = std::env::var_os("OCRX_MODEL_CACHE")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
@@ -1100,30 +1128,6 @@ fn run_scan(options: ScanOptions) -> ! {
             std::process::exit(9);
         }
     }
-    let page_count = match PdfiumRenderer::new(library.clone()).page_count(&input) {
-        Ok(count) => count,
-        Err(error) => {
-            let error_kind = match classify_pdf_error(&error.to_string()) {
-                PdfErrorKind::NonPdf => "pdf_non_pdf",
-                PdfErrorKind::Corrupt => "pdf_corrupt",
-                PdfErrorKind::Encrypted => "pdf_encrypted",
-                PdfErrorKind::DynamicLibrary => "pdf_dynamic_library",
-                PdfErrorKind::Unknown => "input",
-            };
-            reporter.error(
-                &ErrorReport {
-                    code: 3,
-                    kind: error_kind.to_owned(),
-                    message: "unable to read PDF page count".to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: Some("check the input PDF path".to_owned()),
-                },
-                report_format,
-            );
-            print_reporter(reporter);
-            std::process::exit(3);
-        }
-    };
     let pages = options
         .pages
         .clone()
@@ -1349,6 +1353,26 @@ fn run_scan(options: ScanOptions) -> ! {
             print_reporter(reporter);
             std::process::exit(6);
         }
+    }
+}
+
+fn classify_input_error(input: &Path, message: &str) -> PdfErrorKind {
+    let classified = classify_pdf_error(message);
+    if classified != PdfErrorKind::Unknown || !message.to_ascii_lowercase().contains("formaterror")
+    {
+        return classified;
+    }
+    let mut header = [0_u8; 1024];
+    let bytes_read = std::fs::File::open(input)
+        .and_then(|mut file| file.read(&mut header))
+        .unwrap_or_default();
+    if header[..bytes_read]
+        .windows(b"%PDF-".len())
+        .any(|window| window == b"%PDF-")
+    {
+        PdfErrorKind::Corrupt
+    } else {
+        PdfErrorKind::NonPdf
     }
 }
 

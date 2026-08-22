@@ -1,0 +1,505 @@
+{
+  "schema_version": 1,
+  "selector": "liteparse",
+  "liteparse_version": "lit 2.11.1",
+  "pages": [
+    {
+      "page_number": 1,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 1,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "scanned",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "quota:visual"
+    },
+    {
+      "page_number": 2,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 2,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 3,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 4,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "quota:truncated"
+    },
+    {
+      "page_number": 4,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 34,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 5,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 65,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 6,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 96,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 7,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 127,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 8,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 158,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 9,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 189,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 10,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 220,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 11,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 251,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 12,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 282,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 13,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 313,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 14,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 344,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 15,
+      "source_pdf": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+      "source_page": 375,
+      "source_sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 16,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 3,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "table",
+        "failure"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "garbled"
+      ],
+      "layout_reasons": [
+        "table-likely"
+      ],
+      "note": "quota:table"
+    },
+    {
+      "page_number": 17,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 4,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "table",
+        "truncated",
+        "failure"
+      ],
+      "probe_reasons": [
+        "scanned",
+        "garbled"
+      ],
+      "layout_reasons": [
+        "table-likely"
+      ],
+      "note": "quota:failure"
+    },
+    {
+      "page_number": 18,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 5,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "blank"
+      ],
+      "probe_reasons": [
+        "no-text"
+      ],
+      "layout_reasons": [],
+      "note": "quota:blank"
+    },
+    {
+      "page_number": 19,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 10,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "table",
+        "visual",
+        "mixed"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [
+        "table-likely"
+      ],
+      "note": "quota:mixed"
+    },
+    {
+      "page_number": 20,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 18,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "table",
+        "visual",
+        "mixed"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [
+        "table-likely"
+      ],
+      "note": "quota:mixed"
+    },
+    {
+      "page_number": 21,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 29,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "visual"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 22,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 60,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "visual",
+        "failure"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images",
+        "garbled"
+      ],
+      "layout_reasons": [
+        "dense-graphics"
+      ],
+      "note": "top-up"
+    },
+    {
+      "page_number": 23,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 91,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "table",
+        "visual",
+        "mixed",
+        "failure"
+      ],
+      "probe_reasons": [
+        "sparse-text",
+        "embedded-images",
+        "garbled"
+      ],
+      "layout_reasons": [
+        "table-likely",
+        "dense-graphics"
+      ],
+      "note": "top-up"
+    },
+    {
+      "page_number": 24,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 117,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "text"
+      ],
+      "probe_reasons": [
+        "sparse-text"
+      ],
+      "layout_reasons": [],
+      "note": "quota:text"
+    },
+    {
+      "page_number": 25,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 123,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "visual",
+        "failure"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images",
+        "garbled"
+      ],
+      "layout_reasons": [],
+      "note": "top-up"
+    },
+    {
+      "page_number": 26,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 131,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "visual",
+        "truncated"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "quota:truncated"
+    },
+    {
+      "page_number": 27,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 148,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "table",
+        "visual",
+        "mixed",
+        "failure"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "embedded-images",
+        "garbled"
+      ],
+      "layout_reasons": [
+        "table-likely",
+        "dense-graphics"
+      ],
+      "note": "quota:table"
+    },
+    {
+      "page_number": 28,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 156,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "blank",
+        "failure"
+      ],
+      "probe_reasons": [
+        "no-text",
+        "garbled"
+      ],
+      "layout_reasons": [],
+      "note": "quota:failure"
+    },
+    {
+      "page_number": 29,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 157,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "blank"
+      ],
+      "probe_reasons": [
+        "no-text"
+      ],
+      "layout_reasons": [],
+      "note": "quota:blank"
+    },
+    {
+      "page_number": 30,
+      "source_pdf": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+      "source_page": 158,
+      "source_sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+      "suggested_categories": [
+        "visual"
+      ],
+      "probe_reasons": [
+        "sparse-text",
+        "embedded-images"
+      ],
+      "layout_reasons": [],
+      "note": "quota:visual"
+    }
+  ]
+}
