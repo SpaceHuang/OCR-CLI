@@ -81,7 +81,7 @@ def main():
     if len(sys.argv) != 4:
         print("usage: score-regression.py MANIFEST TRUTH_DIR PREDICTION_DIR", file=sys.stderr); return 2
     manifest, truth_dir, pred_dir = map(Path, sys.argv[1:])
-    metadata = json.loads(manifest.read_text())
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
     if metadata.get("schema_version") != 1 or metadata.get("page_count", 0) < 30:
         print("invalid regression manifest", file=sys.stderr); return 3
     pages = []
@@ -89,7 +89,12 @@ def main():
         truth = truth_dir / f"page-{index:04}.json"; pred = pred_dir / f"page-{index:04}.json"
         if not truth.is_file() or not pred.is_file():
             print(f"missing page {index}", file=sys.stderr); return 3
-        pages.append(score_page(json.loads(pred.read_text()), json.loads(truth.read_text())))
+        pages.append(
+            score_page(
+                json.loads(pred.read_text(encoding="utf-8")),
+                json.loads(truth.read_text(encoding="utf-8")),
+            )
+        )
     keys = ["text_ned", "formula_completeness", "table_teds", "reading_order", "bbox_precision", "bbox_recall", "duplicate_rate"]
     averages = {key: sum(page[key] for page in pages) / len(pages) for key in keys}
     report = {"schema_version": 1, "set_id": metadata.get("set_id"), "page_count": len(pages), "metadata": {k: metadata.get(k) for k in ("model_revision", "runtime_revision", "adapter_revision", "prompt_revision")}, "metrics": averages, "truncated_pages": sum(page["truncated"] for page in pages), "blank_or_failed_pages": sum(page["blank_or_failed"] for page in pages), "pages": pages}

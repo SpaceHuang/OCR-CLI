@@ -12,7 +12,18 @@ def main():
     report = {"schema_version": 1, "cases": []}
     for profile, dpi, budget in CASES:
         pred = predictions / profile / str(dpi)
-        result = subprocess.run([sys.executable, str(Path(__file__).with_name("score-regression.py")), str(manifest), str(truth), str(pred)], capture_output=True, text=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("score-regression.py")),
+                str(manifest),
+                str(truth),
+                str(pred),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
         if result.returncode != 0:
             print(result.stderr, file=sys.stderr); return result.returncode
         report["cases"].append({"profile": profile, "dpi": dpi, "pixel_budget": budget, "score": json.loads(result.stdout)})

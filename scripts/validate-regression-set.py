@@ -12,7 +12,7 @@ def main() -> int:
         return 2
     root = Path(sys.argv[1])
     try:
-        manifest = json.loads((root / "manifest.json").read_text())
+        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     except Exception as error:
         print(f"invalid manifest: {error}", file=sys.stderr)
         return 2
@@ -33,7 +33,7 @@ def main() -> int:
         return 3
     categories = {category: 0 for category in required}
     for path in files:
-        page = json.loads(path.read_text())
+        page = json.loads(path.read_text(encoding="utf-8"))
         if page.get("schema_version") != 1 or not page.get("page_number"):
             print(f"invalid truth page: {path}", file=sys.stderr)
             return 3
