@@ -358,12 +358,7 @@ fn parse_command(args: &[&str]) -> Result<CliCommand, String> {
             scan_args.extend(rest.iter().copied());
             Ok(CliCommand::Scan(parse_scan_args(&scan_args)?))
         }
-        ["model", action]
-            if matches!(
-                *action,
-                "list" | "info" | "recommend" | "install" | "remove" | "verify"
-            ) =>
-        {
+        ["model", action] if matches!(*action, "list" | "info" | "recommend") => {
             Ok(CliCommand::Model {
                 action: (*action).to_owned(),
                 profile: None,
@@ -390,6 +385,9 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
     let mut index = 0;
     while index < args.len() {
         match args[index] {
+            flag @ ("--offline" | "--non-interactive") if action == "remove" => {
+                return Err(format!("model {action} does not support {flag}"));
+            }
             "--offline" => offline = true,
             "--non-interactive" => non_interactive = true,
             value if !value.starts_with('-') => {
@@ -404,6 +402,9 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
             other => return Err(format!("unsupported model flag: {other}")),
         }
         index += 1;
+    }
+    if matches!(action, "install" | "remove" | "verify") && profile.is_none() {
+        return Err(format!("model {action} requires a profile"));
     }
     Ok(CliCommand::Model {
         action: action.to_owned(),
@@ -1531,12 +1532,33 @@ fn print_reporter(reporter: Reporter) {
 fn print_help(topic: Option<&str>) {
     match topic {
         None => println!("ocrx <version|scan|doctor|model|skill|help>"),
-        Some("scan") => println!(
-            "ocrx scan <input.pdf> [--output-dir DIR] [--pages SPEC] [--model ovisocr2] [--model-profile PROFILE] [--device DEVICE] [--report text|json] [--resume|--overwrite]"
-        ),
+        Some("scan") => {
+            println!("ocrx scan <input.pdf> [options]");
+            println!("  -o, --output-dir DIR");
+            println!("  --pages SPEC                 page range, e.g. 1,3-5");
+            println!("  --model ovisocr2");
+            println!("  --model-profile auto|compact|balanced|quality|reference");
+            println!("  --device auto|cpu|metal|cuda|vulkan");
+            println!("  --report text|json");
+            println!("  --dpi DPI                    render resolution (1-600, default 300)");
+            println!("  --max-image-tokens N         image token budget (>=128, default 1024)");
+            println!("  --max-output-tokens N        output token budget (>=128, default 4096)");
+            println!("  --context-size N             context size (>=1024, default 16384)");
+            println!("  --progress auto|bar|plain|jsonl|off");
+            println!("  --log-level error|warn|info|debug|trace");
+            println!("  --offline                    do not download");
+            println!("  --non-interactive            disable interactive prompts");
+            println!("  --keep-pages                 keep full-page PNGs after merge");
+            println!("  --resume | --overwrite       mutually exclusive");
+        }
         Some("doctor") => println!("ocrx doctor [--report json]"),
         Some("model") => {
-            println!("ocrx model <list|info|recommend|install|remove|verify> [PROFILE]")
+            println!("ocrx model list");
+            println!("ocrx model info [PROFILE]");
+            println!("ocrx model recommend");
+            println!("ocrx model install PROFILE [--offline] [--non-interactive]");
+            println!("ocrx model remove PROFILE");
+            println!("ocrx model verify PROFILE [--offline] [--non-interactive]");
         }
         Some("skill") => println!("ocrx skill <install|uninstall>"),
         Some(topic) => eprintln!("unknown help topic: {topic}"),
@@ -1732,6 +1754,34 @@ mod tests {
         assert!(output.stdout.is_empty());
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(stderr.contains("ovisocr2") || stderr.contains("model"));
+    }
+
+    #[test]
+    fn cli_model_profile_commands_require_a_profile() {
+        for action in ["install", "remove", "verify"] {
+            let output = run_cli(&["model", action]);
+            assert_eq!(output.status.code(), Some(2), "model {action}");
+            assert!(output.stdout.is_empty(), "model {action}");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(
+                stderr.contains("requires a profile"),
+                "model {action}: {stderr}"
+            );
+        }
+    }
+
+    #[test]
+    fn cli_model_remove_rejects_unsupported_flags() {
+        for args in [
+            &["model", "remove", "compact", "--offline"][..],
+            &["model", "remove", "compact", "--non-interactive"][..],
+        ] {
+            let output = run_cli(args);
+            assert_eq!(output.status.code(), Some(2), "{args:?}");
+            assert!(output.stdout.is_empty(), "{args:?}");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(stderr.contains("does not support"), "{args:?}: {stderr}");
+        }
     }
 
     #[test]
@@ -2025,9 +2075,9 @@ mod tests {
             }))
         );
         assert_eq!(
-            parse_command(&["model", "verify"]),
+            parse_command(&["model", "info"]),
             Ok(CliCommand::Model {
-                action: "verify".to_owned(),
+                action: "info".to_owned(),
                 profile: None,
                 offline: false,
                 non_interactive: false,
@@ -2046,6 +2096,13 @@ mod tests {
         assert!(parse_command(&["clean"]).is_err());
         assert!(parse_command(&["scan"]).is_err());
         assert!(parse_command(&["model", "unknown"]).is_err());
+        assert!(parse_command(&["model", "install"]).is_err());
+        assert!(parse_command(&["model", "remove"]).is_err());
+        assert!(parse_command(&["model", "verify"]).is_err());
+        assert!(parse_command(&["model", "remove", "compact", "--offline"]).is_err());
+        assert!(parse_command(&["model", "remove", "compact", "--non-interactive"]).is_err());
+        assert!(parse_command(&["model", "install", "compact", "--offline"]).is_ok());
+        assert!(parse_command(&["model", "verify", "compact", "--offline"]).is_ok());
         assert!(parse_command(&["model", "verify", "experimental"]).is_err());
         assert!(parse_command(&["model", "verify", "compact"]).is_ok());
     }
