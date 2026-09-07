@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "input_pages": 30,
+  "mode": "ocr",
+  "profile": "quality",
+  "backend": "metal",
+  "model_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+  "runtime": "llama.cpp@0.1.152",
+  "quantization": "Q8_0",
+  "runs": [
+    {"run": 1, "elapsed_ms": 444994, "completed": 30, "failed": 0, "truncated": 0},
+    {"run": 2, "elapsed_ms": 460185, "completed": 30, "failed": 0, "truncated": 0},
+    {"run": 3, "elapsed_ms": 440767, "completed": 30, "failed": 0, "truncated": 0},
+    {"run": 4, "elapsed_ms": 436989, "completed": 30, "failed": 0, "truncated": 0},
+    {"run": 5, "elapsed_ms": 439405, "completed": 30, "failed": 0, "truncated": 0}
+  ],
+  "summary": {
+    "median_elapsed_ms": 440767,
+    "min_elapsed_ms": 436989,
+    "max_elapsed_ms": 460185,
+    "all_runs_successful": true,
+    "model_loaded_every_run": true,
+    "peak_rss_kb": null,
+    "output_size_bytes": null
+  },
+  "notes": [
+    "The release binary used for these runs predates the forced-ocr routing-count fix; routing_counts in its result.json are not used as execution evidence.",
+    "Peak RSS and output size were not captured by this runner and remain a separate measurement item."
+  ]
+}

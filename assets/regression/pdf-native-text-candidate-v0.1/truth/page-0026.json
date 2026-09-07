@@ -1,0 +1,356 @@
+{
+  "schema_version": 2,
+  "page_number": 35,
+  "native_text": "第二章\n越挫越强\n不久前，我们两位作者中的某人到车库里寻找一包旧的高尔夫球杆。先说\n明一点，这里的主人公不是在拉斯韦加斯听着音乐会入睡的那位。这是我们最\n喜欢的球杆。坦率地说，找到的希望并不是很乐观，因为我们的车库堆满了大\n大小小的箱子，而且这些箱子一旦进入车库，就再也没有挪动过，只是任其杂\n乱地堆在那里。然而，令人惊讶的是，这位主人公在其中一个箱子里居然找到\n了那套球杆。找到之后，她迅速起身，结果一头撞上了从墙上伸出来的架子。\n这位主人公痛得直叫“哎哟”，声音之大，整个街区好像都能听到。\n看，这就是突然遭遇创伤引发的极度疼痛。首先，这种痛是真真切切的，\n是那种让你眼冒金星的痛。除了疼痛之外，还有震惊。你不禁想问：“这种事\n怎么能被我碰到呢？”\n只有到后来，通常是肿胀消下去之后，你才会说：“这次意外创伤让我接\n受了教训，我不会让这种事再次发生。”\n生活充满了意外创伤，商业经营过程中也是如此。\n比如，一位重要客户可能会在月度业绩报告会上指责你，并提出一连串的\n抱怨。在向市场推出某个新产品之前，你可能预测每周销量为1 000件，但结\n果可能只有500件、250件或10件。你最大的竞争对手收购了第二大竞争对手，\n他们的销售团队强强联合之后，开始觊觎你最优质的客户。你在数字技术方面\n的合作伙伴可能会终止与你的合作，在两个星期后终止你的秘密营销渠道，而\n这种消息对你来说可能是晴天霹雳。此外，某位客户在你的一家分店遇上糟糕\n服务之后，在推特上发的抱怨贴可能会给你招来一连串暴风骤雨般的负面评\n论。\n然后，你可能还会遭遇更加严重的创伤，就像天塌地陷一样的创伤。比\n如，你长期服务的市场突然间崩溃了，原因可能是一次监管事件或自然灾难，\n也可能是一项具有颠覆性的新技术彻底毁灭了你那个行业，还有可能是遭遇了\n严重的经济衰退，比如，每80年发生一次的衰退。 [1]\n这真是令人惊讶！",
+  "blocks": [
+    {
+      "text": "第二章",
+      "bbox": {
+        "left": 460,
+        "top": 104,
+        "right": 539,
+        "bottom": 124
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "越挫越强",
+      "bbox": {
+        "left": 446,
+        "top": 135,
+        "right": 553,
+        "bottom": 155
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "不久前，我们两位作者中的某人到车库里寻找一包旧的高尔夫球杆。先说",
+      "bbox": {
+        "left": 171,
+        "top": 173,
+        "right": 873,
+        "bottom": 189
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "明一点，这里的主人公不是在拉斯韦加斯听着音乐会入睡的那位。这是我们最",
+      "bbox": {
+        "left": 129,
+        "top": 199,
+        "right": 872,
+        "bottom": 214
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "喜欢的球杆。坦率地说，找到的希望并不是很乐观，因为我们的车库堆满了大",
+      "bbox": {
+        "left": 127,
+        "top": 224,
+        "right": 872,
+        "bottom": 240
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "大小小的箱子，而且这些箱子一旦进入车库，就再也没有挪动过，只是任其杂",
+      "bbox": {
+        "left": 127,
+        "top": 249,
+        "right": 872,
+        "bottom": 265
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "乱地堆在那里。然而，令人惊讶的是，这位主人公在其中一个箱子里居然找到",
+      "bbox": {
+        "left": 127,
+        "top": 274,
+        "right": 872,
+        "bottom": 290
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了那套球杆。找到之后，她迅速起身，结果一头撞上了从墙上伸出来的架子。",
+      "bbox": {
+        "left": 129,
+        "top": 300,
+        "right": 853,
+        "bottom": 315
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这位主人公痛得直叫“哎哟”，声音之大，整个街区好像都能听到。",
+      "bbox": {
+        "left": 170,
+        "top": 333,
+        "right": 810,
+        "bottom": 349
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "看，这就是突然遭遇创伤引发的极度疼痛。首先，这种痛是真真切切的，",
+      "bbox": {
+        "left": 170,
+        "top": 367,
+        "right": 858,
+        "bottom": 383
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "是那种让你眼冒金星的痛。除了疼痛之外，还有震惊。你不禁想问：“这种事",
+      "bbox": {
+        "left": 127,
+        "top": 392,
+        "right": 872,
+        "bottom": 408
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "怎么能被我碰到呢？”",
+      "bbox": {
+        "left": 127,
+        "top": 418,
+        "right": 333,
+        "bottom": 433
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "只有到后来，通常是肿胀消下去之后，你才会说：“这次意外创伤让我接",
+      "bbox": {
+        "left": 171,
+        "top": 451,
+        "right": 873,
+        "bottom": 467
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "受了教训，我不会让这种事再次发生。”",
+      "bbox": {
+        "left": 127,
+        "top": 477,
+        "right": 508,
+        "bottom": 493
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "生活充满了意外创伤，商业经营过程中也是如此。",
+      "bbox": {
+        "left": 170,
+        "top": 510,
+        "right": 635,
+        "bottom": 526
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "比如，一位重要客户可能会在月度业绩报告会上指责你，并提出一连串的",
+      "bbox": {
+        "left": 173,
+        "top": 544,
+        "right": 872,
+        "bottom": 560
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "抱怨。在向市场推出某个新产品之前，你可能预测每周销量为1 000件，但结",
+      "bbox": {
+        "left": 126,
+        "top": 569,
+        "right": 872,
+        "bottom": 585
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "果可能只有500件、250件或10件。你最大的竞争对手收购了第二大竞争对手，",
+      "bbox": {
+        "left": 127,
+        "top": 595,
+        "right": 858,
+        "bottom": 610
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "他们的销售团队强强联合之后，开始觊觎你最优质的客户。你在数字技术方面",
+      "bbox": {
+        "left": 127,
+        "top": 620,
+        "right": 873,
+        "bottom": 636
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的合作伙伴可能会终止与你的合作，在两个星期后终止你的秘密营销渠道，而",
+      "bbox": {
+        "left": 128,
+        "top": 645,
+        "right": 872,
+        "bottom": 661
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这种消息对你来说可能是晴天霹雳。此外，某位客户在你的一家分店遇上糟糕",
+      "bbox": {
+        "left": 127,
+        "top": 671,
+        "right": 872,
+        "bottom": 686
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "服务之后，在推特上发的抱怨贴可能会给你招来一连串暴风骤雨般的负面评",
+      "bbox": {
+        "left": 127,
+        "top": 696,
+        "right": 873,
+        "bottom": 712
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "论。",
+      "bbox": {
+        "left": 127,
+        "top": 721,
+        "right": 155,
+        "bottom": 736
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "然后，你可能还会遭遇更加严重的创伤，就像天塌地陷一样的创伤。比",
+      "bbox": {
+        "left": 170,
+        "top": 755,
+        "right": 872,
+        "bottom": 771
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如，你长期服务的市场突然间崩溃了，原因可能是一次监管事件或自然灾难，",
+      "bbox": {
+        "left": 127,
+        "top": 780,
+        "right": 858,
+        "bottom": 796
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "也可能是一项具有颠覆性的新技术彻底毁灭了你那个行业，还有可能是遭遇了",
+      "bbox": {
+        "left": 127,
+        "top": 805,
+        "right": 871,
+        "bottom": 821
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "严重的经济衰退，比如，每80年发生一次的衰退。 [1]",
+      "bbox": {
+        "left": 127,
+        "top": 831,
+        "right": 638,
+        "bottom": 849
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这真是令人惊讶！",
+      "bbox": {
+        "left": 170,
+        "top": 867,
+        "right": 330,
+        "bottom": 883
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.261789,
+    "visible_characters": 762,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 26,
+  "source_page_number": 35,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

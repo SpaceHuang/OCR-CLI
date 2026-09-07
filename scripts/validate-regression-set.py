@@ -2,9 +2,17 @@
 """Validate the non-distributable P0 regression-set contract."""
 import json
 import sys
+import importlib.util
 from pathlib import Path
 
 DEFAULT_REQUIRED = {"text", "formula", "table", "visual", "mixed", "blank"}
+
+def validate_native_set(root):
+    native_script = Path(__file__).with_name("validate-pdf-native-candidate.py")
+    spec = importlib.util.spec_from_file_location("pdf_native_validator", native_script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.validate(root)
 
 def main() -> int:
     if len(sys.argv) != 2:
@@ -16,6 +24,8 @@ def main() -> int:
     except Exception as error:
         print(f"invalid manifest: {error}", file=sys.stderr)
         return 2
+    if manifest.get("truth_schema") == "ocrx-pdfium-native-facts-v0.1":
+        return validate_native_set(root)
     if manifest.get("schema_version") != 1 or manifest.get("page_count", 0) < 30:
         print("regression set requires schema_version=1 and at least 30 pages", file=sys.stderr)
         return 3

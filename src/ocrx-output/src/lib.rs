@@ -179,7 +179,38 @@ pub struct ProgressEvent {
     pub total: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressStage {
+    Analyzing,
+    Extracting,
+    Rendering,
+    Recognizing,
+    Merging,
+}
+
+impl ProgressStage {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Analyzing => "analyzing",
+            Self::Extracting => "extracting",
+            Self::Rendering => "rendering",
+            Self::Recognizing => "recognizing",
+            Self::Merging => "merging",
+        }
+    }
+}
+
 impl ProgressEvent {
+    #[must_use]
+    pub fn for_stage(stage: ProgressStage, page: Option<u32>, completed: u32, total: u32) -> Self {
+        Self {
+            event: stage.as_str().to_owned(),
+            page,
+            completed,
+            total,
+        }
+    }
+
     #[must_use]
     pub fn to_json_line(&self) -> String {
         let page = self
@@ -298,6 +329,22 @@ pub struct JobSummary {
     pub warnings: Vec<String>,
     pub diagnostics: Vec<PageDiagnostic>,
     pub cancelled: bool,
+}
+
+pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
+    let mut warnings = native.warnings;
+    warnings.extend(ocr.warnings);
+    let mut diagnostics = native.diagnostics;
+    diagnostics.extend(ocr.diagnostics);
+    JobSummary {
+        selected_pages: native.selected_pages.max(ocr.selected_pages),
+        completed_pages: native.completed_pages + ocr.completed_pages,
+        failed_pages: native.failed_pages + ocr.failed_pages,
+        truncated_pages: native.truncated_pages + ocr.truncated_pages,
+        warnings,
+        diagnostics,
+        cancelled: native.cancelled || ocr.cancelled,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -505,21 +552,23 @@ where
             }
             let checkpoint_path = root.join(format!("page-{page:04}.checkpoint"));
             if resume {
-                if let Ok(checkpoint) = read_checkpoint(&checkpoint_path)
-                    && checkpoint.is_reusable_at(compatibility, root, page)
-                {
-                    if checkpoint.truncated {
-                        truncated += 1;
+                if let Ok(checkpoint) = read_checkpoint(&checkpoint_path) {
+                    if checkpoint.resume_action(compatibility, root, page)
+                        == CheckpointResumeAction::SkipCommitted
+                    {
+                        if checkpoint.truncated {
+                            truncated += 1;
+                        }
+                        warnings.extend(checkpoint.warnings.iter().cloned());
+                        diagnostics.push(checkpoint.diagnostic());
+                        completed += 1;
+                        continue;
                     }
-                    warnings.extend(checkpoint.warnings.iter().cloned());
-                    diagnostics.push(checkpoint.diagnostic());
-                    completed += 1;
-                    continue;
                 }
             }
             let image = match self.renderer.render(page) {
                 Ok(image) => image,
-                Err(_) => {
+                Err(_error) => {
                     failed += 1;
                     diagnostics.push(PageDiagnostic {
                         page,
@@ -568,14 +617,19 @@ where
                     )?;
                     completed += 1;
                 }
-                Err(_) => {
+                Err(error) => {
                     failed += 1;
+                    let (error_code, fallback_message) = classify_recognition_error(&error);
                     diagnostics.push(PageDiagnostic {
                         page,
                         status: "failed".to_owned(),
                         stage: "recognize".to_owned(),
-                        error_code: Some("recognition_failed".to_owned()),
-                        message: Some("page recognition failed".to_owned()),
+                        error_code: Some(error_code.to_owned()),
+                        message: Some(if error_code == "device_unavailable" {
+                            fallback_message.to_owned()
+                        } else {
+                            format!("page recognition failed: {error}")
+                        }),
                         audit: Some(image.audit),
                         warnings: Vec::new(),
                     });
@@ -595,7 +649,7 @@ where
                     })
                 })
                 .collect::<io::Result<Vec<_>>>()?;
-            atomic_write(root.join("document.md"), merge_markdown(pages)?.as_bytes())?;
+            finalize_document(root, pages)?;
             if !keep_pages {
                 cleanup_full_page_images(root, page_numbers)?;
             }
@@ -609,6 +663,27 @@ where
             diagnostics,
             cancelled: cancellation.is_cancelled(),
         })
+    }
+}
+
+fn classify_recognition_error(error: &std::io::Error) -> (&'static str, &'static str) {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("failed to initialize backend")
+        || message.contains("command queue")
+        || message.contains("no metal device")
+        || message.contains("device unavailable")
+        // llama-cpp-2 0.1.152 can collapse a failed context/backend
+        // initialization into this message instead of returning the native
+        // backend error. Keep it in the device contract rather than
+        // misreporting it as page recognition quality failure.
+        || message.contains("null reference from llama.cpp")
+    {
+        (
+            "device_unavailable",
+            "inference device initialization failed",
+        )
+    } else {
+        ("recognition_failed", "page recognition failed")
     }
 }
 
@@ -838,6 +913,162 @@ pub struct CompatibilityKey {
     pub parameters: String,
 }
 
+impl CompatibilityKey {
+    /// Native/empty artifacts depend only on the input and the public PDF
+    /// extraction contract. OCR artifacts carry an `ocr-profile` marker and
+    /// therefore require the full effective model/device configuration.
+    #[must_use]
+    pub fn matches_page_compatibility(&self, expected: &Self) -> bool {
+        if self.parameters.contains("ocr-profile=") {
+            self == expected
+        } else if self.parameters.contains("route=native") {
+            self.input_sha256 == expected.input_sha256
+                && self.model == expected.model
+                && public_pdf_parameters(&self.parameters)
+                    == public_pdf_parameters(&expected.parameters)
+        } else {
+            self == expected
+        }
+    }
+}
+
+fn public_pdf_parameters(parameters: &str) -> String {
+    parameters.split(';').take(5).collect::<Vec<_>>().join(";")
+}
+
+fn without_pending_marker(key: &CompatibilityKey) -> CompatibilityKey {
+    CompatibilityKey {
+        parameters: key
+            .parameters
+            .strip_suffix(";pending-ocr=true")
+            .unwrap_or(&key.parameters)
+            .to_owned(),
+        ..key.clone()
+    }
+}
+
+/// Stable shared compatibility fragment for content-aware PDF decisions.
+#[must_use]
+pub fn pdf_compatibility_parameters(
+    mode: &str,
+    quality_tier: &str,
+    classifier_version: &str,
+    extractor_version: &str,
+) -> String {
+    format!(
+        "pdf-mode={mode};quality-tier={quality_tier};classifier={classifier_version};extractor={extractor_version}"
+    )
+}
+
+#[must_use]
+pub fn mark_pending_ocr(parameters: &str) -> String {
+    if parameters
+        .split(';')
+        .any(|field| field == "pending-ocr=true")
+    {
+        parameters.to_owned()
+    } else if parameters.is_empty() {
+        "pending-ocr=true".to_owned()
+    } else {
+        format!("{parameters};pending-ocr=true")
+    }
+}
+
+#[must_use]
+pub fn pending_ocr_checkpoint(
+    page_number: u32,
+    compatibility: CompatibilityKey,
+    reason: impl Into<String>,
+) -> PageCheckpoint {
+    PageCheckpoint {
+        page_number,
+        compatibility: CompatibilityKey {
+            parameters: mark_pending_ocr(&compatibility.parameters),
+            ..compatibility
+        },
+        complete: false,
+        output_sha256: String::new(),
+        truncated: false,
+        warnings: vec![reason.into()],
+        audit: None,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OcrQueuePage {
+    pub page: u32,
+    pub fallback_reason: Option<String>,
+}
+
+/// Merges initial OCR plans and native-validation fallbacks deterministically.
+#[must_use]
+pub fn merge_ocr_queue(initial: &[OcrQueuePage], fallback: &[OcrQueuePage]) -> Vec<OcrQueuePage> {
+    let mut merged = initial.to_vec();
+    for candidate in fallback {
+        if let Some(existing) = merged.iter_mut().find(|page| page.page == candidate.page) {
+            if existing.fallback_reason.is_none() {
+                existing
+                    .fallback_reason
+                    .clone_from(&candidate.fallback_reason);
+            }
+        } else {
+            merged.push(candidate.clone());
+        }
+    }
+    merged.sort_by_key(|page| page.page);
+    merged
+}
+
+#[must_use]
+pub fn native_fallback_queue(candidates: &[(u32, Result<(), String>)]) -> Vec<OcrQueuePage> {
+    let mut queue: Vec<_> = candidates
+        .iter()
+        .filter_map(|(page, result)| {
+            result.as_ref().err().map(|reason| OcrQueuePage {
+                page: *page,
+                fallback_reason: Some(reason.clone()),
+            })
+        })
+        .collect();
+    queue.sort_by_key(|page| page.page);
+    queue.dedup_by_key(|page| page.page);
+    queue
+}
+
+pub fn recover_pending_ocr_queue(
+    root: impl AsRef<Path>,
+    expected: &CompatibilityKey,
+) -> io::Result<Vec<OcrQueuePage>> {
+    let mut queue = Vec::new();
+    let root = root.as_ref();
+    for entry in fs::read_dir(root)? {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let Some(page_text) = name
+            .strip_prefix("page-")
+            .and_then(|value| value.strip_suffix(".checkpoint"))
+        else {
+            continue;
+        };
+        let Ok(page) = page_text.parse::<u32>() else {
+            continue;
+        };
+        if let Ok(checkpoint) = read_checkpoint(&path)
+            && checkpoint.is_pending_ocr(expected)
+        {
+            queue.push(OcrQueuePage {
+                page,
+                fallback_reason: checkpoint.warnings.first().cloned(),
+            });
+        }
+    }
+    queue.sort_by_key(|page| page.page);
+    queue.dedup_by_key(|page| page.page);
+    Ok(queue)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageCheckpoint {
     pub page_number: u32,
@@ -847,6 +1078,89 @@ pub struct PageCheckpoint {
     pub truncated: bool,
     pub warnings: Vec<String>,
     pub audit: Option<RenderAudit>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointDisposition {
+    Reuse,
+    PendingOcr,
+    Reprocess,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointState {
+    Committed,
+    PendingOcr,
+    Reprocess,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointResumeAction {
+    SkipCommitted,
+    QueueOcr,
+    Reprocess,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingCheckpointMetadata {
+    pub pdf_mode: String,
+    pub quality_tier: String,
+    pub classifier_version: String,
+    pub extractor_version: String,
+    pub page_classification: String,
+    pub planned_method: String,
+    pub actual_method: Option<String>,
+    pub fallback_reason: Option<String>,
+}
+
+impl RoutingCheckpointMetadata {
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        let optional = |value: &Option<String>| {
+            value.as_deref().map_or_else(
+                || "null".to_owned(),
+                |value| format!("\"{}\"", json_escape(value)),
+            )
+        };
+        format!(
+            "{{\"pdf_mode\":\"{}\",\"quality_tier\":\"{}\",\"classifier_version\":\"{}\",\"extractor_version\":\"{}\",\"page_classification\":\"{}\",\"planned_method\":\"{}\",\"actual_method\":{},\"fallback_reason\":{}}}",
+            json_escape(&self.pdf_mode),
+            json_escape(&self.quality_tier),
+            json_escape(&self.classifier_version),
+            json_escape(&self.extractor_version),
+            json_escape(&self.page_classification),
+            json_escape(&self.planned_method),
+            optional(&self.actual_method),
+            optional(&self.fallback_reason),
+        )
+    }
+}
+
+/// The sidecar contract used by resumed pages.  Keeping routing metadata in a
+/// separate result envelope lets v5 checkpoints remain readable by older CLI
+/// versions while new writers can persist the v6 routing decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingCheckpointResult {
+    pub page: u32,
+    pub routing: RoutingCheckpointMetadata,
+}
+
+impl RoutingCheckpointResult {
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"schema\":\"ocrx-result-v2\",\"page\":{},\"routing\":{}}}",
+            self.page,
+            self.routing.to_json()
+        )
+    }
+}
+
+pub fn write_routing_result(
+    path: impl AsRef<Path>,
+    result: &RoutingCheckpointResult,
+) -> io::Result<()> {
+    atomic_write(path, result.to_json().as_bytes())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -892,14 +1206,82 @@ pub fn merge_markdown(mut pages: Vec<PageMarkdown>) -> io::Result<String> {
     Ok(merged)
 }
 
+pub fn finalize_document(
+    output_root: impl AsRef<Path>,
+    pages: Vec<PageMarkdown>,
+) -> io::Result<()> {
+    let markdown = merge_markdown(pages)?;
+    atomic_write(
+        output_root.as_ref().join("document.md"),
+        markdown.as_bytes(),
+    )
+}
+
+pub fn collect_page_markdowns(
+    output_root: impl AsRef<Path>,
+    page_numbers: &[u32],
+) -> io::Result<Vec<PageMarkdown>> {
+    page_numbers
+        .iter()
+        .map(|page| {
+            let path = output_root.as_ref().join(format!("page-{page:04}.md"));
+            Ok(PageMarkdown {
+                page_number: *page,
+                content: fs::read_to_string(path)?,
+            })
+        })
+        .collect()
+}
+
 fn normalize_lf(value: &str) -> String {
     value.replace("\r\n", "\n").replace('\r', "\n")
 }
 
 impl PageCheckpoint {
     #[must_use]
+    pub fn resume_action(
+        &self,
+        expected: &CompatibilityKey,
+        root: &Path,
+        page: u32,
+    ) -> CheckpointResumeAction {
+        match self.state(expected, root, page) {
+            CheckpointState::Committed => CheckpointResumeAction::SkipCommitted,
+            CheckpointState::PendingOcr => CheckpointResumeAction::QueueOcr,
+            CheckpointState::Reprocess => CheckpointResumeAction::Reprocess,
+        }
+    }
+
+    #[must_use]
+    pub fn state(&self, expected: &CompatibilityKey, root: &Path, page: u32) -> CheckpointState {
+        match self.disposition(expected, root, page) {
+            CheckpointDisposition::Reuse => CheckpointState::Committed,
+            CheckpointDisposition::PendingOcr => CheckpointState::PendingOcr,
+            CheckpointDisposition::Reprocess => CheckpointState::Reprocess,
+        }
+    }
+
+    #[must_use]
+    pub fn disposition(
+        &self,
+        expected: &CompatibilityKey,
+        root: &Path,
+        page: u32,
+    ) -> CheckpointDisposition {
+        if self.is_reusable_at(expected, root, page) {
+            CheckpointDisposition::Reuse
+        } else if self.is_pending_ocr(expected) {
+            CheckpointDisposition::PendingOcr
+        } else {
+            CheckpointDisposition::Reprocess
+        }
+    }
+
+    #[must_use]
     pub fn is_reusable(&self, expected: &CompatibilityKey) -> bool {
-        self.complete && &self.compatibility == expected && !self.output_sha256.is_empty()
+        self.complete
+            && self.compatibility.matches_page_compatibility(expected)
+            && !self.output_sha256.is_empty()
     }
 
     #[must_use]
@@ -914,6 +1296,17 @@ impl PageCheckpoint {
         artifact_sha256(&markdown, root)
             .map(|hash| hash == self.output_sha256)
             .unwrap_or(false)
+    }
+
+    /// Identifies an analyzed page whose final result is intentionally waiting
+    /// for the OCR phase. It is recoverable, but never a completed artifact.
+    #[must_use]
+    pub fn is_pending_ocr(&self, expected: &CompatibilityKey) -> bool {
+        let pending_base = without_pending_marker(&self.compatibility);
+        let expected_base = without_pending_marker(expected);
+        !self.complete
+            && pending_base.matches_page_compatibility(&expected_base)
+            && self.compatibility.parameters.contains("pending-ocr=true")
     }
 
     fn diagnostic(&self) -> PageDiagnostic {
@@ -971,7 +1364,7 @@ fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
 
 pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> io::Result<()> {
     let content = format!(
-        "ocrx-checkpoint-v4\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\nwarnings={}\naudit={}\n",
+        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\nwarnings={}\naudit={}\n",
         checkpoint.page_number,
         encode_field(&checkpoint.compatibility.input_sha256),
         encode_field(&checkpoint.compatibility.model),
@@ -998,7 +1391,7 @@ fn write_render_audit(root: &Path, page: u32, audit: RenderAudit) -> io::Result<
 
 pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
     let content = fs::read_to_string(path)?;
-    if content.lines().next() != Some("ocrx-checkpoint-v4") {
+    if content.lines().next() != Some("ocrx-checkpoint-v5") {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "unsupported checkpoint version",
@@ -1245,6 +1638,56 @@ pub fn commit_page(
     )
 }
 
+/// Commits a page produced by the native PDF text path without creating a
+/// synthetic raster image. The checkpoint becomes complete only after the
+/// markdown and page JSON artifacts are durable.
+pub fn commit_native_page(
+    output_root: impl AsRef<Path>,
+    page_number: u32,
+    markdown: &str,
+    page_json: &str,
+    checkpoint: &PageCheckpoint,
+) -> io::Result<()> {
+    if page_number == 0 || checkpoint.page_number != page_number {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "checkpoint page mismatch",
+        ));
+    }
+    let root = output_root.as_ref();
+    atomic_write(
+        root.join(format!("page-{page_number:04}.md")),
+        normalize_lf(markdown).as_bytes(),
+    )?;
+    atomic_write(
+        root.join(format!("page-{page_number:04}.json")),
+        page_json.as_bytes(),
+    )?;
+    let output_sha256 = artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
+    write_checkpoint(
+        root.join(format!("page-{page_number:04}.checkpoint")),
+        &PageCheckpoint {
+            complete: true,
+            output_sha256,
+            ..checkpoint.clone()
+        },
+    )
+}
+
+pub fn commit_native_page_and_collect(
+    output_root: impl AsRef<Path>,
+    page_number: u32,
+    markdown: &str,
+    page_json: &str,
+    checkpoint: &PageCheckpoint,
+) -> io::Result<PageMarkdown> {
+    commit_native_page(&output_root, page_number, markdown, page_json, checkpoint)?;
+    Ok(PageMarkdown {
+        page_number,
+        content: normalize_lf(markdown),
+    })
+}
+
 fn temporary_path(path: &Path) -> PathBuf {
     let name = path
         .file_name()
@@ -1256,11 +1699,14 @@ fn temporary_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        CancellationToken, CompatibilityKey, ErrorReport, Heartbeat, JobStatus, JobSummary,
-        ModelLoader, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageLifecycle,
+        CancellationToken, CheckpointDisposition, CheckpointResumeAction, CheckpointState,
+        CompatibilityKey, ErrorReport, Heartbeat, JobStatus, JobSummary, ModelLoader, OcrQueuePage,
+        PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic, PageLifecycle,
         PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent, ProgressMode,
-        ProgressSnapshot, RenderAudit, RenderedPage, ReportFormat, Reporter, ResultReport,
-        ResultStatus, ScanController, ScanService, atomic_write, format_report,
+        ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat, Reporter,
+        ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
+        ScanController, ScanService, atomic_write, classify_recognition_error, format_report,
+        merge_job_summaries, recover_pending_ocr_queue,
     };
     use std::fs;
 
@@ -1499,6 +1945,31 @@ mod tests {
     }
 
     #[test]
+    fn progress_stage_names_are_stable_machine_values() {
+        let stages = [
+            ProgressStage::Analyzing,
+            ProgressStage::Extracting,
+            ProgressStage::Rendering,
+            ProgressStage::Recognizing,
+            ProgressStage::Merging,
+        ];
+        let events: Vec<_> = stages
+            .into_iter()
+            .map(|stage| ProgressEvent::for_stage(stage, None, 0, 1).event)
+            .collect();
+        assert_eq!(
+            events,
+            vec![
+                "analyzing",
+                "extracting",
+                "rendering",
+                "recognizing",
+                "merging"
+            ]
+        );
+    }
+
+    #[test]
     fn reporter_keeps_json_result_on_stdout_and_progress_on_stderr() {
         let mut reporter = Reporter::default();
         reporter.result(
@@ -1684,6 +2155,395 @@ mod tests {
     }
 
     #[test]
+    fn native_checkpoint_ignores_ocr_only_configuration_changes() {
+        let native = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: "pdf-mode=auto;quality-tier=l2;classifier=c;extractor=e;dpi=300;tokens=4096;device=cpu;route=native".to_owned(),
+        };
+        let changed_ocr = CompatibilityKey {
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto;quality-tier=l2;classifier=c;extractor=e;dpi=300;tokens=8192;device=metal;route=native".to_owned(),
+            ..native.clone()
+        };
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: native,
+            complete: true,
+            output_sha256: "output".to_owned(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        assert!(checkpoint.is_reusable(&changed_ocr));
+    }
+
+    #[test]
+    fn effective_ocr_checkpoint_rejects_changed_profile_or_device() {
+        let stored = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "compact".to_owned(),
+            parameters: "pdf-mode=auto;quality-tier=l2;classifier=c;extractor=e;dpi=300;ocr-profile=compact;ocr-device=cpu".to_owned(),
+        };
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: stored.clone(),
+            complete: true,
+            output_sha256: "output".to_owned(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        let changed = CompatibilityKey {
+            profile: "quality".to_owned(),
+            parameters: stored
+                .parameters
+                .replace("compact;ocr-device=cpu", "quality;ocr-device=metal"),
+            ..stored.clone()
+        };
+        assert!(!checkpoint.is_reusable(&changed));
+    }
+
+    #[test]
+    fn pdf_compatibility_fragment_changes_when_routing_contract_changes() {
+        let base = super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v1", "pdf-text-v1");
+        assert_eq!(
+            base,
+            "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;extractor=pdf-text-v1"
+        );
+        assert_ne!(
+            base,
+            super::pdf_compatibility_parameters("auto", "l1", "pdf-route-v1", "pdf-text-v1")
+        );
+        assert_ne!(
+            base,
+            super::pdf_compatibility_parameters("text", "l2", "pdf-route-v1", "pdf-text-v1")
+        );
+        assert_ne!(
+            base,
+            super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v2", "pdf-text-v1")
+        );
+    }
+
+    #[test]
+    fn incomplete_pending_ocr_checkpoint_is_recoverable_but_not_reusable() {
+        let expected = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto;pending-ocr=true".to_owned(),
+        };
+        let checkpoint = PageCheckpoint {
+            page_number: 3,
+            compatibility: expected.clone(),
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: vec!["native_validation_failed".to_owned()],
+            audit: None,
+        };
+        assert!(checkpoint.is_pending_ocr(&expected));
+        assert!(!checkpoint.is_reusable(&expected));
+    }
+
+    #[test]
+    fn pending_ocr_marker_is_stable_and_idempotent() {
+        assert_eq!(
+            super::mark_pending_ocr("pdf-mode=auto"),
+            "pdf-mode=auto;pending-ocr=true"
+        );
+        assert_eq!(
+            super::mark_pending_ocr("pdf-mode=auto;pending-ocr=true"),
+            "pdf-mode=auto;pending-ocr=true"
+        );
+        assert_eq!(super::mark_pending_ocr(""), "pending-ocr=true");
+    }
+
+    #[test]
+    fn pending_ocr_checkpoint_factory_is_incomplete_and_recoverable() {
+        let checkpoint = super::pending_ocr_checkpoint(
+            4,
+            CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "ovisocr2".to_owned(),
+                profile: "quality".to_owned(),
+                parameters: "pdf-mode=auto".to_owned(),
+            },
+            "native_validation_failed",
+        );
+        assert!(!checkpoint.complete);
+        assert_eq!(checkpoint.page_number, 4);
+        assert_eq!(checkpoint.warnings, vec!["native_validation_failed"]);
+        assert!(
+            checkpoint
+                .compatibility
+                .parameters
+                .contains("pending-ocr=true")
+        );
+        assert!(checkpoint.is_pending_ocr(&checkpoint.compatibility));
+    }
+
+    #[test]
+    fn checkpoint_disposition_distinguishes_pending_and_reprocess_states() {
+        let root = test_dir("checkpoint-disposition");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto".to_owned(),
+        };
+        let pending = super::pending_ocr_checkpoint(4, compatibility.clone(), "native_failed");
+        assert_eq!(
+            pending.disposition(&pending.compatibility, &root, 4),
+            CheckpointDisposition::PendingOcr
+        );
+        assert_eq!(
+            pending.disposition(
+                &CompatibilityKey {
+                    parameters: "pdf-mode=ocr".to_owned(),
+                    ..compatibility.clone()
+                },
+                &root,
+                4,
+            ),
+            CheckpointDisposition::Reprocess
+        );
+        let incomplete = PageCheckpoint {
+            page_number: 4,
+            compatibility,
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        assert_eq!(
+            incomplete.disposition(&incomplete.compatibility, &root, 4),
+            CheckpointDisposition::Reprocess
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn checkpoint_state_machine_exposes_recovery_states() {
+        let root = test_dir("checkpoint-state");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto".to_owned(),
+        };
+        let pending = super::pending_ocr_checkpoint(4, compatibility, "native_failed");
+        assert_eq!(
+            pending.state(&pending.compatibility, &root, 4),
+            CheckpointState::PendingOcr
+        );
+        assert_eq!(
+            pending.state(
+                &CompatibilityKey {
+                    parameters: "pdf-mode=ocr".to_owned(),
+                    ..pending.compatibility.clone()
+                },
+                &root,
+                4
+            ),
+            CheckpointState::Reprocess
+        );
+        assert_eq!(
+            pending.resume_action(&pending.compatibility, &root, 4),
+            CheckpointResumeAction::QueueOcr
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recovery_rebuilds_sorted_pending_ocr_queue_from_checkpoint_directory() {
+        let root = test_dir("recover-pending");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".into(),
+            model: "ovisocr2".into(),
+            profile: "quality".into(),
+            parameters: "pdf-mode=auto".into(),
+        };
+        let pending_compatibility =
+            super::pending_ocr_checkpoint(1, compatibility.clone(), "early").compatibility;
+        for (page, reason) in [(3, "late"), (1, "early")] {
+            super::write_checkpoint(
+                root.join(format!("page-{page:04}.checkpoint")),
+                &super::pending_ocr_checkpoint(page, pending_compatibility.clone(), reason),
+            )
+            .unwrap();
+        }
+        let queue = recover_pending_ocr_queue(&root, &compatibility).unwrap();
+        assert_eq!(
+            queue.iter().map(|page| page.page).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(queue[0].fallback_reason.as_deref(), Some("early"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recovery_ignores_pending_checkpoint_from_another_input() {
+        let root = test_dir("recover-incompatible");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let stored = CompatibilityKey {
+            input_sha256: "other-input".into(),
+            model: "ovisocr2".into(),
+            profile: "quality".into(),
+            parameters: "pdf-mode=auto".into(),
+        };
+        let expected = CompatibilityKey {
+            input_sha256: "current-input".into(),
+            ..stored.clone()
+        };
+        let checkpoint = super::pending_ocr_checkpoint(2, stored, "fallback");
+        super::write_checkpoint(root.join("page-0002.checkpoint"), &checkpoint).unwrap();
+        assert!(
+            recover_pending_ocr_queue(&root, &expected)
+                .unwrap()
+                .is_empty()
+        );
+        let expected_different_parameters = CompatibilityKey {
+            input_sha256: "other-input".into(),
+            parameters: "pdf-mode=ocr".into(),
+            ..expected
+        };
+        assert!(
+            recover_pending_ocr_queue(&root, &expected_different_parameters)
+                .unwrap()
+                .is_empty()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn routing_checkpoint_metadata_has_stable_v6_json_shape() {
+        let metadata = RoutingCheckpointMetadata {
+            pdf_mode: "auto".to_owned(),
+            quality_tier: "l2".to_owned(),
+            classifier_version: "pdf-route-v1".to_owned(),
+            extractor_version: "pdf-native-v1".to_owned(),
+            page_classification: "text".to_owned(),
+            planned_method: "native_text".to_owned(),
+            actual_method: None,
+            fallback_reason: None,
+        };
+        assert_eq!(
+            metadata.to_json(),
+            "{\"pdf_mode\":\"auto\",\"quality_tier\":\"l2\",\"classifier_version\":\"pdf-route-v1\",\"extractor_version\":\"pdf-native-v1\",\"page_classification\":\"text\",\"planned_method\":\"native_text\",\"actual_method\":null,\"fallback_reason\":null}"
+        );
+    }
+
+    #[test]
+    fn routing_checkpoint_result_persists_v6_metadata_in_result_json() {
+        let result = RoutingCheckpointResult {
+            page: 4,
+            routing: RoutingCheckpointMetadata {
+                pdf_mode: "auto".to_owned(),
+                quality_tier: "l2".to_owned(),
+                classifier_version: "pdf-route-v1".to_owned(),
+                extractor_version: "pdf-native-v1".to_owned(),
+                page_classification: "mixed".to_owned(),
+                planned_method: "native_text".to_owned(),
+                actual_method: Some("ocr".to_owned()),
+                fallback_reason: Some("native_validation_failed".to_owned()),
+            },
+        };
+        assert!(result.to_json().contains("\"schema\":\"ocrx-result-v2\""));
+        assert!(result.to_json().contains("\"actual_method\":\"ocr\""));
+        assert!(result.to_json().contains("native_validation_failed"));
+    }
+
+    #[test]
+    fn ocr_queue_merge_sorts_deduplicates_and_keeps_fallback_reason() {
+        let initial = vec![
+            OcrQueuePage {
+                page: 4,
+                fallback_reason: None,
+            },
+            OcrQueuePage {
+                page: 2,
+                fallback_reason: None,
+            },
+        ];
+        let fallback = vec![
+            OcrQueuePage {
+                page: 3,
+                fallback_reason: Some("native_validation_failed".to_owned()),
+            },
+            OcrQueuePage {
+                page: 4,
+                fallback_reason: Some("duplicate_text".to_owned()),
+            },
+        ];
+        assert_eq!(
+            super::merge_ocr_queue(&initial, &fallback),
+            vec![
+                OcrQueuePage {
+                    page: 2,
+                    fallback_reason: None
+                },
+                OcrQueuePage {
+                    page: 3,
+                    fallback_reason: Some("native_validation_failed".to_owned())
+                },
+                OcrQueuePage {
+                    page: 4,
+                    fallback_reason: Some("duplicate_text".to_owned())
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn native_fallback_queue_keeps_only_failed_candidates_with_reasons() {
+        let candidates = vec![
+            (1, Ok(())),
+            (2, Err("native_structure_unresolved".to_owned())),
+        ];
+        assert_eq!(
+            super::native_fallback_queue(&candidates),
+            vec![OcrQueuePage {
+                page: 2,
+                fallback_reason: Some("native_structure_unresolved".to_owned())
+            }]
+        );
+    }
+
+    #[test]
+    fn native_fallback_queue_is_sorted_and_deduplicated_by_page() {
+        let candidates = vec![
+            (4, Err("later".to_owned())),
+            (2, Err("first".to_owned())),
+            (4, Err("duplicate".to_owned())),
+            (3, Ok(())),
+        ];
+        assert_eq!(
+            super::native_fallback_queue(&candidates),
+            vec![
+                OcrQueuePage {
+                    page: 2,
+                    fallback_reason: Some("first".to_owned()),
+                },
+                OcrQueuePage {
+                    page: 4,
+                    fallback_reason: Some("later".to_owned()),
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn checkpoint_round_trip_is_atomic_and_versioned() {
         let directory = test_dir("checkpoint");
         let _ = fs::remove_dir_all(&directory);
@@ -1705,6 +2565,8 @@ mod tests {
         super::write_checkpoint(&path, &checkpoint).unwrap();
         assert_eq!(super::read_checkpoint(&path).unwrap(), checkpoint);
         assert!(super::read_checkpoint(directory.join("missing")).is_err());
+        fs::write(directory.join("legacy.checkpoint"), "ocrx-checkpoint-v4\n").unwrap();
+        assert!(super::read_checkpoint(directory.join("legacy.checkpoint")).is_err());
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1753,6 +2615,47 @@ mod tests {
     }
 
     #[test]
+    fn finalize_document_merges_native_and_ocr_pages_in_pdf_order() {
+        let directory = test_dir("finalize-document");
+        let _ = fs::remove_dir_all(&directory);
+        super::finalize_document(
+            &directory,
+            vec![
+                PageMarkdown {
+                    page_number: 2,
+                    content: "ocr".to_owned(),
+                },
+                PageMarkdown {
+                    page_number: 1,
+                    content: "native".to_owned(),
+                },
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(directory.join("document.md")).unwrap(),
+            "<!-- page: 1 -->\nnative\n<!-- page: 2 -->\nocr"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn collect_page_markdowns_reads_existing_page_artifacts_in_requested_order() {
+        let directory = test_dir("collect-page-markdowns");
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("page-0002.md"), "second").unwrap();
+        fs::write(directory.join("page-0001.md"), "first").unwrap();
+
+        let pages = super::collect_page_markdowns(&directory, &[2, 1]).unwrap();
+
+        assert_eq!(pages[0].page_number, 2);
+        assert_eq!(pages[0].content, "second");
+        assert_eq!(pages[1].page_number, 1);
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
     fn overwrite_removes_only_an_allowed_output_root() {
         let directory = test_dir("overwrite");
         let _ = fs::remove_dir_all(&directory);
@@ -1792,6 +2695,79 @@ mod tests {
             super::read_checkpoint(directory.join("page-0001.checkpoint"))
                 .unwrap()
                 .complete
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn native_page_commit_does_not_create_raster_asset() {
+        let directory = test_dir("native-page-commit");
+        let _ = fs::remove_dir_all(&directory);
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "none".to_owned(),
+                profile: "none".to_owned(),
+                parameters: "pdf-mode=auto".to_owned(),
+            },
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        super::commit_native_page(
+            &directory,
+            1,
+            "native text",
+            "{\"source\":\"pdf_text\"}",
+            &checkpoint,
+        )
+        .unwrap();
+        assert!(directory.join("page-0001.md").is_file());
+        assert!(directory.join("page-0001.json").is_file());
+        assert!(!directory.join("images/page-0001.png").exists());
+        assert!(
+            super::read_checkpoint(directory.join("page-0001.checkpoint"))
+                .unwrap()
+                .complete
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn native_page_commit_and_collect_returns_the_committed_markdown() {
+        let directory = test_dir("native-page-collect");
+        let _ = fs::remove_dir_all(&directory);
+        let checkpoint = PageCheckpoint {
+            page_number: 2,
+            compatibility: CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "none".to_owned(),
+                profile: "none".to_owned(),
+                parameters: "pdf-mode=auto".to_owned(),
+            },
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        let page = super::commit_native_page_and_collect(
+            &directory,
+            2,
+            "native\r\npage",
+            "{}",
+            &checkpoint,
+        )
+        .unwrap();
+        assert_eq!(
+            page,
+            PageMarkdown {
+                page_number: 2,
+                content: "native\npage".to_owned()
+            }
         );
         fs::remove_dir_all(directory).unwrap();
     }
@@ -1878,6 +2854,52 @@ mod tests {
     }
 
     #[test]
+    fn merge_job_summaries_combines_native_and_ocr_phases() {
+        let native = JobSummary {
+            selected_pages: 3,
+            completed_pages: 2,
+            failed_pages: 0,
+            truncated_pages: 0,
+            warnings: vec!["native warning".into()],
+            diagnostics: vec![PageDiagnostic {
+                page: 1,
+                status: "completed".into(),
+                stage: "native".into(),
+                error_code: None,
+                message: None,
+                audit: None,
+                warnings: Vec::new(),
+            }],
+            cancelled: false,
+        };
+        let ocr = JobSummary {
+            selected_pages: 1,
+            completed_pages: 1,
+            failed_pages: 0,
+            truncated_pages: 0,
+            warnings: vec!["ocr warning".into()],
+            diagnostics: vec![PageDiagnostic {
+                page: 3,
+                status: "completed".into(),
+                stage: "ocr".into(),
+                error_code: None,
+                message: None,
+                audit: None,
+                warnings: Vec::new(),
+            }],
+            cancelled: false,
+        };
+
+        let merged = merge_job_summaries(native, ocr);
+
+        assert_eq!(merged.selected_pages, 3);
+        assert_eq!(merged.completed_pages, 3);
+        assert_eq!(merged.warnings, vec!["native warning", "ocr warning"]);
+        assert_eq!(merged.diagnostics.len(), 2);
+        assert_eq!(merged.status(), JobStatus::Completed);
+    }
+
+    #[test]
     fn page_lifecycle_allows_only_forward_terminal_transitions() {
         let mut page = PageLifecycle::new(1).unwrap();
         assert!(page.transition(PageStatus::Completed).is_err());
@@ -1892,6 +2914,31 @@ mod tests {
         assert_eq!(ProgressSnapshot::new(0, 10, 20).eta_seconds, None);
         assert_eq!(ProgressSnapshot::new(5, 10, 20).eta_seconds, Some(20));
         assert_eq!(ProgressSnapshot::new(10, 10, 20).eta_seconds, None);
+    }
+
+    #[test]
+    fn backend_initialization_errors_have_device_specific_diagnostics() {
+        let error = std::io::Error::other("llama_init_from_model: failed to initialize backend");
+        assert_eq!(
+            classify_recognition_error(&error),
+            (
+                "device_unavailable",
+                "inference device initialization failed"
+            )
+        );
+        let error = std::io::Error::other("invalid image dimensions");
+        assert_eq!(
+            classify_recognition_error(&error),
+            ("recognition_failed", "page recognition failed")
+        );
+        let error = std::io::Error::other("page recognition failed: null reference from llama.cpp");
+        assert_eq!(
+            classify_recognition_error(&error),
+            (
+                "device_unavailable",
+                "inference device initialization failed"
+            )
+        );
     }
 
     #[test]

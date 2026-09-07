@@ -1,0 +1,378 @@
+{
+  "schema_version": 2,
+  "page_number": 14,
+  "native_text": "与机遇。与此同时，我们在向100多万人发表演讲的过程中，尤其是在问答环\n节中，能够不断地倾听当代商界翘楚们的声音，真正了解他们在想什么以及在\n担忧什么。其实，早在2002年，我们就开始涉足私募股权行业，为众多首席执\n行官们提供咨询服务，也为数十家私募股权公司提供评估和咨询服务，帮助它\n们实现了良好的发展，其中涉及的行业包括医疗卫生、水处理、在线约会网站\n等。正是在这十来年间，我们成功建立了在线MBA教学机构，即斯特雷耶大学\n杰克·韦尔奇管理学院。现在，这个学院的学员规模已经壮大到了900人。他\n们都是商界的专业人才，工作地点遍布世界各地，具有丰富多样的职业履历，\n为我们提供了令人耳目一新的、令人兴奋激动的信息，从而拓展、深化和增进\n了我们对当今世界商业之道的理解。\n如果说我们在写《赢》这本书时对商业有所了解，那么在写《商业的本\n质》这本书时我们对商业了解得更多了，也更深刻了，因为自那时起，商业环\n境已经发生了很大的变化，我们很幸运地能够紧跟时代的变化而不至于落伍。\n这并不是说我们在过去10年里学到的知识否定了《赢》这本书提出的原则与做\n法，恰恰相反，我们自2005年以来学到的知识对《赢》提出的原则与做法起到\n了拓展、更新和强化的作用，这种作用有时比较轻微，而有时却比较显著。\n事实上，这10年是剧烈变革的时代，是激动人心的时代。当然，在某些方\n面，这个时代比以往任何时候都更具挑战性。这是不可否认的。说得委婉一\n些，今天的经济增速并不像以前那么快。各国政府对经济的干预程度大大加强\n了，全球范围内的竞争日益激烈，在新科技的推动下，世界发展得越来越快。\n与此同时，当前这个时代里，创新成果日新月异，令人眼花缭乱。酷炫的\n新产品和新科技层出不穷，似乎一眨眼的工夫就有新产品、新科技出现在你的\n眼前。此外，企业和个人的工作方式也发生了巨大的变化。1925年，时任美国\n总统卡尔文·柯立芝曾说：“美国人民的首要业务是商业。”今天，近一个世\n纪之后，我们可以打趣地将他这句话引申为：“世界的首要业务是商业。”几\n乎每一个人，几乎每一个地方，都在制造、销售、创造或修建某个东西。无论\n是个人还是企业，无论是小企业还是大企业，无论是老牌经济体还是新兴经济\n体，企业家精神都得以发扬光大。\n在这个时代背景下，如果停滞不前，那么你就危险了。更准确地说，如果\n停止学习，你就危险了。",
+  "blocks": [
+    {
+      "text": "与机遇。与此同时，我们在向100多万人发表演讲的过程中，尤其是在问答环",
+      "bbox": {
+        "left": 127,
+        "top": 95,
+        "right": 872,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "节中，能够不断地倾听当代商界翘楚们的声音，真正了解他们在想什么以及在",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 872,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "担忧什么。其实，早在2002年，我们就开始涉足私募股权行业，为众多首席执",
+      "bbox": {
+        "left": 127,
+        "top": 145,
+        "right": 873,
+        "bottom": 161
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "行官们提供咨询服务，也为数十家私募股权公司提供评估和咨询服务，帮助它",
+      "bbox": {
+        "left": 127,
+        "top": 170,
+        "right": 872,
+        "bottom": 186
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "们实现了良好的发展，其中涉及的行业包括医疗卫生、水处理、在线约会网站",
+      "bbox": {
+        "left": 127,
+        "top": 196,
+        "right": 872,
+        "bottom": 212
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "等。正是在这十来年间，我们成功建立了在线MBA教学机构，即斯特雷耶大学",
+      "bbox": {
+        "left": 127,
+        "top": 221,
+        "right": 872,
+        "bottom": 237
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "杰克·韦尔奇管理学院。现在，这个学院的学员规模已经壮大到了900人。他",
+      "bbox": {
+        "left": 126,
+        "top": 246,
+        "right": 873,
+        "bottom": 262
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "们都是商界的专业人才，工作地点遍布世界各地，具有丰富多样的职业履历，",
+      "bbox": {
+        "left": 127,
+        "top": 272,
+        "right": 858,
+        "bottom": 287
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "为我们提供了令人耳目一新的、令人兴奋激动的信息，从而拓展、深化和增进",
+      "bbox": {
+        "left": 127,
+        "top": 297,
+        "right": 873,
+        "bottom": 313
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了我们对当今世界商业之道的理解。",
+      "bbox": {
+        "left": 129,
+        "top": 322,
+        "right": 461,
+        "bottom": 338
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如果说我们在写《赢》这本书时对商业有所了解，那么在写《商业的本",
+      "bbox": {
+        "left": 171,
+        "top": 356,
+        "right": 872,
+        "bottom": 372
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "质》这本书时我们对商业了解得更多了，也更深刻了，因为自那时起，商业环",
+      "bbox": {
+        "left": 127,
+        "top": 381,
+        "right": 872,
+        "bottom": 397
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "境已经发生了很大的变化，我们很幸运地能够紧跟时代的变化而不至于落伍。",
+      "bbox": {
+        "left": 127,
+        "top": 406,
+        "right": 859,
+        "bottom": 422
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这并不是说我们在过去10年里学到的知识否定了《赢》这本书提出的原则与做",
+      "bbox": {
+        "left": 127,
+        "top": 432,
+        "right": 872,
+        "bottom": 448
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "法，恰恰相反，我们自2005年以来学到的知识对《赢》提出的原则与做法起到",
+      "bbox": {
+        "left": 127,
+        "top": 457,
+        "right": 872,
+        "bottom": 473
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了拓展、更新和强化的作用，这种作用有时比较轻微，而有时却比较显著。",
+      "bbox": {
+        "left": 129,
+        "top": 482,
+        "right": 832,
+        "bottom": 498
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "事实上，这10年是剧烈变革的时代，是激动人心的时代。当然，在某些方",
+      "bbox": {
+        "left": 170,
+        "top": 516,
+        "right": 873,
+        "bottom": 532
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "面，这个时代比以往任何时候都更具挑战性。这是不可否认的。说得委婉一",
+      "bbox": {
+        "left": 127,
+        "top": 541,
+        "right": 872,
+        "bottom": 557
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "些，今天的经济增速并不像以前那么快。各国政府对经济的干预程度大大加强",
+      "bbox": {
+        "left": 127,
+        "top": 567,
+        "right": 872,
+        "bottom": 582
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了，全球范围内的竞争日益激烈，在新科技的推动下，世界发展得越来越快。",
+      "bbox": {
+        "left": 129,
+        "top": 592,
+        "right": 853,
+        "bottom": 608
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "与此同时，当前这个时代里，创新成果日新月异，令人眼花缭乱。酷炫的",
+      "bbox": {
+        "left": 171,
+        "top": 626,
+        "right": 872,
+        "bottom": 641
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "新产品和新科技层出不穷，似乎一眨眼的工夫就有新产品、新科技出现在你的",
+      "bbox": {
+        "left": 127,
+        "top": 651,
+        "right": 872,
+        "bottom": 667
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "眼前。此外，企业和个人的工作方式也发生了巨大的变化。1925年，时任美国",
+      "bbox": {
+        "left": 128,
+        "top": 676,
+        "right": 871,
+        "bottom": 692
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "总统卡尔文·柯立芝曾说：“美国人民的首要业务是商业。”今天，近一个世",
+      "bbox": {
+        "left": 127,
+        "top": 701,
+        "right": 873,
+        "bottom": 717
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "纪之后，我们可以打趣地将他这句话引申为：“世界的首要业务是商业。”几",
+      "bbox": {
+        "left": 127,
+        "top": 727,
+        "right": 873,
+        "bottom": 743
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "乎每一个人，几乎每一个地方，都在制造、销售、创造或修建某个东西。无论",
+      "bbox": {
+        "left": 127,
+        "top": 752,
+        "right": 872,
+        "bottom": 768
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "是个人还是企业，无论是小企业还是大企业，无论是老牌经济体还是新兴经济",
+      "bbox": {
+        "left": 127,
+        "top": 777,
+        "right": 872,
+        "bottom": 793
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "体，企业家精神都得以发扬光大。",
+      "bbox": {
+        "left": 127,
+        "top": 803,
+        "right": 439,
+        "bottom": 818
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在这个时代背景下，如果停滞不前，那么你就危险了。更准确地说，如果",
+      "bbox": {
+        "left": 170,
+        "top": 836,
+        "right": 872,
+        "bottom": 852
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    },
+    {
+      "text": "停止学习，你就危险了。",
+      "bbox": {
+        "left": 127,
+        "top": 862,
+        "right": 352,
+        "bottom": 877
+      },
+      "source_order": 30,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.32814106,
+    "visible_characters": 960,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 7,
+  "source_page_number": 14,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

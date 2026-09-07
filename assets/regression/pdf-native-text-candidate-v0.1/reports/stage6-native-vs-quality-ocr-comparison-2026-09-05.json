@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "status": "passed_with_metric_scope",
+  "page_count": 30,
+  "same_input_pages": true,
+  "native": {
+    "mode": "auto",
+    "route": "native_text",
+    "text_ned": 0.0,
+    "reading_order": 1.0,
+    "block_precision": 1.0,
+    "block_recall": 1.0,
+    "block_f1": 1.0,
+    "bbox_validity_rate": 1.0,
+    "bbox_recall": 1.0,
+    "blank_or_failed_pages": 0,
+    "duplicate_pages": 0
+  },
+  "quality_ocr": {
+    "mode": "ocr",
+    "profile": "quality",
+    "backend": "cpu",
+    "route": "ocr",
+    "text_ned": 0.08103813572546813,
+    "reading_order": 1.0,
+    "block_precision": null,
+    "block_recall": null,
+    "block_f1": null,
+    "bbox_validity_rate": null,
+    "bbox_recall": null,
+    "blank_or_failed_pages": 0,
+    "duplicate_pages": 0,
+    "not_applicable_reason": "The real OCR PageDocument artifacts contain markdown blocks but no PDFium native provenance/bbox truth; native block/bbox metrics are not comparable and are reported as N/A."
+  },
+  "comparison": {
+    "text_ned_native_minus_ocr": -0.08103813572546813,
+    "reading_order_delta": 0.0,
+    "native_text_not_degraded": true,
+    "native_reading_order_not_degraded": true,
+    "geometry_comparison": "not_applicable_for_ocr_artifacts",
+    "performance": {
+      "native_median_wall_seconds": 5,
+      "quality_ocr_median_wall_seconds": 546,
+      "native_to_ocr_wall_ratio": 0.009157509157509158,
+      "native_under_half_ocr": true,
+      "native_model_loaded": false,
+      "quality_ocr_model_loaded": true,
+      "quality_ocr_backend": "cpu"
+    }
+  },
+  "evidence": {
+    "native_prediction": "/tmp/ocrx-native-pred",
+    "ocr_prediction": "/tmp/ocrx-native-candidate-quality-ocr-valid",
+    "ocr_result": "/tmp/ocrx-native-candidate-quality-ocr-valid/result.json",
+    "ocr_elapsed_ms": 505308,
+    "ocr_pages_completed": 30,
+    "scorer": "scripts/score-pdf-native.py",
+    "quality_ocr_performance": "assets/regression/pdf-native-text-candidate-v0.1/reports/stage6-quality-ocr-performance-rss-2026-09-05.json"
+  }
+}

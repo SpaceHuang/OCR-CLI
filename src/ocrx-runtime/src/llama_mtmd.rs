@@ -5,7 +5,10 @@ use super::{Backend, InferenceRequest, InferenceResponse, Runtime, RuntimeInfo};
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
-use llama_cpp_2::model::{LlamaModel, params::LlamaModelParams};
+use llama_cpp_2::model::{
+    LlamaModel,
+    params::{LlamaModelParams, LlamaSplitMode},
+};
 use llama_cpp_2::mtmd::{
     MtmdBitmap, MtmdContext, MtmdContextParams, MtmdInputText, mtmd_default_marker,
 };
@@ -38,12 +41,16 @@ impl LlamaMtmdRuntime {
             .map_err(|_| "image token limit exceeds runtime range".to_owned())?;
         let backend = LlamaBackend::init().map_err(|error| error.to_string())?;
         let layers = if use_gpu { u32::MAX } else { 0 };
-        let model = LlamaModel::load_from_file(
-            &backend,
-            model_path.as_ref(),
-            &LlamaModelParams::default().with_n_gpu_layers(layers),
-        )
-        .map_err(|error| error.to_string())?;
+        let mut model_params = LlamaModelParams::default()
+            .with_n_gpu_layers(layers)
+            .with_split_mode(LlamaSplitMode::None);
+        if !use_gpu {
+            // llama.cpp rejects the default main_gpu=0 when no backend device
+            // exists in a CPU-only build (available devices: 0).
+            model_params = model_params.with_main_gpu(-1);
+        }
+        let model = LlamaModel::load_from_file(&backend, model_path.as_ref(), &model_params)
+            .map_err(|error| error.to_string())?;
         let mtmd = MtmdContext::init_from_file(
             &mmproj_path.as_ref().to_string_lossy(),
             &model,

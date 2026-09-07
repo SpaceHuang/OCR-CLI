@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "stage": 6,
+  "set_id": "pdf-native-text-candidate-v0.1",
+  "status": "blocked_by_human_acceptance",
+  "structural_valid": true,
+  "native_acceptance_complete": false,
+  "release_ready": false,
+  "blocked_reasons": ["human_native_acceptance_incomplete"],
+  "native": {
+    "page_count": 30,
+    "route_counts": {
+      "native_text": 30,
+      "ocr": 0,
+      "fallback": 0,
+      "failure": 0
+    },
+    "quality": {
+      "text_ned": 0.0,
+      "reading_order": 1.0,
+      "block_precision": 1.0,
+      "block_recall": 1.0,
+      "block_f1": 1.0,
+      "bbox_validity_rate": 1.0,
+      "bbox_recall": 1.0,
+      "blank_or_failed_pages": 0,
+      "duplicate_pages": 0
+    },
+    "model_loaded": false
+  },
+  "forbidden": {
+    "valid": true,
+    "page_count": 20,
+    "expected_type": "image",
+    "native_text_pages": 0,
+    "native_false_positive_pages": []
+  },
+  "evidence": {
+    "gate_command": "python3 scripts/run-pdf-native-stage6-gate.py assets/regression/pdf-native-text-candidate-v0.1 /tmp/ocrx-native-pred assets/regression/pdf-native-forbidden-v0.1",
+    "mixed_e2e_report": "assets/regression/pdf-mixed-e2e-v0.1/review/cli-auto-e2e-report.json",
+    "native_performance_report": "assets/regression/pdf-native-text-candidate-v0.1/reports/stage6-auto-native-performance-rss-2026-09-05.json",
+    "ocr_performance_report": "assets/regression/pdf-native-text-candidate-v0.1/reports/stage6-quality-ocr-performance-rss-2026-09-05.json",
+    "quality_comparison_report": "assets/regression/pdf-native-text-candidate-v0.1/reports/stage6-native-vs-quality-ocr-comparison-2026-09-05.json"
+  }
+}

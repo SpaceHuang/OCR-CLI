@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "method": "model_vision_page_by_page",
+  "prior_regression_truth_used": false,
+  "pages": [
+    {
+      "candidate_page": 1,
+      "source_page": 5,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 2,
+      "source_page": 6,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 3,
+      "source_page": 7,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 4,
+      "source_page": 10,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 5,
+      "source_page": 11,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 6,
+      "source_page": 13,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": {
+        "severity": "block_structure",
+        "finding": "Visual title is THE REAL-LIFE MBA; native blocks split it into THE, a blank block, and REAL-LIFE MBA.",
+        "expected": "Merge title fragments into one logical block and remove the blank block."
+      }
+    },
+    {
+      "candidate_page": 7,
+      "source_page": 14,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 8,
+      "source_page": 15,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 9,
+      "source_page": 16,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 10,
+      "source_page": 18,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 11,
+      "source_page": 19,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": {
+        "severity": "spacing",
+        "finding": "Footnote marker [1] follows 个人贡献者 visually; block text has a spacing difference.",
+        "expected": "Preserve the visual relation as 个人贡献者[1]。 or the renderer's equivalent footnote association."
+      }
+    },
+    {
+      "candidate_page": 12,
+      "source_page": 20,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 13,
+      "source_page": 21,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 14,
+      "source_page": 22,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 15,
+      "source_page": 23,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 16,
+      "source_page": 24,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 17,
+      "source_page": 25,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 18,
+      "source_page": 26,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 19,
+      "source_page": 27,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 20,
+      "source_page": 28,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 21,
+      "source_page": 29,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 22,
+      "source_page": 30,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 23,
+      "source_page": 31,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 24,
+      "source_page": 32,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 25,
+      "source_page": 33,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 26,
+      "source_page": 35,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 27,
+      "source_page": 36,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 28,
+      "source_page": 37,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    },
+    {
+      "candidate_page": 29,
+      "source_page": 38,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": {
+        "severity": "spacing",
+        "finding": "SPIRIT section contains deliberate visual spacing in 行 动 模 式 and 服务（service）; block text compresses some spaces.",
+        "expected": "Retain visual spacing in the display text or record a normalized-text equivalence explicitly."
+      }
+    },
+    {
+      "candidate_page": 30,
+      "source_page": 39,
+      "status": "reviewed_by_model_vision",
+      "content_accuracy": "mostly_accurate",
+      "page_specific_finding": null
+    }
+  ]
+}

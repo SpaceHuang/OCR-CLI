@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "method": "rebuilt_pdfium_check",
+  "page_count": 20,
+  "native_text_pages": 0,
+  "native_block_pages": 0,
+  "image_object_pages": 20,
+  "native_false_positive_pages": []
+}

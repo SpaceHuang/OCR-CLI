@@ -1,0 +1,356 @@
+{
+  "schema_version": 2,
+  "page_number": 18,
+  "native_text": "第一章\n让痛苦烟消云散\n几年前，我们两个去拉斯韦加斯旅行。当然不是去赌博的，我们也不好这\n一口儿，而是参加国际购物中心协会举办的一次会议，并在会议上发表讲话。\n这个协会拥有6万名会员。\n演讲时间定在第二天上午，因此我们抵达拉斯韦加斯的当天晚上就空出来\n了。如同其他游客一样，我们决定买张门票去看演出，其实我们两人之间，一\n人对此事很热衷，另一人虽不热衷，倒也觉得无所谓，因此也跟着去了。\n那场表演真是太精彩了！50人的管弦乐队阵容强大，烟幕效果异彩纷呈，\n演员长发飘逸，演唱激情四射，伴唱演员吊在钢丝上，进行着令人瞠目的换装\n表演，整个演出真是美轮美奂！\n然而，欣赏了不到一个小时，我们两人中的一个就睡着了。\n后来，他被音乐声吵醒了，醒来后说的第一句话竟然是：“比分如何\n了？”\n短短的几个字就凸显出杰克是一个真正热爱体育的人，也是热爱商业的\n人。\n体育和商业是一码事，不是吗？二者竞争都很激烈，充满乐趣，但做起来\n都很艰辛，而且都瞬息万变，是一个无休止的奋斗过程，需要战略和团队，需\n要细致的分析，总能给人带来惊奇。\n此外，无论是从事体育，还是从事商业，选手们都是为了一个目标：赢！\n为了“赢”这个目标，品牌经理及其团队会不厌其烦地讨论一个产品的定\n位问题，以便最大可能地提高销量；三位在大学期间建立友情的同学放弃华尔\n街的工作，建立了一家小型酿酒厂或推出一款新的应用程序；生产部门的经理\n可能一早醒来，大脑就开始思考如何才能提高产量；人力资源部的主管可能为\n了一个职位而花三个星期去面试六位应聘者，希望最终能找到一位近乎完美的\n人选。\n为了“赢”，人们每天从早到晚都在忙忙碌碌，努力让自己的生活更美\n好，努力让自己的公司更辉煌。人们一直在努力帮助自己的家人、员工、同",
+  "blocks": [
+    {
+      "text": "第一章",
+      "bbox": {
+        "left": 460,
+        "top": 104,
+        "right": 539,
+        "bottom": 124
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "让痛苦烟消云散",
+      "bbox": {
+        "left": 406,
+        "top": 135,
+        "right": 594,
+        "bottom": 155
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "几年前，我们两个去拉斯韦加斯旅行。当然不是去赌博的，我们也不好这",
+      "bbox": {
+        "left": 171,
+        "top": 173,
+        "right": 873,
+        "bottom": 189
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "一口儿，而是参加国际购物中心协会举办的一次会议，并在会议上发表讲话。",
+      "bbox": {
+        "left": 127,
+        "top": 199,
+        "right": 859,
+        "bottom": 214
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这个协会拥有6万名会员。",
+      "bbox": {
+        "left": 127,
+        "top": 224,
+        "right": 363,
+        "bottom": 240
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "演讲时间定在第二天上午，因此我们抵达拉斯韦加斯的当天晚上就空出来",
+      "bbox": {
+        "left": 170,
+        "top": 258,
+        "right": 873,
+        "bottom": 273
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了。如同其他游客一样，我们决定买张门票去看演出，其实我们两人之间，一",
+      "bbox": {
+        "left": 129,
+        "top": 283,
+        "right": 872,
+        "bottom": 299
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "人对此事很热衷，另一人虽不热衷，倒也觉得无所谓，因此也跟着去了。",
+      "bbox": {
+        "left": 127,
+        "top": 308,
+        "right": 810,
+        "bottom": 324
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "那场表演真是太精彩了！50人的管弦乐队阵容强大，烟幕效果异彩纷呈，",
+      "bbox": {
+        "left": 170,
+        "top": 342,
+        "right": 858,
+        "bottom": 358
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "演员长发飘逸，演唱激情四射，伴唱演员吊在钢丝上，进行着令人瞠目的换装",
+      "bbox": {
+        "left": 127,
+        "top": 367,
+        "right": 872,
+        "bottom": 383
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "表演，整个演出真是美轮美奂！",
+      "bbox": {
+        "left": 126,
+        "top": 392,
+        "right": 417,
+        "bottom": 408
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "然而，欣赏了不到一个小时，我们两人中的一个就睡着了。",
+      "bbox": {
+        "left": 170,
+        "top": 426,
+        "right": 722,
+        "bottom": 442
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "后来，他被音乐声吵醒了，醒来后说的第一句话竟然是：“比分如何",
+      "bbox": {
+        "left": 170,
+        "top": 460,
+        "right": 873,
+        "bottom": 476
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了？”",
+      "bbox": {
+        "left": 129,
+        "top": 486,
+        "right": 181,
+        "bottom": 501
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "短短的几个字就凸显出杰克是一个真正热爱体育的人，也是热爱商业的",
+      "bbox": {
+        "left": 170,
+        "top": 519,
+        "right": 872,
+        "bottom": 535
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "人。",
+      "bbox": {
+        "left": 127,
+        "top": 544,
+        "right": 155,
+        "bottom": 560
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "体育和商业是一码事，不是吗？二者竞争都很激烈，充满乐趣，但做起来",
+      "bbox": {
+        "left": 170,
+        "top": 578,
+        "right": 873,
+        "bottom": 594
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "都很艰辛，而且都瞬息万变，是一个无休止的奋斗过程，需要战略和团队，需",
+      "bbox": {
+        "left": 127,
+        "top": 603,
+        "right": 872,
+        "bottom": 619
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "要细致的分析，总能给人带来惊奇。",
+      "bbox": {
+        "left": 127,
+        "top": 628,
+        "right": 461,
+        "bottom": 644
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "此外，无论是从事体育，还是从事商业，选手们都是为了一个目标：赢！",
+      "bbox": {
+        "left": 170,
+        "top": 662,
+        "right": 854,
+        "bottom": 678
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "为了“赢”这个目标，品牌经理及其团队会不厌其烦地讨论一个产品的定",
+      "bbox": {
+        "left": 170,
+        "top": 696,
+        "right": 872,
+        "bottom": 712
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "位问题，以便最大可能地提高销量；三位在大学期间建立友情的同学放弃华尔",
+      "bbox": {
+        "left": 127,
+        "top": 721,
+        "right": 872,
+        "bottom": 737
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "街的工作，建立了一家小型酿酒厂或推出一款新的应用程序；生产部门的经理",
+      "bbox": {
+        "left": 127,
+        "top": 746,
+        "right": 873,
+        "bottom": 762
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "可能一早醒来，大脑就开始思考如何才能提高产量；人力资源部的主管可能为",
+      "bbox": {
+        "left": 127,
+        "top": 772,
+        "right": 872,
+        "bottom": 788
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了一个职位而花三个星期去面试六位应聘者，希望最终能找到一位近乎完美的",
+      "bbox": {
+        "left": 129,
+        "top": 797,
+        "right": 872,
+        "bottom": 813
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "人选。",
+      "bbox": {
+        "left": 127,
+        "top": 822,
+        "right": 177,
+        "bottom": 838
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "为了“赢”，人们每天从早到晚都在忙忙碌碌，努力让自己的生活更美",
+      "bbox": {
+        "left": 170,
+        "top": 856,
+        "right": 872,
+        "bottom": 872
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "好，努力让自己的公司更辉煌。人们一直在努力帮助自己的家人、员工、同",
+      "bbox": {
+        "left": 127,
+        "top": 881,
+        "right": 871,
+        "bottom": 897
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.24710102,
+    "visible_characters": 708,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 10,
+  "source_page_number": 18,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

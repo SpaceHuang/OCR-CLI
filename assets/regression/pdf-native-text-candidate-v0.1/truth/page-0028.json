@@ -1,0 +1,356 @@
+{
+  "schema_version": 2,
+  "page_number": 37,
+  "native_text": "否遭到创伤都无妨。任何一位教练都会告诉你“最好的防御是进攻”，商道也\n是如此。\n力挽狂澜\n如果说好莱坞的票房可以为我们提供什么启发的话，那就是每个人都喜欢\n观看剧情跌宕起伏的恐怖片。请注意，我们在这里用的是“观看”，如果人们\n亲身经历这种场景，恐怕就是另外一回事了。\n不信的话，可以问问乔·德安基罗（Joe DeAngelo）和他在HD Supply公\n司（下文简称HDS公司）的团队。1975年，该公司创立于加利福尼亚州，是一\n个地区性的建材分销商。到1997年，它的规模实现了大幅增长。家得宝公司\n（Home Depot）为了让自己的产品与服务多元化，便出资收购了HDS公司，之\n后大力投资在线订购与物流领域。HDS公司的客户具有高度分散性，包括水管\n工、承包商、公寓负责人、设施维护经理等。在房地产市场蓬勃发展的时期，\n客户分散并不算什么问题，HDS公司在长达数十年的时间里实现了成功的发\n展。2005年，该公司营业收入约120亿美元，EBITDA（息税折旧及摊销前利\n润）为10亿美元。\n然而，到了2008年，HDS遭到了两大重创。首先，长期严重膨胀的房地产\n泡沫破灭了。这对HDS公司的影响非常大，但好在该公司还可以重点发展其二\n级市场，即商业地产市场。这个市场的商业周期与住宅市场的商业周期正好相\n反。然而，过了几个月，随着整体经济下滑，整个地产行业都陷入了逐渐衰退\n的状态，HDS公司的收入最后下降了40%。为了生存，该公司解雇了12 000名员\n工（原有26 000名），出售了三个业务单元，关闭了三分之一的分店。\n更糟的是，当这些不幸事件接踵而至的时候，HDS公司的财务状况变得岌\n岌可危了。后来，家得宝公司把债务累累的HDS公司剥离掉，将其出售给了私\n募基金。虽然私募基金在拯救公司、提升公司协同力方面具有丰富的经验，但\n当时HDS公司遭遇的却是一场极为严重的行业危机。刚被收购之际，HDS公司的\n现金流非常有限，资产负债表的杠杆率也很高。\n德安基罗回忆2008年的情形时说：“在公司外部，每个人都认为我们玩完\n了，就等着我们宣告破产。”",
+  "blocks": [
+    {
+      "text": "否遭到创伤都无妨。任何一位教练都会告诉你“最好的防御是进攻”，商道也",
+      "bbox": {
+        "left": 127,
+        "top": 95,
+        "right": 872,
+        "bottom": 111
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "是如此。",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 199,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "力挽狂澜",
+      "bbox": {
+        "left": 171,
+        "top": 155,
+        "right": 266,
+        "bottom": 172
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如果说好莱坞的票房可以为我们提供什么启发的话，那就是每个人都喜欢",
+      "bbox": {
+        "left": 171,
+        "top": 190,
+        "right": 872,
+        "bottom": 206
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "观看剧情跌宕起伏的恐怖片。请注意，我们在这里用的是“观看”，如果人们",
+      "bbox": {
+        "left": 127,
+        "top": 215,
+        "right": 872,
+        "bottom": 231
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "亲身经历这种场景，恐怕就是另外一回事了。",
+      "bbox": {
+        "left": 127,
+        "top": 241,
+        "right": 548,
+        "bottom": 256
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "不信的话，可以问问乔·德安基罗（Joe DeAngelo）和他在HD Supply公",
+      "bbox": {
+        "left": 171,
+        "top": 274,
+        "right": 872,
+        "bottom": 291
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "司（下文简称HDS公司）的团队。1975年，该公司创立于加利福尼亚州，是一",
+      "bbox": {
+        "left": 127,
+        "top": 300,
+        "right": 872,
+        "bottom": 316
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "个地区性的建材分销商。到1997年，它的规模实现了大幅增长。家得宝公司",
+      "bbox": {
+        "left": 127,
+        "top": 325,
+        "right": 870,
+        "bottom": 341
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "（Home Depot）为了让自己的产品与服务多元化，便出资收购了HDS公司，之",
+      "bbox": {
+        "left": 138,
+        "top": 350,
+        "right": 873,
+        "bottom": 367
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "后大力投资在线订购与物流领域。HDS公司的客户具有高度分散性，包括水管",
+      "bbox": {
+        "left": 127,
+        "top": 376,
+        "right": 872,
+        "bottom": 391
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "工、承包商、公寓负责人、设施维护经理等。在房地产市场蓬勃发展的时期，",
+      "bbox": {
+        "left": 127,
+        "top": 401,
+        "right": 858,
+        "bottom": 417
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "客户分散并不算什么问题，HDS公司在长达数十年的时间里实现了成功的发",
+      "bbox": {
+        "left": 127,
+        "top": 426,
+        "right": 873,
+        "bottom": 442
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "展。2005年，该公司营业收入约120亿美元，EBITDA（息税折旧及摊销前利",
+      "bbox": {
+        "left": 127,
+        "top": 451,
+        "right": 872,
+        "bottom": 467
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "润）为10亿美元。",
+      "bbox": {
+        "left": 127,
+        "top": 477,
+        "right": 286,
+        "bottom": 492
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "然而，到了2008年，HDS遭到了两大重创。首先，长期严重膨胀的房地产",
+      "bbox": {
+        "left": 170,
+        "top": 510,
+        "right": 872,
+        "bottom": 526
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "泡沫破灭了。这对HDS公司的影响非常大，但好在该公司还可以重点发展其二",
+      "bbox": {
+        "left": 127,
+        "top": 536,
+        "right": 872,
+        "bottom": 551
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "级市场，即商业地产市场。这个市场的商业周期与住宅市场的商业周期正好相",
+      "bbox": {
+        "left": 127,
+        "top": 561,
+        "right": 872,
+        "bottom": 577
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "反。然而，过了几个月，随着整体经济下滑，整个地产行业都陷入了逐渐衰退",
+      "bbox": {
+        "left": 127,
+        "top": 586,
+        "right": 873,
+        "bottom": 602
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的状态，HDS公司的收入最后下降了40%。为了生存，该公司解雇了12 000名员",
+      "bbox": {
+        "left": 128,
+        "top": 612,
+        "right": 870,
+        "bottom": 627
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "工（原有26 000名），出售了三个业务单元，关闭了三分之一的分店。",
+      "bbox": {
+        "left": 127,
+        "top": 637,
+        "right": 788,
+        "bottom": 653
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "更糟的是，当这些不幸事件接踵而至的时候，HDS公司的财务状况变得岌",
+      "bbox": {
+        "left": 170,
+        "top": 671,
+        "right": 872,
+        "bottom": 686
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "岌可危了。后来，家得宝公司把债务累累的HDS公司剥离掉，将其出售给了私",
+      "bbox": {
+        "left": 127,
+        "top": 696,
+        "right": 872,
+        "bottom": 712
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "募基金。虽然私募基金在拯救公司、提升公司协同力方面具有丰富的经验，但",
+      "bbox": {
+        "left": 126,
+        "top": 721,
+        "right": 873,
+        "bottom": 737
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "当时HDS公司遭遇的却是一场极为严重的行业危机。刚被收购之际，HDS公司的",
+      "bbox": {
+        "left": 128,
+        "top": 746,
+        "right": 872,
+        "bottom": 762
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "现金流非常有限，资产负债表的杠杆率也很高。",
+      "bbox": {
+        "left": 127,
+        "top": 772,
+        "right": 570,
+        "bottom": 787
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "德安基罗回忆2008年的情形时说：“在公司外部，每个人都认为我们玩完",
+      "bbox": {
+        "left": 170,
+        "top": 805,
+        "right": 872,
+        "bottom": 821
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了，就等着我们宣告破产。”",
+      "bbox": {
+        "left": 129,
+        "top": 831,
+        "right": 399,
+        "bottom": 847
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.27794197,
+    "visible_characters": 847,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 28,
+  "source_page_number": 37,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

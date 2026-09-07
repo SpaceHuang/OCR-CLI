@@ -1,0 +1,356 @@
+{
+  "schema_version": 2,
+  "page_number": 23,
+  "native_text": "来了莫大的激励。研发部门将改善3D TRASAR系统的性能作为工作重心，创造\n了26项专利，满足了客户需求，抑制了竞争对手的模仿。销售部门为业务员开\n展了新培训，制定了新目标，提出了新激励。同时，该公司还在印度新建了一\n个3D TRASAR系统服务中心，配备了40名“水大夫”，即水资源处理领域的工\n程师，这些工程师负责实时监控3D TRASAR系统在世界各地的运行状况，旨在\n先于客户发现并解决问题。\n就这样，纳尔科公司的新使命便应运而生了：“我们为纳尔科的客户提供\n清洁的水，帮助客户实现更大的经济效益，促进世界环境的持续发展。”\n纳尔科公司是否在这一使命的鞭策下实现了两年内安装两万套的目标呢？\n当然！\n方华德说：“人们突然知道了自己为什么要来这里工作，这份工作既能帮\n助我们的客户取得成功，又能拯救世界，他们对此激动不已。他们看到了自己\n的未来，好创意层出不穷，你简直无法相信这是真的。”\n这就是一个好使命的美妙之处。它能让每个人都集中精力，鼓足干劲。\n在这个时候，行动的重要性便开始凸显了。\n行动非常重要。如果说“使命”是一个公司要抵达的“终点”，那么“行\n动”就是“交通工具”，也就是抵达终点的方式。\n我们都知道“行动”环节成为短板的情景，不是吗？比如，一个公司可能\n会滔滔不绝地讲以客户为中心，但实际上，它的一线员工却讨厌客户。好吧，\n也许不是非常讨厌客户，只是当客户妨碍他们做想做的事情时（比如耽误他们\n在下午5点前回到家），他们会用鄙夷的态度对待客户。或者一个公司不断地\n宣讲要加快新产品上市速度，但其经理层却不以为意，官僚作风严重，从而影\n响了使命的落实。或者一个公司可能大谈特谈创新的重要性，而一旦有人担着\n风险搞创新却以失败而告终，管理者便会将这些敢于尝鲜的人炒鱿鱼。\n这些都是不好的现象。\n让使命与行动实现无缝对接才是可取的。如果一个公司能够真正地落实以\n客户为中心的使命，那么其员工的一举一动都会表现出同理心。他们会将自己\n的手机号码给客户，以方便客户在下班时间联系到他们。他们会亲自受理客户",
+  "blocks": [
+    {
+      "text": "来了莫大的激励。研发部门将改善3D TRASAR系统的性能作为工作重心，创造",
+      "bbox": {
+        "left": 127,
+        "top": 95,
+        "right": 873,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了26项专利，满足了客户需求，抑制了竞争对手的模仿。销售部门为业务员开",
+      "bbox": {
+        "left": 129,
+        "top": 120,
+        "right": 873,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "展了新培训，制定了新目标，提出了新激励。同时，该公司还在印度新建了一",
+      "bbox": {
+        "left": 127,
+        "top": 145,
+        "right": 872,
+        "bottom": 161
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "个3D TRASAR系统服务中心，配备了40名“水大夫”，即水资源处理领域的工",
+      "bbox": {
+        "left": 127,
+        "top": 170,
+        "right": 872,
+        "bottom": 186
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "程师，这些工程师负责实时监控3D TRASAR系统在世界各地的运行状况，旨在",
+      "bbox": {
+        "left": 126,
+        "top": 196,
+        "right": 872,
+        "bottom": 212
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "先于客户发现并解决问题。",
+      "bbox": {
+        "left": 127,
+        "top": 221,
+        "right": 373,
+        "bottom": 237
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "就这样，纳尔科公司的新使命便应运而生了：“我们为纳尔科的客户提供",
+      "bbox": {
+        "left": 170,
+        "top": 255,
+        "right": 873,
+        "bottom": 271
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "清洁的水，帮助客户实现更大的经济效益，促进世界环境的持续发展。”",
+      "bbox": {
+        "left": 127,
+        "top": 280,
+        "right": 813,
+        "bottom": 296
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "纳尔科公司是否在这一使命的鞭策下实现了两年内安装两万套的目标呢？",
+      "bbox": {
+        "left": 170,
+        "top": 314,
+        "right": 862,
+        "bottom": 330
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "当然！",
+      "bbox": {
+        "left": 128,
+        "top": 339,
+        "right": 177,
+        "bottom": 355
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "方华德说：“人们突然知道了自己为什么要来这里工作，这份工作既能帮",
+      "bbox": {
+        "left": 170,
+        "top": 373,
+        "right": 872,
+        "bottom": 389
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "助我们的客户取得成功，又能拯救世界，他们对此激动不已。他们看到了自己",
+      "bbox": {
+        "left": 127,
+        "top": 398,
+        "right": 872,
+        "bottom": 414
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的未来，好创意层出不穷，你简直无法相信这是真的。”",
+      "bbox": {
+        "left": 128,
+        "top": 423,
+        "right": 661,
+        "bottom": 439
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这就是一个好使命的美妙之处。它能让每个人都集中精力，鼓足干劲。",
+      "bbox": {
+        "left": 170,
+        "top": 457,
+        "right": 832,
+        "bottom": 473
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在这个时候，行动的重要性便开始凸显了。",
+      "bbox": {
+        "left": 170,
+        "top": 491,
+        "right": 570,
+        "bottom": 507
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "行动非常重要。如果说“使命”是一个公司要抵达的“终点”，那么“行",
+      "bbox": {
+        "left": 171,
+        "top": 524,
+        "right": 872,
+        "bottom": 540
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "动”就是“交通工具”，也就是抵达终点的方式。",
+      "bbox": {
+        "left": 127,
+        "top": 550,
+        "right": 592,
+        "bottom": 565
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "我们都知道“行动”环节成为短板的情景，不是吗？比如，一个公司可能",
+      "bbox": {
+        "left": 170,
+        "top": 583,
+        "right": 872,
+        "bottom": 599
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "会滔滔不绝地讲以客户为中心，但实际上，它的一线员工却讨厌客户。好吧，",
+      "bbox": {
+        "left": 126,
+        "top": 609,
+        "right": 858,
+        "bottom": 625
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "也许不是非常讨厌客户，只是当客户妨碍他们做想做的事情时（比如耽误他们",
+      "bbox": {
+        "left": 127,
+        "top": 634,
+        "right": 872,
+        "bottom": 650
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在下午5点前回到家），他们会用鄙夷的态度对待客户。或者一个公司不断地",
+      "bbox": {
+        "left": 126,
+        "top": 659,
+        "right": 873,
+        "bottom": 675
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "宣讲要加快新产品上市速度，但其经理层却不以为意，官僚作风严重，从而影",
+      "bbox": {
+        "left": 127,
+        "top": 685,
+        "right": 873,
+        "bottom": 700
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "响了使命的落实。或者一个公司可能大谈特谈创新的重要性，而一旦有人担着",
+      "bbox": {
+        "left": 128,
+        "top": 710,
+        "right": 872,
+        "bottom": 726
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "风险搞创新却以失败而告终，管理者便会将这些敢于尝鲜的人炒鱿鱼。",
+      "bbox": {
+        "left": 127,
+        "top": 735,
+        "right": 788,
+        "bottom": 751
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这些都是不好的现象。",
+      "bbox": {
+        "left": 170,
+        "top": 769,
+        "right": 373,
+        "bottom": 785
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "让使命与行动实现无缝对接才是可取的。如果一个公司能够真正地落实以",
+      "bbox": {
+        "left": 170,
+        "top": 803,
+        "right": 871,
+        "bottom": 818
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "客户为中心的使命，那么其员工的一举一动都会表现出同理心。他们会将自己",
+      "bbox": {
+        "left": 127,
+        "top": 828,
+        "right": 872,
+        "bottom": 844
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的手机号码给客户，以方便客户在下班时间联系到他们。他们会亲自受理客户",
+      "bbox": {
+        "left": 128,
+        "top": 853,
+        "right": 870,
+        "bottom": 869
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.28179002,
+    "visible_characters": 830,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 15,
+  "source_page_number": 23,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "mode": "auto_native",
+  "page_count": 30,
+  "runs": [
+    {"run": 1, "wall_ms": 1129, "reported_ms": 1069, "exit_code": 0, "ocr_model_loaded": false, "output_bytes": 365060},
+    {"run": 2, "wall_ms": 1048, "reported_ms": 1015, "exit_code": 0, "ocr_model_loaded": false, "output_bytes": 365060},
+    {"run": 3, "wall_ms": 1060, "reported_ms": 1021, "exit_code": 0, "ocr_model_loaded": false, "output_bytes": 365060},
+    {"run": 4, "wall_ms": 1028, "reported_ms": 990, "exit_code": 0, "ocr_model_loaded": false, "output_bytes": 365059},
+    {"run": 5, "wall_ms": 1045, "reported_ms": 1004, "exit_code": 0, "ocr_model_loaded": false, "output_bytes": 365060}
+  ],
+  "median_wall_ms": 1048,
+  "model_loaded": false,
+  "forced_ocr_baseline": {"status": "not_run", "reason": "verified OCR model assets unavailable on this host"}
+}

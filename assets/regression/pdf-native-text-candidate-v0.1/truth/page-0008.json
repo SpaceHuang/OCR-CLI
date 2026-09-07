@@ -1,0 +1,378 @@
+{
+  "schema_version": 2,
+  "page_number": 15,
+  "native_text": "一种较好的选择就是不断学习，看看你的企业、团队和职业生涯发生了什\n么。这会让你激动不已，走上发展和成功之路。\n我们的希望和意图是让这本书在学习之路上陪你一程。事实上，这本书将\n在你的学习过程中发挥很大的促进作用，因为它紧跟时代潮流，实用性非常\n强，便于即学即用。\n你可能想用《商业的本质》来补充自己在传统课堂或在线课程上学到的\nMBA知识，而本书确实不会让你失望。不过，本书的作用不止于此。本书切合\n实际，不讲假大空的套话，深入浅出地阐述了商业方面的想法，书里所讲的经\n营技巧，今天学了，明天就能用到实处，因此，堪称商业领域最佳的基础读物\n之一。无论是谁，如果想找这样一本书，《商业的本质》无疑是最佳的选择。\n你可能已经读完了商学院的课程，获得了相应的文凭，但你的知识与技能\n仍然有待完善。你也可能走到了职业生涯的某个阶段，比如大学毕业后找到了\n第一份工作，或第一次被提升到了领导岗位上，或开始在一家非营利性机构从\n事管理工作，或在一家新创立的公司担任首席执行官（首席执行官就是头号员\n工，努力实现这个目标吧），在这些阶段，了解一些商业管理知识是非常必要\n的。换言之，本书是为那些不想独自一人闯荡商海、希望汲取他人经验的人而\n写的。\n现在，说了这么多，是否意味着这本书包含了你需要的一切商业管理知识\n呢？当然不是！我们建议你充分利用每一个可能的渠道充实自己，这些渠道包\n括同事、上司、电视、网站、报纸、会议、播客以及其他书籍。此外，还要在\n自己从事的行业里寻找值得尊重的专家，跟他们多学学。同时，也要关注与自\n己存在分歧的专家，借鉴他们的观点。\n我们的目的不是将你打造成某个类型的专家，而是汇总当代商业经营之道\n的精髓，无论你正在从事哪个行业，或者希望将来进入哪个行业，都期望为你\n提供一个思考问题的大框架，帮助你理解现代商业的内涵以及如何做得更好。\n为此，本书第一部分就是“商业篇”。在这一部分，我们探讨了各种类\n型、各种规模的企业应该采取哪些组织和运作模式才能在市场上出奇制胜。比\n如，我们探讨了它们如何才能充分调动每一位员工的积极性，使其围绕着同一\n个使命，采取具有高度协同力的行动。此外，我们还探讨了企业如何才能制定\n出永不褪色的战略，如何在竞争失利的处境下东山再起，如何在低速增长的大",
+  "blocks": [
+    {
+      "text": "一种较好的选择就是不断学习，看看你的企业、团队和职业生涯发生了什",
+      "bbox": {
+        "left": 171,
+        "top": 95,
+        "right": 873,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "么。这会让你激动不已，走上发展和成功之路。",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 570,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "我们的希望和意图是让这本书在学习之路上陪你一程。事实上，这本书将",
+      "bbox": {
+        "left": 170,
+        "top": 154,
+        "right": 872,
+        "bottom": 169
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在你的学习过程中发挥很大的促进作用，因为它紧跟时代潮流，实用性非常",
+      "bbox": {
+        "left": 126,
+        "top": 179,
+        "right": 872,
+        "bottom": 195
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "强，便于即学即用。",
+      "bbox": {
+        "left": 127,
+        "top": 204,
+        "right": 308,
+        "bottom": 220
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "你可能想用《商业的本质》来补充自己在传统课堂或在线课程上学到的",
+      "bbox": {
+        "left": 170,
+        "top": 238,
+        "right": 872,
+        "bottom": 254
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "MBA知识，而本书确实不会让你失望。不过，本书的作用不止于此。本书切合",
+      "bbox": {
+        "left": 126,
+        "top": 263,
+        "right": 873,
+        "bottom": 279
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "实际，不讲假大空的套话，深入浅出地阐述了商业方面的想法，书里所讲的经",
+      "bbox": {
+        "left": 127,
+        "top": 288,
+        "right": 873,
+        "bottom": 304
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "营技巧，今天学了，明天就能用到实处，因此，堪称商业领域最佳的基础读物",
+      "bbox": {
+        "left": 127,
+        "top": 314,
+        "right": 872,
+        "bottom": 330
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "之一。无论是谁，如果想找这样一本书，《商业的本质》无疑是最佳的选择。",
+      "bbox": {
+        "left": 127,
+        "top": 339,
+        "right": 853,
+        "bottom": 355
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "你可能已经读完了商学院的课程，获得了相应的文凭，但你的知识与技能",
+      "bbox": {
+        "left": 170,
+        "top": 373,
+        "right": 872,
+        "bottom": 389
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "仍然有待完善。你也可能走到了职业生涯的某个阶段，比如大学毕业后找到了",
+      "bbox": {
+        "left": 127,
+        "top": 398,
+        "right": 871,
+        "bottom": 414
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "第一份工作，或第一次被提升到了领导岗位上，或开始在一家非营利性机构从",
+      "bbox": {
+        "left": 127,
+        "top": 423,
+        "right": 873,
+        "bottom": 439
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "事管理工作，或在一家新创立的公司担任首席执行官（首席执行官就是头号员",
+      "bbox": {
+        "left": 127,
+        "top": 449,
+        "right": 870,
+        "bottom": 464
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "工，努力实现这个目标吧），在这些阶段，了解一些商业管理知识是非常必要",
+      "bbox": {
+        "left": 127,
+        "top": 474,
+        "right": 872,
+        "bottom": 490
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的。换言之，本书是为那些不想独自一人闯荡商海、希望汲取他人经验的人而",
+      "bbox": {
+        "left": 128,
+        "top": 499,
+        "right": 872,
+        "bottom": 515
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "写的。",
+      "bbox": {
+        "left": 127,
+        "top": 525,
+        "right": 177,
+        "bottom": 540
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "现在，说了这么多，是否意味着这本书包含了你需要的一切商业管理知识",
+      "bbox": {
+        "left": 170,
+        "top": 558,
+        "right": 872,
+        "bottom": 574
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "呢？当然不是！我们建议你充分利用每一个可能的渠道充实自己，这些渠道包",
+      "bbox": {
+        "left": 128,
+        "top": 583,
+        "right": 872,
+        "bottom": 599
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "括同事、上司、电视、网站、报纸、会议、播客以及其他书籍。此外，还要在",
+      "bbox": {
+        "left": 127,
+        "top": 609,
+        "right": 872,
+        "bottom": 625
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "自己从事的行业里寻找值得尊重的专家，跟他们多学学。同时，也要关注与自",
+      "bbox": {
+        "left": 130,
+        "top": 634,
+        "right": 870,
+        "bottom": 650
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "己存在分歧的专家，借鉴他们的观点。",
+      "bbox": {
+        "left": 129,
+        "top": 659,
+        "right": 482,
+        "bottom": 675
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "我们的目的不是将你打造成某个类型的专家，而是汇总当代商业经营之道",
+      "bbox": {
+        "left": 170,
+        "top": 693,
+        "right": 872,
+        "bottom": 709
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的精髓，无论你正在从事哪个行业，或者希望将来进入哪个行业，都期望为你",
+      "bbox": {
+        "left": 128,
+        "top": 718,
+        "right": 872,
+        "bottom": 734
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "提供一个思考问题的大框架，帮助你理解现代商业的内涵以及如何做得更好。",
+      "bbox": {
+        "left": 127,
+        "top": 744,
+        "right": 853,
+        "bottom": 759
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "为此，本书第一部分就是“商业篇”。在这一部分，我们探讨了各种类",
+      "bbox": {
+        "left": 170,
+        "top": 777,
+        "right": 873,
+        "bottom": 793
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "型、各种规模的企业应该采取哪些组织和运作模式才能在市场上出奇制胜。比",
+      "bbox": {
+        "left": 127,
+        "top": 803,
+        "right": 872,
+        "bottom": 818
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如，我们探讨了它们如何才能充分调动每一位员工的积极性，使其围绕着同一",
+      "bbox": {
+        "left": 127,
+        "top": 828,
+        "right": 872,
+        "bottom": 844
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "个使命，采取具有高度协同力的行动。此外，我们还探讨了企业如何才能制定",
+      "bbox": {
+        "left": 127,
+        "top": 853,
+        "right": 872,
+        "bottom": 869
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    },
+    {
+      "text": "出永不褪色的战略，如何在竞争失利的处境下东山再起，如何在低速增长的大",
+      "bbox": {
+        "left": 128,
+        "top": 878,
+        "right": 872,
+        "bottom": 894
+      },
+      "source_order": 30,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.31716403,
+    "visible_characters": 918,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 8,
+  "source_page_number": 15,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

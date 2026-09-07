@@ -1,0 +1,345 @@
+{
+  "schema_version": 2,
+  "page_number": 36,
+  "native_text": "的确，有时候这种创伤来得太突然，令人惊讶，但对于硅谷的许多企业而\n言，灾难性的、突如其来的“颠覆”都是家常便饭了。对于这种情况，其实还\n有个专用的缩略词WFIO（we’re fucked，it’s over的缩写），也就是“我\n们玩完了，结束了”。高科技公司的性质决定了它们的确很容易遭遇这种突如\n其来的创伤。\n有时候，不知从哪儿突然就爆发了一场灾难，给你造成重创，而且事前几\n乎没有什么预警。不信的话，可以回想一下2005年新奥尔良的卡特里娜飓风以\n及2012年超级风暴桑迪摧毁的企业。\n但这种大灾大难是罕见的。更多时候，我们的公司之所以遭到创伤，是因\n为我们事前没有做好充分的应对准备，我们没有看到某个问题正在悄然向我们\n走来。比如，一个威胁自身竞争力的因素、一场文化变革、一项新技术等等，\n这样的例子不胜枚举。正如谷歌创始人拉里·佩奇（Larry Page）在2014年的\nTED演讲中所说的那样：“在我看来，导致公司失败的最主要因素是他们自己\n错失了未来。”\n不过你的公司为什么会遭到创伤并不是我们这里讨论的重点，有些糟糕的\n事情肯定是无法避免的。这一章要讲的就是如何采取补救措施，尽量挽回损\n失，使公司尽快恢复元气，最好是能让公司重新开始正常运作，并大大降低再\n次遭到创伤的概率。\n为此，我们给出了6条补救建议，并在稍后的篇幅里加以解释和探讨。\n1.直面创伤。\n2.留住优秀人才。\n3.基于数据认真分析影响成本、业绩与增长的因素。\n4.重塑你的战略流程。\n5.根据现实检查你公司的社会架构。\n6.不做无谓的担忧。\n准备好了吗？接下来我们就开始逐一讲述了。我们很喜欢谈论这些策略，\n它们既适用于那些正处在复苏阵痛中的公司，也普遍适用于其他公司，无论是",
+  "blocks": [
+    {
+      "text": "的确，有时候这种创伤来得太突然，令人惊讶，但对于硅谷的许多企业而",
+      "bbox": {
+        "left": 172,
+        "top": 95,
+        "right": 872,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "言，灾难性的、突如其来的“颠覆”都是家常便饭了。对于这种情况，其实还",
+      "bbox": {
+        "left": 128,
+        "top": 120,
+        "right": 873,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "有个专用的缩略词WFIO（we’re fucked，it’s over的缩写），也就是“我",
+      "bbox": {
+        "left": 127,
+        "top": 145,
+        "right": 873,
+        "bottom": 161
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "们玩完了，结束了”。高科技公司的性质决定了它们的确很容易遭遇这种突如",
+      "bbox": {
+        "left": 127,
+        "top": 170,
+        "right": 872,
+        "bottom": 186
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "其来的创伤。",
+      "bbox": {
+        "left": 127,
+        "top": 196,
+        "right": 243,
+        "bottom": 212
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "有时候，不知从哪儿突然就爆发了一场灾难，给你造成重创，而且事前几",
+      "bbox": {
+        "left": 170,
+        "top": 229,
+        "right": 873,
+        "bottom": 245
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "乎没有什么预警。不信的话，可以回想一下2005年新奥尔良的卡特里娜飓风以",
+      "bbox": {
+        "left": 127,
+        "top": 255,
+        "right": 871,
+        "bottom": 271
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "及2012年超级风暴桑迪摧毁的企业。",
+      "bbox": {
+        "left": 126,
+        "top": 280,
+        "right": 461,
+        "bottom": 296
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "但这种大灾大难是罕见的。更多时候，我们的公司之所以遭到创伤，是因",
+      "bbox": {
+        "left": 170,
+        "top": 314,
+        "right": 871,
+        "bottom": 330
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "为我们事前没有做好充分的应对准备，我们没有看到某个问题正在悄然向我们",
+      "bbox": {
+        "left": 127,
+        "top": 339,
+        "right": 872,
+        "bottom": 355
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "走来。比如，一个威胁自身竞争力的因素、一场文化变革、一项新技术等等，",
+      "bbox": {
+        "left": 127,
+        "top": 364,
+        "right": 858,
+        "bottom": 380
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这样的例子不胜枚举。正如谷歌创始人拉里·佩奇（Larry Page）在2014年的",
+      "bbox": {
+        "left": 127,
+        "top": 390,
+        "right": 872,
+        "bottom": 406
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "TED演讲中所说的那样：“在我看来，导致公司失败的最主要因素是他们自己",
+      "bbox": {
+        "left": 126,
+        "top": 415,
+        "right": 872,
+        "bottom": 431
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "错失了未来。”",
+      "bbox": {
+        "left": 127,
+        "top": 440,
+        "right": 268,
+        "bottom": 456
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "不过你的公司为什么会遭到创伤并不是我们这里讨论的重点，有些糟糕的",
+      "bbox": {
+        "left": 171,
+        "top": 474,
+        "right": 872,
+        "bottom": 490
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "事情肯定是无法避免的。这一章要讲的就是如何采取补救措施，尽量挽回损",
+      "bbox": {
+        "left": 127,
+        "top": 499,
+        "right": 872,
+        "bottom": 515
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "失，使公司尽快恢复元气，最好是能让公司重新开始正常运作，并大大降低再",
+      "bbox": {
+        "left": 127,
+        "top": 524,
+        "right": 873,
+        "bottom": 540
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "次遭到创伤的概率。",
+      "bbox": {
+        "left": 127,
+        "top": 550,
+        "right": 308,
+        "bottom": 566
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "为此，我们给出了6条补救建议，并在稍后的篇幅里加以解释和探讨。",
+      "bbox": {
+        "left": 170,
+        "top": 583,
+        "right": 821,
+        "bottom": 599
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "1.直面创伤。",
+      "bbox": {
+        "left": 215,
+        "top": 642,
+        "right": 330,
+        "bottom": 658
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "2.留住优秀人才。",
+      "bbox": {
+        "left": 214,
+        "top": 675,
+        "right": 373,
+        "bottom": 691
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "3.基于数据认真分析影响成本、业绩与增长的因素。",
+      "bbox": {
+        "left": 214,
+        "top": 708,
+        "right": 701,
+        "bottom": 724
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "4.重塑你的战略流程。",
+      "bbox": {
+        "left": 214,
+        "top": 741,
+        "right": 417,
+        "bottom": 757
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "5.根据现实检查你公司的社会架构。",
+      "bbox": {
+        "left": 214,
+        "top": 774,
+        "right": 548,
+        "bottom": 789
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "6.不做无谓的担忧。",
+      "bbox": {
+        "left": 214,
+        "top": 806,
+        "right": 395,
+        "bottom": 822
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "准备好了吗？接下来我们就开始逐一讲述了。我们很喜欢谈论这些策略，",
+      "bbox": {
+        "left": 170,
+        "top": 840,
+        "right": 858,
+        "bottom": 856
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "它们既适用于那些正处在复苏阵痛中的公司，也普遍适用于其他公司，无论是",
+      "bbox": {
+        "left": 127,
+        "top": 865,
+        "right": 872,
+        "bottom": 881
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.23222998,
+    "visible_characters": 700,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 27,
+  "source_page_number": 36,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

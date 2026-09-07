@@ -1,0 +1,356 @@
+{
+  "schema_version": 2,
+  "page_number": 21,
+  "native_text": "散。\n使命与行动\n协同力是一种具有变革意义的力量，每个行业都有这方面的例子，这是毋\n庸置疑的，但在私募行业，这类例子尤其多。想想看，凡是进入私募公司法眼\n的企业，显然都是价值被低估的，要么是管理不善，无力应对不断变化的市\n场，要么是没有接班计划的家族企业，要么是被成功的母公司忽视的分公司，\n这些情况下的企业都存在着巨大潜力。\n目前，确实存在私募公司交了好运的情况，它们或者发现了一个璞玉式的\n企业，略经雕琢，便大获其利，或者在其他私募公司为满足投资者财务预期而\n被迫出售盈利状况良好的企业之际，直接出手收购，然后坐享其成。但这些情\n况毕竟是少数，在大部分情况下，私募公司都是收购步履维艰的企业，然后劳\n心费力地为其寻找卓越的领导者。往往它们做的第一件事，也是最重要的事，\n就是提升被收购企业的协同力。\n以荷兰VNU集团为例。 [2]\n2006年之前的10年里，该集团业绩虽不辉煌，却还算体面。到2006年，虽\n然该集团首席执行官罗布·范德伯格（Rob van den Bergh）在致股东的年度\n信函中表示自己对集团业绩状况感到满意（该集团旗下的资产包括《好莱坞报\n道》和尼尔森评级公司），认为集团是健康发展的，但其经营状况其实已趋于\n恶化。然而私募公司从中发现了尚未开发的机遇，一个由6家私募公司组成的\n财团斥资120亿美元将其强势收购，并聘请经验丰富的戴夫·卡尔霍恩（Dave\nCalhoun）出任该集团的首席执行官。\n戴夫的职业生涯璀璨夺目，担任过多家大型企业的高管，年仅45岁便荣升\n通用电气公司副总裁，但入主VNU集团后，他忽然发现自己面临的品牌与产品\n非常杂乱，而之前从没遇见过这种情况。戴夫回忆道：“我到那儿时，公司的\n使命是‘我们是市场资讯的领导者’。这听起来很好，但它事实上意味着你只\n要在自己那一亩三分地上做好就行了，无法让员工产生大局意识。”\n戴夫与其团队立即着手改变这种情况。他们放弃了“VNU”这个名字，改\n用“尼尔森”来命名整个集团，并明确表示，新的尼尔森集团的使命就是研究",
+  "blocks": [
+    {
+      "text": "散。",
+      "bbox": {
+        "left": 126,
+        "top": 95,
+        "right": 155,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "使命与行动",
+      "bbox": {
+        "left": 170,
+        "top": 129,
+        "right": 290,
+        "bottom": 147
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "协同力是一种具有变革意义的力量，每个行业都有这方面的例子，这是毋",
+      "bbox": {
+        "left": 170,
+        "top": 165,
+        "right": 872,
+        "bottom": 181
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "庸置疑的，但在私募行业，这类例子尤其多。想想看，凡是进入私募公司法眼",
+      "bbox": {
+        "left": 127,
+        "top": 190,
+        "right": 872,
+        "bottom": 206
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的企业，显然都是价值被低估的，要么是管理不善，无力应对不断变化的市",
+      "bbox": {
+        "left": 128,
+        "top": 215,
+        "right": 872,
+        "bottom": 231
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "场，要么是没有接班计划的家族企业，要么是被成功的母公司忽视的分公司，",
+      "bbox": {
+        "left": 126,
+        "top": 241,
+        "right": 858,
+        "bottom": 256
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这些情况下的企业都存在着巨大潜力。",
+      "bbox": {
+        "left": 127,
+        "top": 266,
+        "right": 482,
+        "bottom": 282
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "目前，确实存在私募公司交了好运的情况，它们或者发现了一个璞玉式的",
+      "bbox": {
+        "left": 174,
+        "top": 300,
+        "right": 872,
+        "bottom": 315
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "企业，略经雕琢，便大获其利，或者在其他私募公司为满足投资者财务预期而",
+      "bbox": {
+        "left": 127,
+        "top": 325,
+        "right": 872,
+        "bottom": 341
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "被迫出售盈利状况良好的企业之际，直接出手收购，然后坐享其成。但这些情",
+      "bbox": {
+        "left": 127,
+        "top": 350,
+        "right": 872,
+        "bottom": 366
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "况毕竟是少数，在大部分情况下，私募公司都是收购步履维艰的企业，然后劳",
+      "bbox": {
+        "left": 127,
+        "top": 375,
+        "right": 872,
+        "bottom": 391
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "心费力地为其寻找卓越的领导者。往往它们做的第一件事，也是最重要的事，",
+      "bbox": {
+        "left": 127,
+        "top": 401,
+        "right": 858,
+        "bottom": 417
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "就是提升被收购企业的协同力。",
+      "bbox": {
+        "left": 127,
+        "top": 426,
+        "right": 417,
+        "bottom": 442
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "以荷兰VNU集团为例。 [2]",
+      "bbox": {
+        "left": 173,
+        "top": 460,
+        "right": 409,
+        "bottom": 478
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "2006年之前的10年里，该集团业绩虽不辉煌，却还算体面。到2006年，虽",
+      "bbox": {
+        "left": 170,
+        "top": 496,
+        "right": 872,
+        "bottom": 512
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "然该集团首席执行官罗布·范德伯格（Rob van den Bergh）在致股东的年度",
+      "bbox": {
+        "left": 127,
+        "top": 522,
+        "right": 872,
+        "bottom": 538
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "信函中表示自己对集团业绩状况感到满意（该集团旗下的资产包括《好莱坞报",
+      "bbox": {
+        "left": 127,
+        "top": 547,
+        "right": 872,
+        "bottom": 563
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "道》和尼尔森评级公司），认为集团是健康发展的，但其经营状况其实已趋于",
+      "bbox": {
+        "left": 126,
+        "top": 572,
+        "right": 872,
+        "bottom": 588
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "恶化。然而私募公司从中发现了尚未开发的机遇，一个由6家私募公司组成的",
+      "bbox": {
+        "left": 127,
+        "top": 597,
+        "right": 872,
+        "bottom": 613
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "财团斥资120亿美元将其强势收购，并聘请经验丰富的戴夫·卡尔霍恩（Dave",
+      "bbox": {
+        "left": 127,
+        "top": 623,
+        "right": 872,
+        "bottom": 639
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "Calhoun）出任该集团的首席执行官。",
+      "bbox": {
+        "left": 126,
+        "top": 648,
+        "right": 472,
+        "bottom": 664
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "戴夫的职业生涯璀璨夺目，担任过多家大型企业的高管，年仅45岁便荣升",
+      "bbox": {
+        "left": 171,
+        "top": 682,
+        "right": 872,
+        "bottom": 698
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "通用电气公司副总裁，但入主VNU集团后，他忽然发现自己面临的品牌与产品",
+      "bbox": {
+        "left": 127,
+        "top": 707,
+        "right": 871,
+        "bottom": 723
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "非常杂乱，而之前从没遇见过这种情况。戴夫回忆道：“我到那儿时，公司的",
+      "bbox": {
+        "left": 127,
+        "top": 732,
+        "right": 872,
+        "bottom": 748
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "使命是‘我们是市场资讯的领导者’。这听起来很好，但它事实上意味着你只",
+      "bbox": {
+        "left": 127,
+        "top": 758,
+        "right": 870,
+        "bottom": 773
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "要在自己那一亩三分地上做好就行了，无法让员工产生大局意识。”",
+      "bbox": {
+        "left": 127,
+        "top": 783,
+        "right": 770,
+        "bottom": 799
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "戴夫与其团队立即着手改变这种情况。他们放弃了“VNU”这个名字，改",
+      "bbox": {
+        "left": 171,
+        "top": 817,
+        "right": 873,
+        "bottom": 832
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "用“尼尔森”来命名整个集团，并明确表示，新的尼尔森集团的使命就是研究",
+      "bbox": {
+        "left": 127,
+        "top": 842,
+        "right": 872,
+        "bottom": 858
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.276432,
+    "visible_characters": 821,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 13,
+  "source_page_number": 21,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

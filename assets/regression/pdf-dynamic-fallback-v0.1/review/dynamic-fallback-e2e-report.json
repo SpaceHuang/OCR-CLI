@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "fixture": "native-plus-tiny-fallback.pdf",
+  "source_sha256": "7d500ae1c522cc1a337264bb1f162a2feaf35684a4c7c3a842e9ef12b45269b3",
+  "pdfium_evidence": "pdfium-analysis-validation.jsonl",
+  "command": "GGML_METAL=OFF cargo build --release -p ocrx; OCRX_PDFIUM_LIBRARY=dist/ocrx/lib/libpdfium.dylib target/release/ocrx scan native-plus-tiny-fallback.pdf --output-dir /tmp/ocrx-dynamic-fallback-e2e --pdf-mode auto --quality-tier l2 --model-profile quality --device cpu --offline --non-interactive --report json --progress off",
+  "routing": {
+    "page_1": {
+      "planned_method": "native_text",
+      "actual_method": "native_text",
+      "fallback_reason": null,
+      "native_artifact": true,
+      "ocr_artifact": false
+    },
+    "page_2": {
+      "planned_method": "native_text",
+      "actual_method": "ocr",
+      "fallback_reason": "native_validation_failed",
+      "native_artifact": false,
+      "ocr_artifact": true
+    }
+  },
+  "result": {
+    "status": "success",
+    "pages_total": 2,
+    "pages_completed": 2,
+    "pages_failed": 0,
+    "routing_counts": {
+      "native_text": 1,
+      "ocr": 1,
+      "fallback": 1
+    },
+    "model_loaded": true,
+    "backend": "cpu"
+  },
+  "model_preparation": {
+    "model_loader_metadata_lines": 1,
+    "interpretation": "one model preparation/load phase for the final OCR queue; native page 1 was not OCR-processed"
+  },
+  "artifacts": {
+    "result_json": "cli-auto-e2e-result.json",
+    "document_markdown": "cli-auto-e2e-document.md",
+    "pdfium_page_evidence": "pdfium-analysis-validation.jsonl",
+    "native_page_json": "/tmp/ocrx-dynamic-fallback-e2e/page-0001.json",
+    "fallback_ocr_page_json": "/tmp/ocrx-dynamic-fallback-e2e/page-0002.json"
+  }
+}

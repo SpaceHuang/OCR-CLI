@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "command": "OCRX_MODEL_CACHE=.ocrx-model-cache OCRX_PDFIUM_LIBRARY=dist/ocrx/lib/libpdfium.dylib target/release/ocrx scan native-plus-tiny-fallback.pdf --output-dir /tmp/ocrx-dynamic-fallback-unavailable --pdf-mode auto --quality-tier l2 --model-profile quality --device cpu --offline --non-interactive --resume --report json --progress off",
+  "exit_code": 0,
+  "result": "resume-e2e-result.json",
+  "routing_counts": {
+    "native_text": 1,
+    "ocr": 1,
+    "fallback": 1
+  },
+  "completed_pages": [1, 2],
+  "recovered_pending_ocr_pages": [2],
+  "native_page_reprocessed": false,
+  "page_1_checkpoint_output_sha256_unchanged": true,
+  "model_loader_metadata_lines": 1,
+  "interpretation": "resume reused the compatible native page and processed only the pending fallback OCR page"
+}

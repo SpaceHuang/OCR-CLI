@@ -1,0 +1,405 @@
+{
+  "schema_version": 1,
+  "set_id": "pdf-native-text-candidate-v0.1",
+  "status": "draft_reviewed_pending_human_l2_acceptance",
+  "purpose": "30-page native text qualified-set candidate from a text-heavy source PDF",
+  "page_count": 30,
+  "input_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+  "source_pdf": "/Users/space/Documents/Develop/OCR-CLI/test-data/books/商业金融/《商业的本质》杰克•韦尔奇【文字版_PDF电子书_下载】.pdf",
+  "renderer": {
+    "dpi": 300,
+    "pixel_budget": 1048576
+  },
+  "required_quality_tier": "l2",
+  "classifier_version": "pdf-route-v1",
+  "extractor_version": "pdf-text-v1",
+  "native_route": {
+    "allowed_final_method": "native_text",
+    "all_pages_require_acceptance": true
+  },
+  "truth_schema": "ocrx-pdfium-native-facts-v0.1",
+  "license": {
+    "redistributable": false,
+    "provenance": "Local test-data source PDF; not redistributable."
+  },
+  "selection": {
+    "source_pages": [
+      5,
+      6,
+      7,
+      10,
+      11,
+      13,
+      14,
+      15,
+      16,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      35,
+      36,
+      37,
+      38,
+      39
+    ],
+    "selection_basis": "text-heavy pages with PDFium native text, >=20 native blocks, text_bbox_coverage >= 0.15, image_coverage < 0.10, and no geometry anomaly"
+  },
+  "pages": [
+    {
+      "candidate_page": 1,
+      "source_page": 5,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 27,
+      "expected_native_text_chars": 853
+    },
+    {
+      "candidate_page": 2,
+      "source_page": 6,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 882
+    },
+    {
+      "candidate_page": 3,
+      "source_page": 7,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 27,
+      "expected_native_text_chars": 829
+    },
+    {
+      "candidate_page": 4,
+      "source_page": 10,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 871
+    },
+    {
+      "candidate_page": 5,
+      "source_page": 11,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 31,
+      "expected_native_text_chars": 1045
+    },
+    {
+      "candidate_page": 6,
+      "source_page": 13,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 32,
+      "expected_native_text_chars": 957
+    },
+    {
+      "candidate_page": 7,
+      "source_page": 14,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 30,
+      "expected_native_text_chars": 989
+    },
+    {
+      "candidate_page": 8,
+      "source_page": 15,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 30,
+      "expected_native_text_chars": 947
+    },
+    {
+      "candidate_page": 9,
+      "source_page": 16,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 30,
+      "expected_native_text_chars": 925
+    },
+    {
+      "candidate_page": 10,
+      "source_page": 18,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 735
+    },
+    {
+      "candidate_page": 11,
+      "source_page": 19,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 828
+    },
+    {
+      "candidate_page": 12,
+      "source_page": 20,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 803
+    },
+    {
+      "candidate_page": 13,
+      "source_page": 21,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 852
+    },
+    {
+      "candidate_page": 14,
+      "source_page": 22,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 841
+    },
+    {
+      "candidate_page": 15,
+      "source_page": 23,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 860
+    },
+    {
+      "candidate_page": 16,
+      "source_page": 24,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 812
+    },
+    {
+      "candidate_page": 17,
+      "source_page": 25,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 30,
+      "expected_native_text_chars": 978
+    },
+    {
+      "candidate_page": 18,
+      "source_page": 26,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 886
+    },
+    {
+      "candidate_page": 19,
+      "source_page": 27,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 906
+    },
+    {
+      "candidate_page": 20,
+      "source_page": 28,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 762
+    },
+    {
+      "candidate_page": 21,
+      "source_page": 29,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 30,
+      "expected_native_text_chars": 962
+    },
+    {
+      "candidate_page": 22,
+      "source_page": 30,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 838
+    },
+    {
+      "candidate_page": 23,
+      "source_page": 31,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 30,
+      "expected_native_text_chars": 930
+    },
+    {
+      "candidate_page": 24,
+      "source_page": 32,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 854
+    },
+    {
+      "candidate_page": 25,
+      "source_page": 33,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 888
+    },
+    {
+      "candidate_page": 26,
+      "source_page": 35,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 791
+    },
+    {
+      "candidate_page": 27,
+      "source_page": 36,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 27,
+      "expected_native_text_chars": 729
+    },
+    {
+      "candidate_page": 28,
+      "source_page": 37,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 28,
+      "expected_native_text_chars": 879
+    },
+    {
+      "candidate_page": 29,
+      "source_page": 38,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 30,
+      "expected_native_text_chars": 991
+    },
+    {
+      "candidate_page": 30,
+      "source_page": 39,
+      "source_sha256": "7360dd0c7bd49b3a08ae47841e338997da9de2f1469623ebbdf220beac4e77c5",
+      "expected_page_type": "text",
+      "native_allowed": true,
+      "truth_version": "pdf-native-truth-v1",
+      "expected_native_blocks": 29,
+      "expected_native_text_chars": 919
+    }
+  ],
+  "known_limitations": [
+    "Native text and normalized-1000 bboxes are recorded as raw evidence; no page is final L2 truth.",
+    "Three page-specific block/spacing findings are recorded in truth.visual_corrections.",
+    "Every page contains a visible bottom-right watermark not included in native_text."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "visual_audit": {
+    "reviewed_pages": 30,
+    "review_method": "model_vision_page_by_page",
+    "prior_regression_truth_used": false,
+    "native_accepted_pages": [],
+    "human_acceptance_required": true
+  },
+  "watermark_policy": "Visible image watermark is recorded but excluded from native text body truth; human must confirm this policy.",
+  "manifest_role": "pdf_native_quality_set",
+  "quality_set_type": "native_allowed",
+  "prompt_revision": "not_applicable_native_pdfium",
+  "adapter_revision": "not_applicable_native_pdfium",
+  "runtime_revision": "not_applicable_native_pdfium",
+  "model_revision": null,
+  "truth_version": "pdf-native-truth-v1",
+  "benchmark_version": "pdf-native-benchmark-v1",
+  "classifier_revision": "pdf-route-v1",
+  "extractor_revision": "pdf-text-v1",
+  "required_categories": [
+    "text"
+  ],
+  "native_allowed": true,
+  "quality_thresholds": {
+    "text_ned_max": 0.01,
+    "reading_order_min": 0.98,
+    "block_precision_min": 0.97,
+    "block_recall_min": 0.97,
+    "block_f1_min": 0.97,
+    "bbox_validity_rate_min": 0.99,
+    "bbox_recall_min": 0.97,
+    "duplicate_pages_max": 0,
+    "blank_or_failed_pages_max": 0
+  }
+}

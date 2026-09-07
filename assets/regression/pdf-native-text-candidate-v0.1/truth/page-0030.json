@@ -1,0 +1,367 @@
+{
+  "schema_version": 2,
+  "page_number": 39,
+  "native_text": "司，德安基罗选择的方法就是专门组建一个小组去研究历史上各行各业中最著\n名的“冠军”具有哪些共同特点。这些“冠军”包括乔治·华盛顿、穆罕默德\n·阿里以及一匹名为“秘书长”（Secretariat）的赛马。1973年6月9日，这\n匹名为“秘书长”、具有传奇色彩的赛马在贝尔蒙特赛马会上以超越第二名31\n个马身的成绩夺取了第一名。经过一番研究发现，这些“冠军”的共同特点就\n是工作起来近乎疯狂，具有永不言败的心态和精益求精的激情。德安基罗\n说：“这些研究结果，我们讨论了一遍又一遍。”我们还用“秘书长”的案例\n去重塑员工的思维。我们要让每一个人问：“雇那个人能帮助我们取得‘秘书\n长’那样辉煌的胜利吗？参加那个会议能帮我们取得那样辉煌的胜利吗？”\n德安基罗说：“研究‘冠军’的项目真的有助于终结自怨自艾的氛围，帮\n助我们反思如何变得更好。我们意识到自己可以拒绝失败。”\n留住优秀人才\n当一家公司陷入麻烦之际，其领导层第一时间做出的反应往往是在不考虑\n业绩的情况下盲目裁员。这种情形太常见了。很多时候，之所以会出现这种一\n棍子打翻一船人的做法，是因为公司没有一套业绩评价体系。公司领导者为了\n向董事会表明自己采取的应对举措多么迅速以及多么有深度，往往会不假思索\n地要求每一位部门经理裁掉10%的员工，或者将部门所有人员的薪酬降低10%。\n此外，公司领导者可能还会提出解雇补偿方案，谁愿意接受，谁就会获得一笔\n解雇补偿费用。当然，面对这种选择，接招的往往是那些平时薪酬最高、资历\n最佳的员工，他们非常乐意拿到一笔补偿后离职，因为他们很优秀，在别处依\n然能够获得最好的待遇和机会。\n这些做法有什么好处暂且不提，但最起码表明公司领导层能力低下，胆怯\n懦弱，他们让整个公司士气低落。刺激最优秀的人才出走，可能会引发大规模\n的人才流失，究竟为什么要这么做呢？\n摆脱困境的确并非易事，但如果留不住那些最优秀的人才，你永远不可能\n摆脱困境。因此，在公司面临困境之际，领导者不要在本能驱使下裁员降薪，\n而是要逆本能而动，采取一些鼓舞人心的举措，短期性的措施如涨薪，长期性\n的措施如根据其业绩表现给予更多的公司股份，也就是说要尽量想办法留住人\n才，而不是减少人才。",
+  "blocks": [
+    {
+      "text": "司，德安基罗选择的方法就是专门组建一个小组去研究历史上各行各业中最著",
+      "bbox": {
+        "left": 127,
+        "top": 95,
+        "right": 872,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "名的“冠军”具有哪些共同特点。这些“冠军”包括乔治·华盛顿、穆罕默德",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 872,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "·阿里以及一匹名为“秘书长”（Secretariat）的赛马。1973年6月9日，这",
+      "bbox": {
+        "left": 134,
+        "top": 145,
+        "right": 873,
+        "bottom": 161
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "匹名为“秘书长”、具有传奇色彩的赛马在贝尔蒙特赛马会上以超越第二名31",
+      "bbox": {
+        "left": 128,
+        "top": 170,
+        "right": 871,
+        "bottom": 186
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "个马身的成绩夺取了第一名。经过一番研究发现，这些“冠军”的共同特点就",
+      "bbox": {
+        "left": 127,
+        "top": 196,
+        "right": 872,
+        "bottom": 212
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "是工作起来近乎疯狂，具有永不言败的心态和精益求精的激情。德安基罗",
+      "bbox": {
+        "left": 127,
+        "top": 221,
+        "right": 871,
+        "bottom": 237
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "说：“这些研究结果，我们讨论了一遍又一遍。”我们还用“秘书长”的案例",
+      "bbox": {
+        "left": 127,
+        "top": 246,
+        "right": 872,
+        "bottom": 262
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "去重塑员工的思维。我们要让每一个人问：“雇那个人能帮助我们取得‘秘书",
+      "bbox": {
+        "left": 127,
+        "top": 272,
+        "right": 872,
+        "bottom": 287
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "长’那样辉煌的胜利吗？参加那个会议能帮我们取得那样辉煌的胜利吗？”",
+      "bbox": {
+        "left": 127,
+        "top": 297,
+        "right": 835,
+        "bottom": 313
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "德安基罗说：“研究‘冠军’的项目真的有助于终结自怨自艾的氛围，帮",
+      "bbox": {
+        "left": 170,
+        "top": 331,
+        "right": 872,
+        "bottom": 346
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "助我们反思如何变得更好。我们意识到自己可以拒绝失败。”",
+      "bbox": {
+        "left": 127,
+        "top": 356,
+        "right": 704,
+        "bottom": 372
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "留住优秀人才",
+      "bbox": {
+        "left": 172,
+        "top": 391,
+        "right": 316,
+        "bottom": 408
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "当一家公司陷入麻烦之际，其领导层第一时间做出的反应往往是在不考虑",
+      "bbox": {
+        "left": 172,
+        "top": 426,
+        "right": 872,
+        "bottom": 442
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "业绩的情况下盲目裁员。这种情形太常见了。很多时候，之所以会出现这种一",
+      "bbox": {
+        "left": 126,
+        "top": 451,
+        "right": 872,
+        "bottom": 467
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "棍子打翻一船人的做法，是因为公司没有一套业绩评价体系。公司领导者为了",
+      "bbox": {
+        "left": 127,
+        "top": 477,
+        "right": 871,
+        "bottom": 493
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "向董事会表明自己采取的应对举措多么迅速以及多么有深度，往往会不假思索",
+      "bbox": {
+        "left": 129,
+        "top": 502,
+        "right": 872,
+        "bottom": 518
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "地要求每一位部门经理裁掉10%的员工，或者将部门所有人员的薪酬降低10%。",
+      "bbox": {
+        "left": 127,
+        "top": 527,
+        "right": 859,
+        "bottom": 543
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "此外，公司领导者可能还会提出解雇补偿方案，谁愿意接受，谁就会获得一笔",
+      "bbox": {
+        "left": 127,
+        "top": 553,
+        "right": 872,
+        "bottom": 568
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "解雇补偿费用。当然，面对这种选择，接招的往往是那些平时薪酬最高、资历",
+      "bbox": {
+        "left": 126,
+        "top": 578,
+        "right": 872,
+        "bottom": 594
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "最佳的员工，他们非常乐意拿到一笔补偿后离职，因为他们很优秀，在别处依",
+      "bbox": {
+        "left": 127,
+        "top": 603,
+        "right": 872,
+        "bottom": 619
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "然能够获得最好的待遇和机会。",
+      "bbox": {
+        "left": 127,
+        "top": 628,
+        "right": 417,
+        "bottom": 644
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这些做法有什么好处暂且不提，但最起码表明公司领导层能力低下，胆怯",
+      "bbox": {
+        "left": 170,
+        "top": 662,
+        "right": 873,
+        "bottom": 678
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "懦弱，他们让整个公司士气低落。刺激最优秀的人才出走，可能会引发大规模",
+      "bbox": {
+        "left": 127,
+        "top": 687,
+        "right": 873,
+        "bottom": 703
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的人才流失，究竟为什么要这么做呢？",
+      "bbox": {
+        "left": 128,
+        "top": 713,
+        "right": 485,
+        "bottom": 729
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "摆脱困境的确并非易事，但如果留不住那些最优秀的人才，你永远不可能",
+      "bbox": {
+        "left": 170,
+        "top": 746,
+        "right": 872,
+        "bottom": 762
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "摆脱困境。因此，在公司面临困境之际，领导者不要在本能驱使下裁员降薪，",
+      "bbox": {
+        "left": 127,
+        "top": 772,
+        "right": 858,
+        "bottom": 788
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "而是要逆本能而动，采取一些鼓舞人心的举措，短期性的措施如涨薪，长期性",
+      "bbox": {
+        "left": 127,
+        "top": 797,
+        "right": 873,
+        "bottom": 813
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的措施如根据其业绩表现给予更多的公司股份，也就是说要尽量想办法留住人",
+      "bbox": {
+        "left": 128,
+        "top": 822,
+        "right": 873,
+        "bottom": 838
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "才，而不是减少人才。",
+      "bbox": {
+        "left": 126,
+        "top": 848,
+        "right": 330,
+        "bottom": 863
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.304315,
+    "visible_characters": 891,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 30,
+  "source_page_number": 39,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

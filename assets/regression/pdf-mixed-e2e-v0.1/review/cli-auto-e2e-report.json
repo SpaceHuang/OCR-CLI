@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "input_sha256": "182c9329f1e29927ec0b0dffbb4bdbb17a88795d1a6416d03b5cc6f679d4e75b",
+  "command_mode": "auto",
+  "model_profile": "quality",
+  "backend": "metal",
+  "model_loaded": true,
+  "pages": {
+    "total": 3,
+    "completed": 3,
+    "failed": 0,
+    "truncated": 0
+  },
+  "routing_counts": {"native_text": 1, "ocr": 2, "empty": 0, "fallback": 0},
+  "routes": [
+    {"page": 1, "expected_type": "text", "actual_type": "text", "planned": "native_text", "actual": "native_text"},
+    {"page": 2, "expected_type": "image", "actual_type": "image", "planned": "ocr", "actual": "ocr"},
+    {"page": 3, "expected_type": "uncertain", "actual_type": "uncertain", "planned": "ocr", "actual": "ocr", "reason": "duplicate_text"}
+  ],
+  "document": {
+    "markdown": "/tmp/ocrx-mixed-e2e/document.md",
+    "merged_by_original_page_order": true,
+    "ocr_pages": [2, 3]
+  }
+}

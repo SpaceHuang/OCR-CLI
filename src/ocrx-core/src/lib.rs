@@ -3,6 +3,8 @@
 use std::io::{self, Read};
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 #[allow(clippy::large_stack_arrays)]
 pub fn sha256_file(path: &Path) -> io::Result<String> {
     let mut file = std::fs::File::open(path)?;
@@ -202,6 +204,220 @@ pub fn sha256(data: &[u8]) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobId(pub String);
 
+/// The execution policy selected for PDF input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfMode {
+    Auto,
+    Text,
+    Ocr,
+}
+
+impl PdfMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Text => "text",
+            Self::Ocr => "ocr",
+        }
+    }
+}
+
+/// Minimum content fidelity required from native extraction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QualityTier {
+    L1,
+    L2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageType {
+    Text,
+    Image,
+    Mixed,
+    Empty,
+    Uncertain,
+}
+
+impl PageType {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Image => "image",
+            Self::Mixed => "mixed",
+            Self::Empty => "empty",
+            Self::Uncertain => "uncertain",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteConfidence {
+    High,
+    Medium,
+    Low,
+}
+
+impl RouteConfidence {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessingMethod {
+    NativeText,
+    Ocr,
+    Empty,
+}
+
+impl ProcessingMethod {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NativeText => "native_text",
+            Self::Ocr => "ocr",
+            Self::Empty => "empty",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockSource {
+    PdfText,
+    PdfImage,
+    Ocr,
+    Derived,
+}
+
+impl BlockSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PdfText => "pdf_text",
+            Self::PdfImage => "pdf_image",
+            Self::Ocr => "ocr",
+            Self::Derived => "derived",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfReasonCode {
+    NativeTextReliable,
+    NoVisibleContent,
+    ImageCoverageHigh,
+    MixedContent,
+    TextCoverageLow,
+    UnicodeValidityLow,
+    DuplicateText,
+    GeometryAnomaly,
+    NativeStructureUnresolved,
+    NativeValidationFailed,
+}
+
+impl PdfReasonCode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NativeTextReliable => "native_text_reliable",
+            Self::NoVisibleContent => "no_visible_content",
+            Self::ImageCoverageHigh => "image_coverage_high",
+            Self::MixedContent => "mixed_content",
+            Self::TextCoverageLow => "text_coverage_low",
+            Self::UnicodeValidityLow => "unicode_validity_low",
+            Self::DuplicateText => "duplicate_text",
+            Self::GeometryAnomaly => "geometry_anomaly",
+            Self::NativeStructureUnresolved => "native_structure_unresolved",
+            Self::NativeValidationFailed => "native_validation_failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageClassification {
+    pub page_type: PageType,
+    pub confidence: RouteConfidence,
+    pub recommended_method: ProcessingMethod,
+    pub reason: PdfReasonCode,
+}
+
+impl PageClassification {
+    #[must_use]
+    pub fn to_json(self) -> String {
+        format!(
+            "{{\"page_type\":\"{}\",\"confidence\":\"{}\",\"recommended_method\":\"{}\",\"reason\":\"{}\"}}",
+            self.page_type.as_str(),
+            self.confidence.as_str(),
+            self.recommended_method.as_str(),
+            self.reason.as_str()
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageProcessing {
+    pub planned_method: ProcessingMethod,
+    pub actual_method: Option<ProcessingMethod>,
+    pub fallback_reason: Option<PdfReasonCode>,
+}
+
+impl PageProcessing {
+    pub fn validate(self) -> Result<(), DomainError> {
+        if self.actual_method == Some(ProcessingMethod::Ocr)
+            && self.planned_method == ProcessingMethod::NativeText
+            && self.fallback_reason.is_none()
+        {
+            return Err(DomainError::InvalidPage);
+        }
+        if self.planned_method == ProcessingMethod::Empty
+            && self
+                .actual_method
+                .is_some_and(|method| method != ProcessingMethod::Empty)
+        {
+            return Err(DomainError::InvalidPage);
+        }
+        if self.actual_method == Some(ProcessingMethod::NativeText)
+            && self.planned_method != ProcessingMethod::NativeText
+        {
+            return Err(DomainError::InvalidPage);
+        }
+        if self.fallback_reason.is_some() && self.actual_method != Some(ProcessingMethod::Ocr) {
+            return Err(DomainError::InvalidPage);
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn to_json(self) -> String {
+        let actual = self.actual_method.map_or_else(
+            || "null".to_owned(),
+            |method| format!("\"{}\"", method.as_str()),
+        );
+        let fallback = self.fallback_reason.map_or_else(
+            || "null".to_owned(),
+            |reason| format!("\"{}\"", reason.as_str()),
+        );
+        format!(
+            "{{\"planned_method\":\"{}\",\"actual_method\":{},\"fallback_reason\":{}}}",
+            self.planned_method.as_str(),
+            actual,
+            fallback
+        )
+    }
+}
+
 #[cfg(test)]
 mod hash_tests {
     use super::{Sha256State, sha256};
@@ -223,6 +439,317 @@ mod hash_tests {
     }
 }
 
+#[cfg(test)]
+mod pdf_contract_tests {
+    use super::{
+        BlockSource, DomainError, NormalizedBbox, PageBlock, PageClassification, PageDocument,
+        PageProcessing, PageType, PdfBlockProvenance, PdfMode, PdfPageDocument, PdfReasonCode,
+        ProcessingMethod, QualityTier, RouteConfidence, Termination,
+    };
+
+    #[test]
+    fn pdf_diagnostic_strings_are_stable_machine_values() {
+        assert_eq!(PageType::Uncertain.as_str(), "uncertain");
+        assert_eq!(RouteConfidence::Medium.as_str(), "medium");
+        assert_eq!(ProcessingMethod::NativeText.as_str(), "native_text");
+        assert_eq!(
+            PdfReasonCode::NativeStructureUnresolved.as_str(),
+            "native_structure_unresolved"
+        );
+    }
+
+    #[test]
+    fn routing_configuration_enums_round_trip_with_stable_json_values() {
+        for (encoded, value) in [
+            ("\"auto\"", PdfMode::Auto),
+            ("\"text\"", PdfMode::Text),
+            ("\"ocr\"", PdfMode::Ocr),
+        ] {
+            assert_eq!(serde_json::to_string(&value).unwrap(), encoded);
+            assert_eq!(serde_json::from_str::<PdfMode>(encoded).unwrap(), value);
+        }
+        for (encoded, value) in [("\"l1\"", QualityTier::L1), ("\"l2\"", QualityTier::L2)] {
+            assert_eq!(serde_json::to_string(&value).unwrap(), encoded);
+            assert_eq!(serde_json::from_str::<QualityTier>(encoded).unwrap(), value);
+        }
+        assert!(serde_json::from_str::<PdfMode>("\"preview\"").is_err());
+        assert!(serde_json::from_str::<QualityTier>("\"l3\"").is_err());
+    }
+
+    #[test]
+    fn page_diagnostic_json_has_stable_shape_and_null_optional_fields() {
+        let classification = PageClassification {
+            page_type: PageType::Text,
+            confidence: RouteConfidence::High,
+            recommended_method: ProcessingMethod::NativeText,
+            reason: PdfReasonCode::NativeTextReliable,
+        };
+        assert_eq!(
+            classification.to_json(),
+            "{\"page_type\":\"text\",\"confidence\":\"high\",\"recommended_method\":\"native_text\",\"reason\":\"native_text_reliable\"}"
+        );
+        let processing = PageProcessing {
+            planned_method: ProcessingMethod::NativeText,
+            actual_method: None,
+            fallback_reason: None,
+        };
+        assert_eq!(
+            processing.to_json(),
+            "{\"planned_method\":\"native_text\",\"actual_method\":null,\"fallback_reason\":null}"
+        );
+    }
+
+    #[test]
+    fn routed_domain_metadata_round_trips_through_serde_with_stable_enum_names() {
+        let classification = PageClassification {
+            page_type: PageType::Mixed,
+            confidence: RouteConfidence::Medium,
+            recommended_method: ProcessingMethod::Ocr,
+            reason: PdfReasonCode::MixedContent,
+        };
+        let processing = PageProcessing {
+            planned_method: ProcessingMethod::NativeText,
+            actual_method: Some(ProcessingMethod::Ocr),
+            fallback_reason: Some(PdfReasonCode::NativeValidationFailed),
+        };
+        let classification_json = serde_json::to_string(&classification).unwrap();
+        let processing_json = serde_json::to_string(&processing).unwrap();
+        assert_eq!(
+            classification_json,
+            "{\"page_type\":\"mixed\",\"confidence\":\"medium\",\"recommended_method\":\"ocr\",\"reason\":\"mixed_content\"}"
+        );
+        assert_eq!(
+            processing_json,
+            "{\"planned_method\":\"native_text\",\"actual_method\":\"ocr\",\"fallback_reason\":\"native_validation_failed\"}"
+        );
+        assert_eq!(
+            serde_json::from_str::<PageClassification>(&classification_json).unwrap(),
+            classification
+        );
+        assert_eq!(
+            serde_json::from_str::<PageProcessing>(&processing_json).unwrap(),
+            processing
+        );
+    }
+
+    #[test]
+    fn page_processing_rejects_inconsistent_actual_and_fallback_states() {
+        assert_eq!(
+            (PageProcessing {
+                planned_method: ProcessingMethod::Ocr,
+                actual_method: Some(ProcessingMethod::NativeText),
+                fallback_reason: None,
+            })
+            .validate(),
+            Err(DomainError::InvalidPage)
+        );
+        assert_eq!(
+            (PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: None,
+                fallback_reason: Some(PdfReasonCode::NativeValidationFailed),
+            })
+            .validate(),
+            Err(DomainError::InvalidPage)
+        );
+    }
+
+    #[test]
+    fn page_processing_accepts_pending_and_consistent_terminal_states() {
+        for processing in [
+            PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: None,
+                fallback_reason: None,
+            },
+            PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: Some(ProcessingMethod::NativeText),
+                fallback_reason: None,
+            },
+            PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: Some(ProcessingMethod::Ocr),
+                fallback_reason: Some(PdfReasonCode::NativeValidationFailed),
+            },
+            PageProcessing {
+                planned_method: ProcessingMethod::Ocr,
+                actual_method: Some(ProcessingMethod::Ocr),
+                fallback_reason: None,
+            },
+            PageProcessing {
+                planned_method: ProcessingMethod::Empty,
+                actual_method: Some(ProcessingMethod::Empty),
+                fallback_reason: None,
+            },
+        ] {
+            assert_eq!(processing.validate(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn page_processing_validation_rejects_inconsistent_route_states() {
+        assert!(
+            PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: Some(ProcessingMethod::Ocr),
+                fallback_reason: None
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: Some(ProcessingMethod::Ocr),
+                fallback_reason: Some(PdfReasonCode::NativeValidationFailed)
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            PageProcessing {
+                planned_method: ProcessingMethod::Empty,
+                actual_method: Some(ProcessingMethod::Ocr),
+                fallback_reason: None
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn pdf_page_document_v2_round_trips_contract_metadata_and_rejects_wrong_version() {
+        let classification = PageClassification {
+            page_type: PageType::Text,
+            confidence: RouteConfidence::High,
+            recommended_method: ProcessingMethod::NativeText,
+            reason: PdfReasonCode::NativeTextReliable,
+        };
+        let document = PdfPageDocument {
+            schema_version: PdfPageDocument::SCHEMA_VERSION,
+            document: PageDocument {
+                schema_version: PageDocument::SCHEMA_VERSION,
+                page_number: 1,
+                blocks: vec![PageBlock::Markdown {
+                    content: "native".into(),
+                }],
+                termination: Termination::Eos,
+                warnings: vec![],
+            },
+            classification,
+            processing: PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: Some(ProcessingMethod::NativeText),
+                fallback_reason: None,
+            },
+            provenance: vec![PdfBlockProvenance {
+                source: BlockSource::PdfText,
+                bbox: Some(NormalizedBbox::new(1, 1, 100, 100).unwrap()),
+                source_order: 1,
+            }],
+        };
+
+        let json = document.to_json().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["schema_version"], 2);
+        assert!(json.contains("\"schema_version\":2"));
+        assert!(json.contains("\"page_type\":\"text\""));
+        assert!(json.contains("\"actual_method\":\"native_text\""));
+        assert!(json.contains("\"source\":\"pdf_text\""));
+        let decoded = PdfPageDocument::from_json(&json).unwrap();
+        assert_eq!(decoded.document, document.document);
+        assert_eq!(decoded.classification, document.classification);
+        assert_eq!(decoded.processing, document.processing);
+        assert_eq!(decoded.provenance, document.provenance);
+        assert_eq!(parsed["classification"]["reason"], "native_text_reliable");
+        assert_eq!(parsed["processing"]["planned_method"], "native_text");
+        assert!(document.validate().is_ok());
+        let mut old = document;
+        old.schema_version = 1;
+        assert_eq!(old.validate(), Err(DomainError::InvalidPage));
+    }
+
+    #[test]
+    fn serde_metadata_rejects_unknown_reason_and_missing_required_fields() {
+        assert!(serde_json::from_str::<PdfReasonCode>("\"future_reason\"").is_err());
+        assert!(serde_json::from_str::<PageClassification>("{\"page_type\":\"text\"}").is_err());
+        assert!(
+            serde_json::from_str::<PdfBlockProvenance>(
+                "{\"source\":\"pdf_text\",\"source_order\":0,\"bbox\":null}"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn native_pdf_page_requires_pdf_text_provenance() {
+        let classification = PageClassification {
+            page_type: PageType::Text,
+            confidence: RouteConfidence::High,
+            recommended_method: ProcessingMethod::NativeText,
+            reason: PdfReasonCode::NativeTextReliable,
+        };
+        let document = PdfPageDocument {
+            schema_version: PdfPageDocument::SCHEMA_VERSION,
+            document: PageDocument {
+                schema_version: PageDocument::SCHEMA_VERSION,
+                page_number: 1,
+                blocks: vec![PageBlock::Markdown {
+                    content: "text".into(),
+                }],
+                termination: Termination::Eos,
+                warnings: vec![],
+            },
+            classification,
+            processing: PageProcessing {
+                planned_method: ProcessingMethod::NativeText,
+                actual_method: Some(ProcessingMethod::NativeText),
+                fallback_reason: None,
+            },
+            provenance: vec![PdfBlockProvenance {
+                source: BlockSource::Ocr,
+                bbox: None,
+                source_order: 1,
+            }],
+        };
+        assert_eq!(document.validate(), Err(DomainError::InvalidPage));
+    }
+
+    #[test]
+    fn native_pdf_page_requires_text_classification() {
+        let document = PdfPageDocument {
+            schema_version: PdfPageDocument::SCHEMA_VERSION,
+            document: PageDocument {
+                schema_version: PageDocument::SCHEMA_VERSION,
+                page_number: 1,
+                blocks: vec![PageBlock::Markdown {
+                    content: "text".into(),
+                }],
+                termination: Termination::Eos,
+                warnings: vec![],
+            },
+            classification: PageClassification {
+                page_type: PageType::Image,
+                confidence: RouteConfidence::High,
+                recommended_method: ProcessingMethod::Ocr,
+                reason: PdfReasonCode::ImageCoverageHigh,
+            },
+            processing: PageProcessing {
+                planned_method: ProcessingMethod::Ocr,
+                actual_method: Some(ProcessingMethod::NativeText),
+                fallback_reason: None,
+            },
+            provenance: vec![PdfBlockProvenance {
+                source: BlockSource::PdfText,
+                bbox: None,
+                source_order: 1,
+            }],
+        };
+        assert_eq!(document.validate(), Err(DomainError::InvalidPage));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageDocument {
     pub schema_version: u32,
@@ -230,6 +757,46 @@ pub struct PageDocument {
     pub blocks: Vec<PageBlock>,
     pub termination: Termination,
     pub warnings: Vec<PageWarning>,
+}
+
+#[derive(Serialize)]
+struct PageDocumentSerde<'a> {
+    schema_version: u32,
+    page_number: u32,
+    blocks: Vec<PageBlockSerde<'a>>,
+    termination: &'a str,
+    warnings: Vec<&'a str>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum PageBlockSerde<'a> {
+    #[serde(rename = "markdown")]
+    Markdown { content: &'a str },
+    #[serde(rename = "formula")]
+    Formula { latex: &'a str, display: bool },
+    #[serde(rename = "html_table")]
+    HtmlTable { html: &'a str },
+    #[serde(rename = "visual_region")]
+    VisualRegion {
+        bbox: NormalizedBbox,
+        source_order: u32,
+    },
+}
+
+fn page_block_serde(block: &PageBlock) -> PageBlockSerde<'_> {
+    match block {
+        PageBlock::Markdown { content } => PageBlockSerde::Markdown { content },
+        PageBlock::Formula { latex, display } => PageBlockSerde::Formula {
+            latex,
+            display: *display,
+        },
+        PageBlock::HtmlTable { html } => PageBlockSerde::HtmlTable { html },
+        PageBlock::VisualRegion { bbox, source_order } => PageBlockSerde::VisualRegion {
+            bbox: *bbox,
+            source_order: *source_order,
+        },
+    }
 }
 
 impl PageDocument {
@@ -263,27 +830,14 @@ impl PageDocument {
     /// Returns [`DomainError`] when the document violates the domain invariants.
     pub fn to_json(&self) -> Result<String, DomainError> {
         self.validate()?;
-        let blocks = self
-            .blocks
-            .iter()
-            .map(PageBlock::to_json)
-            .collect::<Vec<_>>()
-            .join(",");
-        let warnings = self
-            .warnings
-            .iter()
-            .map(PageWarning::as_str)
-            .map(|warning| format!("\"{warning}\""))
-            .collect::<Vec<_>>()
-            .join(",");
-        Ok(format!(
-            "{{\"schema_version\":{},\"page_number\":{},\"blocks\":[{}],\"termination\":\"{}\",\"warnings\":[{}]}}",
-            self.schema_version,
-            self.page_number,
-            blocks,
-            self.termination.as_str(),
-            warnings
-        ))
+        let value = PageDocumentSerde {
+            schema_version: self.schema_version,
+            page_number: self.page_number,
+            blocks: self.blocks.iter().map(page_block_serde).collect(),
+            termination: self.termination.as_str(),
+            warnings: self.warnings.iter().map(PageWarning::as_str).collect(),
+        };
+        serde_json::to_string(&value).map_err(|_| DomainError::InvalidJson)
     }
 
     /// Deserializes the stable JSON shape emitted by [`Self::to_json`].
@@ -292,6 +846,58 @@ impl PageDocument {
     ///
     /// Returns [`DomainError::InvalidJson`] for malformed or unsupported JSON.
     pub fn from_json(value: &str) -> Result<Self, DomainError> {
+        let root: serde_json::Value =
+            serde_json::from_str(value).map_err(|_| DomainError::InvalidJson)?;
+        let schema_version = root
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or(DomainError::InvalidJson)?;
+        let page_number = root
+            .get("page_number")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or(DomainError::InvalidJson)?;
+        let termination = match root
+            .get("termination")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(DomainError::InvalidJson)?
+        {
+            "eos" => Termination::Eos,
+            "stop_token" => Termination::StopToken,
+            "max_tokens" => Termination::MaxTokens,
+            "invalid" => Termination::Invalid,
+            _ => return Err(DomainError::InvalidJson),
+        };
+        let warnings = root
+            .get("warnings")
+            .and_then(serde_json::Value::as_array)
+            .ok_or(DomainError::InvalidJson)?
+            .iter()
+            .map(|warning| match warning.as_str() {
+                Some("truncated") => Ok(PageWarning::Truncated),
+                Some("repetition_removed") => Ok(PageWarning::RepetitionRemoved),
+                Some("render_scaled") => Ok(PageWarning::RenderScaled),
+                _ => Err(DomainError::InvalidJson),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let blocks = root
+            .get("blocks")
+            .and_then(serde_json::Value::as_array)
+            .ok_or(DomainError::InvalidJson)?
+            .iter()
+            .map(|block| parse_block(&block.to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let document = Self {
+            schema_version,
+            page_number,
+            blocks,
+            termination,
+            warnings,
+        };
+        document.validate()?;
+        return Ok(document);
+        #[allow(unreachable_code)]
         let schema_version = json_number(value, "schema_version")?;
         let page_number = json_number(value, "page_number")?;
         let termination = match json_string(value, "termination")?.as_str() {
@@ -341,6 +947,205 @@ impl PageDocument {
         };
         document.validate()?;
         Ok(document)
+    }
+}
+
+/// Versioned envelope for PDF content-aware pages.
+///
+/// The existing [`PageDocument`] remains the OCR adapter contract. PDF pages
+/// use this envelope so routing metadata cannot be silently dropped when a
+/// page is persisted or resumed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdfPageDocument {
+    pub schema_version: u32,
+    pub document: PageDocument,
+    pub classification: PageClassification,
+    pub processing: PageProcessing,
+    pub provenance: Vec<PdfBlockProvenance>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PdfBlockProvenance {
+    pub source: BlockSource,
+    pub bbox: Option<NormalizedBbox>,
+    pub source_order: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PdfPageMetadataSerde {
+    schema_version: u32,
+    page: u32,
+    classification: PageClassification,
+    processing: PageProcessing,
+    provenance: Vec<PdfBlockProvenance>,
+}
+
+#[derive(Debug, Serialize)]
+struct PdfPageEnvelopeSerde {
+    schema_version: u32,
+    page: u32,
+    classification: PageClassification,
+    processing: PageProcessing,
+    provenance: Vec<PdfBlockProvenance>,
+    document: serde_json::Value,
+}
+
+impl PdfPageDocument {
+    pub const SCHEMA_VERSION: u32 = 2;
+
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(DomainError::InvalidPage);
+        }
+        self.document.validate()?;
+        self.processing.validate()?;
+        if self.processing.actual_method == Some(ProcessingMethod::NativeText)
+            && (self.classification.page_type != PageType::Text
+                || self.classification.recommended_method != ProcessingMethod::NativeText)
+        {
+            return Err(DomainError::InvalidPage);
+        }
+        if self.processing.actual_method == Some(ProcessingMethod::NativeText)
+            && (self.provenance.is_empty()
+                || self
+                    .provenance
+                    .iter()
+                    .any(|block| block.source != BlockSource::PdfText))
+        {
+            return Err(DomainError::InvalidPage);
+        }
+        let mut orders = self
+            .provenance
+            .iter()
+            .map(|block| block.source_order)
+            .collect::<Vec<_>>();
+        if orders.contains(&0) {
+            return Err(DomainError::InvalidPage);
+        }
+        orders.sort_unstable();
+        if orders.windows(2).any(|pair| pair[0] == pair[1])
+            || self
+                .provenance
+                .iter()
+                .any(|block| block.bbox.is_some_and(|bbox| !bbox.is_valid()))
+        {
+            return Err(DomainError::InvalidPage);
+        }
+        if self.processing.planned_method != self.classification.recommended_method
+            && self.processing.planned_method != ProcessingMethod::Ocr
+        {
+            return Err(DomainError::InvalidPage);
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, DomainError> {
+        self.validate()?;
+        let document = serde_json::from_str(&self.document.to_json()?)
+            .map_err(|_| DomainError::InvalidJson)?;
+        serde_json::to_string(&PdfPageEnvelopeSerde {
+            schema_version: Self::SCHEMA_VERSION,
+            page: self.document.page_number,
+            classification: self.classification,
+            processing: self.processing,
+            provenance: self.provenance.clone(),
+            document,
+        })
+        .map_err(|_| DomainError::InvalidJson)
+    }
+
+    pub fn from_json(value: &str) -> Result<Self, DomainError> {
+        return Self::from_json_serde(value);
+        #[allow(unreachable_code)]
+        if json_number(value, "schema_version")? != Self::SCHEMA_VERSION {
+            return Err(DomainError::InvalidJson);
+        }
+        let classification = PageClassification {
+            page_type: match json_string(value, "page_type")?.as_str() {
+                "text" => PageType::Text,
+                "image" => PageType::Image,
+                "mixed" => PageType::Mixed,
+                "empty" => PageType::Empty,
+                "uncertain" => PageType::Uncertain,
+                _ => return Err(DomainError::InvalidJson),
+            },
+            confidence: match json_string(value, "confidence")?.as_str() {
+                "high" => RouteConfidence::High,
+                "medium" => RouteConfidence::Medium,
+                "low" => RouteConfidence::Low,
+                _ => return Err(DomainError::InvalidJson),
+            },
+            recommended_method: match json_string(value, "recommended_method")?.as_str() {
+                "native_text" => ProcessingMethod::NativeText,
+                "ocr" => ProcessingMethod::Ocr,
+                "empty" => ProcessingMethod::Empty,
+                _ => return Err(DomainError::InvalidJson),
+            },
+            reason: match json_string(value, "reason")?.as_str() {
+                "native_text_reliable" => PdfReasonCode::NativeTextReliable,
+                "no_visible_content" => PdfReasonCode::NoVisibleContent,
+                "image_coverage_high" => PdfReasonCode::ImageCoverageHigh,
+                "mixed_content" => PdfReasonCode::MixedContent,
+                "text_coverage_low" => PdfReasonCode::TextCoverageLow,
+                "unicode_validity_low" => PdfReasonCode::UnicodeValidityLow,
+                "duplicate_text" => PdfReasonCode::DuplicateText,
+                "geometry_anomaly" => PdfReasonCode::GeometryAnomaly,
+                "native_structure_unresolved" => PdfReasonCode::NativeStructureUnresolved,
+                "native_validation_failed" => PdfReasonCode::NativeValidationFailed,
+                _ => return Err(DomainError::InvalidJson),
+            },
+        };
+        let processing = PageProcessing {
+            planned_method: classification.recommended_method,
+            actual_method: match json_string(value, "actual_method") {
+                Ok(method) => Some(match method.as_str() {
+                    "native_text" => ProcessingMethod::NativeText,
+                    "ocr" => ProcessingMethod::Ocr,
+                    "empty" => ProcessingMethod::Empty,
+                    _ => return Err(DomainError::InvalidJson),
+                }),
+                Err(_) => None,
+            },
+            fallback_reason: None,
+        };
+        let document_start = value
+            .find("\"document\":")
+            .ok_or(DomainError::InvalidJson)?
+            + 11;
+        let document = PageDocument::from_json(&value[document_start..])?;
+        let provenance = Vec::new();
+        let result = Self {
+            schema_version: Self::SCHEMA_VERSION,
+            document,
+            classification,
+            processing,
+            provenance,
+        };
+        result.validate()?;
+        Ok(result)
+    }
+
+    fn from_json_serde(value: &str) -> Result<Self, DomainError> {
+        let root: serde_json::Value =
+            serde_json::from_str(value).map_err(|_| DomainError::InvalidJson)?;
+        let metadata: PdfPageMetadataSerde =
+            serde_json::from_value(root.clone()).map_err(|_| DomainError::InvalidJson)?;
+        let document_value = root.get("document").ok_or(DomainError::InvalidJson)?;
+        let document_json =
+            serde_json::to_string(document_value).map_err(|_| DomainError::InvalidJson)?;
+        let document = PageDocument::from_json(&document_json)?;
+        if metadata.page != document.page_number {
+            return Err(DomainError::InvalidPage);
+        }
+        let result = Self {
+            schema_version: metadata.schema_version,
+            document,
+            classification: metadata.classification,
+            processing: metadata.processing,
+            provenance: metadata.provenance,
+        };
+        result.validate()?;
+        Ok(result)
     }
 }
 
@@ -442,7 +1247,7 @@ impl PageBlock {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedBbox {
     pub left: u16,
     pub top: u16,

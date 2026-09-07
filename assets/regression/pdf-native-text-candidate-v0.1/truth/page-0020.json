@@ -1,0 +1,356 @@
+{
+  "schema_version": 2,
+  "page_number": 28,
+  "native_text": "如果是我们听了这个解释，可能不禁会尖叫欢呼（她当时的确也想这么\n做）。\n如果一个公司领导者任由公司使命摆在那里，等待别人去理解、去实现，\n那么公司就会错失很多大好机遇。领导者应该阐明使命，明确指出员工应该采\n取哪些行动，然后评估和奖励那些表现出色的员工。\n这些说得容易，做起来并不简单，因为我们永远也不会把话说得那么明\n确。虽然提升公司的协同力并不是彻底洗脑，却仍有很多的公司领导者避之唯\n恐不及，就是因为他们相信“洗脑说”。然而，如果一个公司没有协同力，它\n就不会健康。\n提升领导力，从今天做起\n现在，就让我们把目光转向实现协同力的一个大前提——领导力。\n正如我们前面提到的那样，领导力对激发协同力、消除工作中的痛苦具有\n关键作用。事实上，在绝大多数情况下，如果一个停滞不前的公司想要焕发出\n新的领导力，那么管理者就必须重建公司的使命、价值观以及结果评价体系，\n这两者绝对是密不可分的，必须相辅相成。\n在这本书的后面，我们将用一章的篇幅去讲领导力。事实上，我们将根据\n自己的全部经验和观察提出一个新的、全面的领导力模型。该模型对领导力的\n定义就是不断地探求真实和不断地建立互信。\n但现在，我们讨论的是如何消除工作中的痛苦，因此，我们先来谈谈有助\n于探求真实、建立互信的关键策略。具体地讲，就是五个最为迫切的行动步\n骤，因为如果你的公司死气沉沉、原地踏步或者由于其他原因而未能充分发挥\n出潜力，那么你就必须想办法解决现有的问题。你不能把问题拖到明天或下\n周。\n你必须从今天做起！下面是具体做法。\n第一，领导者要体谅下属\n如果一个公司里面有一位傲慢浮夸、妄自尊大的经理，那可能是最糟糕不\n过的事情了。他可能像个小将军一样，在公司里颐指气使地走来走去，对助手\n吼来吼去，似乎他的全部工作就是给下属开会以及为上司筹备会议。此外，这",
+  "blocks": [
+    {
+      "text": "如果是我们听了这个解释，可能不禁会尖叫欢呼（她当时的确也想这么",
+      "bbox": {
+        "left": 171,
+        "top": 95,
+        "right": 871,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "做）。",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 177,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如果一个公司领导者任由公司使命摆在那里，等待别人去理解、去实现，",
+      "bbox": {
+        "left": 171,
+        "top": 154,
+        "right": 858,
+        "bottom": 169
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "那么公司就会错失很多大好机遇。领导者应该阐明使命，明确指出员工应该采",
+      "bbox": {
+        "left": 127,
+        "top": 179,
+        "right": 873,
+        "bottom": 195
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "取哪些行动，然后评估和奖励那些表现出色的员工。",
+      "bbox": {
+        "left": 127,
+        "top": 204,
+        "right": 613,
+        "bottom": 220
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这些说得容易，做起来并不简单，因为我们永远也不会把话说得那么明",
+      "bbox": {
+        "left": 170,
+        "top": 238,
+        "right": 871,
+        "bottom": 254
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "确。虽然提升公司的协同力并不是彻底洗脑，却仍有很多的公司领导者避之唯",
+      "bbox": {
+        "left": 127,
+        "top": 263,
+        "right": 872,
+        "bottom": 279
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "恐不及，就是因为他们相信“洗脑说”。然而，如果一个公司没有协同力，它",
+      "bbox": {
+        "left": 127,
+        "top": 288,
+        "right": 872,
+        "bottom": 304
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "就不会健康。",
+      "bbox": {
+        "left": 127,
+        "top": 314,
+        "right": 243,
+        "bottom": 330
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "提升领导力，从今天做起",
+      "bbox": {
+        "left": 170,
+        "top": 349,
+        "right": 438,
+        "bottom": 366
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "现在，就让我们把目光转向实现协同力的一个大前提——领导力。",
+      "bbox": {
+        "left": 170,
+        "top": 384,
+        "right": 788,
+        "bottom": 400
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "正如我们前面提到的那样，领导力对激发协同力、消除工作中的痛苦具有",
+      "bbox": {
+        "left": 171,
+        "top": 418,
+        "right": 872,
+        "bottom": 433
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "关键作用。事实上，在绝大多数情况下，如果一个停滞不前的公司想要焕发出",
+      "bbox": {
+        "left": 127,
+        "top": 443,
+        "right": 871,
+        "bottom": 459
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "新的领导力，那么管理者就必须重建公司的使命、价值观以及结果评价体系，",
+      "bbox": {
+        "left": 127,
+        "top": 468,
+        "right": 858,
+        "bottom": 484
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这两者绝对是密不可分的，必须相辅相成。",
+      "bbox": {
+        "left": 127,
+        "top": 494,
+        "right": 526,
+        "bottom": 509
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在这本书的后面，我们将用一章的篇幅去讲领导力。事实上，我们将根据",
+      "bbox": {
+        "left": 170,
+        "top": 527,
+        "right": 872,
+        "bottom": 543
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "自己的全部经验和观察提出一个新的、全面的领导力模型。该模型对领导力的",
+      "bbox": {
+        "left": 130,
+        "top": 553,
+        "right": 872,
+        "bottom": 568
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "定义就是不断地探求真实和不断地建立互信。",
+      "bbox": {
+        "left": 127,
+        "top": 578,
+        "right": 548,
+        "bottom": 594
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "但现在，我们讨论的是如何消除工作中的痛苦，因此，我们先来谈谈有助",
+      "bbox": {
+        "left": 170,
+        "top": 612,
+        "right": 872,
+        "bottom": 627
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "于探求真实、建立互信的关键策略。具体地讲，就是五个最为迫切的行动步",
+      "bbox": {
+        "left": 127,
+        "top": 637,
+        "right": 872,
+        "bottom": 653
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "骤，因为如果你的公司死气沉沉、原地踏步或者由于其他原因而未能充分发挥",
+      "bbox": {
+        "left": 127,
+        "top": 662,
+        "right": 872,
+        "bottom": 678
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "出潜力，那么你就必须想办法解决现有的问题。你不能把问题拖到明天或下",
+      "bbox": {
+        "left": 128,
+        "top": 687,
+        "right": 872,
+        "bottom": 703
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "周。",
+      "bbox": {
+        "left": 127,
+        "top": 713,
+        "right": 155,
+        "bottom": 728
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "你必须从今天做起！下面是具体做法。",
+      "bbox": {
+        "left": 170,
+        "top": 746,
+        "right": 526,
+        "bottom": 762
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "第一，领导者要体谅下属",
+      "bbox": {
+        "left": 170,
+        "top": 781,
+        "right": 437,
+        "bottom": 799
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如果一个公司里面有一位傲慢浮夸、妄自尊大的经理，那可能是最糟糕不",
+      "bbox": {
+        "left": 171,
+        "top": 817,
+        "right": 872,
+        "bottom": 832
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "过的事情了。他可能像个小将军一样，在公司里颐指气使地走来走去，对助手",
+      "bbox": {
+        "left": 127,
+        "top": 842,
+        "right": 873,
+        "bottom": 858
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "吼来吼去，似乎他的全部工作就是给下属开会以及为上司筹备会议。此外，这",
+      "bbox": {
+        "left": 128,
+        "top": 867,
+        "right": 873,
+        "bottom": 883
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.253438,
+    "visible_characters": 735,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 20,
+  "source_page_number": 28,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

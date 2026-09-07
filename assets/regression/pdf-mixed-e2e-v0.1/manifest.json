@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "manifest_role": "pdf_content_aware_e2e",
+  "set_id": "pdf-mixed-e2e-v0.1",
+  "status": "ready_for_cli_e2e",
+  "page_count": 3,
+  "source_pdf": "/Users/space/Documents/Develop/OCR-CLI/.worktrees/pdf-content-aware-v0.2/assets/regression/pdf-mixed-e2e-v0.1/inputs/native-image-mixed-3-pages.pdf",
+  "input_sha256": "483525422d1dd7f1dc5bbce83feb4261a27714998c4ee17da59b010892a482ed",
+  "source_material": {
+    "native_source": "/Users/space/Documents/Develop/OCR-CLI/test-data/books/商业金融/《商业的本质》杰克•韦尔奇【文字版_PDF电子书_下载】.pdf",
+    "image_source": "/Users/space/Documents/Develop/OCR-CLI/.worktrees/pdf-content-aware-v0.2/assets/regression/pdf-native-forbidden-v0.1/inputs/image-only-20-pages.pdf"
+  },
+  "pages": [
+    {
+      "page": 1,
+      "expected_page_type": "text",
+      "expected_route": "native_text"
+    },
+    {
+      "page": 2,
+      "expected_page_type": "image",
+      "expected_route": "ocr"
+    },
+    {
+      "page": 3,
+      "expected_page_type": "uncertain",
+      "expected_route": "ocr"
+    }
+  ]
+}
