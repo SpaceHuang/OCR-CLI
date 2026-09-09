@@ -2981,6 +2981,8 @@ fn doctor_json_report_with_paths(
     let device = recommend_device(snapshot, "auto").unwrap_or_else(|_| "unavailable".to_owned());
     let platform = if cfg!(target_os = "macos") {
         "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
     } else {
         "unsupported"
     };
