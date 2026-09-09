@@ -1,5 +1,7 @@
 use image::ImageFormat;
-use ocrx_core::{ModelId, PageClassification, PageType, ProcessingMethod, QualityTier};
+use ocrx_core::{
+    GpuResourceReport, ModelId, PageClassification, PageType, ProcessingMethod, QualityTier,
+};
 use ocrx_models::{
     ModelCatalog, ResourceSnapshot, UrlInstallRequest, community_asset_sizes, community_asset_urls,
     community_manifest, recommend_device, recommend_profile,
@@ -16,9 +18,11 @@ use ocrx_pdf::{
     PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
     fit_pixel_budget, plan_page_checked,
 };
-use ocrx_runtime::{Backend, LlamaMtmdRuntime, RuntimeInfo};
+use ocrx_runtime::{Backend, LlamaMtmdRuntime, Runtime, RuntimeInfo, RuntimeTelemetry};
+use std::cell::RefCell;
 use std::io::{Cursor, IsTerminal, Read};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1560,9 +1564,55 @@ impl ModelLoader for RuntimeLoader {
     }
 }
 
+/// Sample peak Windows GPU VRAM (via `nvidia-smi`) while a scan runs so the
+/// W4.4 GPU resource report can record a real `vram_peak_bytes`. Returns `None`
+/// on non-Windows targets or when `nvidia-smi` is unavailable.
+fn start_vram_sampler() -> Option<(
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+    std::thread::JoinHandle<u64>,
+)> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let done_worker = std::sync::Arc::clone(&done);
+    let handle = std::thread::spawn(move || {
+        let mut peak_mb = 0_u64;
+        while !done_worker.load(std::sync::atomic::Ordering::SeqCst) {
+            if let Ok(output) = std::process::Command::new("nvidia-smi")
+                .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
+                .output()
+                && output.status.success()
+            {
+                if let Some(first) = String::from_utf8_lossy(&output.stdout).lines().next()
+                    && let Ok(mb) = first.trim().parse::<u64>()
+                {
+                    peak_mb = peak_mb.max(mb);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        peak_mb.saturating_mul(1024 * 1024)
+    });
+    Some((done, handle))
+}
+
+fn stop_vram_sampler(
+    sampler: Option<(
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+        std::thread::JoinHandle<u64>,
+    )>,
+) -> Option<u64> {
+    let (done, handle) = sampler?;
+    done.store(true, std::sync::atomic::Ordering::SeqCst);
+    let bytes = handle.join().unwrap_or(0);
+    (bytes > 0).then_some(bytes)
+}
+
 struct OvisRecognizer {
     output: PathBuf,
     max_tokens: u32,
+    telemetry: Rc<RefCell<RuntimeTelemetry>>,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     fn recognize_artifact(
@@ -1581,6 +1631,8 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             &self.output,
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let previous = *self.telemetry.borrow();
+        *self.telemetry.borrow_mut() = previous.merge(model.telemetry());
         let mut png = Cursor::new(Vec::new());
         image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
             .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
@@ -1803,9 +1855,11 @@ fn run_scan(options: ScanOptions) -> ! {
             options: RenderOptions { dpi },
         })
     };
+    let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let recognizer = OvisRecognizer {
         output: output.clone(),
         max_tokens: options.max_output_tokens.unwrap_or(4096),
+        telemetry: Rc::clone(&telemetry),
     };
     // Keep compatibility metadata stable without touching model resources.
     // Actual profile/device resolution is deferred until the final OCR queue
@@ -2250,6 +2304,15 @@ fn run_scan(options: ScanOptions) -> ! {
     }
     let cancellation = CancellationToken::new();
     install_sigint_handler(cancellation.clone());
+    // W4.4 GPU report: opt-in so a normal scan does not spawn a background
+    // sampler or write an extra file by default. Enabled only when OCR actually
+    // runs on a GPU backend and OCRX_GPU_REPORT is explicitly set.
+    let gpu_report_enabled = std::env::var_os("OCRX_GPU_REPORT").is_some() && device != "cpu";
+    let vram_sampler = if gpu_report_enabled && execution_plan.initialize_runtime {
+        start_vram_sampler()
+    } else {
+        None
+    };
     let summary = if execution_plan.initialize_runtime {
         let loader = RuntimeLoader {
             model,
@@ -2278,6 +2341,37 @@ fn run_scan(options: ScanOptions) -> ! {
             cancelled: false,
         })
     };
+    let vram_peak_bytes = stop_vram_sampler(vram_sampler);
+    if gpu_report_enabled && execution_plan.initialize_runtime && device != "cpu" {
+        let scan_telemetry = *telemetry.borrow();
+        let gpu_report = GpuResourceReport {
+            backend: device.clone(),
+            vram_peak_bytes,
+            unified_memory_peak_bytes: None,
+            load_time_ms: Some(scan_telemetry.load_time_ms),
+            first_token_ms: Some(scan_telemetry.first_token_ms),
+            output_tokens: u32::try_from(scan_telemetry.generated_tokens).unwrap_or(u32::MAX),
+            output_tokens_per_sec: scan_telemetry.output_tokens_per_sec(),
+            peak_memory_bytes: None,
+        };
+        if let Err(error) = ocrx_output::atomic_write(
+            output.join("gpu-resource.json"),
+            gpu_report.to_json().as_bytes(),
+        ) {
+            reporter.error(
+                &ErrorReport {
+                    code: 6,
+                    kind: "output".to_owned(),
+                    message: "gpu-resource.json commit failed".to_owned(),
+                    cause: Some(error.to_string()),
+                    suggestion: None,
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(6);
+        }
+    }
     match summary {
         Ok(summary) => {
             let mut terminal_pending_pages = resume_pending_pages.clone();
