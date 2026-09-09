@@ -324,10 +324,10 @@ fn resolve_and_prepare_model(
     let profile = resolve_scan_profile(requested_profile, snapshot.memory_gb)?;
     let device = recommend_device(snapshot, requested_device)
         .map_err(|error| format!("requested device is unavailable: {error:?}"))?;
-    let (model, mmproj) = ocrx_models::cache_paths(cache, &profile)
-        .map_err(|error| format!("model path resolution failed: {error:?}"))?;
     let manifest =
         community_manifest(&profile).map_err(|error| format!("model manifest: {error:?}"))?;
+    let (model, mmproj) = ocrx_models::cache_paths(cache, &manifest.identity.revision, &profile)
+        .map_err(|error| format!("model path resolution failed: {error:?}"))?;
     let (model_bytes, mmproj_bytes) = community_asset_sizes(&profile)
         .ok_or_else(|| "model asset sizes unavailable".to_owned())?;
     let mut assets_valid = model.is_file()
@@ -1247,8 +1247,13 @@ fn main() {
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
-            let (model_path, _mmproj_path) = ocrx_models::cache_paths(&cache_root, &profile)
-                .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
+            let revision = ocrx_models::community_manifest(&profile)
+                .unwrap_or_else(|_| unreachable!("profile parsed by CLI"))
+                .identity
+                .revision;
+            let (model_path, _mmproj_path) =
+                ocrx_models::cache_paths(&cache_root, &revision, &profile)
+                    .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
             match action.as_str() {
                 "verify" => {
                     let manifest = ocrx_models::community_manifest(&profile)
@@ -1334,25 +1339,62 @@ fn main() {
         CliCommand::Scan(options) => run_scan(options),
         CliCommand::Skill { action } => {
             let target = std::env::var("OCRX_SKILL_TARGET").unwrap_or_else(|_| "all".to_owned());
-            let home = std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("."));
+            let scope = match ocrx_skill::SkillScope::parse(
+                &std::env::var("OCRX_SKILL_SCOPE").unwrap_or_else(|_| "user".to_owned()),
+            ) {
+                Ok(scope) => scope,
+                Err(error) => {
+                    eprintln!("skill {action} blocked: {error}");
+                    std::process::exit(2);
+                }
+            };
+            let (home, project): (Option<PathBuf>, Option<PathBuf>) = match scope {
+                ocrx_skill::SkillScope::User => (
+                    std::env::var_os("HOME")
+                        .or_else(|| std::env::var_os("USERPROFILE"))
+                        .map(PathBuf::from),
+                    None,
+                ),
+                ocrx_skill::SkillScope::Project => (
+                    None,
+                    Some(
+                        std::env::var_os("OCRX_SKILL_PROJECT")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| {
+                                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                            }),
+                    ),
+                ),
+            };
             let content = include_str!("../../../assets/skills/ocrx/SKILL.md");
             let result = match action.as_str() {
-                "install" => ocrx_skill::install(&target, &home, content).map(|paths| {
+                "install" => ocrx_skill::install(
+                    &target,
+                    scope,
+                    home.as_deref(),
+                    project.as_deref(),
+                    content,
+                )
+                .map(|paths| {
                     format!(
-                        "skill=ocrx status=installed targets={} files={}",
+                        "skill=ocrx status=installed scope={} targets={} files={}",
+                        scope.as_str(),
                         target,
                         paths.len()
                     )
                 }),
-                "uninstall" => ocrx_skill::uninstall(&target, &home).map(|paths| {
-                    format!(
-                        "skill=ocrx status=uninstalled targets={} files={}",
-                        target,
-                        paths.len()
+                "uninstall" => {
+                    ocrx_skill::uninstall(&target, scope, home.as_deref(), project.as_deref()).map(
+                        |paths| {
+                            format!(
+                                "skill=ocrx status=uninstalled scope={} targets={} files={}",
+                                scope.as_str(),
+                                target,
+                                paths.len()
+                            )
+                        },
                     )
-                }),
+                }
                 _ => unreachable!("skill action parsed by CLI"),
             };
             match result {
@@ -1842,6 +1884,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 segment_pages: 20,
                 timeout: Duration::from_secs(20 * 60),
                 dpi,
+                env: Vec::new(),
             },
             input: input.clone(),
             output: worker_output,
@@ -2906,6 +2949,8 @@ fn resource_snapshot() -> ResourceSnapshot {
     ResourceSnapshot {
         memory_gb,
         metal_available: cfg!(target_os = "macos"),
+        cuda_available: ocrx_runtime::Backend::Cuda.is_compiled(),
+        vulkan_available: ocrx_runtime::Backend::Vulkan.is_compiled(),
         cpu_available: true,
     }
 }
@@ -2941,12 +2986,17 @@ fn doctor_json_report_with_paths(
     };
     let backend = match info.backend {
         Backend::Metal => "Metal",
+        Backend::Cuda => "Cuda",
+        Backend::Vulkan => "Vulkan",
         Backend::Cpu => "Cpu",
     };
     let installed_profiles = ["compact", "balanced", "quality", "reference"]
         .into_iter()
         .filter(|profile| {
-            ocrx_models::cache_paths(&cache_root, profile)
+            ocrx_models::community_manifest(profile)
+                .and_then(|manifest| {
+                    ocrx_models::cache_paths(&cache_root, &manifest.identity.revision, profile)
+                })
                 .map(|(model, mmproj)| model.is_file() && mmproj.is_file())
                 .unwrap_or(false)
         })
@@ -4041,6 +4091,8 @@ mod tests {
             ResourceSnapshot {
                 memory_gb: 16,
                 metal_available: true,
+                cuda_available: false,
+                vulkan_available: false,
                 cpu_available: true,
             },
             ocrx_runtime::RuntimeInfo {
@@ -4097,6 +4149,8 @@ mod tests {
             ResourceSnapshot {
                 memory_gb: 16,
                 metal_available: true,
+                cuda_available: false,
+                vulkan_available: false,
                 cpu_available: true,
             },
             ocrx_runtime::RuntimeInfo {
