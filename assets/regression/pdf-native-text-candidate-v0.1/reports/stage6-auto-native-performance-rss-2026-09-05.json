@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "input_pages": 30,
+  "mode": "auto",
+  "backend": "metal",
+  "runs": [
+    {"run": 1, "wall_seconds": 5, "peak_rss_kb": 19232, "output_size_bytes": 708608, "completed": 30, "failed": 0, "ocr_model_loaded": false},
+    {"run": 2, "wall_seconds": 6, "peak_rss_kb": 19280, "output_size_bytes": 708608, "completed": 30, "failed": 0, "ocr_model_loaded": false},
+    {"run": 3, "wall_seconds": 5, "peak_rss_kb": 19200, "output_size_bytes": 708608, "completed": 30, "failed": 0, "ocr_model_loaded": false},
+    {"run": 4, "wall_seconds": 5, "peak_rss_kb": 19248, "output_size_bytes": 708608, "completed": 30, "failed": 0, "ocr_model_loaded": false},
+    {"run": 5, "wall_seconds": 5, "peak_rss_kb": 23488, "output_size_bytes": 708608, "completed": 30, "failed": 0, "ocr_model_loaded": false}
+  ],
+  "summary": {
+    "median_wall_seconds": 5,
+    "median_peak_rss_kb": 19248,
+    "median_output_size_bytes": 708608,
+    "all_runs_native_text_30_of_30": true,
+    "all_runs_model_loaded": false,
+    "all_runs_successful": true
+  },
+  "notes": ["Peak RSS sampled from the CLI process at 200 ms intervals; output size is the run directory size."]
+}

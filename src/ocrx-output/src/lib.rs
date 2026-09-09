@@ -9,8 +9,7 @@ pub enum ResultStatus {
 }
 
 impl ResultStatus {
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::Success => "success",
             Self::Partial => "partial",
@@ -65,30 +64,9 @@ fn json_escape(value: &str) -> String {
 }
 
 /// Redacts sensitive values before any diagnostic field is serialized.
-///
-/// Redaction is platform-agnostic: the same structured-event fields are
-/// scrubbed on every operating system, so Windows never introduces its own
-/// redaction call points. Two strategies compose:
-///   1. key-based: a known sensitive key (`prompt`, `ocr`, `token`,
-///      `authorization`, `proxy`, `url`) followed by `=`/`:` scopes its value.
-///      A quoted value is scrubbed to its closing quote so multi-word prompt or
-///      OCR bodies do not leak past the first word; an unquoted value is
-///      scrubbed to the next delimiter.
-///   2. pattern-based: bare bearer tokens, URL userinfo credentials
-///      (`scheme://user:pass@host`), and URL query-parameter values are
-///      scrubbed even without a preceding key, so a stray URL or token in a
-///      free-text message cannot leak.
 #[must_use]
 pub fn redact_sensitive(input: &str) -> String {
     let mut output = input.to_owned();
-    redact_keyed_values(&mut output);
-    redact_url_userinfo(&mut output);
-    redact_url_query_values(&mut output);
-    redact_bearer_tokens(&output)
-}
-
-/// Scrubs values associated with known sensitive keys.
-fn redact_keyed_values(output: &mut String) {
     for key in ["prompt", "ocr", "token", "authorization", "proxy", "url"] {
         let mut cursor = 0;
         while let Some(relative) = output[cursor..].to_ascii_lowercase().find(key) {
@@ -97,133 +75,14 @@ fn redact_keyed_values(output: &mut String) {
                 break;
             };
             let value_start = start + separator + 1;
-            let value_len = end_of_sensitive_value(&output[value_start..]);
-            output.replace_range(value_start..value_start + value_len, "[REDACTED]");
-            cursor = value_start + "[REDACTED]".len();
+            let value_end = output[value_start..]
+                .find([',', ' ', '\n'])
+                .map_or(output.len(), |end| value_start + end);
+            output.replace_range(value_start..value_end, "[REDACTED]");
+            cursor = value_start + 10;
         }
     }
-}
-
-/// Length of a sensitive value beginning at `rest`: a quoted value extends to
-/// its closing quote (inclusive); otherwise up to the next delimiter.
-fn end_of_sensitive_value(rest: &str) -> usize {
-    let Some(&quote) = rest.as_bytes().first() else {
-        return 0;
-    };
-    if quote == b'"' || quote == b'\'' {
-        return rest[1..]
-            .find(char::from(quote))
-            .map_or(rest.len(), |relative| relative + 2);
-    }
-    rest.find([',', ' ', '\n']).map_or(rest.len(), |end| end)
-}
-
-/// Scrubs embedded credentials (`user:pass@`) out of URL authorities.
-fn redact_url_userinfo(output: &mut String) {
-    let mut search_from = 0;
-    while let Some(relative) = output[search_from..].find("://") {
-        let authority_start = search_from + relative + "://".len();
-        let authority = &output[authority_start..];
-        let mut userinfo_end = None;
-        for (index, ch) in authority.char_indices() {
-            if ch == '@' {
-                userinfo_end = Some(index);
-                break;
-            }
-            if matches!(
-                ch,
-                '/' | '?' | '#' | ' ' | '\n' | '\t' | '"' | '\'' | ',' | '\\'
-            ) {
-                break;
-            }
-        }
-        match userinfo_end {
-            Some(end) => {
-                output.replace_range(authority_start..authority_start + end, "[REDACTED]");
-                // Skip past the redaction and the `@` to keep searching.
-                search_from = authority_start + "[REDACTED]".len() + 1;
-            }
-            None => {
-                // No userinfo here; advance past this `://`.
-                search_from = authority_start + 1;
-            }
-        }
-    }
-}
-
-/// Scrubs values out of URL query strings (`?key=value&key=value`).
-fn redact_url_query_values(output: &mut String) {
-    let mut search_from = 0;
-    while let Some(relative) = output[search_from..].find('?') {
-        let query_start = search_from + relative + 1;
-        let query = &output[query_start..];
-        let query_end = query
-            .char_indices()
-            .find(|(_, ch)| matches!(ch, ' ' | '\n' | '\t' | '"' | '\'' | '\\' | '<' | '>'))
-            .map_or(query.len(), |(index, _)| index);
-        if query_end == 0 {
-            // Not a query string (e.g. a literal `?` in prose); skip it.
-            search_from = query_start;
-            continue;
-        }
-        let redacted = redact_query_pairs(&query[..query_end]);
-        output.replace_range(query_start..query_start + query_end, &redacted);
-        search_from = query_start + redacted.len();
-    }
-}
-
-/// Redacts every `value` in a `key=value` query pair list joined by `&`.
-fn redact_query_pairs(pairs: &str) -> String {
-    pairs
-        .split('&')
-        .map(|pair| match pair.find('=') {
-            Some(eq) => {
-                let (key, _) = pair.split_at(eq);
-                format!("{key}=[REDACTED]")
-            }
-            None => pair.to_owned(),
-        })
-        .collect::<Vec<_>>()
-        .join("&")
-}
-
-/// Scrubs bare bearer tokens (`Bearer <token>`) not scoped by a key.
-fn redact_bearer_tokens(input: &str) -> String {
-    let lower = input.to_ascii_lowercase();
-    let input_bytes = input.as_bytes();
-    let lower_bytes = lower.as_bytes();
-    let mut out = String::with_capacity(input.len());
-    let mut i = 0;
-    while i < input_bytes.len() {
-        let bearer = "bearer";
-        let left_boundary = i == 0 || !input_bytes[i - 1].is_ascii_alphanumeric();
-        if left_boundary
-            && i + bearer.len() <= lower_bytes.len()
-            && &lower_bytes[i..i + bearer.len()] == bearer.as_bytes()
-            && i + bearer.len() < input_bytes.len()
-            && input_bytes[i + bearer.len()].is_ascii_whitespace()
-        {
-            out.push_str("bearer");
-            let mut j = i + bearer.len();
-            while j < input_bytes.len() && input_bytes[j].is_ascii_whitespace() {
-                out.push(char::from(input_bytes[j]));
-                j += 1;
-            }
-            let token_start = j;
-            while j < input_bytes.len() && !input_bytes[j].is_ascii_whitespace() {
-                j += 1;
-            }
-            if j > token_start {
-                out.push_str("[REDACTED]");
-            }
-            i = j;
-        } else {
-            let ch = input[i..].chars().next().expect("non-empty slice");
-            out.push(ch);
-            i += ch.len_utf8();
-        }
-    }
-    out
+    output
 }
 
 /// Formats a report for the selected output channel.
@@ -320,7 +179,38 @@ pub struct ProgressEvent {
     pub total: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressStage {
+    Analyzing,
+    Extracting,
+    Rendering,
+    Recognizing,
+    Merging,
+}
+
+impl ProgressStage {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Analyzing => "analyzing",
+            Self::Extracting => "extracting",
+            Self::Rendering => "rendering",
+            Self::Recognizing => "recognizing",
+            Self::Merging => "merging",
+        }
+    }
+}
+
 impl ProgressEvent {
+    #[must_use]
+    pub fn for_stage(stage: ProgressStage, page: Option<u32>, completed: u32, total: u32) -> Self {
+        Self {
+            event: stage.as_str().to_owned(),
+            page,
+            completed,
+            total,
+        }
+    }
+
     #[must_use]
     pub fn to_json_line(&self) -> String {
         let page = self
@@ -369,8 +259,8 @@ impl ErrorReport {
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-
-pub use ocrx_core::{CancellationToken, GenerationProgress};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
@@ -441,6 +331,22 @@ pub struct JobSummary {
     pub cancelled: bool,
 }
 
+pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
+    let mut warnings = native.warnings;
+    warnings.extend(ocr.warnings);
+    let mut diagnostics = native.diagnostics;
+    diagnostics.extend(ocr.diagnostics);
+    JobSummary {
+        selected_pages: native.selected_pages.max(ocr.selected_pages),
+        completed_pages: native.completed_pages + ocr.completed_pages,
+        failed_pages: native.failed_pages + ocr.failed_pages,
+        truncated_pages: native.truncated_pages + ocr.truncated_pages,
+        warnings,
+        diagnostics,
+        cancelled: native.cancelled || ocr.cancelled,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageDiagnostic {
     pub page: u32,
@@ -460,6 +366,11 @@ pub struct ProgressSnapshot {
     pub eta_seconds: Option<u64>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CancellationToken {
+    requests: Arc<AtomicU8>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Heartbeat {
     interval_seconds: u64,
@@ -471,8 +382,6 @@ pub struct ScanController {
     pages: Vec<PageLifecycle>,
     cancellation: CancellationToken,
     heartbeat: Heartbeat,
-    warnings: std::collections::BTreeSet<String>,
-    diagnostics: Vec<PageDiagnostic>,
 }
 
 /// Application ports used by the fake-first scan service.
@@ -584,24 +493,6 @@ pub trait PageArtifactRecognizer<M> {
         page: u32,
         image: &RenderedPage,
     ) -> io::Result<PageArtifactResult>;
-
-    /// Cancellation-aware variant used by the real scan path.
-    ///
-    /// The default implementation delegates to [`PageArtifactRecognizer::recognize_artifact`]
-    /// for fake/test recognizers. Real recognizers must override it so the
-    /// runtime can poll cancellation between tokens and report generation
-    /// progress for the per-second heartbeat contract.
-    fn recognize_artifact_cancelled(
-        &mut self,
-        model: &mut M,
-        page: u32,
-        image: &RenderedPage,
-        cancellation: &CancellationToken,
-        progress: &mut dyn FnMut(GenerationProgress),
-    ) -> io::Result<PageArtifactResult> {
-        let _ = (cancellation, progress);
-        self.recognize_artifact(model, page, image)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -650,63 +541,48 @@ where
         let mut model = self.loader.load()?;
         let root = output_root.as_ref();
         fs::create_dir_all(root)?;
-        let mut controller = ScanController::with_cancellation(page_numbers, cancellation)?;
-        while let Some(page) = controller.start_next()? {
+        let mut completed = 0_u32;
+        let mut failed = 0_u32;
+        let mut truncated = 0_u32;
+        let mut warnings = std::collections::BTreeSet::new();
+        let mut diagnostics = Vec::new();
+        for &page in page_numbers {
+            if cancellation.is_cancelled() {
+                break;
+            }
             let checkpoint_path = root.join(format!("page-{page:04}.checkpoint"));
             if resume {
-                if let Ok(checkpoint) = read_checkpoint(&checkpoint_path)
-                    && checkpoint.is_reusable_at(compatibility, root, page)
-                {
-                    controller.record_warnings(checkpoint.warnings.iter().cloned());
-                    controller.record_diagnostic(checkpoint.diagnostic());
-                    controller.finish(
-                        page,
+                if let Ok(checkpoint) = read_checkpoint(&checkpoint_path) {
+                    if checkpoint.resume_action(compatibility, root, page)
+                        == CheckpointResumeAction::SkipCommitted
+                    {
                         if checkpoint.truncated {
-                            PageStatus::Truncated
-                        } else {
-                            PageStatus::Completed
-                        },
-                    )?;
-                    continue;
+                            truncated += 1;
+                        }
+                        warnings.extend(checkpoint.warnings.iter().cloned());
+                        diagnostics.push(checkpoint.diagnostic());
+                        completed += 1;
+                        continue;
+                    }
                 }
             }
             let image = match self.renderer.render(page) {
                 Ok(image) => image,
-                Err(_) => {
-                    controller.record_diagnostic(PageDiagnostic {
+                Err(_error) => {
+                    failed += 1;
+                    diagnostics.push(PageDiagnostic {
                         page,
-                        status: if cancellation.is_cancelled() {
-                            "cancelled".to_owned()
-                        } else {
-                            "failed".to_owned()
-                        },
+                        status: "failed".to_owned(),
                         stage: "render".to_owned(),
                         error_code: Some("render_failed".to_owned()),
                         message: Some("page rendering failed".to_owned()),
                         audit: None,
                         warnings: Vec::new(),
                     });
-                    controller.finish(
-                        page,
-                        if cancellation.is_cancelled() {
-                            PageStatus::Cancelled
-                        } else {
-                            PageStatus::Failed
-                        },
-                    )?;
-                    if cancellation.is_cancelled() {
-                        break;
-                    }
                     continue;
                 }
             };
-            match self.recognizer.recognize_artifact_cancelled(
-                &mut model,
-                page,
-                &image,
-                cancellation,
-                &mut |_| {},
-            ) {
+            match self.recognizer.recognize_artifact(&mut model, page, &image) {
                 Ok(artifact) => {
                     let mut artifact_warnings = artifact.warnings;
                     if image.audit.scaled
@@ -716,7 +592,10 @@ where
                     {
                         artifact_warnings.push("render_scaled".to_owned());
                     }
-                    controller.record_warnings(artifact_warnings.iter().cloned());
+                    if artifact.truncated {
+                        truncated += 1;
+                    }
+                    warnings.extend(artifact_warnings.iter().cloned());
                     write_render_audit(root, page, image.audit)?;
                     let checkpoint = PageCheckpoint {
                         page_number: page,
@@ -727,7 +606,7 @@ where
                         warnings: artifact_warnings,
                         audit: Some(image.audit),
                     };
-                    controller.record_diagnostic(checkpoint.diagnostic());
+                    diagnostics.push(checkpoint.diagnostic());
                     commit_page(
                         root,
                         page,
@@ -736,47 +615,30 @@ where
                         &artifact.page_json,
                         &checkpoint,
                     )?;
-                    controller.finish(
-                        page,
-                        if artifact.truncated {
-                            PageStatus::Truncated
-                        } else {
-                            PageStatus::Completed
-                        },
-                    )?;
+                    completed += 1;
                 }
-                Err(_) => {
-                    controller.record_diagnostic(PageDiagnostic {
+                Err(error) => {
+                    failed += 1;
+                    let (error_code, fallback_message) = classify_recognition_error(&error);
+                    diagnostics.push(PageDiagnostic {
                         page,
-                        status: if cancellation.is_cancelled() {
-                            "cancelled".to_owned()
-                        } else {
-                            "failed".to_owned()
-                        },
+                        status: "failed".to_owned(),
                         stage: "recognize".to_owned(),
-                        error_code: Some("recognition_failed".to_owned()),
-                        message: Some("page recognition failed".to_owned()),
+                        error_code: Some(error_code.to_owned()),
+                        message: Some(if error_code == "device_unavailable" {
+                            fallback_message.to_owned()
+                        } else {
+                            format!("page recognition failed: {error}")
+                        }),
                         audit: Some(image.audit),
                         warnings: Vec::new(),
                     });
-                    controller.finish(
-                        page,
-                        if cancellation.is_cancelled() {
-                            PageStatus::Cancelled
-                        } else {
-                            PageStatus::Failed
-                        },
-                    )?;
-                    if cancellation.is_cancelled() {
-                        break;
-                    }
                 }
             }
         }
-        let summary = controller.summary();
-        if summary.failed_pages == 0
+        if failed == 0
             && !cancellation.is_cancelled()
-            && summary.completed_pages == u32::try_from(page_numbers.len()).unwrap_or(u32::MAX)
+            && completed == u32::try_from(page_numbers.len()).unwrap_or(u32::MAX)
         {
             let pages = page_numbers
                 .iter()
@@ -787,12 +649,41 @@ where
                     })
                 })
                 .collect::<io::Result<Vec<_>>>()?;
-            atomic_write(root.join("document.md"), merge_markdown(pages)?.as_bytes())?;
+            finalize_document(root, pages)?;
             if !keep_pages {
                 cleanup_full_page_images(root, page_numbers)?;
             }
         }
-        Ok(summary)
+        Ok(JobSummary {
+            selected_pages: u32::try_from(page_numbers.len()).unwrap_or(u32::MAX),
+            completed_pages: completed,
+            failed_pages: failed,
+            truncated_pages: truncated,
+            warnings: warnings.into_iter().collect(),
+            diagnostics,
+            cancelled: cancellation.is_cancelled(),
+        })
+    }
+}
+
+fn classify_recognition_error(error: &std::io::Error) -> (&'static str, &'static str) {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("failed to initialize backend")
+        || message.contains("command queue")
+        || message.contains("no metal device")
+        || message.contains("device unavailable")
+        // llama-cpp-2 0.1.152 can collapse a failed context/backend
+        // initialization into this message instead of returning the native
+        // backend error. Keep it in the device contract rather than
+        // misreporting it as page recognition quality failure.
+        || message.contains("null reference from llama.cpp")
+    {
+        (
+            "device_unavailable",
+            "inference device initialization failed",
+        )
+    } else {
+        ("recognition_failed", "page recognition failed")
     }
 }
 
@@ -853,22 +744,13 @@ where
 
 impl ScanController {
     pub fn new(page_numbers: &[u32]) -> io::Result<Self> {
-        Self::with_cancellation(page_numbers, &CancellationToken::new())
-    }
-
-    pub fn with_cancellation(
-        page_numbers: &[u32],
-        cancellation: &CancellationToken,
-    ) -> io::Result<Self> {
         Ok(Self {
             pages: page_numbers
                 .iter()
                 .map(|&page| PageLifecycle::new(page))
                 .collect::<io::Result<Vec<_>>>()?,
-            cancellation: cancellation.clone(),
+            cancellation: CancellationToken::new(),
             heartbeat: Heartbeat::default(),
-            warnings: std::collections::BTreeSet::new(),
-            diagnostics: Vec::new(),
         })
     }
 
@@ -896,14 +778,6 @@ impl ScanController {
         page.transition(status)
     }
 
-    pub fn record_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
-        self.warnings.extend(warnings);
-    }
-
-    pub fn record_diagnostic(&mut self, diagnostic: PageDiagnostic) {
-        self.diagnostics.push(diagnostic);
-    }
-
     pub fn cancel(&self) {
         self.cancellation.request_cancel();
     }
@@ -920,7 +794,7 @@ impl ScanController {
             completed_pages: self
                 .pages
                 .iter()
-                .filter(|page| matches!(page.status, PageStatus::Completed | PageStatus::Truncated))
+                .filter(|page| page.status == PageStatus::Completed)
                 .count() as u32,
             failed_pages: self
                 .pages
@@ -932,8 +806,8 @@ impl ScanController {
                 .iter()
                 .filter(|page| page.status == PageStatus::Truncated)
                 .count() as u32,
-            warnings: self.warnings.iter().cloned().collect(),
-            diagnostics: self.diagnostics.clone(),
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
             cancelled: self.cancellation.is_cancelled(),
         }
     }
@@ -972,6 +846,31 @@ impl Heartbeat {
     }
 }
 
+impl CancellationToken {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn request_cancel(&self) {
+        self.requests
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
+                Some(value.saturating_add(1))
+            })
+            .ok();
+    }
+
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.requests.load(Ordering::SeqCst) >= 1
+    }
+
+    #[must_use]
+    pub fn force_exit(&self) -> bool {
+        self.requests.load(Ordering::SeqCst) >= 2
+    }
+}
+
 impl ProgressSnapshot {
     #[must_use]
     pub fn new(completed: u32, total: u32, elapsed_seconds: u64) -> Self {
@@ -1004,32 +903,6 @@ impl JobSummary {
             JobStatus::Running
         }
     }
-
-    /// Maps the job outcome to the stable process exit code:
-    /// cancelled -> 130, completed -> 0, partial -> 10, otherwise 6 (runtime).
-    /// Consolidates the scattered `failed_pages == 0 && truncated_pages == 0`
-    /// checks so the CLI never re-derives the code from raw counts.
-    #[must_use]
-    pub fn exit_code(&self) -> i32 {
-        match self.status() {
-            JobStatus::Cancelled => 130,
-            JobStatus::Completed => 0,
-            JobStatus::Partial => 10,
-            JobStatus::Running => 6,
-        }
-    }
-
-    /// Maps the job outcome to the stable result-report status used in JSON.
-    /// Cancelled or still-running jobs map to `Partial`; the cancelled path
-    /// exits via an error report before a `ResultReport` is built, so this is
-    /// only consulted for non-cancelled finished jobs in practice.
-    #[must_use]
-    pub fn result_status(&self) -> ResultStatus {
-        match self.status() {
-            JobStatus::Completed => ResultStatus::Success,
-            JobStatus::Partial | JobStatus::Cancelled | JobStatus::Running => ResultStatus::Partial,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1038,6 +911,162 @@ pub struct CompatibilityKey {
     pub model: String,
     pub profile: String,
     pub parameters: String,
+}
+
+impl CompatibilityKey {
+    /// Native/empty artifacts depend only on the input and the public PDF
+    /// extraction contract. OCR artifacts carry an `ocr-profile` marker and
+    /// therefore require the full effective model/device configuration.
+    #[must_use]
+    pub fn matches_page_compatibility(&self, expected: &Self) -> bool {
+        if self.parameters.contains("ocr-profile=") {
+            self == expected
+        } else if self.parameters.contains("route=native") {
+            self.input_sha256 == expected.input_sha256
+                && self.model == expected.model
+                && public_pdf_parameters(&self.parameters)
+                    == public_pdf_parameters(&expected.parameters)
+        } else {
+            self == expected
+        }
+    }
+}
+
+fn public_pdf_parameters(parameters: &str) -> String {
+    parameters.split(';').take(5).collect::<Vec<_>>().join(";")
+}
+
+fn without_pending_marker(key: &CompatibilityKey) -> CompatibilityKey {
+    CompatibilityKey {
+        parameters: key
+            .parameters
+            .strip_suffix(";pending-ocr=true")
+            .unwrap_or(&key.parameters)
+            .to_owned(),
+        ..key.clone()
+    }
+}
+
+/// Stable shared compatibility fragment for content-aware PDF decisions.
+#[must_use]
+pub fn pdf_compatibility_parameters(
+    mode: &str,
+    quality_tier: &str,
+    classifier_version: &str,
+    extractor_version: &str,
+) -> String {
+    format!(
+        "pdf-mode={mode};quality-tier={quality_tier};classifier={classifier_version};extractor={extractor_version}"
+    )
+}
+
+#[must_use]
+pub fn mark_pending_ocr(parameters: &str) -> String {
+    if parameters
+        .split(';')
+        .any(|field| field == "pending-ocr=true")
+    {
+        parameters.to_owned()
+    } else if parameters.is_empty() {
+        "pending-ocr=true".to_owned()
+    } else {
+        format!("{parameters};pending-ocr=true")
+    }
+}
+
+#[must_use]
+pub fn pending_ocr_checkpoint(
+    page_number: u32,
+    compatibility: CompatibilityKey,
+    reason: impl Into<String>,
+) -> PageCheckpoint {
+    PageCheckpoint {
+        page_number,
+        compatibility: CompatibilityKey {
+            parameters: mark_pending_ocr(&compatibility.parameters),
+            ..compatibility
+        },
+        complete: false,
+        output_sha256: String::new(),
+        truncated: false,
+        warnings: vec![reason.into()],
+        audit: None,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OcrQueuePage {
+    pub page: u32,
+    pub fallback_reason: Option<String>,
+}
+
+/// Merges initial OCR plans and native-validation fallbacks deterministically.
+#[must_use]
+pub fn merge_ocr_queue(initial: &[OcrQueuePage], fallback: &[OcrQueuePage]) -> Vec<OcrQueuePage> {
+    let mut merged = initial.to_vec();
+    for candidate in fallback {
+        if let Some(existing) = merged.iter_mut().find(|page| page.page == candidate.page) {
+            if existing.fallback_reason.is_none() {
+                existing
+                    .fallback_reason
+                    .clone_from(&candidate.fallback_reason);
+            }
+        } else {
+            merged.push(candidate.clone());
+        }
+    }
+    merged.sort_by_key(|page| page.page);
+    merged
+}
+
+#[must_use]
+pub fn native_fallback_queue(candidates: &[(u32, Result<(), String>)]) -> Vec<OcrQueuePage> {
+    let mut queue: Vec<_> = candidates
+        .iter()
+        .filter_map(|(page, result)| {
+            result.as_ref().err().map(|reason| OcrQueuePage {
+                page: *page,
+                fallback_reason: Some(reason.clone()),
+            })
+        })
+        .collect();
+    queue.sort_by_key(|page| page.page);
+    queue.dedup_by_key(|page| page.page);
+    queue
+}
+
+pub fn recover_pending_ocr_queue(
+    root: impl AsRef<Path>,
+    expected: &CompatibilityKey,
+) -> io::Result<Vec<OcrQueuePage>> {
+    let mut queue = Vec::new();
+    let root = root.as_ref();
+    for entry in fs::read_dir(root)? {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let Some(page_text) = name
+            .strip_prefix("page-")
+            .and_then(|value| value.strip_suffix(".checkpoint"))
+        else {
+            continue;
+        };
+        let Ok(page) = page_text.parse::<u32>() else {
+            continue;
+        };
+        if let Ok(checkpoint) = read_checkpoint(&path)
+            && checkpoint.is_pending_ocr(expected)
+        {
+            queue.push(OcrQueuePage {
+                page,
+                fallback_reason: checkpoint.warnings.first().cloned(),
+            });
+        }
+    }
+    queue.sort_by_key(|page| page.page);
+    queue.dedup_by_key(|page| page.page);
+    Ok(queue)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1049,6 +1078,89 @@ pub struct PageCheckpoint {
     pub truncated: bool,
     pub warnings: Vec<String>,
     pub audit: Option<RenderAudit>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointDisposition {
+    Reuse,
+    PendingOcr,
+    Reprocess,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointState {
+    Committed,
+    PendingOcr,
+    Reprocess,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointResumeAction {
+    SkipCommitted,
+    QueueOcr,
+    Reprocess,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingCheckpointMetadata {
+    pub pdf_mode: String,
+    pub quality_tier: String,
+    pub classifier_version: String,
+    pub extractor_version: String,
+    pub page_classification: String,
+    pub planned_method: String,
+    pub actual_method: Option<String>,
+    pub fallback_reason: Option<String>,
+}
+
+impl RoutingCheckpointMetadata {
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        let optional = |value: &Option<String>| {
+            value.as_deref().map_or_else(
+                || "null".to_owned(),
+                |value| format!("\"{}\"", json_escape(value)),
+            )
+        };
+        format!(
+            "{{\"pdf_mode\":\"{}\",\"quality_tier\":\"{}\",\"classifier_version\":\"{}\",\"extractor_version\":\"{}\",\"page_classification\":\"{}\",\"planned_method\":\"{}\",\"actual_method\":{},\"fallback_reason\":{}}}",
+            json_escape(&self.pdf_mode),
+            json_escape(&self.quality_tier),
+            json_escape(&self.classifier_version),
+            json_escape(&self.extractor_version),
+            json_escape(&self.page_classification),
+            json_escape(&self.planned_method),
+            optional(&self.actual_method),
+            optional(&self.fallback_reason),
+        )
+    }
+}
+
+/// The sidecar contract used by resumed pages.  Keeping routing metadata in a
+/// separate result envelope lets v5 checkpoints remain readable by older CLI
+/// versions while new writers can persist the v6 routing decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingCheckpointResult {
+    pub page: u32,
+    pub routing: RoutingCheckpointMetadata,
+}
+
+impl RoutingCheckpointResult {
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"schema\":\"ocrx-result-v2\",\"page\":{},\"routing\":{}}}",
+            self.page,
+            self.routing.to_json()
+        )
+    }
+}
+
+pub fn write_routing_result(
+    path: impl AsRef<Path>,
+    result: &RoutingCheckpointResult,
+) -> io::Result<()> {
+    atomic_write(path, result.to_json().as_bytes())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1094,14 +1206,82 @@ pub fn merge_markdown(mut pages: Vec<PageMarkdown>) -> io::Result<String> {
     Ok(merged)
 }
 
+pub fn finalize_document(
+    output_root: impl AsRef<Path>,
+    pages: Vec<PageMarkdown>,
+) -> io::Result<()> {
+    let markdown = merge_markdown(pages)?;
+    atomic_write(
+        output_root.as_ref().join("document.md"),
+        markdown.as_bytes(),
+    )
+}
+
+pub fn collect_page_markdowns(
+    output_root: impl AsRef<Path>,
+    page_numbers: &[u32],
+) -> io::Result<Vec<PageMarkdown>> {
+    page_numbers
+        .iter()
+        .map(|page| {
+            let path = output_root.as_ref().join(format!("page-{page:04}.md"));
+            Ok(PageMarkdown {
+                page_number: *page,
+                content: fs::read_to_string(path)?,
+            })
+        })
+        .collect()
+}
+
 fn normalize_lf(value: &str) -> String {
     value.replace("\r\n", "\n").replace('\r', "\n")
 }
 
 impl PageCheckpoint {
     #[must_use]
+    pub fn resume_action(
+        &self,
+        expected: &CompatibilityKey,
+        root: &Path,
+        page: u32,
+    ) -> CheckpointResumeAction {
+        match self.state(expected, root, page) {
+            CheckpointState::Committed => CheckpointResumeAction::SkipCommitted,
+            CheckpointState::PendingOcr => CheckpointResumeAction::QueueOcr,
+            CheckpointState::Reprocess => CheckpointResumeAction::Reprocess,
+        }
+    }
+
+    #[must_use]
+    pub fn state(&self, expected: &CompatibilityKey, root: &Path, page: u32) -> CheckpointState {
+        match self.disposition(expected, root, page) {
+            CheckpointDisposition::Reuse => CheckpointState::Committed,
+            CheckpointDisposition::PendingOcr => CheckpointState::PendingOcr,
+            CheckpointDisposition::Reprocess => CheckpointState::Reprocess,
+        }
+    }
+
+    #[must_use]
+    pub fn disposition(
+        &self,
+        expected: &CompatibilityKey,
+        root: &Path,
+        page: u32,
+    ) -> CheckpointDisposition {
+        if self.is_reusable_at(expected, root, page) {
+            CheckpointDisposition::Reuse
+        } else if self.is_pending_ocr(expected) {
+            CheckpointDisposition::PendingOcr
+        } else {
+            CheckpointDisposition::Reprocess
+        }
+    }
+
+    #[must_use]
     pub fn is_reusable(&self, expected: &CompatibilityKey) -> bool {
-        self.complete && &self.compatibility == expected && !self.output_sha256.is_empty()
+        self.complete
+            && self.compatibility.matches_page_compatibility(expected)
+            && !self.output_sha256.is_empty()
     }
 
     #[must_use]
@@ -1116,6 +1296,17 @@ impl PageCheckpoint {
         artifact_sha256(&markdown, root)
             .map(|hash| hash == self.output_sha256)
             .unwrap_or(false)
+    }
+
+    /// Identifies an analyzed page whose final result is intentionally waiting
+    /// for the OCR phase. It is recoverable, but never a completed artifact.
+    #[must_use]
+    pub fn is_pending_ocr(&self, expected: &CompatibilityKey) -> bool {
+        let pending_base = without_pending_marker(&self.compatibility);
+        let expected_base = without_pending_marker(expected);
+        !self.complete
+            && pending_base.matches_page_compatibility(&expected_base)
+            && self.compatibility.parameters.contains("pending-ocr=true")
     }
 
     fn diagnostic(&self) -> PageDiagnostic {
@@ -1173,7 +1364,7 @@ fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
 
 pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> io::Result<()> {
     let content = format!(
-        "ocrx-checkpoint-v4\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\nwarnings={}\naudit={}\n",
+        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\nwarnings={}\naudit={}\n",
         checkpoint.page_number,
         encode_field(&checkpoint.compatibility.input_sha256),
         encode_field(&checkpoint.compatibility.model),
@@ -1200,7 +1391,7 @@ fn write_render_audit(root: &Path, page: u32, audit: RenderAudit) -> io::Result<
 
 pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
     let content = fs::read_to_string(path)?;
-    if content.lines().next() != Some("ocrx-checkpoint-v4") {
+    if content.lines().next() != Some("ocrx-checkpoint-v5") {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "unsupported checkpoint version",
@@ -1384,12 +1575,6 @@ pub fn validate_output_root(
             "output root is the input path",
         ));
     }
-    if is_broad_or_system_path(output) {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "output root is a broad or system directory",
-        ));
-    }
     for protected in protected_roots {
         if output == *protected || output.starts_with(protected) || protected.starts_with(output) {
             return Err(io::Error::new(
@@ -1399,36 +1584,6 @@ pub fn validate_output_root(
         }
     }
     Ok(())
-}
-
-/// Returns `true` when `path` is too broad or sensitive to use as an output
-/// root - i.e. a recursive delete into it would be catastrophic. Rejects
-/// filesystem roots (`/`, `C:\`), the process temp dir, the user's home
-/// directory, and the Windows system root (`%SystemRoot%`, e.g. `C:\Windows`).
-/// This is a conservative guard: it only blocks the genuinely dangerous
-/// broad targets, never a normal project output directory.
-fn is_broad_or_system_path(path: &Path) -> bool {
-    // Filesystem root: a path with no parent (e.g. `/`, `C:\`).
-    if path.parent().is_none() {
-        return true;
-    }
-    if path == std::env::temp_dir() {
-        return true;
-    }
-    if let Some(home) = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-    {
-        if path == home {
-            return true;
-        }
-    }
-    if let Some(system_root) = std::env::var_os("SystemRoot").map(PathBuf::from) {
-        if path == system_root || path == system_root.join("System32") {
-            return true;
-        }
-    }
-    false
 }
 
 pub fn remove_for_overwrite(
@@ -1483,12 +1638,57 @@ pub fn commit_page(
     )
 }
 
-pub fn temporary_path(path: &Path) -> PathBuf {
-    // The temp file is co-located in the target's parent directory so that
-    // `fs::rename` never crosses a volume boundary on Windows (`MoveFileEx`
-    // fails with `ERROR_NOT_SAME_DEVICE` across volumes). A `.part` suffix
-    // plus the process id keeps concurrent writers from colliding and marks
-    // the file as incomplete for crash-recovery sweeps.
+/// Commits a page produced by the native PDF text path without creating a
+/// synthetic raster image. The checkpoint becomes complete only after the
+/// markdown and page JSON artifacts are durable.
+pub fn commit_native_page(
+    output_root: impl AsRef<Path>,
+    page_number: u32,
+    markdown: &str,
+    page_json: &str,
+    checkpoint: &PageCheckpoint,
+) -> io::Result<()> {
+    if page_number == 0 || checkpoint.page_number != page_number {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "checkpoint page mismatch",
+        ));
+    }
+    let root = output_root.as_ref();
+    atomic_write(
+        root.join(format!("page-{page_number:04}.md")),
+        normalize_lf(markdown).as_bytes(),
+    )?;
+    atomic_write(
+        root.join(format!("page-{page_number:04}.json")),
+        page_json.as_bytes(),
+    )?;
+    let output_sha256 = artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
+    write_checkpoint(
+        root.join(format!("page-{page_number:04}.checkpoint")),
+        &PageCheckpoint {
+            complete: true,
+            output_sha256,
+            ..checkpoint.clone()
+        },
+    )
+}
+
+pub fn commit_native_page_and_collect(
+    output_root: impl AsRef<Path>,
+    page_number: u32,
+    markdown: &str,
+    page_json: &str,
+    checkpoint: &PageCheckpoint,
+) -> io::Result<PageMarkdown> {
+    commit_native_page(&output_root, page_number, markdown, page_json, checkpoint)?;
+    Ok(PageMarkdown {
+        page_number,
+        content: normalize_lf(markdown),
+    })
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
     let name = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -1499,12 +1699,14 @@ pub fn temporary_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        CancellationToken, CompatibilityKey, ErrorReport, GenerationProgress, Heartbeat, JobStatus,
-        JobSummary, ModelLoader, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint,
-        PageDiagnostic, PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus,
-        ProgressEvent, ProgressMode, ProgressSnapshot, RenderAudit, RenderedPage, ReportFormat,
-        Reporter, ResultReport, ResultStatus, ScanController, ScanService, atomic_write,
-        format_report, redact_sensitive,
+        CancellationToken, CheckpointDisposition, CheckpointResumeAction, CheckpointState,
+        CompatibilityKey, ErrorReport, Heartbeat, JobStatus, JobSummary, ModelLoader, OcrQueuePage,
+        PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic, PageLifecycle,
+        PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent, ProgressMode,
+        ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat, Reporter,
+        ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
+        ScanController, ScanService, atomic_write, classify_recognition_error, format_report,
+        merge_job_summaries, recover_pending_ocr_queue,
     };
     use std::fs;
 
@@ -1574,72 +1776,6 @@ mod tests {
                 truncated: false,
                 warnings: Vec::new(),
             })
-        }
-    }
-
-    /// Configurable artifact recognizer for W3.3 state-machine scenarios: it
-    /// can fail recognition, mark a page truncated (max-token), and request
-    /// cancellation after a given page so mid-run cancellation is deterministic
-    /// (no threads, no timing).
-    #[allow(clippy::struct_excessive_bools)]
-    struct ScenarioArtifacts {
-        fail_page: Option<u32>,
-        truncate_page: Option<u32>,
-        cancel_after: Option<u32>,
-        token: CancellationToken,
-        calls: Vec<u32>,
-    }
-    impl PageArtifactRecognizer<u32> for ScenarioArtifacts {
-        fn recognize_artifact(
-            &mut self,
-            _model: &mut u32,
-            page: u32,
-            _image: &RenderedPage,
-        ) -> std::io::Result<PageArtifactResult> {
-            self.calls.push(page);
-            if self.fail_page == Some(page) {
-                return Err(std::io::Error::other("recognition"));
-            }
-            if self.cancel_after == Some(page) {
-                self.token.request_cancel();
-            }
-            Ok(PageArtifactResult {
-                png: vec![page as u8],
-                markdown: format!("page {page}"),
-                page_json: String::new(),
-                truncated: self.truncate_page == Some(page),
-                warnings: Vec::new(),
-            })
-        }
-    }
-
-    struct CancellingArtifacts;
-    impl PageArtifactRecognizer<u32> for CancellingArtifacts {
-        fn recognize_artifact(
-            &mut self,
-            _model: &mut u32,
-            page: u32,
-            _image: &RenderedPage,
-        ) -> std::io::Result<PageArtifactResult> {
-            Ok(PageArtifactResult {
-                png: vec![page as u8],
-                markdown: format!("page {page}"),
-                page_json: String::new(),
-                truncated: false,
-                warnings: Vec::new(),
-            })
-        }
-
-        fn recognize_artifact_cancelled(
-            &mut self,
-            _model: &mut u32,
-            _page: u32,
-            _image: &RenderedPage,
-            cancellation: &CancellationToken,
-            _progress: &mut dyn FnMut(GenerationProgress),
-        ) -> std::io::Result<PageArtifactResult> {
-            cancellation.request_cancel();
-            Err(std::io::Error::other("cancelled"))
         }
     }
 
@@ -1809,6 +1945,31 @@ mod tests {
     }
 
     #[test]
+    fn progress_stage_names_are_stable_machine_values() {
+        let stages = [
+            ProgressStage::Analyzing,
+            ProgressStage::Extracting,
+            ProgressStage::Rendering,
+            ProgressStage::Recognizing,
+            ProgressStage::Merging,
+        ];
+        let events: Vec<_> = stages
+            .into_iter()
+            .map(|stage| ProgressEvent::for_stage(stage, None, 0, 1).event)
+            .collect();
+        assert_eq!(
+            events,
+            vec![
+                "analyzing",
+                "extracting",
+                "rendering",
+                "recognizing",
+                "merging"
+            ]
+        );
+    }
+
+    #[test]
     fn reporter_keeps_json_result_on_stdout_and_progress_on_stderr() {
         let mut reporter = Reporter::default();
         reporter.result(
@@ -1882,61 +2043,6 @@ mod tests {
     }
 
     #[test]
-    fn redact_sensitive_covers_prompt_ocr_token_proxy_auth_and_query_url() {
-        // prompt body (quoted, multi-word) must not leak past the first word.
-        let prompt = redact_sensitive(r#"prompt:"Recognize all text and reply with JSON""#);
-        assert!(!prompt.contains("Recognize"));
-        assert!(!prompt.contains("reply with JSON"));
-        // OCR body text (quoted, multi-word) must not leak past the first word.
-        let ocr = redact_sensitive(r#"ocr:"INVOICE TOTAL DUE $1,234.56""#);
-        assert!(!ocr.contains("INVOICE"));
-        assert!(!ocr.contains("TOTAL DUE"));
-        // a bare bearer token not preceded by a recognized key must not leak.
-        let token = redact_sensitive("received bearer eyJhbGciOiJIUzI1NiJ9.abc.def from upstream");
-        assert!(!token.contains("eyJhbGciOiJIUzI1NiJ9"));
-        // proxy auth credentials embedded in a URL must not leak.
-        let proxy = redact_sensitive("via http://alice:hunter2@gateway.test:8080 now");
-        assert!(!proxy.contains("hunter2"));
-        assert!(!proxy.contains("alice"));
-        // a URL with query parameters must not leak param values.
-        let query =
-            redact_sensitive("GET https://gateway.internal/ingest?secret=s3cr3tvalue&user=bob");
-        assert!(!query.contains("s3cr3tvalue"));
-        assert!(!query.contains("bob"));
-    }
-
-    #[test]
-    fn reporter_capture_redacts_bare_sensitive_values_on_success_and_error_paths() {
-        let mut reporter = Reporter::default();
-        // success path: a bare proxy URL with embedded credentials in output_dir.
-        reporter.result(
-            &ResultReport {
-                job_id: "job-7".to_owned(),
-                status: ResultStatus::Success,
-                total_pages: 1,
-                completed_pages: 1,
-                failed_pages: 0,
-                output_dir: "uploaded via https://alice:hunter2@gateway.test/u".to_owned(),
-            },
-            ReportFormat::Json,
-        );
-        assert!(!reporter.stdout.contains("hunter2"));
-        // error path (JSON): a bare bearer token in message, query URL in cause.
-        reporter.error(
-            &ErrorReport {
-                code: 5,
-                kind: "upstream".to_owned(),
-                message: "received bearer eyJhbGciOiJIUzI1NiJ9.abc.def from upstream".to_owned(),
-                cause: Some("GET https://gateway.internal/ingest?secret=s3cr3tvalue".to_owned()),
-                suggestion: None,
-            },
-            ReportFormat::Json,
-        );
-        assert!(!reporter.stdout.contains("eyJhbGciOiJIUzI1NiJ9"));
-        assert!(!reporter.stdout.contains("s3cr3tvalue"));
-    }
-
-    #[test]
     fn progress_jsonl_and_error_json_are_stable() {
         let event = ProgressEvent {
             event: "page_progress".to_owned(),
@@ -1984,111 +2090,24 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    // --- W2.3: Windows temp dir + atomic write contract ----------------------
-    //
-    // The frozen atomic-write implementation must (a) co-locate the temp file
-    // with the target so `fs::rename` never crosses volumes on Windows, and
-    // (b) clean up the `.part` temp when the rename fails. These characterize
-    // the already-shipped behavior so a regression on Windows is caught.
-
-    #[test]
-    fn temporary_path_colocates_with_target_to_avoid_cross_volume_rename() {
-        let target = std::path::Path::new("/tmp/ocrx/page-0001.md");
-        let temp = super::temporary_path(target);
-        assert_eq!(
-            temp.parent(),
-            target.parent(),
-            "temp must share the target's parent dir so fs::rename never crosses volumes"
-        );
-        let name = temp.file_name().unwrap().to_string_lossy().into_owned();
-        assert!(name.starts_with('.'), "temp name should be hidden: {name}");
-        assert!(
-            name.contains(".part"),
-            "temp name should mark .part: {name}"
-        );
-    }
-
-    #[test]
-    fn atomic_write_cleans_part_file_when_rename_fails() {
-        let directory = test_dir("part-cleanup");
-        let _ = fs::remove_dir_all(&directory);
-        fs::create_dir_all(&directory).unwrap();
-        // Target is an existing directory: renaming a file over a directory
-        // fails on both Windows (`MoveFileEx`) and Unix (`rename`), so the
-        // `.part` temp created moments earlier must be removed, not left behind.
-        let target = directory.join("result");
-        fs::create_dir(&target).unwrap();
-        assert!(atomic_write(&target, b"content").is_err());
-        assert!(target.is_dir(), "directory target must be left untouched");
-        let leftover: Vec<String> = fs::read_dir(&directory)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .filter(|name| name.contains(".part"))
-            .collect();
-        assert!(
-            leftover.is_empty(),
-            "leftover .part files after failed rename: {leftover:?}"
-        );
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn output_root_rejects_broad_and_system_directories() {
-        use std::path::Path;
-        let input = std::env::temp_dir().join(format!("ocrx-input-{}.pdf", std::process::id()));
-        let protected: [&Path; 0] = [];
-        // Filesystem root is never a valid output root.
-        let root = if cfg!(windows) {
-            Path::new("C:\\")
-        } else {
-            Path::new("/")
-        };
-        assert!(
-            super::validate_output_root(&input, root, &protected).is_err(),
-            "filesystem root must be rejected as a broad directory"
-        );
-        // The process temp dir is too broad to recursively delete into.
-        assert!(
-            super::validate_output_root(&input, std::env::temp_dir(), &protected).is_err(),
-            "temp dir must be rejected as a broad directory"
-        );
-        // The user's home directory is too broad.
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .map(std::path::PathBuf::from);
-        if let Some(home) = home {
-            assert!(
-                super::validate_output_root(&input, &home, &protected).is_err(),
-                "home directory must be rejected as a broad directory"
-            );
-        }
-    }
-
     #[test]
     fn output_root_rejects_relative_and_protected_paths() {
-        let base = std::env::temp_dir().join(format!("ocrx-output-root-{}", std::process::id()));
-        let input = base.join("work/input.pdf");
-        let cache = base.join("work/.cache");
-        let workspace = base.join("work");
-        let protected = [cache.as_path(), workspace.as_path()];
-        assert!(super::validate_output_root(&input, "relative", &protected).is_err());
-        assert!(super::validate_output_root(&input, &workspace, &protected).is_err());
-        assert!(super::validate_output_root(&input, &cache.join("job"), &protected).is_err());
+        let input = std::path::Path::new("/work/input.pdf");
+        let cache = std::path::Path::new("/work/.cache");
+        let workspace = std::path::Path::new("/work");
+        assert!(super::validate_output_root(input, "relative", &[cache, workspace]).is_err());
+        assert!(super::validate_output_root(input, "/work", &[cache, workspace]).is_err());
         assert!(
-            super::validate_output_root(&input, &workspace.join("result"), &protected).is_err()
+            super::validate_output_root(input, "/work/.cache/job", &[cache, workspace]).is_err()
         );
+        assert!(super::validate_output_root(input, "/work/result", &[cache, workspace]).is_err());
     }
 
     #[test]
     fn output_root_accepts_unrelated_absolute_path() {
-        let base =
-            std::env::temp_dir().join(format!("ocrx-output-unrelated-{}", std::process::id()));
-        let input = base.join("work/input.pdf");
-        let cache = base.join("work/.cache");
-        let protected = [cache.as_path()];
-        assert!(
-            super::validate_output_root(&input, &base.join("tmp/ocr-result"), &protected).is_ok()
-        );
+        let input = std::path::Path::new("/work/input.pdf");
+        let cache = std::path::Path::new("/work/.cache");
+        assert!(super::validate_output_root(input, "/tmp/ocr-result", &[cache]).is_ok());
     }
 
     #[test]
@@ -2136,32 +2155,392 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_does_not_cross_reuse_between_platform_backends() {
-        // W3.3 acceptance: a checkpoint produced by one platform/backend must
-        // not be reused under another platform/backend, even if the input,
-        // model, profile, and DPI are identical. The compatibility key is the
-        // only trust boundary; the stable checkpoint format itself is shared.
-        let windows_cpu = CompatibilityKey {
+    fn native_checkpoint_ignores_ocr_only_configuration_changes() {
+        let native = CompatibilityKey {
             input_sha256: "input".to_owned(),
             model: "ovisocr2".to_owned(),
-            profile: "compact".to_owned(),
-            parameters: "dpi=300;device=cpu".to_owned(),
+            profile: "native".to_owned(),
+            parameters: "pdf-mode=auto;quality-tier=l2;classifier=c;extractor=e;dpi=300;tokens=4096;device=cpu;route=native".to_owned(),
         };
-        let macos_metal = CompatibilityKey {
-            parameters: "dpi=300;device=metal".to_owned(),
-            ..windows_cpu.clone()
+        let changed_ocr = CompatibilityKey {
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto;quality-tier=l2;classifier=c;extractor=e;dpi=300;tokens=8192;device=metal;route=native".to_owned(),
+            ..native.clone()
         };
         let checkpoint = PageCheckpoint {
             page_number: 1,
-            compatibility: windows_cpu.clone(),
+            compatibility: native,
             complete: true,
             output_sha256: "output".to_owned(),
             truncated: false,
             warnings: Vec::new(),
             audit: None,
         };
-        assert!(checkpoint.is_reusable(&windows_cpu));
-        assert!(!checkpoint.is_reusable(&macos_metal));
+        assert!(checkpoint.is_reusable(&changed_ocr));
+    }
+
+    #[test]
+    fn effective_ocr_checkpoint_rejects_changed_profile_or_device() {
+        let stored = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "compact".to_owned(),
+            parameters: "pdf-mode=auto;quality-tier=l2;classifier=c;extractor=e;dpi=300;ocr-profile=compact;ocr-device=cpu".to_owned(),
+        };
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: stored.clone(),
+            complete: true,
+            output_sha256: "output".to_owned(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        let changed = CompatibilityKey {
+            profile: "quality".to_owned(),
+            parameters: stored
+                .parameters
+                .replace("compact;ocr-device=cpu", "quality;ocr-device=metal"),
+            ..stored.clone()
+        };
+        assert!(!checkpoint.is_reusable(&changed));
+    }
+
+    #[test]
+    fn pdf_compatibility_fragment_changes_when_routing_contract_changes() {
+        let base = super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v1", "pdf-text-v1");
+        assert_eq!(
+            base,
+            "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;extractor=pdf-text-v1"
+        );
+        assert_ne!(
+            base,
+            super::pdf_compatibility_parameters("auto", "l1", "pdf-route-v1", "pdf-text-v1")
+        );
+        assert_ne!(
+            base,
+            super::pdf_compatibility_parameters("text", "l2", "pdf-route-v1", "pdf-text-v1")
+        );
+        assert_ne!(
+            base,
+            super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v2", "pdf-text-v1")
+        );
+    }
+
+    #[test]
+    fn incomplete_pending_ocr_checkpoint_is_recoverable_but_not_reusable() {
+        let expected = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto;pending-ocr=true".to_owned(),
+        };
+        let checkpoint = PageCheckpoint {
+            page_number: 3,
+            compatibility: expected.clone(),
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: vec!["native_validation_failed".to_owned()],
+            audit: None,
+        };
+        assert!(checkpoint.is_pending_ocr(&expected));
+        assert!(!checkpoint.is_reusable(&expected));
+    }
+
+    #[test]
+    fn pending_ocr_marker_is_stable_and_idempotent() {
+        assert_eq!(
+            super::mark_pending_ocr("pdf-mode=auto"),
+            "pdf-mode=auto;pending-ocr=true"
+        );
+        assert_eq!(
+            super::mark_pending_ocr("pdf-mode=auto;pending-ocr=true"),
+            "pdf-mode=auto;pending-ocr=true"
+        );
+        assert_eq!(super::mark_pending_ocr(""), "pending-ocr=true");
+    }
+
+    #[test]
+    fn pending_ocr_checkpoint_factory_is_incomplete_and_recoverable() {
+        let checkpoint = super::pending_ocr_checkpoint(
+            4,
+            CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "ovisocr2".to_owned(),
+                profile: "quality".to_owned(),
+                parameters: "pdf-mode=auto".to_owned(),
+            },
+            "native_validation_failed",
+        );
+        assert!(!checkpoint.complete);
+        assert_eq!(checkpoint.page_number, 4);
+        assert_eq!(checkpoint.warnings, vec!["native_validation_failed"]);
+        assert!(
+            checkpoint
+                .compatibility
+                .parameters
+                .contains("pending-ocr=true")
+        );
+        assert!(checkpoint.is_pending_ocr(&checkpoint.compatibility));
+    }
+
+    #[test]
+    fn checkpoint_disposition_distinguishes_pending_and_reprocess_states() {
+        let root = test_dir("checkpoint-disposition");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto".to_owned(),
+        };
+        let pending = super::pending_ocr_checkpoint(4, compatibility.clone(), "native_failed");
+        assert_eq!(
+            pending.disposition(&pending.compatibility, &root, 4),
+            CheckpointDisposition::PendingOcr
+        );
+        assert_eq!(
+            pending.disposition(
+                &CompatibilityKey {
+                    parameters: "pdf-mode=ocr".to_owned(),
+                    ..compatibility.clone()
+                },
+                &root,
+                4,
+            ),
+            CheckpointDisposition::Reprocess
+        );
+        let incomplete = PageCheckpoint {
+            page_number: 4,
+            compatibility,
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        assert_eq!(
+            incomplete.disposition(&incomplete.compatibility, &root, 4),
+            CheckpointDisposition::Reprocess
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn checkpoint_state_machine_exposes_recovery_states() {
+        let root = test_dir("checkpoint-state");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "quality".to_owned(),
+            parameters: "pdf-mode=auto".to_owned(),
+        };
+        let pending = super::pending_ocr_checkpoint(4, compatibility, "native_failed");
+        assert_eq!(
+            pending.state(&pending.compatibility, &root, 4),
+            CheckpointState::PendingOcr
+        );
+        assert_eq!(
+            pending.state(
+                &CompatibilityKey {
+                    parameters: "pdf-mode=ocr".to_owned(),
+                    ..pending.compatibility.clone()
+                },
+                &root,
+                4
+            ),
+            CheckpointState::Reprocess
+        );
+        assert_eq!(
+            pending.resume_action(&pending.compatibility, &root, 4),
+            CheckpointResumeAction::QueueOcr
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recovery_rebuilds_sorted_pending_ocr_queue_from_checkpoint_directory() {
+        let root = test_dir("recover-pending");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".into(),
+            model: "ovisocr2".into(),
+            profile: "quality".into(),
+            parameters: "pdf-mode=auto".into(),
+        };
+        let pending_compatibility =
+            super::pending_ocr_checkpoint(1, compatibility.clone(), "early").compatibility;
+        for (page, reason) in [(3, "late"), (1, "early")] {
+            super::write_checkpoint(
+                root.join(format!("page-{page:04}.checkpoint")),
+                &super::pending_ocr_checkpoint(page, pending_compatibility.clone(), reason),
+            )
+            .unwrap();
+        }
+        let queue = recover_pending_ocr_queue(&root, &compatibility).unwrap();
+        assert_eq!(
+            queue.iter().map(|page| page.page).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(queue[0].fallback_reason.as_deref(), Some("early"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recovery_ignores_pending_checkpoint_from_another_input() {
+        let root = test_dir("recover-incompatible");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let stored = CompatibilityKey {
+            input_sha256: "other-input".into(),
+            model: "ovisocr2".into(),
+            profile: "quality".into(),
+            parameters: "pdf-mode=auto".into(),
+        };
+        let expected = CompatibilityKey {
+            input_sha256: "current-input".into(),
+            ..stored.clone()
+        };
+        let checkpoint = super::pending_ocr_checkpoint(2, stored, "fallback");
+        super::write_checkpoint(root.join("page-0002.checkpoint"), &checkpoint).unwrap();
+        assert!(
+            recover_pending_ocr_queue(&root, &expected)
+                .unwrap()
+                .is_empty()
+        );
+        let expected_different_parameters = CompatibilityKey {
+            input_sha256: "other-input".into(),
+            parameters: "pdf-mode=ocr".into(),
+            ..expected
+        };
+        assert!(
+            recover_pending_ocr_queue(&root, &expected_different_parameters)
+                .unwrap()
+                .is_empty()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn routing_checkpoint_metadata_has_stable_v6_json_shape() {
+        let metadata = RoutingCheckpointMetadata {
+            pdf_mode: "auto".to_owned(),
+            quality_tier: "l2".to_owned(),
+            classifier_version: "pdf-route-v1".to_owned(),
+            extractor_version: "pdf-native-v1".to_owned(),
+            page_classification: "text".to_owned(),
+            planned_method: "native_text".to_owned(),
+            actual_method: None,
+            fallback_reason: None,
+        };
+        assert_eq!(
+            metadata.to_json(),
+            "{\"pdf_mode\":\"auto\",\"quality_tier\":\"l2\",\"classifier_version\":\"pdf-route-v1\",\"extractor_version\":\"pdf-native-v1\",\"page_classification\":\"text\",\"planned_method\":\"native_text\",\"actual_method\":null,\"fallback_reason\":null}"
+        );
+    }
+
+    #[test]
+    fn routing_checkpoint_result_persists_v6_metadata_in_result_json() {
+        let result = RoutingCheckpointResult {
+            page: 4,
+            routing: RoutingCheckpointMetadata {
+                pdf_mode: "auto".to_owned(),
+                quality_tier: "l2".to_owned(),
+                classifier_version: "pdf-route-v1".to_owned(),
+                extractor_version: "pdf-native-v1".to_owned(),
+                page_classification: "mixed".to_owned(),
+                planned_method: "native_text".to_owned(),
+                actual_method: Some("ocr".to_owned()),
+                fallback_reason: Some("native_validation_failed".to_owned()),
+            },
+        };
+        assert!(result.to_json().contains("\"schema\":\"ocrx-result-v2\""));
+        assert!(result.to_json().contains("\"actual_method\":\"ocr\""));
+        assert!(result.to_json().contains("native_validation_failed"));
+    }
+
+    #[test]
+    fn ocr_queue_merge_sorts_deduplicates_and_keeps_fallback_reason() {
+        let initial = vec![
+            OcrQueuePage {
+                page: 4,
+                fallback_reason: None,
+            },
+            OcrQueuePage {
+                page: 2,
+                fallback_reason: None,
+            },
+        ];
+        let fallback = vec![
+            OcrQueuePage {
+                page: 3,
+                fallback_reason: Some("native_validation_failed".to_owned()),
+            },
+            OcrQueuePage {
+                page: 4,
+                fallback_reason: Some("duplicate_text".to_owned()),
+            },
+        ];
+        assert_eq!(
+            super::merge_ocr_queue(&initial, &fallback),
+            vec![
+                OcrQueuePage {
+                    page: 2,
+                    fallback_reason: None
+                },
+                OcrQueuePage {
+                    page: 3,
+                    fallback_reason: Some("native_validation_failed".to_owned())
+                },
+                OcrQueuePage {
+                    page: 4,
+                    fallback_reason: Some("duplicate_text".to_owned())
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn native_fallback_queue_keeps_only_failed_candidates_with_reasons() {
+        let candidates = vec![
+            (1, Ok(())),
+            (2, Err("native_structure_unresolved".to_owned())),
+        ];
+        assert_eq!(
+            super::native_fallback_queue(&candidates),
+            vec![OcrQueuePage {
+                page: 2,
+                fallback_reason: Some("native_structure_unresolved".to_owned())
+            }]
+        );
+    }
+
+    #[test]
+    fn native_fallback_queue_is_sorted_and_deduplicated_by_page() {
+        let candidates = vec![
+            (4, Err("later".to_owned())),
+            (2, Err("first".to_owned())),
+            (4, Err("duplicate".to_owned())),
+            (3, Ok(())),
+        ];
+        assert_eq!(
+            super::native_fallback_queue(&candidates),
+            vec![
+                OcrQueuePage {
+                    page: 2,
+                    fallback_reason: Some("first".to_owned()),
+                },
+                OcrQueuePage {
+                    page: 4,
+                    fallback_reason: Some("later".to_owned()),
+                },
+            ]
+        );
     }
 
     #[test]
@@ -2186,6 +2565,8 @@ mod tests {
         super::write_checkpoint(&path, &checkpoint).unwrap();
         assert_eq!(super::read_checkpoint(&path).unwrap(), checkpoint);
         assert!(super::read_checkpoint(directory.join("missing")).is_err());
+        fs::write(directory.join("legacy.checkpoint"), "ocrx-checkpoint-v4\n").unwrap();
+        assert!(super::read_checkpoint(directory.join("legacy.checkpoint")).is_err());
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -2234,20 +2615,57 @@ mod tests {
     }
 
     #[test]
+    fn finalize_document_merges_native_and_ocr_pages_in_pdf_order() {
+        let directory = test_dir("finalize-document");
+        let _ = fs::remove_dir_all(&directory);
+        super::finalize_document(
+            &directory,
+            vec![
+                PageMarkdown {
+                    page_number: 2,
+                    content: "ocr".to_owned(),
+                },
+                PageMarkdown {
+                    page_number: 1,
+                    content: "native".to_owned(),
+                },
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(directory.join("document.md")).unwrap(),
+            "<!-- page: 1 -->\nnative\n<!-- page: 2 -->\nocr"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn collect_page_markdowns_reads_existing_page_artifacts_in_requested_order() {
+        let directory = test_dir("collect-page-markdowns");
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("page-0002.md"), "second").unwrap();
+        fs::write(directory.join("page-0001.md"), "first").unwrap();
+
+        let pages = super::collect_page_markdowns(&directory, &[2, 1]).unwrap();
+
+        assert_eq!(pages[0].page_number, 2);
+        assert_eq!(pages[0].content, "second");
+        assert_eq!(pages[1].page_number, 1);
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
     fn overwrite_removes_only_an_allowed_output_root() {
         let directory = test_dir("overwrite");
         let _ = fs::remove_dir_all(&directory);
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("old"), b"old").unwrap();
-        let base = std::env::temp_dir().join(format!("ocrx-overwrite-{}", std::process::id()));
-        let input = base.join("work/input.pdf");
-        let protected = base.join("work/.cache");
-        super::remove_for_overwrite(&input, &directory, &[protected.as_path()]).unwrap();
+        let input = std::path::Path::new("/work/input.pdf");
+        let protected = std::path::Path::new("/work/.cache");
+        super::remove_for_overwrite(input, &directory, &[protected]).unwrap();
         assert!(!directory.exists());
-        assert!(
-            super::remove_for_overwrite(&input, &base.join("work"), &[protected.as_path()])
-                .is_err()
-        );
+        assert!(super::remove_for_overwrite(input, "/work", &[protected]).is_err());
     }
 
     #[test]
@@ -2277,6 +2695,79 @@ mod tests {
             super::read_checkpoint(directory.join("page-0001.checkpoint"))
                 .unwrap()
                 .complete
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn native_page_commit_does_not_create_raster_asset() {
+        let directory = test_dir("native-page-commit");
+        let _ = fs::remove_dir_all(&directory);
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "none".to_owned(),
+                profile: "none".to_owned(),
+                parameters: "pdf-mode=auto".to_owned(),
+            },
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        super::commit_native_page(
+            &directory,
+            1,
+            "native text",
+            "{\"source\":\"pdf_text\"}",
+            &checkpoint,
+        )
+        .unwrap();
+        assert!(directory.join("page-0001.md").is_file());
+        assert!(directory.join("page-0001.json").is_file());
+        assert!(!directory.join("images/page-0001.png").exists());
+        assert!(
+            super::read_checkpoint(directory.join("page-0001.checkpoint"))
+                .unwrap()
+                .complete
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn native_page_commit_and_collect_returns_the_committed_markdown() {
+        let directory = test_dir("native-page-collect");
+        let _ = fs::remove_dir_all(&directory);
+        let checkpoint = PageCheckpoint {
+            page_number: 2,
+            compatibility: CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "none".to_owned(),
+                profile: "none".to_owned(),
+                parameters: "pdf-mode=auto".to_owned(),
+            },
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            warnings: Vec::new(),
+            audit: None,
+        };
+        let page = super::commit_native_page_and_collect(
+            &directory,
+            2,
+            "native\r\npage",
+            "{}",
+            &checkpoint,
+        )
+        .unwrap();
+        assert_eq!(
+            page,
+            PageMarkdown {
+                page_number: 2,
+                content: "native\npage".to_owned()
+            }
         );
         fs::remove_dir_all(directory).unwrap();
     }
@@ -2362,211 +2853,50 @@ mod tests {
         );
     }
 
-    // --- W3.3: cancellation / partial-completion state machine contract -----
-    //
-    // Exit-code and result-status mapping is consolidated on JobSummary so the
-    // CLI doesn't re-derive it from scattered bools; per-page diagnostics
-    // carry a stable stage/error_code for each failure mode; and mid-run
-    // cancellation stops taking new pages while keeping the committed
-    // checkpoint. All deterministic, no runtime, no threads.
-
     #[test]
-    fn job_summary_exit_code_and_result_status_match_stable_contract() {
-        let completed = JobSummary {
-            selected_pages: 2,
+    fn merge_job_summaries_combines_native_and_ocr_phases() {
+        let native = JobSummary {
+            selected_pages: 3,
             completed_pages: 2,
             failed_pages: 0,
             truncated_pages: 0,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
+            warnings: vec!["native warning".into()],
+            diagnostics: vec![PageDiagnostic {
+                page: 1,
+                status: "completed".into(),
+                stage: "native".into(),
+                error_code: None,
+                message: None,
+                audit: None,
+                warnings: Vec::new(),
+            }],
             cancelled: false,
         };
-        assert_eq!(completed.status(), JobStatus::Completed);
-        assert_eq!(completed.result_status(), ResultStatus::Success);
-        assert_eq!(completed.exit_code(), 0);
-
-        let partial = JobSummary {
-            selected_pages: 2,
-            completed_pages: 1,
-            failed_pages: 1,
-            truncated_pages: 0,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
-            cancelled: false,
-        };
-        assert_eq!(partial.status(), JobStatus::Partial);
-        assert_eq!(partial.result_status(), ResultStatus::Partial);
-        assert_eq!(partial.exit_code(), 10);
-
-        // A truncated page counts as completed but still yields partial/10.
-        let truncated = JobSummary {
-            selected_pages: 2,
-            completed_pages: 2,
-            failed_pages: 0,
-            truncated_pages: 1,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
-            cancelled: false,
-        };
-        assert_eq!(truncated.status(), JobStatus::Partial);
-        assert_eq!(truncated.result_status(), ResultStatus::Partial);
-        assert_eq!(truncated.exit_code(), 10);
-
-        let cancelled = JobSummary {
-            selected_pages: 2,
+        let ocr = JobSummary {
+            selected_pages: 1,
             completed_pages: 1,
             failed_pages: 0,
             truncated_pages: 0,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
-            cancelled: true,
+            warnings: vec!["ocr warning".into()],
+            diagnostics: vec![PageDiagnostic {
+                page: 3,
+                status: "completed".into(),
+                stage: "ocr".into(),
+                error_code: None,
+                message: None,
+                audit: None,
+                warnings: Vec::new(),
+            }],
+            cancelled: false,
         };
-        assert_eq!(cancelled.status(), JobStatus::Cancelled);
-        assert_eq!(cancelled.exit_code(), 130);
-    }
 
-    #[test]
-    fn scan_service_records_per_page_diagnostics_for_render_recognize_and_truncation() {
-        let root = test_dir("scan-diagnostics");
-        let _ = fs::remove_dir_all(&root);
-        let compatibility = CompatibilityKey {
-            input_sha256: "input".to_owned(),
-            model: "ovisocr2".to_owned(),
-            profile: "balanced".to_owned(),
-            parameters: "p".to_owned(),
-        };
-        // page 1: render fails; page 2: recognition fails; page 3: truncated;
-        // page 4: success. Remaining pages must continue after each failure.
-        let mut service = ScanService::new(
-            FakeRenderer {
-                calls: Vec::new(),
-                fail_page: Some(1),
-            },
-            FakeLoader { loads: 0 },
-            ScenarioArtifacts {
-                fail_page: Some(2),
-                truncate_page: Some(3),
-                cancel_after: None,
-                token: CancellationToken::new(),
-                calls: Vec::new(),
-            },
-        );
-        let summary = service
-            .run_with_checkpoints(&[1, 2, 3, 4], &root, &compatibility, false)
-            .unwrap();
-        assert_eq!(summary.completed_pages, 2, "page 3 (truncated) + page 4");
-        assert_eq!(
-            summary.failed_pages, 2,
-            "page 1 (render) + page 2 (recognize)"
-        );
-        assert_eq!(summary.truncated_pages, 1);
-        assert_eq!(summary.status(), JobStatus::Partial);
-        assert!(
-            !root.join("document.md").exists(),
-            "no final merge on partial"
-        );
+        let merged = merge_job_summaries(native, ocr);
 
-        let by_page: std::collections::BTreeMap<u32, &PageDiagnostic> = summary
-            .diagnostics
-            .iter()
-            .map(|diag| (diag.page, diag))
-            .collect();
-        assert_eq!(by_page[&1].stage, "render");
-        assert_eq!(by_page[&1].error_code.as_deref(), Some("render_failed"));
-        assert_eq!(by_page[&2].stage, "recognize");
-        assert_eq!(
-            by_page[&2].error_code.as_deref(),
-            Some("recognition_failed")
-        );
-        assert_eq!(
-            by_page[&3].status, "partial",
-            "truncated page reports partial"
-        );
-        assert_eq!(by_page[&4].status, "completed");
-        assert!(service.recognizer.calls == vec![2, 3, 4]);
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn scan_service_mid_run_cancellation_stops_new_pages_and_keeps_checkpoint() {
-        let root = test_dir("scan-mid-cancel");
-        let _ = fs::remove_dir_all(&root);
-        let token = CancellationToken::new();
-        let compatibility = CompatibilityKey {
-            input_sha256: "input".to_owned(),
-            model: "ovisocr2".to_owned(),
-            profile: "balanced".to_owned(),
-            parameters: "p".to_owned(),
-        };
-        // Cancel after page 1 completes: page 2 must not be processed, page 1's
-        // checkpoint stays, and the job is cancelled (exit 130).
-        let mut service = ScanService::new(
-            FakeRenderer {
-                calls: Vec::new(),
-                fail_page: None,
-            },
-            FakeLoader { loads: 0 },
-            ScenarioArtifacts {
-                fail_page: None,
-                truncate_page: None,
-                cancel_after: Some(1),
-                token: token.clone(),
-                calls: Vec::new(),
-            },
-        );
-        let summary = service
-            .run_with_checkpoints_cancelled(&[1, 2, 3], &root, &compatibility, false, false, &token)
-            .unwrap();
-        assert!(summary.cancelled);
-        assert_eq!(summary.completed_pages, 1);
-        assert_eq!(summary.status(), JobStatus::Cancelled);
-        assert_eq!(summary.exit_code(), 130);
-        assert!(
-            root.join("page-0001.checkpoint").exists(),
-            "committed checkpoint kept"
-        );
-        assert!(
-            !root.join("page-0002.checkpoint").exists(),
-            "page 2 not started"
-        );
-        assert_eq!(service.recognizer.calls, vec![1]);
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn scan_service_cancellation_during_recognition_marks_page_cancelled_and_skips_commit() {
-        let root = test_dir("scan-recognition-cancel");
-        let _ = fs::remove_dir_all(&root);
-        let token = CancellationToken::new();
-        let compatibility = CompatibilityKey {
-            input_sha256: "input".to_owned(),
-            model: "ovisocr2".to_owned(),
-            profile: "balanced".to_owned(),
-            parameters: "p".to_owned(),
-        };
-        let mut service = ScanService::new(
-            FakeRenderer {
-                calls: Vec::new(),
-                fail_page: None,
-            },
-            FakeLoader { loads: 0 },
-            CancellingArtifacts,
-        );
-        let summary = service
-            .run_with_checkpoints_cancelled(&[1, 2], &root, &compatibility, false, false, &token)
-            .unwrap();
-        assert!(summary.cancelled);
-        assert_eq!(summary.completed_pages, 0);
-        assert_eq!(summary.failed_pages, 0);
-        assert!(
-            !root.join("page-0001.checkpoint").exists(),
-            "the in-flight page must not be committed"
-        );
-        assert_eq!(summary.diagnostics.len(), 1);
-        assert_eq!(summary.diagnostics[0].page, 1);
-        assert_eq!(summary.diagnostics[0].status, "cancelled");
-        assert_eq!(summary.diagnostics[0].stage, "recognize");
-        let _ = fs::remove_dir_all(root);
+        assert_eq!(merged.selected_pages, 3);
+        assert_eq!(merged.completed_pages, 3);
+        assert_eq!(merged.warnings, vec!["native warning", "ocr warning"]);
+        assert_eq!(merged.diagnostics.len(), 2);
+        assert_eq!(merged.status(), JobStatus::Completed);
     }
 
     #[test]
@@ -2584,6 +2914,31 @@ mod tests {
         assert_eq!(ProgressSnapshot::new(0, 10, 20).eta_seconds, None);
         assert_eq!(ProgressSnapshot::new(5, 10, 20).eta_seconds, Some(20));
         assert_eq!(ProgressSnapshot::new(10, 10, 20).eta_seconds, None);
+    }
+
+    #[test]
+    fn backend_initialization_errors_have_device_specific_diagnostics() {
+        let error = std::io::Error::other("llama_init_from_model: failed to initialize backend");
+        assert_eq!(
+            classify_recognition_error(&error),
+            (
+                "device_unavailable",
+                "inference device initialization failed"
+            )
+        );
+        let error = std::io::Error::other("invalid image dimensions");
+        assert_eq!(
+            classify_recognition_error(&error),
+            ("recognition_failed", "page recognition failed")
+        );
+        let error = std::io::Error::other("page recognition failed: null reference from llama.cpp");
+        assert_eq!(
+            classify_recognition_error(&error),
+            (
+                "device_unavailable",
+                "inference device initialization failed"
+            )
+        );
     }
 
     #[test]

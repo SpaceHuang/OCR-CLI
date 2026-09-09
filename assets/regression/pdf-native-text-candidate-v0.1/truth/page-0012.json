@@ -1,0 +1,367 @@
+{
+  "schema_version": 2,
+  "page_number": 20,
+  "native_text": "问题是，在现实中，各类企业不重视协同力的持续运用，也没有为了提升\n企业的协同力而制定一系列奖惩措施，以至于在提升协同力的道路上半途而\n废。\n之所以出现这种情况，就是被“工作”，即没完没了的、令人讨厌的工作\n任务清单牵绊住了。\n对此，我们是能够理解的。人们总是觉得应该把手头的工作摆在第一位，\n尤其是在今天这种严峻的经济环境下，更是如此。在一天之内，你可能同时面\n临多个问题，比如你遇到了一位脾气暴躁的客户，需要为新来的员工开展培\n训，竞争对手掌握了某项可能将你打败的新技术，以及推特上爆发了一场突如\n其来的公关灾难等等。\n但事实上，如果你想摆脱工作中的痛苦，提升公司的协同力就是一条必由\n之路。在开始工作之前、工作进行期间以及完成工作之后，都要得到协同力的\n保障。协同力必须时刻辅佐工作的进行。\n这就会促使我们提出这样一个问题：协同力究竟要协同什么？\n答案就是：让使命、行动与结果协同起来。\n“使命”决定着一个公司要抵达的终点，也就是说，你要去哪里以及为什\n么去。同样重要的一点是，如果要成功完成一项使命，还必须回答好一个问\n题，即：“完成使命对于每个员工的生活意味着什么？”\n“行动”是指员工思考、探索、沟通和做事的方式。使命不是挂在墙上招\n来灰尘、惹人讥讽的牌匾，也不是堆砌一些晦涩的、华丽的辞藻就行了。要完\n成使命，必须付出切实的行动。\n“结果”是为了确保整个过程顺利推进。我们所说的结果，是指我们要根\n据员工是否认可使命、是否推动使命的完成及其工作效率来决定是否给予晋升\n和奖金。\n对你而言，这些要素可能听起来很熟悉，觉得它们是不言自明的，因为我\n们前面讲过，协同力不是个新课题。也可能恰恰相反，你听起来觉得很陌生，\n因为在现实中，真正实现协同力的企业是很罕见的。\n但无论哪种情况，我们都能向你保证一件事情：一旦具备了协同力，工作\n中就不会再走弯路或做无用功，而是会一往无前，过程中的痛苦也将烟消云",
+  "blocks": [
+    {
+      "text": "问题是，在现实中，各类企业不重视协同力的持续运用，也没有为了提升",
+      "bbox": {
+        "left": 173,
+        "top": 95,
+        "right": 872,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "企业的协同力而制定一系列奖惩措施，以至于在提升协同力的道路上半途而",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 872,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "废。",
+      "bbox": {
+        "left": 126,
+        "top": 145,
+        "right": 155,
+        "bottom": 161
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "之所以出现这种情况，就是被“工作”，即没完没了的、令人讨厌的工作",
+      "bbox": {
+        "left": 170,
+        "top": 179,
+        "right": 872,
+        "bottom": 195
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "任务清单牵绊住了。",
+      "bbox": {
+        "left": 126,
+        "top": 204,
+        "right": 308,
+        "bottom": 220
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "对此，我们是能够理解的。人们总是觉得应该把手头的工作摆在第一位，",
+      "bbox": {
+        "left": 170,
+        "top": 238,
+        "right": 858,
+        "bottom": 254
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "尤其是在今天这种严峻的经济环境下，更是如此。在一天之内，你可能同时面",
+      "bbox": {
+        "left": 127,
+        "top": 263,
+        "right": 873,
+        "bottom": 279
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "临多个问题，比如你遇到了一位脾气暴躁的客户，需要为新来的员工开展培",
+      "bbox": {
+        "left": 128,
+        "top": 288,
+        "right": 872,
+        "bottom": 304
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "训，竞争对手掌握了某项可能将你打败的新技术，以及推特上爆发了一场突如",
+      "bbox": {
+        "left": 127,
+        "top": 314,
+        "right": 872,
+        "bottom": 330
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "其来的公关灾难等等。",
+      "bbox": {
+        "left": 127,
+        "top": 339,
+        "right": 330,
+        "bottom": 355
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "但事实上，如果你想摆脱工作中的痛苦，提升公司的协同力就是一条必由",
+      "bbox": {
+        "left": 170,
+        "top": 373,
+        "right": 871,
+        "bottom": 389
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "之路。在开始工作之前、工作进行期间以及完成工作之后，都要得到协同力的",
+      "bbox": {
+        "left": 127,
+        "top": 398,
+        "right": 872,
+        "bottom": 414
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "保障。协同力必须时刻辅佐工作的进行。",
+      "bbox": {
+        "left": 127,
+        "top": 423,
+        "right": 504,
+        "bottom": 439
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这就会促使我们提出这样一个问题：协同力究竟要协同什么？",
+      "bbox": {
+        "left": 170,
+        "top": 457,
+        "right": 747,
+        "bottom": 473
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "答案就是：让使命、行动与结果协同起来。",
+      "bbox": {
+        "left": 170,
+        "top": 491,
+        "right": 570,
+        "bottom": 507
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "“使命”决定着一个公司要抵达的终点，也就是说，你要去哪里以及为什",
+      "bbox": {
+        "left": 180,
+        "top": 524,
+        "right": 873,
+        "bottom": 540
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "么去。同样重要的一点是，如果要成功完成一项使命，还必须回答好一个问",
+      "bbox": {
+        "left": 127,
+        "top": 550,
+        "right": 871,
+        "bottom": 566
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "题，即：“完成使命对于每个员工的生活意味着什么？”",
+      "bbox": {
+        "left": 127,
+        "top": 575,
+        "right": 661,
+        "bottom": 591
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "“行动”是指员工思考、探索、沟通和做事的方式。使命不是挂在墙上招",
+      "bbox": {
+        "left": 180,
+        "top": 609,
+        "right": 872,
+        "bottom": 625
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "来灰尘、惹人讥讽的牌匾，也不是堆砌一些晦涩的、华丽的辞藻就行了。要完",
+      "bbox": {
+        "left": 127,
+        "top": 634,
+        "right": 872,
+        "bottom": 650
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "成使命，必须付出切实的行动。",
+      "bbox": {
+        "left": 127,
+        "top": 659,
+        "right": 417,
+        "bottom": 675
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "“结果”是为了确保整个过程顺利推进。我们所说的结果，是指我们要根",
+      "bbox": {
+        "left": 180,
+        "top": 693,
+        "right": 873,
+        "bottom": 709
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "据员工是否认可使命、是否推动使命的完成及其工作效率来决定是否给予晋升",
+      "bbox": {
+        "left": 126,
+        "top": 718,
+        "right": 872,
+        "bottom": 734
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "和奖金。",
+      "bbox": {
+        "left": 127,
+        "top": 744,
+        "right": 199,
+        "bottom": 759
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "对你而言，这些要素可能听起来很熟悉，觉得它们是不言自明的，因为我",
+      "bbox": {
+        "left": 170,
+        "top": 777,
+        "right": 873,
+        "bottom": 793
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "们前面讲过，协同力不是个新课题。也可能恰恰相反，你听起来觉得很陌生，",
+      "bbox": {
+        "left": 127,
+        "top": 803,
+        "right": 858,
+        "bottom": 818
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "因为在现实中，真正实现协同力的企业是很罕见的。",
+      "bbox": {
+        "left": 128,
+        "top": 828,
+        "right": 613,
+        "bottom": 844
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "但无论哪种情况，我们都能向你保证一件事情：一旦具备了协同力，工作",
+      "bbox": {
+        "left": 170,
+        "top": 862,
+        "right": 872,
+        "bottom": 877
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "中就不会再走弯路或做无用功，而是会一往无前，过程中的痛苦也将烟消云",
+      "bbox": {
+        "left": 129,
+        "top": 887,
+        "right": 872,
+        "bottom": 903
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.267492,
+    "visible_characters": 775,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 12,
+  "source_page_number": 20,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

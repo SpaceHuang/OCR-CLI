@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "manifest_role": "pdf_native_quality_set",
+  "quality_set_type": "native_forbidden",
+  "set_id": "pdf-native-forbidden-v0.1",
+  "status": "ready_for_route_gate",
+  "page_count": 20,
+  "source_pdf": "/Users/space/Documents/Develop/OCR-CLI/.worktrees/pdf-content-aware-v0.2/assets/regression/pdf-native-forbidden-v0.1/inputs/image-only-20-pages.pdf",
+  "input_sha256": "51ebed25166fbb2df5bf5f497024c487ada9985338dd435389d9aabde9b2ff59",
+  "truth_version": "pdf-native-negative-v1",
+  "benchmark_version": "pdf-native-benchmark-v1",
+  "classifier_revision": "pdf-route-v1",
+  "extractor_revision": "pdf-text-v1",
+  "native_allowed": false,
+  "pages": [
+    {
+      "candidate_page": 1,
+      "source_page": 1,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 2,
+      "source_page": 2,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 3,
+      "source_page": 3,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 4,
+      "source_page": 4,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 5,
+      "source_page": 5,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 6,
+      "source_page": 6,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 7,
+      "source_page": 7,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 8,
+      "source_page": 8,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 9,
+      "source_page": 9,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 10,
+      "source_page": 10,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 11,
+      "source_page": 11,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 12,
+      "source_page": 12,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 13,
+      "source_page": 13,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 14,
+      "source_page": 14,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 15,
+      "source_page": 15,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 16,
+      "source_page": 16,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 17,
+      "source_page": 17,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 18,
+      "source_page": 18,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 19,
+      "source_page": 19,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    },
+    {
+      "candidate_page": 20,
+      "source_page": 20,
+      "expected_page_type": "image",
+      "native_allowed": false,
+      "truth_version": "pdf-native-negative-v1",
+      "expected_native_text_chars": 0,
+      "expected_native_blocks": 0
+    }
+  ],
+  "selection": {
+    "selection_basis": "deterministic image-only fixture with no PDF text objects"
+  },
+  "license": {
+    "redistributable": true,
+    "provenance": "Generated deterministic local test fixture."
+  }
+}

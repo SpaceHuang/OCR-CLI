@@ -1,0 +1,378 @@
+{
+  "schema_version": 2,
+  "page_number": 25,
+  "native_text": "尼尔森集团之所以能够实现长足发展，还在于它能够将这些信息以简明易\n懂的方式传递给客户，让客户理解。因此，为推动尼尔森集团的成功，第三个\n行动就是：以简明易懂的方式向客户传递信息。\n戴夫解释道：“数字世界变得势不可当，海量的数据足以淹没你。”在这\n种情况下，人们往往能够接收到从不同角度对同一个案例进行的解读，但这样\n只会让每一个人晕头转向。戴夫说：“如果我们能够以一种简明易懂、确凿无\n疑的方式为客户提出建议，我们将成为赢家。”（他们确实赢了。戴夫担任首\n席执行官的6年内，尼尔森集团的市值增加了两倍，是他上任伊始的3倍。）\n类似地，纳尔科公司的首席执行官方华德与其团队也确立了一系列落实新\n使命的关键行动。第一个就是要对节水拥有“圣战”般的热情。这种热情并不\n是让员工觉得“哦，节水听起来有点酷”，也不是让员工逢人便讲“我能告诉\n你我做的工作吗？我通过节水拯救世界”。\n方华德解释道：“我们要让员工每天早上一醒来打开电脑看到‘仪表’时\n就激动不已。”他说的“仪表”指的是纳尔科公司内部网络上的一个显示终\n端，用来显示该公司在全球范围内的总节水量，也能显示出为每一位用户节约\n了多少水。\n第二个行动是要对业绩增长拥有强烈渴望。这种增长不是个位数的增长。\n方华德断定，纳尔科公司的使命能召唤一批热衷于提升业绩的人才。这批人既\n要能发现之前被视为不可能的机遇，扩大客户群体，也要能开拓其他公司望而\n生畏的市场。2009年，在纳尔科公司所在的行业内，当大多数竞争对手由于害\n怕中国经济减速而徘徊不前之际，该公司却请一位能力高强、得到实践检验的\n高管去开拓亚洲市场，开拓新的增长点。这位高管将纳尔科公司的亚洲事业总\n部从舒适的新加坡搬迁到了上海，并在上海新建了一座办公大楼。这座大楼设\n施完善，里面包括一个客户及员工培训中心、技术研发中心以及营销中心等。\n纳尔科公司总部还允许亚洲事业总部不断招募杰出人才，其中包括大批中国工\n程师，这些工程师们都希望通过帮助重型制造业提高水处理效率和生产效率来\n改善环境。亚洲事业总部的员工规模逐渐从200人增加到了800人。\n在大力开拓亚洲市场的同时，纳尔科公司还大力发展石油和天然气业务\n部，为全球天然气、石油和石化行业提供技术领先的工艺处理方案和水处理方\n案，帮助客户提高产量和生产效率。（要提炼一桶石油，就要分离出四桶水，",
+  "blocks": [
+    {
+      "text": "尼尔森集团之所以能够实现长足发展，还在于它能够将这些信息以简明易",
+      "bbox": {
+        "left": 170,
+        "top": 95,
+        "right": 871,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "懂的方式传递给客户，让客户理解。因此，为推动尼尔森集团的成功，第三个",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 873,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "行动就是：以简明易懂的方式向客户传递信息。",
+      "bbox": {
+        "left": 127,
+        "top": 145,
+        "right": 570,
+        "bottom": 161
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "戴夫解释道：“数字世界变得势不可当，海量的数据足以淹没你。”在这",
+      "bbox": {
+        "left": 171,
+        "top": 179,
+        "right": 873,
+        "bottom": 195
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "种情况下，人们往往能够接收到从不同角度对同一个案例进行的解读，但这样",
+      "bbox": {
+        "left": 127,
+        "top": 204,
+        "right": 872,
+        "bottom": 220
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "只会让每一个人晕头转向。戴夫说：“如果我们能够以一种简明易懂、确凿无",
+      "bbox": {
+        "left": 128,
+        "top": 229,
+        "right": 873,
+        "bottom": 245
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "疑的方式为客户提出建议，我们将成为赢家。”（他们确实赢了。戴夫担任首",
+      "bbox": {
+        "left": 127,
+        "top": 255,
+        "right": 872,
+        "bottom": 271
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "席执行官的6年内，尼尔森集团的市值增加了两倍，是他上任伊始的3倍。）",
+      "bbox": {
+        "left": 127,
+        "top": 280,
+        "right": 833,
+        "bottom": 296
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "类似地，纳尔科公司的首席执行官方华德与其团队也确立了一系列落实新",
+      "bbox": {
+        "left": 170,
+        "top": 314,
+        "right": 873,
+        "bottom": 330
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "使命的关键行动。第一个就是要对节水拥有“圣战”般的热情。这种热情并不",
+      "bbox": {
+        "left": 127,
+        "top": 339,
+        "right": 872,
+        "bottom": 355
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "是让员工觉得“哦，节水听起来有点酷”，也不是让员工逢人便讲“我能告诉",
+      "bbox": {
+        "left": 127,
+        "top": 364,
+        "right": 873,
+        "bottom": 380
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "你我做的工作吗？我通过节水拯救世界”。",
+      "bbox": {
+        "left": 127,
+        "top": 390,
+        "right": 526,
+        "bottom": 405
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "方华德解释道：“我们要让员工每天早上一醒来打开电脑看到‘仪表’时",
+      "bbox": {
+        "left": 170,
+        "top": 423,
+        "right": 872,
+        "bottom": 439
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "就激动不已。”他说的“仪表”指的是纳尔科公司内部网络上的一个显示终",
+      "bbox": {
+        "left": 127,
+        "top": 449,
+        "right": 873,
+        "bottom": 464
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "端，用来显示该公司在全球范围内的总节水量，也能显示出为每一位用户节约",
+      "bbox": {
+        "left": 127,
+        "top": 474,
+        "right": 871,
+        "bottom": 490
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了多少水。",
+      "bbox": {
+        "left": 129,
+        "top": 499,
+        "right": 221,
+        "bottom": 515
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "第二个行动是要对业绩增长拥有强烈渴望。这种增长不是个位数的增长。",
+      "bbox": {
+        "left": 170,
+        "top": 533,
+        "right": 859,
+        "bottom": 549
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "方华德断定，纳尔科公司的使命能召唤一批热衷于提升业绩的人才。这批人既",
+      "bbox": {
+        "left": 127,
+        "top": 558,
+        "right": 872,
+        "bottom": 574
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "要能发现之前被视为不可能的机遇，扩大客户群体，也要能开拓其他公司望而",
+      "bbox": {
+        "left": 127,
+        "top": 583,
+        "right": 872,
+        "bottom": 599
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "生畏的市场。2009年，在纳尔科公司所在的行业内，当大多数竞争对手由于害",
+      "bbox": {
+        "left": 127,
+        "top": 609,
+        "right": 872,
+        "bottom": 625
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "怕中国经济减速而徘徊不前之际，该公司却请一位能力高强、得到实践检验的",
+      "bbox": {
+        "left": 127,
+        "top": 634,
+        "right": 872,
+        "bottom": 650
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "高管去开拓亚洲市场，开拓新的增长点。这位高管将纳尔科公司的亚洲事业总",
+      "bbox": {
+        "left": 127,
+        "top": 659,
+        "right": 872,
+        "bottom": 675
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "部从舒适的新加坡搬迁到了上海，并在上海新建了一座办公大楼。这座大楼设",
+      "bbox": {
+        "left": 127,
+        "top": 685,
+        "right": 872,
+        "bottom": 700
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "施完善，里面包括一个客户及员工培训中心、技术研发中心以及营销中心等。",
+      "bbox": {
+        "left": 126,
+        "top": 710,
+        "right": 859,
+        "bottom": 726
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "纳尔科公司总部还允许亚洲事业总部不断招募杰出人才，其中包括大批中国工",
+      "bbox": {
+        "left": 127,
+        "top": 735,
+        "right": 872,
+        "bottom": 751
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "程师，这些工程师们都希望通过帮助重型制造业提高水处理效率和生产效率来",
+      "bbox": {
+        "left": 126,
+        "top": 760,
+        "right": 873,
+        "bottom": 776
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "改善环境。亚洲事业总部的员工规模逐渐从200人增加到了800人。",
+      "bbox": {
+        "left": 127,
+        "top": 786,
+        "right": 744,
+        "bottom": 802
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在大力开拓亚洲市场的同时，纳尔科公司还大力发展石油和天然气业务",
+      "bbox": {
+        "left": 170,
+        "top": 819,
+        "right": 872,
+        "bottom": 835
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "部，为全球天然气、石油和石化行业提供技术领先的工艺处理方案和水处理方",
+      "bbox": {
+        "left": 127,
+        "top": 845,
+        "right": 873,
+        "bottom": 861
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    },
+    {
+      "text": "案，帮助客户提高产量和生产效率。（要提炼一桶石油，就要分离出四桶水，",
+      "bbox": {
+        "left": 127,
+        "top": 870,
+        "right": 858,
+        "bottom": 886
+      },
+      "source_order": 30,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.32684904,
+    "visible_characters": 949,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 17,
+  "source_page_number": 25,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

@@ -1,0 +1,410 @@
+{
+  "schema_version": 2,
+  "page_number": 13,
+  "native_text": "前言\nTHE REAL-LIFE MBA\n读者朋友们，大家好，我们在这里首先恭喜大家。你们读到了这本书，我\n们很高兴，但我们要恭喜的并不是这件事，而是恭喜你读完本书后，将更加深\n刻地理解“任何人都不应该单枪匹马地从事商业”这个事实。\n商业归根结底是一项“团队运动”，必须依靠团队的力量。无论你的公司\n规模是5人、5 000人还是15 000人，无论你的公司是在美国印第安纳州的加里\n市生产钢铁，还是在硅谷的帕洛阿尔托市研究计算机代码；无论你是在一个没\n有窗户的小房间里刚开始创业三天，距离宏伟蓝图的实现还有十万八千里，还\n是在公司总部第45层的角落办公室里运筹帷幄，都需要集思广益，发挥团队的\n力量。\n商业不是依靠“你”的一己之力，而是依靠“你们”的群策群力，你要尽\n最大努力去征求他人的建议和想法，获取他人的帮助。\n如果你真正明白了这个道理，那真是一件值得庆贺的事。如果你正在读这\n本书，那么你在这一点上会认同我们的看法。在商业问题上，你永远不能停下\n学习的脚步。在商业运作过程中，我们必须以宽广的视野去统筹方方面面的因\n素，“科技”和“人”对商业产生的驱动作用非常显著，它既会受到全球化大\n潮的影响，也会受到本地因素的影响，因此，商业运作是一项非常宏伟的事\n业，前景难以预测。无论什么时候，你都不能说“终于大功告成，可以高枕无\n忧了”之类的话。虽然我和苏茜在商界摸爬滚打的时间加起来有81年了，但我\n们仍然在不断地学习，在这些年里，最近这10年是最开拓思维和令人振奋的。\n没错，过去10年对我们而言是最富有教益的，接下来我将详细讲述一下为\n什么。自从我们上一本书——《赢》（Winning）于2005年出版之后，我们就\n走上了巡回演讲的道路。在长达10年的时间里，我们不停地演讲和写作，不停\n地提供商业领域的教学与咨询服务。在此期间，我们深度接触了数十家公司，\n每一家都在市场和管理领域面临着独特的挑战。我们曾经帮助一位中国企业家\n建立了一家促进外国企业与中国本地制造商实现对接的外贸公司，帮助智利一\n个家族酒庄实现了经营模式的转型，帮助凤凰城一个新兴的航空航天公司解决\n了何时上市以及如何上市的问题。上述这些经历以及其他方方面面的经历帮助\n我们深刻领悟了当今世界商业经营之道的精髓，窥见了商业经营过程中的艰辛",
+  "blocks": [
+    {
+      "text": "前言",
+      "bbox": {
+        "left": 474,
+        "top": 104,
+        "right": 525,
+        "bottom": 124
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "THE",
+      "bbox": {
+        "left": 396,
+        "top": 138,
+        "right": 432,
+        "bottom": 151
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": " ",
+      "bbox": {
+        "left": 433,
+        "top": 151,
+        "right": 445,
+        "bottom": 152
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "REAL-LIFE MBA",
+      "bbox": {
+        "left": 446,
+        "top": 137,
+        "right": 604,
+        "bottom": 152
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "读者朋友们，大家好，我们在这里首先恭喜大家。你们读到了这本书，我",
+      "bbox": {
+        "left": 170,
+        "top": 170,
+        "right": 873,
+        "bottom": 186
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "们很高兴，但我们要恭喜的并不是这件事，而是恭喜你读完本书后，将更加深",
+      "bbox": {
+        "left": 127,
+        "top": 196,
+        "right": 872,
+        "bottom": 212
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "刻地理解“任何人都不应该单枪匹马地从事商业”这个事实。",
+      "bbox": {
+        "left": 127,
+        "top": 221,
+        "right": 701,
+        "bottom": 237
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "商业归根结底是一项“团队运动”，必须依靠团队的力量。无论你的公司",
+      "bbox": {
+        "left": 171,
+        "top": 255,
+        "right": 870,
+        "bottom": 271
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "规模是5人、5 000人还是15 000人，无论你的公司是在美国印第安纳州的加里",
+      "bbox": {
+        "left": 127,
+        "top": 280,
+        "right": 872,
+        "bottom": 296
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "市生产钢铁，还是在硅谷的帕洛阿尔托市研究计算机代码；无论你是在一个没",
+      "bbox": {
+        "left": 127,
+        "top": 305,
+        "right": 872,
+        "bottom": 321
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "有窗户的小房间里刚开始创业三天，距离宏伟蓝图的实现还有十万八千里，还",
+      "bbox": {
+        "left": 127,
+        "top": 331,
+        "right": 873,
+        "bottom": 346
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "是在公司总部第45层的角落办公室里运筹帷幄，都需要集思广益，发挥团队的",
+      "bbox": {
+        "left": 127,
+        "top": 356,
+        "right": 872,
+        "bottom": 372
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "力量。",
+      "bbox": {
+        "left": 127,
+        "top": 381,
+        "right": 177,
+        "bottom": 397
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "商业不是依靠“你”的一己之力，而是依靠“你们”的群策群力，你要尽",
+      "bbox": {
+        "left": 171,
+        "top": 415,
+        "right": 872,
+        "bottom": 431
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "最大努力去征求他人的建议和想法，获取他人的帮助。",
+      "bbox": {
+        "left": 127,
+        "top": 440,
+        "right": 635,
+        "bottom": 456
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如果你真正明白了这个道理，那真是一件值得庆贺的事。如果你正在读这",
+      "bbox": {
+        "left": 171,
+        "top": 474,
+        "right": 873,
+        "bottom": 490
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "本书，那么你在这一点上会认同我们的看法。在商业问题上，你永远不能停下",
+      "bbox": {
+        "left": 127,
+        "top": 499,
+        "right": 872,
+        "bottom": 515
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "学习的脚步。在商业运作过程中，我们必须以宽广的视野去统筹方方面面的因",
+      "bbox": {
+        "left": 127,
+        "top": 524,
+        "right": 871,
+        "bottom": 540
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "素，“科技”和“人”对商业产生的驱动作用非常显著，它既会受到全球化大",
+      "bbox": {
+        "left": 127,
+        "top": 550,
+        "right": 872,
+        "bottom": 566
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "潮的影响，也会受到本地因素的影响，因此，商业运作是一项非常宏伟的事",
+      "bbox": {
+        "left": 126,
+        "top": 575,
+        "right": 872,
+        "bottom": 591
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "业，前景难以预测。无论什么时候，你都不能说“终于大功告成，可以高枕无",
+      "bbox": {
+        "left": 126,
+        "top": 600,
+        "right": 873,
+        "bottom": 616
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "忧了”之类的话。虽然我和苏茜在商界摸爬滚打的时间加起来有81年了，但我",
+      "bbox": {
+        "left": 127,
+        "top": 626,
+        "right": 873,
+        "bottom": 641
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "们仍然在不断地学习，在这些年里，最近这10年是最开拓思维和令人振奋的。",
+      "bbox": {
+        "left": 127,
+        "top": 651,
+        "right": 853,
+        "bottom": 667
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "没错，过去10年对我们而言是最富有教益的，接下来我将详细讲述一下为",
+      "bbox": {
+        "left": 171,
+        "top": 685,
+        "right": 872,
+        "bottom": 700
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "什么。自从我们上一本书——《赢》（Winning）于2005年出版之后，我们就",
+      "bbox": {
+        "left": 127,
+        "top": 710,
+        "right": 872,
+        "bottom": 726
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "走上了巡回演讲的道路。在长达10年的时间里，我们不停地演讲和写作，不停",
+      "bbox": {
+        "left": 127,
+        "top": 735,
+        "right": 872,
+        "bottom": 751
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "地提供商业领域的教学与咨询服务。在此期间，我们深度接触了数十家公司，",
+      "bbox": {
+        "left": 127,
+        "top": 760,
+        "right": 858,
+        "bottom": 776
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "每一家都在市场和管理领域面临着独特的挑战。我们曾经帮助一位中国企业家",
+      "bbox": {
+        "left": 127,
+        "top": 786,
+        "right": 872,
+        "bottom": 802
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "建立了一家促进外国企业与中国本地制造商实现对接的外贸公司，帮助智利一",
+      "bbox": {
+        "left": 127,
+        "top": 811,
+        "right": 872,
+        "bottom": 827
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    },
+    {
+      "text": "个家族酒庄实现了经营模式的转型，帮助凤凰城一个新兴的航空航天公司解决",
+      "bbox": {
+        "left": 127,
+        "top": 836,
+        "right": 873,
+        "bottom": 852
+      },
+      "source_order": 30,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了何时上市以及如何上市的问题。上述这些经历以及其他方方面面的经历帮助",
+      "bbox": {
+        "left": 129,
+        "top": 862,
+        "right": 872,
+        "bottom": 877
+      },
+      "source_order": 31,
+      "source": "pdf_text"
+    },
+    {
+      "text": "我们深刻领悟了当今世界商业经营之道的精髓，窥见了商业经营过程中的艰辛",
+      "bbox": {
+        "left": 127,
+        "top": 887,
+        "right": 872,
+        "bottom": 903
+      },
+      "source_order": 32,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.31306204,
+    "visible_characters": 924,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 6,
+  "source_page_number": 13,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": {
+      "severity": "block_structure",
+      "finding": "Visual title is THE REAL-LIFE MBA; native blocks split it into THE, a blank block, and REAL-LIFE MBA.",
+      "expected": "Merge title fragments into one logical block and remove the blank block."
+    }
+  },
+  "visual_corrections": [
+    {
+      "severity": "block_structure",
+      "finding": "Visual title is THE REAL-LIFE MBA; native blocks split it into THE, a blank block, and REAL-LIFE MBA.",
+      "expected": "Merge title fragments into one logical block and remove the blank block."
+    }
+  ]
+}

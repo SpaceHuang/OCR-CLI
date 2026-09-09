@@ -1,0 +1,367 @@
+{
+  "schema_version": 2,
+  "page_number": 24,
+  "native_text": "关于服务质量不佳的投诉。如果公司允许，他们会将每一个新产品带回家亲自\n试试，以确保客户在使用过程中不会出现任何问题。\n也许我们说得有点夸张，但是你明白我们的意思。使命和行动必须是同一\n个链条上密切配合的两个环节。\n如果你之前读过我们的书或专栏文章，现在可能想知道为什么我们一直\n用“行动”，而不用“价值观”这个词。毕竟，在将近10年的时间里，我们在\n同样的语境下频繁地用到“价值观”一词，甚至你可能认为“价值观”是我们\n最喜欢用的词。\n之前的确是这样，但我们发现“价值观”是一个令人费解的词。太抽象\n了。很多时候，人们一听到“价值观”，就觉得你可能在谈论政治或文化，\n如“家庭价值观”里面的内容。\n我们在这里谈论的是人们在工作中应该采取什么样的行动才能实现公司的\n使命。我们在这里用的是“行动”一词，唯一的原因是公司的领导者需要以非\n常公开、非常清晰、非常一致的方式告诉员工怎么做才能完成公司使命。\n回到尼尔森公司的案例。戴夫·卡尔霍恩在宣布了尼尔森集团的新使命之\n后，还宣布了三个有助于完成这一使命的行动。\n第一个行动是：拥有开放的思维。委婉地讲，与之前的做法相比，这种做\n法标志着一种变革。戴夫解释道：“人们认为我们是一个市场研究公司，那\n么，在市场研究公司里面，什么样的人才能成功呢？真正聪明的人！他们能够\n让自己的算法日臻完善，而且不希望其他任何人看到这些算法，以免遭到剽\n窃。”\n“但如果我们要在这个领域占据主导地位、了解消费者的一切需求，就必\n须敞开心扉，拥有开放的思维，乐于接触来自各个渠道的数据，愿意与每一个\n人共事。”\n第二个行动是：拥有整合数据的激情。戴夫相信，尼尔森集团要实现大发\n展，其员工必须拥有整合数据的激情。这种激情不仅仅局限于“喜欢”的程\n度，而是“热爱”。整合数据就是将来自各方面的数据放在一起加以综合对比\n分析的过程。这一过程之所以具有现实可行性，在很大程度上得益于大数据的\n爆炸式增加。",
+  "blocks": [
+    {
+      "text": "关于服务质量不佳的投诉。如果公司允许，他们会将每一个新产品带回家亲自",
+      "bbox": {
+        "left": 127,
+        "top": 95,
+        "right": 870,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "试试，以确保客户在使用过程中不会出现任何问题。",
+      "bbox": {
+        "left": 127,
+        "top": 120,
+        "right": 613,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "也许我们说得有点夸张，但是你明白我们的意思。使命和行动必须是同一",
+      "bbox": {
+        "left": 171,
+        "top": 154,
+        "right": 872,
+        "bottom": 169
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "个链条上密切配合的两个环节。",
+      "bbox": {
+        "left": 127,
+        "top": 179,
+        "right": 417,
+        "bottom": 195
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如果你之前读过我们的书或专栏文章，现在可能想知道为什么我们一直",
+      "bbox": {
+        "left": 171,
+        "top": 213,
+        "right": 872,
+        "bottom": 228
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "用“行动”，而不用“价值观”这个词。毕竟，在将近10年的时间里，我们在",
+      "bbox": {
+        "left": 127,
+        "top": 238,
+        "right": 872,
+        "bottom": 254
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "同样的语境下频繁地用到“价值观”一词，甚至你可能认为“价值观”是我们",
+      "bbox": {
+        "left": 129,
+        "top": 263,
+        "right": 872,
+        "bottom": 279
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "最喜欢用的词。",
+      "bbox": {
+        "left": 127,
+        "top": 289,
+        "right": 264,
+        "bottom": 304
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "之前的确是这样，但我们发现“价值观”是一个令人费解的词。太抽象",
+      "bbox": {
+        "left": 170,
+        "top": 322,
+        "right": 873,
+        "bottom": 338
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了。很多时候，人们一听到“价值观”，就觉得你可能在谈论政治或文化，",
+      "bbox": {
+        "left": 129,
+        "top": 347,
+        "right": 858,
+        "bottom": 363
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "如“家庭价值观”里面的内容。",
+      "bbox": {
+        "left": 127,
+        "top": 373,
+        "right": 417,
+        "bottom": 389
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "我们在这里谈论的是人们在工作中应该采取什么样的行动才能实现公司的",
+      "bbox": {
+        "left": 170,
+        "top": 406,
+        "right": 872,
+        "bottom": 422
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "使命。我们在这里用的是“行动”一词，唯一的原因是公司的领导者需要以非",
+      "bbox": {
+        "left": 127,
+        "top": 432,
+        "right": 873,
+        "bottom": 448
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "常公开、非常清晰、非常一致的方式告诉员工怎么做才能完成公司使命。",
+      "bbox": {
+        "left": 127,
+        "top": 457,
+        "right": 810,
+        "bottom": 473
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "回到尼尔森公司的案例。戴夫·卡尔霍恩在宣布了尼尔森集团的新使命之",
+      "bbox": {
+        "left": 172,
+        "top": 491,
+        "right": 873,
+        "bottom": 507
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "后，还宣布了三个有助于完成这一使命的行动。",
+      "bbox": {
+        "left": 127,
+        "top": 516,
+        "right": 570,
+        "bottom": 532
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "第一个行动是：拥有开放的思维。委婉地讲，与之前的做法相比，这种做",
+      "bbox": {
+        "left": 170,
+        "top": 550,
+        "right": 872,
+        "bottom": 566
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "法标志着一种变革。戴夫解释道：“人们认为我们是一个市场研究公司，那",
+      "bbox": {
+        "left": 127,
+        "top": 575,
+        "right": 872,
+        "bottom": 591
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "么，在市场研究公司里面，什么样的人才能成功呢？真正聪明的人！他们能够",
+      "bbox": {
+        "left": 127,
+        "top": 600,
+        "right": 872,
+        "bottom": 616
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "让自己的算法日臻完善，而且不希望其他任何人看到这些算法，以免遭到剽",
+      "bbox": {
+        "left": 127,
+        "top": 626,
+        "right": 872,
+        "bottom": 641
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "窃。”",
+      "bbox": {
+        "left": 127,
+        "top": 651,
+        "right": 181,
+        "bottom": 667
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "“但如果我们要在这个领域占据主导地位、了解消费者的一切需求，就必",
+      "bbox": {
+        "left": 180,
+        "top": 685,
+        "right": 872,
+        "bottom": 700
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "须敞开心扉，拥有开放的思维，乐于接触来自各个渠道的数据，愿意与每一个",
+      "bbox": {
+        "left": 127,
+        "top": 710,
+        "right": 873,
+        "bottom": 726
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "人共事。”",
+      "bbox": {
+        "left": 127,
+        "top": 735,
+        "right": 224,
+        "bottom": 751
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "第二个行动是：拥有整合数据的激情。戴夫相信，尼尔森集团要实现大发",
+      "bbox": {
+        "left": 170,
+        "top": 769,
+        "right": 873,
+        "bottom": 785
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "展，其员工必须拥有整合数据的激情。这种激情不仅仅局限于“喜欢”的程",
+      "bbox": {
+        "left": 127,
+        "top": 794,
+        "right": 873,
+        "bottom": 810
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "度，而是“热爱”。整合数据就是将来自各方面的数据放在一起加以综合对比",
+      "bbox": {
+        "left": 126,
+        "top": 819,
+        "right": 872,
+        "bottom": 835
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "分析的过程。这一过程之所以具有现实可行性，在很大程度上得益于大数据的",
+      "bbox": {
+        "left": 127,
+        "top": 845,
+        "right": 872,
+        "bottom": 861
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "爆炸式增加。",
+      "bbox": {
+        "left": 127,
+        "top": 870,
+        "right": 243,
+        "bottom": 886
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.27028102,
+    "visible_characters": 784,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 16,
+  "source_page_number": 24,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

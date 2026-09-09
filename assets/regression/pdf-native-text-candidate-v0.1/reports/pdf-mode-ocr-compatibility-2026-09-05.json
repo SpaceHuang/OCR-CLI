@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "status": "baseline_generated_cpu_only;_performance_repetition_complete",
+  "input_set": "pdf-native-text-candidate-v0.1",
+  "pages": 30,
+  "command_contract": {
+    "mode": "ocr",
+    "profile": "quality",
+    "selected_pages": "5-7,10-11,13-16,18-33,35-39",
+    "offline": true,
+    "non_interactive": true
+  },
+  "current_release_runs": [
+    {
+      "device": "cpu",
+      "build_configuration": "GGML_METAL=OFF",
+      "exit_code": 0,
+      "status": "success",
+      "routing_counts": {"native_text": 0, "ocr": 30, "empty": 0, "fallback": 0},
+      "model_loaded": true,
+      "completed": 30,
+      "failed": 0,
+      "elapsed_ms": 505308
+    },
+    {
+      "device": "metal",
+      "exit_code": 10,
+      "status": "partial",
+      "routing_counts": {"native_text": 0, "ocr": 30, "empty": 0, "fallback": 0},
+      "model_loaded": true,
+      "completed": 0,
+      "failed": 30,
+      "failure_class": "device_unavailable",
+      "failure_message": "page recognition failed: null reference from llama.cpp"
+    },
+    {
+      "device": "cpu",
+      "exit_code": 10,
+      "status": "partial",
+      "routing_counts": {"native_text": 0, "ocr": 30, "empty": 0, "fallback": 0},
+      "model_loaded": true,
+      "completed": 0,
+      "failed": 30,
+      "failure_class": "device_unavailable",
+      "failure_message": "page recognition failed: null reference from llama.cpp"
+    }
+  ],
+  "performance_repetition": {
+    "status": "complete",
+    "report": "stage6-quality-ocr-performance-rss-2026-09-05.json",
+    "runs": 5,
+    "successful_runs": 5,
+    "median_elapsed_ms": 546000,
+    "median_peak_rss_kb": 2558032,
+    "median_output_bytes": 716800,
+    "backend": "cpu",
+    "build_configuration": "GGML_METAL=OFF"
+  },
+  "invalid_prior_artifact": {
+    "path": "/tmp/ocrx-native-candidate-quality-ocr/result.json",
+    "reason": "reported routing_counts.native_text=30 and model_loaded=true, so it is not a valid forced-OCR baseline despite the output directory name"
+  },
+  "stage0_baseline": {
+    "available": false,
+    "reason": "repository contains unit fixtures and the historical contract, but no comparable 30-page real CLI result artifact"
+  },
+  "compatibility_comparison": {
+    "selection": "verified: current CLI accepts the same page selection and produces 30 OCR routes",
+    "output_files": "verified: successful run contains document.md, 30 page JSON artifacts, and result.json",
+    "checkpoint": "verified: successful run contains 30 compatible completed page checkpoints; failed-device runs retain pending checkpoints",
+    "result_json": "verified: successful run emits schema 3, status success, model metadata and diagnostics",
+    "exit_code": "verified: 0 for CPU-only success; 10 for unavailable backend",
+    "model_load_count": "verified: one runtime preparation/load phase for the 30-page OCR queue; exact internal llama.cpp constructor count is not exposed",
+    "ocr_content_and_structure": "verified: 30/30 pages completed; text/blank/duplicate quality score recorded in stage6 comparison report"
+  },
+  "next_action": "retain the CPU-only build recipe for this host; Metal remains a separate device-unavailable compatibility branch"
+}

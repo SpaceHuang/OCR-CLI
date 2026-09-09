@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "status": "verified",
+  "platform": "macOS arm64",
+  "os": "macOS-26.5.2-arm64",
+  "rustc": "1.97.1",
+  "model_id": "ovisocr2",
+  "model_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+  "runtime": "llama.cpp@0.1.152",
+  "backend": "metal",
+  "quantization": "Q8_0",
+  "profiles": {
+    "compact": {"model_bytes": 529297280, "model_sha256": "4ae54c66bfe1efb2882854ff642c3d137aa082dbd0699bc9234ff39874a492a1"},
+    "balanced": {"model_bytes": 577998720, "model_sha256": "e17744e367adb891cc9c82f4255408cf46a00efa1b20a83f8187d5bd662ce89a"},
+    "quality": {"model_bytes": 811843498, "model_sha256": "3fba6d94312e550575a92d55cffb8d75997bf68a9f133c92ab6ad7f0bf2bc93e"},
+    "reference": {"model_bytes": 1516744617, "model_sha256": "bd8f2c62c930d74590abcb5f65f79e898672e458d6044e8b2e885daea948592e"}
+  },
+  "mmproj": {"bytes": 204987079, "sha256": "7e371704e8f3c88638830e52866dfa88b2fd383155e3a0f9484e4ce037fdd42f"},
+  "verification": "All four profiles and shared projector were locally present and SHA-256 verified; quality Metal OCR E2E completed 30/30 pages."
+}

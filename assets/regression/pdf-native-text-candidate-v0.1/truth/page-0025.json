@@ -1,0 +1,367 @@
+{
+  "schema_version": 2,
+  "page_number": 33,
+  "native_text": "很多人把工作与生活分开。其实，正如我们之前所说的那样，工作是生活\n的一部分，可能不是生活的全部内容，但它在生活中占据着重要地位。正是由\n于这个原因，如果你是一个领导者，你就应该让你的工作场所充满乐趣。如果\n你的办公场所就像亨利·大卫·梭罗在《瓦尔登湖》里面描述的那样，弥漫\n着“悄无声息的绝望”，那简直太可怕了，这对公司的业绩将造成毁灭性的影\n响。\n其实快乐工作是非常有益的。无论对于公司而言，还是对于个人而言，快\n乐工作都是有利于促进健康、有利于振作精神的。我们敢打包票，99.9%的经\n理都认同这一点，但这个数字只是停留在抽象的理论层面，实际上他们并不一\n定会这么做。很多经理一到办公室，立刻“吸”走了原有的快乐，有时是因为\n这些经理发表了某些负面言论，对下属缺乏坦率态度或喜欢支配下属；有时是\n因为这些经理认为快快乐乐就是不严肃的，而工作需要拿出严肃的态度；有时\n仅仅是因为这些经理没有认识到自己有责任创造快乐的工作氛围。\n事实上，这就是经理的职责。要知道，下属为了工作而奉献出了白天的时\n间，有时还奉献出夜晚的时间，付出了自己的脑力、体力和情感。没错，公司\n给他们发了工资，充实了他们的钱包，但作为一个领导者，你还需要充实他们\n的灵魂。你要体谅下属，让下属的工作充满意义，为下属的前进道路扫除障\n碍，并展示出自己的慷慨基因。你可以做到这些，为下属创造一个让他们激\n动、快乐的工作环境。\n该怎么做呢？选择有很多种，操作起来也很轻松有趣。如果发生了一些里\n程碑式的事件，如果下属取得了小小的成功，那就举行一个庆祝仪式；提倡幽\n默和坦率，让员工展现出自己真实的一面；一旦官僚主义开始抬头，就立即想\n办法解决掉；消除那些阻碍进步的因素；在办公室之外，与下属聚一聚。谁说\n上司和下属不应该成为朋友呢？你为什么不想跟朝夕相处的人做朋友呢？\n没错，我们深知工作中有时会存在困难和压力，这些都是难免的，但领导\n者不能让这些成为常态。即便在困难时期，也要让下属喜欢工作，这是领导者\n应该做到的。\n在本章伊始，我们就指出私募行业的很多例子都能说明协同力与领导力对\n公司具有强大的变革作用。",
+  "blocks": [
+    {
+      "text": "很多人把工作与生活分开。其实，正如我们之前所说的那样，工作是生活",
+      "bbox": {
+        "left": 170,
+        "top": 95,
+        "right": 873,
+        "bottom": 110
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的一部分，可能不是生活的全部内容，但它在生活中占据着重要地位。正是由",
+      "bbox": {
+        "left": 128,
+        "top": 120,
+        "right": 871,
+        "bottom": 136
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "于这个原因，如果你是一个领导者，你就应该让你的工作场所充满乐趣。如果",
+      "bbox": {
+        "left": 127,
+        "top": 145,
+        "right": 872,
+        "bottom": 161
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "你的办公场所就像亨利·大卫·梭罗在《瓦尔登湖》里面描述的那样，弥漫",
+      "bbox": {
+        "left": 127,
+        "top": 170,
+        "right": 873,
+        "bottom": 186
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "着“悄无声息的绝望”，那简直太可怕了，这对公司的业绩将造成毁灭性的影",
+      "bbox": {
+        "left": 127,
+        "top": 196,
+        "right": 873,
+        "bottom": 212
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "响。",
+      "bbox": {
+        "left": 128,
+        "top": 221,
+        "right": 155,
+        "bottom": 236
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "其实快乐工作是非常有益的。无论对于公司而言，还是对于个人而言，快",
+      "bbox": {
+        "left": 170,
+        "top": 255,
+        "right": 873,
+        "bottom": 271
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "乐工作都是有利于促进健康、有利于振作精神的。我们敢打包票，99.9%的经",
+      "bbox": {
+        "left": 127,
+        "top": 280,
+        "right": 873,
+        "bottom": 296
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "理都认同这一点，但这个数字只是停留在抽象的理论层面，实际上他们并不一",
+      "bbox": {
+        "left": 127,
+        "top": 305,
+        "right": 872,
+        "bottom": 321
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "定会这么做。很多经理一到办公室，立刻“吸”走了原有的快乐，有时是因为",
+      "bbox": {
+        "left": 127,
+        "top": 331,
+        "right": 872,
+        "bottom": 346
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "这些经理发表了某些负面言论，对下属缺乏坦率态度或喜欢支配下属；有时是",
+      "bbox": {
+        "left": 127,
+        "top": 356,
+        "right": 872,
+        "bottom": 372
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "因为这些经理认为快快乐乐就是不严肃的，而工作需要拿出严肃的态度；有时",
+      "bbox": {
+        "left": 128,
+        "top": 381,
+        "right": 872,
+        "bottom": 397
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "仅仅是因为这些经理没有认识到自己有责任创造快乐的工作氛围。",
+      "bbox": {
+        "left": 126,
+        "top": 406,
+        "right": 744,
+        "bottom": 422
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "事实上，这就是经理的职责。要知道，下属为了工作而奉献出了白天的时",
+      "bbox": {
+        "left": 170,
+        "top": 440,
+        "right": 872,
+        "bottom": 456
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "间，有时还奉献出夜晚的时间，付出了自己的脑力、体力和情感。没错，公司",
+      "bbox": {
+        "left": 128,
+        "top": 465,
+        "right": 870,
+        "bottom": 481
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "给他们发了工资，充实了他们的钱包，但作为一个领导者，你还需要充实他们",
+      "bbox": {
+        "left": 127,
+        "top": 491,
+        "right": 872,
+        "bottom": 507
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的灵魂。你要体谅下属，让下属的工作充满意义，为下属的前进道路扫除障",
+      "bbox": {
+        "left": 128,
+        "top": 516,
+        "right": 873,
+        "bottom": 532
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "碍，并展示出自己的慷慨基因。你可以做到这些，为下属创造一个让他们激",
+      "bbox": {
+        "left": 126,
+        "top": 541,
+        "right": 873,
+        "bottom": 557
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "动、快乐的工作环境。",
+      "bbox": {
+        "left": 127,
+        "top": 567,
+        "right": 330,
+        "bottom": 582
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "该怎么做呢？选择有很多种，操作起来也很轻松有趣。如果发生了一些里",
+      "bbox": {
+        "left": 171,
+        "top": 600,
+        "right": 872,
+        "bottom": 616
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "程碑式的事件，如果下属取得了小小的成功，那就举行一个庆祝仪式；提倡幽",
+      "bbox": {
+        "left": 126,
+        "top": 626,
+        "right": 872,
+        "bottom": 641
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "默和坦率，让员工展现出自己真实的一面；一旦官僚主义开始抬头，就立即想",
+      "bbox": {
+        "left": 127,
+        "top": 651,
+        "right": 872,
+        "bottom": 667
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "办法解决掉；消除那些阻碍进步的因素；在办公室之外，与下属聚一聚。谁说",
+      "bbox": {
+        "left": 127,
+        "top": 676,
+        "right": 873,
+        "bottom": 692
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "上司和下属不应该成为朋友呢？你为什么不想跟朝夕相处的人做朋友呢？",
+      "bbox": {
+        "left": 127,
+        "top": 701,
+        "right": 812,
+        "bottom": 717
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "没错，我们深知工作中有时会存在困难和压力，这些都是难免的，但领导",
+      "bbox": {
+        "left": 171,
+        "top": 735,
+        "right": 872,
+        "bottom": 751
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "者不能让这些成为常态。即便在困难时期，也要让下属喜欢工作，这是领导者",
+      "bbox": {
+        "left": 127,
+        "top": 760,
+        "right": 872,
+        "bottom": 776
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "应该做到的。",
+      "bbox": {
+        "left": 127,
+        "top": 786,
+        "right": 243,
+        "bottom": 802
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在本章伊始，我们就指出私募行业的很多例子都能说明协同力与领导力对",
+      "bbox": {
+        "left": 170,
+        "top": 819,
+        "right": 873,
+        "bottom": 835
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    },
+    {
+      "text": "公司具有强大的变革作用。",
+      "bbox": {
+        "left": 127,
+        "top": 845,
+        "right": 373,
+        "bottom": 861
+      },
+      "source_order": 29,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.29795998,
+    "visible_characters": 860,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 25,
+  "source_page_number": 33,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

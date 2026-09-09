@@ -1,0 +1,345 @@
+{
+  "schema_version": 2,
+  "page_number": 5,
+  "native_text": "管理之美在于亦步亦趋的践行\n沈博阳 领英中国总裁\n仔细研读完《商业的本质》之后，只能用四个字来形容我的感受——酣畅\n淋漓。我之前读过杰克·韦尔奇的《赢》，在我看来这本新书类似于《赢》的\n姐妹篇。两本书给我的感受如出一辙，有一种大道至简的感觉，杰克在行云流\n水之间就把管理学的精髓简单而直接地刻画了出来。杰克把他在通用电气20年\n做首席执行官所积累的经验进行了高度浓缩，在他退休后的10年，杰克在全球\n各地巡讲帮助了很多企业成长，让很多企业家和创业者对商业的本质有了更为\n深刻和更新的认识。《商业的本质》对《赢》是一个非常好的延续和在某些方\n面的进化。\n我是工程师出身，没有上过MBA（工商管理硕士），也没有受过正规的管\n理培训。我像早期的硅谷创业者一样，从8个人在一间会议室里创业，到最后\n发展为2 000人。一开始管理团队更多凭借的是创业的热情，以及本能的判断\n和悟性。但随着公司的日益扩大，组织结构变得越来越复杂，完全靠摸索的管\n理就会慢慢变得力不从心。那时候，我就开始阅读杰克·韦尔奇的管理学著作\n了，希望自己的一些困惑能够在他的书里找到答案。作为一名创业者，我有两\n段相对完整而又风格迥异的创业经历——从人员相对草根的糯米网到后来洋气\n了许多的领英中国团队，但在这两种风格反差极大的公司，我所面临的很多问\n题从本质上来讲都是相通的。我猜想，我所经历的这些挑战今天大部分的创业\n者和企业家也同样经历过，或正在经历，也许只是以不同的形式在不同的环境\n下体现出来。而这也就是我更加推荐这本书的原因，因为当你将真正面临的问\n题和书中的理论相互印证的时候，你会惊奇地发现，作者其实已经把你脑子里\n的困惑和不解进行了高度的提炼，并给出了相应的建议。\n《商业的本质》可以打动我这样一名创业者，我想原因主要有以下两个：\n·不同于一般的作者，杰克是20世纪公认的最伟大的管理者之一，被\n《财富》杂志评选为“世纪经理人”。他所有的理论都是有实践基础的，\n实用性非常强，让人感同身受。对于我这样的企业家，自然会有说服力。",
+  "blocks": [
+    {
+      "text": "管理之美在于亦步亦趋的践行",
+      "bbox": {
+        "left": 324,
+        "top": 104,
+        "right": 676,
+        "bottom": 124
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "沈博阳 领英中国总裁",
+      "bbox": {
+        "left": 668,
+        "top": 142,
+        "right": 873,
+        "bottom": 158
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "仔细研读完《商业的本质》之后，只能用四个字来形容我的感受——酣畅",
+      "bbox": {
+        "left": 170,
+        "top": 176,
+        "right": 872,
+        "bottom": 192
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "淋漓。我之前读过杰克·韦尔奇的《赢》，在我看来这本新书类似于《赢》的",
+      "bbox": {
+        "left": 127,
+        "top": 201,
+        "right": 872,
+        "bottom": 217
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "姐妹篇。两本书给我的感受如出一辙，有一种大道至简的感觉，杰克在行云流",
+      "bbox": {
+        "left": 127,
+        "top": 227,
+        "right": 873,
+        "bottom": 242
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "水之间就把管理学的精髓简单而直接地刻画了出来。杰克把他在通用电气20年",
+      "bbox": {
+        "left": 127,
+        "top": 252,
+        "right": 873,
+        "bottom": 268
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "做首席执行官所积累的经验进行了高度浓缩，在他退休后的10年，杰克在全球",
+      "bbox": {
+        "left": 127,
+        "top": 277,
+        "right": 873,
+        "bottom": 293
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "各地巡讲帮助了很多企业成长，让很多企业家和创业者对商业的本质有了更为",
+      "bbox": {
+        "left": 127,
+        "top": 303,
+        "right": 872,
+        "bottom": 318
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "深刻和更新的认识。《商业的本质》对《赢》是一个非常好的延续和在某些方",
+      "bbox": {
+        "left": 127,
+        "top": 328,
+        "right": 873,
+        "bottom": 344
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "面的进化。",
+      "bbox": {
+        "left": 127,
+        "top": 353,
+        "right": 221,
+        "bottom": 369
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "我是工程师出身，没有上过MBA（工商管理硕士），也没有受过正规的管",
+      "bbox": {
+        "left": 170,
+        "top": 387,
+        "right": 872,
+        "bottom": 403
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "理培训。我像早期的硅谷创业者一样，从8个人在一间会议室里创业，到最后",
+      "bbox": {
+        "left": 127,
+        "top": 412,
+        "right": 872,
+        "bottom": 428
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "发展为2 000人。一开始管理团队更多凭借的是创业的热情，以及本能的判断",
+      "bbox": {
+        "left": 127,
+        "top": 437,
+        "right": 873,
+        "bottom": 453
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "和悟性。但随着公司的日益扩大，组织结构变得越来越复杂，完全靠摸索的管",
+      "bbox": {
+        "left": 127,
+        "top": 463,
+        "right": 872,
+        "bottom": 478
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "理就会慢慢变得力不从心。那时候，我就开始阅读杰克·韦尔奇的管理学著作",
+      "bbox": {
+        "left": 127,
+        "top": 488,
+        "right": 872,
+        "bottom": 504
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了，希望自己的一些困惑能够在他的书里找到答案。作为一名创业者，我有两",
+      "bbox": {
+        "left": 129,
+        "top": 513,
+        "right": 872,
+        "bottom": 529
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "段相对完整而又风格迥异的创业经历——从人员相对草根的糯米网到后来洋气",
+      "bbox": {
+        "left": 127,
+        "top": 538,
+        "right": 872,
+        "bottom": 554
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "了许多的领英中国团队，但在这两种风格反差极大的公司，我所面临的很多问",
+      "bbox": {
+        "left": 129,
+        "top": 564,
+        "right": 871,
+        "bottom": 580
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "题从本质上来讲都是相通的。我猜想，我所经历的这些挑战今天大部分的创业",
+      "bbox": {
+        "left": 127,
+        "top": 589,
+        "right": 873,
+        "bottom": 605
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "者和企业家也同样经历过，或正在经历，也许只是以不同的形式在不同的环境",
+      "bbox": {
+        "left": 127,
+        "top": 614,
+        "right": 873,
+        "bottom": 630
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "下体现出来。而这也就是我更加推荐这本书的原因，因为当你将真正面临的问",
+      "bbox": {
+        "left": 127,
+        "top": 640,
+        "right": 871,
+        "bottom": 655
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "题和书中的理论相互印证的时候，你会惊奇地发现，作者其实已经把你脑子里",
+      "bbox": {
+        "left": 127,
+        "top": 665,
+        "right": 872,
+        "bottom": 681
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的困惑和不解进行了高度的提炼，并给出了相应的建议。",
+      "bbox": {
+        "left": 128,
+        "top": 690,
+        "right": 657,
+        "bottom": 706
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "《商业的本质》可以打动我这样一名创业者，我想原因主要有以下两个：",
+      "bbox": {
+        "left": 181,
+        "top": 724,
+        "right": 851,
+        "bottom": 740
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "·不同于一般的作者，杰克是20世纪公认的最伟大的管理者之一，被",
+      "bbox": {
+        "left": 221,
+        "top": 783,
+        "right": 873,
+        "bottom": 799
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "《财富》杂志评选为“世纪经理人”。他所有的理论都是有实践基础的，",
+      "bbox": {
+        "left": 181,
+        "top": 808,
+        "right": 858,
+        "bottom": 824
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "实用性非常强，让人感同身受。对于我这样的企业家，自然会有说服力。",
+      "bbox": {
+        "left": 171,
+        "top": 833,
+        "right": 853,
+        "bottom": 849
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.285324,
+    "visible_characters": 825,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 1,
+  "source_page_number": 5,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "input_pages": 30,
+  "mode": "ocr",
+  "profile": "quality",
+  "backend": "cpu",
+  "build_configuration": "GGML_METAL=OFF",
+  "model_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+  "runtime": "llama.cpp@0.1.152",
+  "quantization": "Q8_0",
+  "runs": [
+    {"run": 1, "wall_seconds": 506, "peak_rss_kb": 2556144, "output_size_bytes": 716800, "completed": 30, "failed": 0, "truncated": 0, "model_loaded": true},
+    {"run": 2, "wall_seconds": 546, "peak_rss_kb": 2558032, "output_size_bytes": 716800, "completed": 30, "failed": 0, "truncated": 0, "model_loaded": true},
+    {"run": 3, "wall_seconds": 593, "peak_rss_kb": 2552960, "output_size_bytes": 716800, "completed": 30, "failed": 0, "truncated": 0, "model_loaded": true},
+    {"run": 4, "wall_seconds": 571, "peak_rss_kb": 2560864, "output_size_bytes": 716800, "completed": 30, "failed": 0, "truncated": 0, "model_loaded": true},
+    {"run": 5, "wall_seconds": 528, "peak_rss_kb": 2612160, "output_size_bytes": 716800, "completed": 30, "failed": 0, "truncated": 0, "model_loaded": true}
+  ],
+  "summary": {
+    "median_wall_seconds": 546,
+    "min_wall_seconds": 506,
+    "max_wall_seconds": 593,
+    "median_peak_rss_kb": 2558032,
+    "min_peak_rss_kb": 2552960,
+    "max_peak_rss_kb": 2612160,
+    "median_output_size_bytes": 716800,
+    "all_runs_successful": true,
+    "all_runs_ocr_30_of_30": true,
+    "model_loaded_every_run": true
+  },
+  "evidence": {
+    "raw_report": "/tmp/ocrx-quality-cpu-perf-2026-09-05-valid/report.json",
+    "scored_prediction": "/tmp/ocrx-native-candidate-quality-ocr-valid",
+    "rss_sampling_interval_ms": 200
+  },
+  "notes": [
+    "All five runs used the rebuilt CPU-only runtime with GGML_METAL=OFF and --device cpu.",
+    "Each run processed the same 30 selected pages with --pdf-mode ocr and --model-profile quality.",
+    "Peak RSS was sampled from the CLI process at 200 ms intervals; output size is the run directory size."
+  ]
+}

@@ -1,0 +1,356 @@
+{
+  "schema_version": 2,
+  "page_number": 10,
+  "native_text": "商业是探求真实、建立互信的过程\n杰克·韦尔奇、苏茜·韦尔奇\n可以毫不夸张地说，我们在过去15年左右的时间内游历了整个世界。我这\n样讲其实是有据可依的。自2001年以来，我们到过38个国家的101个城市，有\n的是出差，有的是旅游。我们到过芬兰，参加北欧商业论坛（Nordic\nBusiness Forum），并发表演讲。当时是冬季，那里的森林一片萧瑟。我们还\n到过澳大利亚的悉尼，会见了当地的学生以及来自各行各业的商人，欣赏过邦\n迪湾清澈湛蓝的海水。我们到过的每一个地方都有令人惊叹的奇迹，都有令人\n感到神秘的地方，不但拓展了我们的思维，也触动了我们的心灵。\n但我们永远都不会忘记最近访问中国期间受到的那种纯粹的、永不磨灭的\n心灵震撼。当时，我们在商务行程之外抽时间去了一趟丽江。在宾馆经理的建\n议下，我们去了玉龙雪山，并观看了中国著名导演张艺谋创作的名为《印象·\n丽江》的大型实景歌舞表演。坦诚地讲，我们在纽约看了几十年的表演，因\n此，起初并没有抱多少期待。我们两人都觉得，难道还有比百老汇更好的表演\n吗？\n但这场表演给我们带来的惊讶实在无以言表。在两个小时内，我们彻底震\n惊了！纳西族气势恢宏的舞蹈和美轮美奂的场景令我们完全沉醉。这场表演是\n在露天舞台完成的，它给我们内心带来的最大触动是，我们感受到崇拜和敬\n畏、兴奋和愉悦，以及沧桑和亲切。最后，我们请一名观众帮我们拍照留念，\n背景就是舞台布景和玉龙雪山。我们想拍下美丽的风景，但最重要的是，我们\n要留下当时激动兴奋的表情。这样的表演我们前所未见、令人难以置信。\n那一刻，我们对当代中国的感受可谓百感交集。没错，中国作为全球地缘\n政治格局的一部分，目前的确面临着挑战，但每一个国家都是如此。更重要的\n是，我们为中国的未来感到兴奋，这主要源于以下几个方面：\n第一，中国经济日益转型为消费驱动型经济，这令我们感到激动不已。过\n去，中国更偏重于重工业，很大一部分经济产出是用于出口的。但近年来，内\n需对中国经济的贡献稳步提升。中国中产阶级的壮大促进了中国经济的多元\n化，这完全是一种积极的现象。",
+  "blocks": [
+    {
+      "text": "商业是探求真实、建立互信的过程",
+      "bbox": {
+        "left": 297,
+        "top": 104,
+        "right": 704,
+        "bottom": 124
+      },
+      "source_order": 1,
+      "source": "pdf_text"
+    },
+    {
+      "text": "杰克·韦尔奇、苏茜·韦尔奇",
+      "bbox": {
+        "left": 591,
+        "top": 168,
+        "right": 873,
+        "bottom": 183
+      },
+      "source_order": 2,
+      "source": "pdf_text"
+    },
+    {
+      "text": "可以毫不夸张地说，我们在过去15年左右的时间内游历了整个世界。我这",
+      "bbox": {
+        "left": 170,
+        "top": 201,
+        "right": 873,
+        "bottom": 217
+      },
+      "source_order": 3,
+      "source": "pdf_text"
+    },
+    {
+      "text": "样讲其实是有据可依的。自2001年以来，我们到过38个国家的101个城市，有",
+      "bbox": {
+        "left": 126,
+        "top": 227,
+        "right": 872,
+        "bottom": 242
+      },
+      "source_order": 4,
+      "source": "pdf_text"
+    },
+    {
+      "text": "的是出差，有的是旅游。我们到过芬兰，参加北欧商业论坛（Nordic",
+      "bbox": {
+        "left": 128,
+        "top": 252,
+        "right": 872,
+        "bottom": 268
+      },
+      "source_order": 5,
+      "source": "pdf_text"
+    },
+    {
+      "text": "Business Forum），并发表演讲。当时是冬季，那里的森林一片萧瑟。我们还",
+      "bbox": {
+        "left": 126,
+        "top": 277,
+        "right": 873,
+        "bottom": 293
+      },
+      "source_order": 6,
+      "source": "pdf_text"
+    },
+    {
+      "text": "到过澳大利亚的悉尼，会见了当地的学生以及来自各行各业的商人，欣赏过邦",
+      "bbox": {
+        "left": 127,
+        "top": 302,
+        "right": 872,
+        "bottom": 318
+      },
+      "source_order": 7,
+      "source": "pdf_text"
+    },
+    {
+      "text": "迪湾清澈湛蓝的海水。我们到过的每一个地方都有令人惊叹的奇迹，都有令人",
+      "bbox": {
+        "left": 126,
+        "top": 328,
+        "right": 873,
+        "bottom": 344
+      },
+      "source_order": 8,
+      "source": "pdf_text"
+    },
+    {
+      "text": "感到神秘的地方，不但拓展了我们的思维，也触动了我们的心灵。",
+      "bbox": {
+        "left": 127,
+        "top": 353,
+        "right": 744,
+        "bottom": 369
+      },
+      "source_order": 9,
+      "source": "pdf_text"
+    },
+    {
+      "text": "但我们永远都不会忘记最近访问中国期间受到的那种纯粹的、永不磨灭的",
+      "bbox": {
+        "left": 170,
+        "top": 387,
+        "right": 872,
+        "bottom": 403
+      },
+      "source_order": 10,
+      "source": "pdf_text"
+    },
+    {
+      "text": "心灵震撼。当时，我们在商务行程之外抽时间去了一趟丽江。在宾馆经理的建",
+      "bbox": {
+        "left": 127,
+        "top": 412,
+        "right": 873,
+        "bottom": 428
+      },
+      "source_order": 11,
+      "source": "pdf_text"
+    },
+    {
+      "text": "议下，我们去了玉龙雪山，并观看了中国著名导演张艺谋创作的名为《印象·",
+      "bbox": {
+        "left": 127,
+        "top": 437,
+        "right": 865,
+        "bottom": 453
+      },
+      "source_order": 12,
+      "source": "pdf_text"
+    },
+    {
+      "text": "丽江》的大型实景歌舞表演。坦诚地讲，我们在纽约看了几十年的表演，因",
+      "bbox": {
+        "left": 127,
+        "top": 463,
+        "right": 871,
+        "bottom": 478
+      },
+      "source_order": 13,
+      "source": "pdf_text"
+    },
+    {
+      "text": "此，起初并没有抱多少期待。我们两人都觉得，难道还有比百老汇更好的表演",
+      "bbox": {
+        "left": 127,
+        "top": 488,
+        "right": 872,
+        "bottom": 504
+      },
+      "source_order": 14,
+      "source": "pdf_text"
+    },
+    {
+      "text": "吗？",
+      "bbox": {
+        "left": 128,
+        "top": 514,
+        "right": 158,
+        "bottom": 529
+      },
+      "source_order": 15,
+      "source": "pdf_text"
+    },
+    {
+      "text": "但这场表演给我们带来的惊讶实在无以言表。在两个小时内，我们彻底震",
+      "bbox": {
+        "left": 170,
+        "top": 547,
+        "right": 872,
+        "bottom": 563
+      },
+      "source_order": 16,
+      "source": "pdf_text"
+    },
+    {
+      "text": "惊了！纳西族气势恢宏的舞蹈和美轮美奂的场景令我们完全沉醉。这场表演是",
+      "bbox": {
+        "left": 127,
+        "top": 572,
+        "right": 872,
+        "bottom": 588
+      },
+      "source_order": 17,
+      "source": "pdf_text"
+    },
+    {
+      "text": "在露天舞台完成的，它给我们内心带来的最大触动是，我们感受到崇拜和敬",
+      "bbox": {
+        "left": 126,
+        "top": 597,
+        "right": 872,
+        "bottom": 613
+      },
+      "source_order": 18,
+      "source": "pdf_text"
+    },
+    {
+      "text": "畏、兴奋和愉悦，以及沧桑和亲切。最后，我们请一名观众帮我们拍照留念，",
+      "bbox": {
+        "left": 127,
+        "top": 623,
+        "right": 858,
+        "bottom": 639
+      },
+      "source_order": 19,
+      "source": "pdf_text"
+    },
+    {
+      "text": "背景就是舞台布景和玉龙雪山。我们想拍下美丽的风景，但最重要的是，我们",
+      "bbox": {
+        "left": 127,
+        "top": 648,
+        "right": 872,
+        "bottom": 664
+      },
+      "source_order": 20,
+      "source": "pdf_text"
+    },
+    {
+      "text": "要留下当时激动兴奋的表情。这样的表演我们前所未见、令人难以置信。",
+      "bbox": {
+        "left": 127,
+        "top": 673,
+        "right": 810,
+        "bottom": 689
+      },
+      "source_order": 21,
+      "source": "pdf_text"
+    },
+    {
+      "text": "那一刻，我们对当代中国的感受可谓百感交集。没错，中国作为全球地缘",
+      "bbox": {
+        "left": 170,
+        "top": 707,
+        "right": 873,
+        "bottom": 723
+      },
+      "source_order": 22,
+      "source": "pdf_text"
+    },
+    {
+      "text": "政治格局的一部分，目前的确面临着挑战，但每一个国家都是如此。更重要的",
+      "bbox": {
+        "left": 126,
+        "top": 732,
+        "right": 872,
+        "bottom": 748
+      },
+      "source_order": 23,
+      "source": "pdf_text"
+    },
+    {
+      "text": "是，我们为中国的未来感到兴奋，这主要源于以下几个方面：",
+      "bbox": {
+        "left": 127,
+        "top": 758,
+        "right": 699,
+        "bottom": 773
+      },
+      "source_order": 24,
+      "source": "pdf_text"
+    },
+    {
+      "text": "第一，中国经济日益转型为消费驱动型经济，这令我们感到激动不已。过",
+      "bbox": {
+        "left": 170,
+        "top": 791,
+        "right": 873,
+        "bottom": 807
+      },
+      "source_order": 25,
+      "source": "pdf_text"
+    },
+    {
+      "text": "去，中国更偏重于重工业，很大一部分经济产出是用于出口的。但近年来，内",
+      "bbox": {
+        "left": 127,
+        "top": 817,
+        "right": 870,
+        "bottom": 832
+      },
+      "source_order": 26,
+      "source": "pdf_text"
+    },
+    {
+      "text": "需对中国经济的贡献稳步提升。中国中产阶级的壮大促进了中国经济的多元",
+      "bbox": {
+        "left": 128,
+        "top": 842,
+        "right": 873,
+        "bottom": 858
+      },
+      "source_order": 27,
+      "source": "pdf_text"
+    },
+    {
+      "text": "化，这完全是一种积极的现象。",
+      "bbox": {
+        "left": 127,
+        "top": 867,
+        "right": 417,
+        "bottom": 883
+      },
+      "source_order": 28,
+      "source": "pdf_text"
+    }
+  ],
+  "signals": {
+    "page_width": 612,
+    "page_height": 792,
+    "image_objects": 1,
+    "text_bbox_coverage": 0.291263,
+    "visible_characters": 843,
+    "unicode_validity": 1,
+    "text_coverage": 1,
+    "image_coverage": 0.0148544265,
+    "duplicate_text": false,
+    "geometry_anomaly": false
+  },
+  "candidate_status": "raw_native_facts_requires_l2_validation",
+  "candidate_page_number": 4,
+  "source_page_number": 10,
+  "review_status": "needs_human_review",
+  "native_decision": "pending_l2_block_review",
+  "review_notes": [
+    "Independent visual audit completed for this page; audit did not use prior regression truth.",
+    "Bboxes are normalized 0-1000, not PDF point coordinates.",
+    "Native body text is visually plausible, but final L2 acceptance remains pending human review."
+  ],
+  "bbox_coordinate_space": "normalized_1000",
+  "page_size_points": {
+    "width": 612,
+    "height": 792
+  },
+  "watermark": {
+    "present": true,
+    "description": "Bottom-right grey 网络加速器 / t.tizi8.com / t.it520.cc / t.hi6.uk watermark visible in rendered page",
+    "included_in_native_text": false,
+    "policy": "exclude_from_native_text_body_pending_human_acceptance"
+  },
+  "visual_audit": {
+    "status": "reviewed_by_model_vision",
+    "content_accuracy": "mostly_accurate",
+    "reading_order": "continuous_top_to_bottom",
+    "native_text_matches_visible_body": true,
+    "finding": "No page-specific text discrepancy found; confirm bbox and watermark policy during human acceptance."
+  },
+  "visual_corrections": []
+}

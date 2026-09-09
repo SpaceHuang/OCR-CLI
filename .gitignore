@@ -1,6 +1,7 @@
 /target/
 /.cargo/
 .DS_Store
+._*
 *.swp
 __pycache__/
 .ocrx-model-cache/
@@ -15,3 +16,4 @@ __pycache__/
 /assets/regression/*/preview/
 /assets/regression/*/work/
 /assets/regression/*/inputs/*.pdf
+/.worktree/

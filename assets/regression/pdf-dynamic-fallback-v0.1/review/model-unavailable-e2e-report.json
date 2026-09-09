@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "command": "OCRX_MODEL_CACHE=/tmp/ocrx-empty-model-cache OCRX_PDFIUM_LIBRARY=dist/ocrx/lib/libpdfium.dylib target/release/ocrx scan native-plus-tiny-fallback.pdf --output-dir /tmp/ocrx-dynamic-fallback-unavailable --pdf-mode auto --quality-tier l2 --model-profile quality --device cpu --offline --non-interactive --report json --progress off",
+  "exit_code": 4,
+  "error": {
+    "kind": "model",
+    "message": "offline scan requires verified local model assets"
+  },
+  "committed_native_pages": [1],
+  "pending_ocr_pages": [2],
+  "pending_checkpoint": "model-unavailable-page-0002.pending.checkpoint",
+  "native_page_preserved": true,
+  "fallback_page_not_reported_as_native_success": true,
+  "interpretation": "native success was committed before model preparation failed; the fallback page remained an incomplete pending OCR checkpoint"
+}

@@ -67,6 +67,10 @@ def make_pdf(
     varied_sizes: bool = False,
     complex_page: bool = False,
     dense_page: bool = False,
+    tiny_page: bool = False,
+    tiny_page_number: int | None = None,
+    empty_page: bool = False,
+    empty_page_number: int | None = None,
     password: str | None = None,
 ) -> bytes:
     objects: list[bytes] = []
@@ -93,6 +97,10 @@ def make_pdf(
                 for row in range(80)
             ]
             text = "\n".join(lines)
+        if tiny_page or number == tiny_page_number:
+            text = "BT /F1 0.5 Tf 306 396 Td (tiny native validation fixture) Tj ET"
+        if empty_page or number == empty_page_number:
+            text = ""
         stream = text.encode("ascii")
         content_id = add(b"")
         # PDF stream encryption is object-specific.  Allocate object numbers
@@ -175,6 +183,12 @@ def main() -> int:
     (root / "varied-page-sizes.pdf").write_bytes(make_pdf(4, varied_sizes=True))
     (root / "complex-20-pages.pdf").write_bytes(make_pdf(20, varied_sizes=True, complex_page=True))
     (root / "dense-text-for-max-tokens.pdf").write_bytes(make_pdf(1, dense_page=True))
+    (root / "tiny-native-structure-fallback.pdf").write_bytes(make_pdf(1, tiny_page=True))
+    (root / "native-plus-tiny-fallback.pdf").write_bytes(
+        make_pdf(2, tiny_page_number=2)
+    )
+    (root / "empty-1-page.pdf").write_bytes(make_pdf(1, empty_page=True))
+    (root / "native-plus-empty.pdf").write_bytes(make_pdf(2, empty_page_number=2))
     (root / "encrypted-password-required.pdf").write_bytes(make_pdf(1, password=PASSWORD))
     normal = (root / "normal-1-page.pdf").read_bytes()
     (root / "corrupt-truncated.pdf").write_bytes(normal[: len(normal) // 2])
