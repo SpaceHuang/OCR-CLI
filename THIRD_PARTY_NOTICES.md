@@ -25,14 +25,23 @@ OCR-CLI uses llama.cpp through Rust bindings for local inference and uses the ll
 
 - Project: [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)
 - Multimodal documentation: [libmtmd / MTMD documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/mtmd/README.md)
-- License: see the upstream [llama.cpp `LICENSE`](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE)
+- License: MIT; see the upstream [llama.cpp `LICENSE`](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE)
+- Pinned revision: `9e3b928fd8c9d14dbf15a8768b9fdd7e5c721d66` (embedded by `llama-cpp-sys-2`); the MIT license text of that revision is bundled in release archives under `licenses/llama.cpp/LICENSE`
 - Additional upstream notices: see the upstream [`licenses/`](https://github.com/ggml-org/llama.cpp/tree/master/licenses) directory
 
 The exact llama.cpp revision and the Rust binding revision must be recorded in the release manifest before publishing a production binary. The current Cargo versions are declared in [`src/ocrx-runtime/Cargo.toml`](src/ocrx-runtime/Cargo.toml).
 
+## Microsoft Visual C++ runtime
+
+Windows release archives ship the Microsoft Visual C++ 2022 redistributable runtime DLLs (`msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`) app-local in `bin/`, because the release binary links the dynamically loaded CRT through llama.cpp and a clean Windows machine may not have the redistributable installed.
+
+- Copyright: Microsoft Corporation
+- License: Microsoft Software License Terms for the Visual Studio 2022 VC++ Redistributable files; see the redistribution notice bundled at `licenses/ms-vc-runtime/README.txt`
+- Source: copied from the locally installed Visual Studio 2022 Build Tools `VC\Redist\MSVC` directory at packaging time; the packaged hashes are recorded in the archive `SHA256SUMS`
+
 ## PDFium
 
-OCR-CLI uses PDFium for PDF rendering through the [`pdfium-render`](https://crates.io/crates/pdfium-render) Rust crate. Some macOS release archives may contain a `libpdfium.dylib` binary.
+OCR-CLI uses PDFium for PDF rendering through the [`pdfium-render`](https://crates.io/crates/pdfium-render) Rust crate. macOS release archives may contain a `libpdfium.dylib` binary; Windows release archives may contain a `pdfium.dll` binary.
 
 - Project: [Chromium PDFium](https://github.com/chromium/pdfium)
 - License: [PDFium `LICENSE`](https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/2028/LICENSE)

@@ -194,6 +194,77 @@ pub fn cache_paths(
     ))
 }
 
+/// Resolves the platform-standard default model cache root (WP.1 freeze).
+///
+/// Windows resolves `%LOCALAPPDATA%` (falling back to `%USERPROFILE%\AppData\Local`),
+/// macOS resolves `$HOME/Library/Caches`; platforms without a standard cache
+/// location keep the legacy relative `.ocrx-model-cache`. The `ocrx/models`
+/// layout below the root is appended by [`cache_paths`], so model assets never
+/// land in the current project directory by default. `OCRX_MODEL_CACHE`
+/// overrides only the root.
+///
+/// Migration safety (M4): when the platform root holds no `ocrx/models`
+/// content but the legacy `.ocrx-model-cache` does, the legacy root is
+/// returned so an existing user's verified models do not silently
+/// "disappear" (and re-download gigabytes) after the default moved. The
+/// fallback is one-directional — once the platform root is populated it
+/// always wins.
+#[must_use]
+pub fn default_cache_root() -> std::path::PathBuf {
+    let root = default_cache_root_from(
+        std::env::var_os("LOCALAPPDATA").as_deref(),
+        std::env::var_os("USERPROFILE").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    );
+    let legacy = std::path::PathBuf::from(".ocrx-model-cache");
+    legacy_cache_root_fallback(&root, &legacy).unwrap_or(root)
+}
+
+/// Pure core of the legacy-root fallback used by [`default_cache_root`].
+///
+/// Returns `Some(legacy_root)` only when the legacy directory contains model
+/// content and the new platform root does not.
+#[must_use]
+pub fn legacy_cache_root_fallback(
+    platform_root: &std::path::Path,
+    legacy_root: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    if platform_root.join("ocrx").join("models").exists() {
+        return None;
+    }
+    if legacy_root.join("ocrx").join("models").exists() {
+        return Some(legacy_root.to_path_buf());
+    }
+    None
+}
+
+/// Pure core of [`default_cache_root`] with injectable environment values.
+#[must_use]
+pub fn default_cache_root_from(
+    local_app_data: Option<&std::ffi::OsStr>,
+    user_profile: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+) -> std::path::PathBuf {
+    if cfg!(target_os = "windows") {
+        if let Some(local) = local_app_data {
+            return std::path::PathBuf::from(local);
+        }
+        if let Some(profile) = user_profile {
+            return std::path::PathBuf::from(profile)
+                .join("AppData")
+                .join("Local");
+        }
+    }
+    if cfg!(target_os = "macos") {
+        if let Some(home) = home {
+            return std::path::PathBuf::from(home)
+                .join("Library")
+                .join("Caches");
+        }
+    }
+    std::path::PathBuf::from(".ocrx-model-cache")
+}
+
 /// Verifies that local model state matches the canonical cache layout.
 ///
 /// # Errors
@@ -769,9 +840,10 @@ mod tests {
     };
     use super::{
         InstallRequest, LocalModelState, ManifestError, ManifestIdentity, ModelCatalog,
-        ModelManifest, ResourceSnapshot, UrlInstallRequest, cache_paths, download_asset,
-        install_from_files, install_from_urls, recommend_device, recommend_profile,
-        validate_runtime_adapter_compatibility, verify_local_state, verify_manifest_files,
+        ModelManifest, ResourceSnapshot, UrlInstallRequest, cache_paths, default_cache_root_from,
+        download_asset, install_from_files, install_from_urls, legacy_cache_root_fallback,
+        recommend_device, recommend_profile, validate_runtime_adapter_compatibility,
+        verify_local_state, verify_manifest_files,
     };
     use ocrx_core::ModelId;
 
@@ -1089,6 +1161,98 @@ mod tests {
         assert!(cache_paths(root, "rev/with/slash", "compact").is_err());
         assert!(cache_paths(root, "", "compact").is_err());
         assert!(cache_paths(root, "rev-1", "unknown-profile").is_err());
+    }
+
+    #[test]
+    fn default_cache_root_prefers_local_app_data_on_windows() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let local = std::path::PathBuf::from("C:\\Users\\u\\AppData\\Local");
+        assert_eq!(
+            default_cache_root_from(
+                Some(local.as_os_str()),
+                Some(std::ffi::OsStr::new("C:\\Users\\u")),
+                None,
+            ),
+            local
+        );
+    }
+
+    #[test]
+    fn default_cache_root_falls_back_to_user_profile_on_windows() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        assert_eq!(
+            default_cache_root_from(None, Some(std::ffi::OsStr::new("C:\\Users\\u")), None),
+            std::path::PathBuf::from("C:\\Users\\u")
+                .join("AppData")
+                .join("Local")
+        );
+    }
+
+    #[test]
+    fn default_cache_root_uses_library_caches_on_macos() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        assert_eq!(
+            default_cache_root_from(None, None, Some(std::ffi::OsStr::new("/Users/u"))),
+            std::path::PathBuf::from("/Users/u/Library/Caches")
+        );
+    }
+
+    #[test]
+    fn default_cache_root_keeps_relative_dir_without_platform_env() {
+        if cfg!(target_os = "windows") {
+            assert_eq!(
+                default_cache_root_from(None, None, Some(std::ffi::OsStr::new("/Users/u"))),
+                std::path::PathBuf::from(".ocrx-model-cache")
+            );
+            return;
+        }
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                default_cache_root_from(
+                    Some(std::ffi::OsStr::new("C:\\Local")),
+                    Some(std::ffi::OsStr::new("C:\\Users\\u")),
+                    None,
+                ),
+                std::path::PathBuf::from(".ocrx-model-cache")
+            );
+            return;
+        }
+        assert_eq!(
+            default_cache_root_from(None, None, None),
+            std::path::PathBuf::from(".ocrx-model-cache")
+        );
+    }
+
+    #[test]
+    fn legacy_cache_root_fallback_prefers_populated_legacy_over_empty_platform_root() {
+        // M4 migration guard: an existing user's models under the legacy
+        // relative root must stay visible after the default moved to the
+        // platform cache root, but only until the platform root is populated.
+        let base = std::env::temp_dir().join(format!("ocrx-legacy-cache-{}", std::process::id()));
+        let platform = base.join("platform");
+        let legacy = base.join("legacy");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(legacy.join("ocrx").join("models")).unwrap();
+
+        // Empty platform root + populated legacy root -> legacy wins.
+        assert_eq!(
+            legacy_cache_root_fallback(&platform, &legacy),
+            Some(legacy.clone())
+        );
+        // Populated platform root always wins.
+        std::fs::create_dir_all(platform.join("ocrx").join("models")).unwrap();
+        assert_eq!(legacy_cache_root_fallback(&platform, &legacy), None);
+        // Neither populated -> no fallback (fresh install uses platform root).
+        let empty_legacy = base.join("empty-legacy");
+        assert_eq!(legacy_cache_root_fallback(&platform, &empty_legacy), None);
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -1425,43 +1425,17 @@ impl PdfWorkerScheduler {
 }
 
 fn child_rss_kb(pid: u32) -> u64 {
-    if cfg!(target_os = "windows") {
-        // `wmic` reports WorkingSetSize in bytes; best-effort (returns 0 when
-        // wmic is absent, e.g. on Windows builds that ship without it).
-        Command::new("wmic")
-            .args([
-                "process",
-                "where",
-                &format!("ProcessId={pid}"),
-                "get",
-                "WorkingSetSize",
-                "/value",
-            ])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|stdout| {
-                stdout.lines().find_map(|line| {
-                    line.trim()
-                        .strip_prefix("WorkingSetSize=")?
-                        .trim()
-                        .parse::<u64>()
-                        .ok()
-                })
-            })
-            .map(|bytes| bytes / 1024)
-            .unwrap_or_default()
-    } else {
-        Command::new("ps")
-            .args(["-o", "rss=", "-p", &pid.to_string()])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|rss| rss.trim().parse::<u64>().ok())
-            .unwrap_or_default()
-    }
+    // Delegates to the shared W0.3 sampler: on Windows it reads the working
+    // set through `tasklist`, because `wmic` is removed by default on
+    // Windows 11 24H2+ and used to silently return 0 on those machines (M5).
+    // Best-effort: a refused sample counts as 0, matching the peak-tracking
+    // semantics of the scheduler loop.
+    use ocrx_core::resource_sampler::{ProcessMemorySampler, RealProcessMemorySampler};
+
+    RealProcessMemorySampler
+        .sample_rss(pid)
+        .map(|sample| sample.rss_kb)
+        .unwrap_or_default()
 }
 
 impl Default for RenderOptions {
@@ -2006,6 +1980,14 @@ mod tests {
 
     #[test]
     fn stage0_real_pdfium_fixture_reports_text_and_geometry_when_library_is_available() {
+        run_pdfium_probe(
+            "tests::pdfium_probe_stage0_real_pdfium_fixture_reports_text_and_geometry",
+        );
+    }
+
+    #[ignore = "probe runs in an isolated subprocess via run_pdfium_probe"]
+    #[test]
+    fn pdfium_probe_stage0_real_pdfium_fixture_reports_text_and_geometry() {
         let library = std::env::var_os("OCRX_PDFIUM_LIBRARY_DIR")
             .map(PathBuf::from)
             .or_else(|| {
@@ -2036,7 +2018,7 @@ mod tests {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf");
         let page = renderer
-            .extract_native_page(fixture, 0)
+            .extract_native_page(fixture.clone(), 0)
             .expect("PDFium fixture should be readable");
         assert!(page.signals.visible_characters > 0);
         assert!(page.signals.page_width > 0.0);
@@ -2050,11 +2032,7 @@ mod tests {
         );
         assert!(page.signals.unicode_validity > 0.0);
         let signals = renderer
-            .analyze_page_signals(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf"),
-                0,
-            )
+            .analyze_page_signals(fixture, 0)
             .expect("raw page signals should be available");
         assert_eq!(signals.visible_characters, page.signals.visible_characters);
     }
@@ -2355,6 +2333,44 @@ mod tests {
             .join(name)
     }
 
+    // pdfium-render's `thread_safe` feature only marks `Pdfium` as Send/Sync,
+    // and the native library keeps process-global state. Running several
+    // in-process PDFium workloads back to back in one process has been
+    // observed to corrupt the heap on Windows (flaky segfaults /
+    // STATUS_HEAP_CORRUPTION under parallel harness threads), while each
+    // workload in a fresh process is empirically stable. The real-PDF
+    // component tests therefore delegate to `#[ignore]`d probe tests executed
+    // in a fresh subprocess each — the same process isolation the production
+    // `pdfium-worker` architecture applies (W2.2).
+    fn run_pdfium_probe(probe: &str) {
+        let exe = std::env::current_exe().expect("test binary path should resolve");
+        let output = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                probe,
+                "--ignored",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .output()
+            .expect("test subprocess should start");
+        // libtest exits 0 even when the exact filter matches zero tests (e.g.
+        // after a probe rename), so success alone proves nothing: require the
+        // subprocess's own `test result:` summary to show one passing test in
+        // an ok run (M6).
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let summary = stdout
+            .lines()
+            .rev()
+            .find(|line| line.starts_with("test result:"))
+            .unwrap_or_default();
+        assert!(
+            summary.contains("ok.") && summary.contains("1 passed"),
+            "pdfium probe {probe} did not run cleanly; subprocess summary: `{summary}` (stdout: `{}`)",
+            stdout.trim()
+        );
+    }
+
     fn ensure_pdfium() -> Option<PathBuf> {
         let dir = pdfium_lib_dir();
         if dir.is_none() {
@@ -2368,6 +2384,12 @@ mod tests {
 
     #[test]
     fn real_pdf_page_counts_match_fixtures() {
+        run_pdfium_probe("tests::pdfium_probe_page_counts_match_fixtures");
+    }
+
+    #[ignore = "probe runs in an isolated subprocess via run_pdfium_probe"]
+    #[test]
+    fn pdfium_probe_page_counts_match_fixtures() {
         let Some(lib) = ensure_pdfium() else {
             return;
         };
@@ -2392,6 +2414,12 @@ mod tests {
 
     #[test]
     fn real_pdf_renders_rgb8_at_300_dpi_with_audit_sizes() {
+        run_pdfium_probe("tests::pdfium_probe_renders_rgb8_at_300_dpi_with_audit_sizes");
+    }
+
+    #[ignore = "probe runs in an isolated subprocess via run_pdfium_probe"]
+    #[test]
+    fn pdfium_probe_renders_rgb8_at_300_dpi_with_audit_sizes() {
         let Some(lib) = ensure_pdfium() else {
             return;
         };
@@ -2418,6 +2446,12 @@ mod tests {
 
     #[test]
     fn real_pdf_page_selection_maps_to_the_requested_index() {
+        run_pdfium_probe("tests::pdfium_probe_page_selection_maps_to_the_requested_index");
+    }
+
+    #[ignore = "probe runs in an isolated subprocess via run_pdfium_probe"]
+    #[test]
+    fn pdfium_probe_page_selection_maps_to_the_requested_index() {
         let Some(lib) = ensure_pdfium() else {
             return;
         };
@@ -2435,6 +2469,12 @@ mod tests {
 
     #[test]
     fn real_render_pixel_budget_scales_proportionally_without_cropping() {
+        run_pdfium_probe("tests::pdfium_probe_render_pixel_budget_scales_proportionally");
+    }
+
+    #[ignore = "probe runs in an isolated subprocess via run_pdfium_probe"]
+    #[test]
+    fn pdfium_probe_render_pixel_budget_scales_proportionally() {
         let Some(lib) = ensure_pdfium() else {
             return;
         };
@@ -2459,6 +2499,12 @@ mod tests {
 
     #[test]
     fn real_pdfium_errors_classify_to_stable_content_categories() {
+        run_pdfium_probe("tests::pdfium_probe_errors_classify_to_stable_content_categories");
+    }
+
+    #[ignore = "probe runs in an isolated subprocess via run_pdfium_probe"]
+    #[test]
+    fn pdfium_probe_errors_classify_to_stable_content_categories() {
         let Some(lib) = ensure_pdfium() else {
             return;
         };

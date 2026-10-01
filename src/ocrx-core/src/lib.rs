@@ -1413,6 +1413,158 @@ fn json_escape(value: &str) -> String {
         .replace('\t', "\\t")
 }
 
+/// Structural JSON syntax validator used by CLI contract tests.
+///
+/// The project emits hand-assembled JSON strings; this walks the emitted
+/// bytes (balanced containers, correctly quoted strings, valid escape
+/// sequences, well-formed literals and numbers) without adding a JSON parser
+/// dependency. It validates syntax only, never schema. Whitespace around the
+/// top-level value is tolerated, matching lenient parsers.
+#[must_use]
+pub fn is_valid_json(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let Some(end) = parse_json_value(bytes, skip_json_ws(bytes, 0)) else {
+        return false;
+    };
+    skip_json_ws(bytes, end) == bytes.len()
+}
+
+fn skip_json_ws(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() && matches!(bytes[index], b' ' | b'\n' | b'\r' | b'\t') {
+        index += 1;
+    }
+    index
+}
+
+/// Parses one JSON value starting at `index`; returns the index just past it.
+fn parse_json_value(bytes: &[u8], mut index: usize) -> Option<usize> {
+    index = skip_json_ws(bytes, index);
+    match bytes.get(index)? {
+        b'{' => {
+            index = skip_json_ws(bytes, index + 1);
+            if bytes.get(index) == Some(&b'}') {
+                return Some(index + 1);
+            }
+            loop {
+                index = skip_json_ws(bytes, index);
+                if bytes.get(index) != Some(&b'"') {
+                    return None;
+                }
+                index = parse_json_string(bytes, index)?;
+                index = skip_json_ws(bytes, index);
+                if bytes.get(index) != Some(&b':') {
+                    return None;
+                }
+                index = parse_json_value(bytes, index + 1)?;
+                index = skip_json_ws(bytes, index);
+                match bytes.get(index) {
+                    Some(&b',') => index += 1,
+                    Some(&b'}') => return Some(index + 1),
+                    _ => return None,
+                }
+            }
+        }
+        b'[' => {
+            index = skip_json_ws(bytes, index + 1);
+            if bytes.get(index) == Some(&b']') {
+                return Some(index + 1);
+            }
+            loop {
+                index = parse_json_value(bytes, index)?;
+                index = skip_json_ws(bytes, index);
+                match bytes.get(index) {
+                    Some(&b',') => index += 1,
+                    Some(&b']') => return Some(index + 1),
+                    _ => return None,
+                }
+            }
+        }
+        b'"' => parse_json_string(bytes, index),
+        b't' => consume_json_literal(bytes, index, b"true"),
+        b'f' => consume_json_literal(bytes, index, b"false"),
+        b'n' => consume_json_literal(bytes, index, b"null"),
+        b'-' | b'0'..=b'9' => parse_json_number(bytes, index),
+        _ => None,
+    }
+}
+
+/// Parses a quoted string starting at the opening quote; returns the index
+/// just past the closing quote.
+fn parse_json_string(bytes: &[u8], mut index: usize) -> Option<usize> {
+    if bytes.get(index) != Some(&b'"') {
+        return None;
+    }
+    index += 1;
+    loop {
+        match bytes.get(index)? {
+            b'"' => return Some(index + 1),
+            b'\\' => {
+                index += 1;
+                match bytes.get(index)? {
+                    b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => index += 1,
+                    b'u' => {
+                        for _ in 0..4 {
+                            index += 1;
+                            if !bytes.get(index)?.is_ascii_hexdigit() {
+                                return None;
+                            }
+                        }
+                        index += 1;
+                    }
+                    // An unescaped Windows path like "C:\Users" lands here.
+                    _ => return None,
+                }
+            }
+            byte if *byte < 0x20 => return None, // raw control characters
+            _ => index += 1,
+        }
+    }
+}
+
+fn consume_json_literal(bytes: &[u8], index: usize, literal: &[u8]) -> Option<usize> {
+    bytes
+        .get(index..index + literal.len())?
+        .eq_ignore_ascii_case(literal)
+        .then(|| index + literal.len())
+}
+
+fn parse_json_number(bytes: &[u8], mut index: usize) -> Option<usize> {
+    if bytes.get(index) == Some(&b'-') {
+        index += 1;
+    }
+    let digits_start = index;
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    if index == digits_start {
+        return None;
+    }
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        let fraction_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+        if index == fraction_start {
+            return None;
+        }
+    }
+    if matches!(bytes.get(index), Some(&b'e') | Some(&b'E')) {
+        index += 1;
+        if matches!(bytes.get(index), Some(&b'+') | Some(&b'-')) {
+            index += 1;
+        }
+        let exponent_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+        if index == exponent_start {
+            return None;
+        }
+    }
+    Some(index)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelId {
     OvisOcr2,
@@ -1574,6 +1726,27 @@ impl AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn json_validator_accepts_escaped_windows_paths_and_balanced_containers() {
+        assert!(is_valid_json(
+            r#"{"cache_root":"C:\\Users\\u\\AppData\\Local","n":1,"list":[true,false,null]}"#
+        ));
+        assert!(is_valid_json("  {\"a\":\"b\"}  \n"));
+        assert!(is_valid_json("-12.5e+3"));
+    }
+
+    #[test]
+    fn json_validator_rejects_unescaped_backslash_and_structural_errors() {
+        // The BLK-1 regression: a raw Windows path inside a JSON string.
+        assert!(!is_valid_json(r#"{"cache_root":"C:\Users\Space"}"#));
+        assert!(!is_valid_json(r#"{"a":"\u12g0"}"#));
+        assert!(!is_valid_json(r#"{"a":}"#));
+        assert!(!is_valid_json(r#"{"a":1,}"#));
+        assert!(!is_valid_json(r"[1,2"));
+        assert!(!is_valid_json("{\"a\":\"b\"} trailing"));
+        assert!(!is_valid_json(""));
+    }
 
     #[test]
     fn runtime_compatibility_records_frozen_llama_cpp_commit() {

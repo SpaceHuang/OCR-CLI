@@ -135,6 +135,14 @@ impl Runtime for LlamaMtmdRuntime {
         {
             return Err("invalid inference request".to_owned());
         }
+        if cancellation.is_cancelled() {
+            return Err("cancelled".to_owned());
+        }
+        // The generation clock starts before bitmap construction and chunk
+        // evaluation: on CPU the mmproj eval of ~1024 image tokens is the
+        // dominant share of time-to-first-token, so `first_token_ms` and the
+        // heartbeat must cover it (M8).
+        let started = Instant::now();
         let bitmap =
             MtmdBitmap::from_image_data(request.width, request.height, &request.image_rgb8)
                 .map_err(|error| error.to_string())?;
@@ -149,6 +157,12 @@ impl Runtime for LlamaMtmdRuntime {
                 &[&bitmap],
             )
             .map_err(|error| error.to_string())?;
+        // Ctrl+C must stay responsive across the (potentially hundreds of
+        // seconds on CPU) image-encoding phase: check before and after the
+        // blocking eval (M9). eval_chunks itself cannot be interrupted.
+        if cancellation.is_cancelled() {
+            return Err("cancelled".to_owned());
+        }
         let params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(self.context_size))
             .with_op_offload(self.use_gpu)
@@ -160,8 +174,10 @@ impl Runtime for LlamaMtmdRuntime {
         let position = chunks
             .eval_chunks(&self.mtmd, &context, 0, 0, 512, true)
             .map_err(|error| error.to_string())?;
+        if cancellation.is_cancelled() {
+            return Err("cancelled".to_owned());
+        }
         let mut output = String::new();
-        let started = Instant::now();
         let mut last_emitted_second = None;
         let mut generated_tokens = 0_u64;
         let mut first_token_ms = 0_u64;

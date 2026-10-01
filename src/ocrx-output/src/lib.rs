@@ -259,8 +259,12 @@ impl ErrorReport {
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+
+// Single cancellation source of truth (W3.1): the SIGINT token created by the
+// CLI must be passable to the runtime's token-generation loop, so the trait
+// below shares `ocrx_core::CancellationToken` instead of keeping a private,
+// type-incompatible duplicate.
+pub use ocrx_core::{CancellationToken, GenerationProgress};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
@@ -364,11 +368,6 @@ pub struct ProgressSnapshot {
     pub total: u32,
     pub elapsed_seconds: u64,
     pub eta_seconds: Option<u64>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CancellationToken {
-    requests: Arc<AtomicU8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -493,6 +492,24 @@ pub trait PageArtifactRecognizer<M> {
         page: u32,
         image: &RenderedPage,
     ) -> io::Result<PageArtifactResult>;
+
+    /// Cancellation-aware variant used by the real scan path.
+    ///
+    /// The default implementation delegates to [`PageArtifactRecognizer::recognize_artifact`]
+    /// for fake/test recognizers. Real recognizers must override it so the
+    /// runtime can poll cancellation between tokens and report generation
+    /// progress for the per-second heartbeat contract.
+    fn recognize_artifact_cancelled(
+        &mut self,
+        model: &mut M,
+        page: u32,
+        image: &RenderedPage,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> io::Result<PageArtifactResult> {
+        let _ = (cancellation, progress);
+        self.recognize_artifact(model, page, image)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -569,20 +586,39 @@ where
             let image = match self.renderer.render(page) {
                 Ok(image) => image,
                 Err(_error) => {
-                    failed += 1;
+                    // A page interrupted by cancellation stays resumable: it is
+                    // reported as "cancelled", not "failed", so the CLI's
+                    // resume logic does not treat it as a terminal page.
+                    let cancelled = cancellation.is_cancelled();
+                    if !cancelled {
+                        failed += 1;
+                    }
                     diagnostics.push(PageDiagnostic {
                         page,
-                        status: "failed".to_owned(),
+                        status: if cancelled {
+                            "cancelled".to_owned()
+                        } else {
+                            "failed".to_owned()
+                        },
                         stage: "render".to_owned(),
                         error_code: Some("render_failed".to_owned()),
                         message: Some("page rendering failed".to_owned()),
                         audit: None,
                         warnings: Vec::new(),
                     });
+                    if cancelled {
+                        break;
+                    }
                     continue;
                 }
             };
-            match self.recognizer.recognize_artifact(&mut model, page, &image) {
+            match self.recognizer.recognize_artifact_cancelled(
+                &mut model,
+                page,
+                &image,
+                cancellation,
+                &mut |_| {},
+            ) {
                 Ok(artifact) => {
                     let mut artifact_warnings = artifact.warnings;
                     if image.audit.scaled
@@ -618,11 +654,21 @@ where
                     completed += 1;
                 }
                 Err(error) => {
-                    failed += 1;
+                    // Same resumability rule as render failures: a recognition
+                    // interrupted by Ctrl+C is "cancelled", not a quality
+                    // failure, and stops the loop instead of scanning on.
+                    let cancelled = cancellation.is_cancelled();
+                    if !cancelled {
+                        failed += 1;
+                    }
                     let (error_code, fallback_message) = classify_recognition_error(&error);
                     diagnostics.push(PageDiagnostic {
                         page,
-                        status: "failed".to_owned(),
+                        status: if cancelled {
+                            "cancelled".to_owned()
+                        } else {
+                            "failed".to_owned()
+                        },
                         stage: "recognize".to_owned(),
                         error_code: Some(error_code.to_owned()),
                         message: Some(if error_code == "device_unavailable" {
@@ -633,6 +679,9 @@ where
                         audit: Some(image.audit),
                         warnings: Vec::new(),
                     });
+                    if cancelled {
+                        break;
+                    }
                 }
             }
         }
@@ -843,31 +892,6 @@ impl Heartbeat {
             }
             Some(_) => false,
         }
-    }
-}
-
-impl CancellationToken {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn request_cancel(&self) {
-        self.requests
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
-                Some(value.saturating_add(1))
-            })
-            .ok();
-    }
-
-    #[must_use]
-    pub fn is_cancelled(&self) -> bool {
-        self.requests.load(Ordering::SeqCst) >= 1
-    }
-
-    #[must_use]
-    pub fn force_exit(&self) -> bool {
-        self.requests.load(Ordering::SeqCst) >= 2
     }
 }
 
@@ -1556,6 +1580,42 @@ pub fn atomic_write(path: impl AsRef<Path>, contents: &[u8]) -> io::Result<()> {
     result
 }
 
+/// Compares path components for equality, ignoring ASCII case on Windows.
+///
+/// NTFS (and the Win32 namespace generally) matches paths case-insensitively,
+/// so byte-exact comparison lets `c:\users\space\appdata\local` slip past a
+/// protected `%LOCALAPPDATA%` root. Comparison is component-wise, so
+/// `C:\foo` never matches a prefix of `C:\foobar`.
+fn comparable_components(path: &Path) -> Vec<String> {
+    path.components()
+        .map(|component| {
+            let text = component.as_os_str().to_string_lossy().into_owned();
+            if cfg!(target_os = "windows") {
+                text.to_ascii_lowercase()
+            } else {
+                text
+            }
+        })
+        .collect()
+}
+
+/// Returns whether `descendant` is `ancestor` itself or lives underneath it
+/// (case-insensitively on Windows).
+#[must_use]
+pub fn path_contains(ancestor: &Path, descendant: &Path) -> bool {
+    let ancestor_components = comparable_components(ancestor);
+    let descendant_components = comparable_components(descendant);
+    descendant_components.len() >= ancestor_components.len()
+        && descendant_components[..ancestor_components.len()] == ancestor_components[..]
+}
+
+/// Returns whether two paths overlap: equal, one inside the other, or sharing
+/// a case-variant spelling on Windows.
+#[must_use]
+pub fn paths_overlap(left: &Path, right: &Path) -> bool {
+    path_contains(left, right) || path_contains(right, left)
+}
+
 pub fn validate_output_root(
     input: impl AsRef<Path>,
     output: impl AsRef<Path>,
@@ -1569,14 +1629,14 @@ pub fn validate_output_root(
             "output root must be absolute",
         ));
     }
-    if output == input {
+    if paths_overlap(output, input) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "output root is the input path",
         ));
     }
     for protected in protected_roots {
-        if output == *protected || output.starts_with(protected) || protected.starts_with(output) {
+        if paths_overlap(output, protected) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "output root overlaps a protected path",
@@ -2107,7 +2167,47 @@ mod tests {
     fn output_root_accepts_unrelated_absolute_path() {
         let input = std::path::Path::new("/work/input.pdf");
         let cache = std::path::Path::new("/work/.cache");
-        assert!(super::validate_output_root(input, "/tmp/ocr-result", &[cache]).is_ok());
+        // Windows needs a drive-qualified path: "/tmp/..." is not absolute there.
+        let outside = if cfg!(target_os = "windows") {
+            "C:\\tmp\\ocr-result"
+        } else {
+            "/tmp/ocr-result"
+        };
+        assert!(super::validate_output_root(input, outside, &[cache]).is_ok());
+    }
+
+    #[test]
+    fn output_root_rejects_case_variant_of_protected_path_on_windows() {
+        // NTFS matches paths case-insensitively: a case variant of a protected
+        // root must not slip past the overlap check (M3 regression guard).
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let input = std::path::Path::new("C:\\work\\input.pdf");
+        let cache = std::path::Path::new("C:\\Users\\u\\AppData\\Local");
+        let case_variant = std::path::Path::new("c:\\users\\U\\appdata\\local\\ocr-out");
+        assert!(super::validate_output_root(input, case_variant, &[cache]).is_err());
+        // Component boundaries still matter: a sibling sharing a prefix is fine.
+        let sibling = std::path::Path::new("C:\\Users\\u\\AppData\\Localocr-out");
+        assert!(super::validate_output_root(input, sibling, &[cache]).is_ok());
+    }
+
+    #[test]
+    fn path_contains_is_component_wise() {
+        let root = std::path::Path::new("/work/cache");
+        assert!(super::path_contains(
+            root,
+            std::path::Path::new("/work/cache/job")
+        ));
+        assert!(!super::path_contains(
+            root,
+            std::path::Path::new("/work/cache-other")
+        ));
+        assert!(!super::path_contains(root, std::path::Path::new("/work")));
+        assert!(super::paths_overlap(
+            root,
+            std::path::Path::new("/work/cache")
+        ));
     }
 
     #[test]

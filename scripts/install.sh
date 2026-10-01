@@ -27,4 +27,4 @@ if [[ "${OCRX_INSTALL_SKILL:-0}" == "1" ]]; then
 fi
 echo "installed $PREFIX/bin/ocrx"
 case ":${PATH:-}:" in *":$PREFIX/bin:"*) ;; *) echo "add $PREFIX/bin to PATH" ;; esac
-echo "model weights were not downloaded; run explicit model installation when configured"
+echo "model weights were not downloaded; install them explicitly with the CLI when needed"

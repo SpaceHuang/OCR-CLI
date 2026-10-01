@@ -66,6 +66,12 @@ fn run_injected_scan(injection_var: &str, page: &str) -> (i32, String) {
             output_dir.to_str().unwrap(),
             "--pages",
             "1",
+            // The fixture has a reliable text layer, so the default content-
+            // aware routing handles it natively and never reaches the OCR
+            // renderer/recognizer seams. `--pdf-mode ocr` forces the page
+            // through the OCR queue the injection hooks live in.
+            "--pdf-mode",
+            "ocr",
             "--model-profile",
             "compact",
             "--device",

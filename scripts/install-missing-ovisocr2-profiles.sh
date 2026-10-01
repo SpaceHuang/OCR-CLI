@@ -5,9 +5,20 @@
 set -eu
 
 revision='8a22290a0c42dbcf84739d6d4c2763f877494ae0'
-cache_root="${OCRX_MODEL_CACHE:-.ocrx-model-cache}"
-model_root="$cache_root/ovisocr2"
-projector_source="$model_root/compact/mmproj.gguf"
+# Mirror the CLI's default cache root (WP.1): platform cache dir by default,
+# with a one-time fallback to a populated legacy .ocrx-model-cache so existing
+# local models stay visible. OCRX_MODEL_CACHE overrides the root.
+if [ -n "${OCRX_MODEL_CACHE:-}" ]; then
+  cache_root="$OCRX_MODEL_CACHE"
+elif [ -d "$HOME/Library/Caches/ocrx/models" ]; then
+  cache_root="$HOME/Library/Caches"
+elif [ -d ".ocrx-model-cache/ocrx/models" ]; then
+  cache_root=".ocrx-model-cache"
+else
+  cache_root="${HOME}/Library/Caches"
+fi
+model_root="$cache_root/ocrx/models/ovisocr2/$revision"
+projector_source="$model_root/mmproj.gguf"
 projector_sha256='7e371704e8f3c88638830e52866dfa88b2fd383155e3a0f9484e4ce037fdd42f'
 
 sha256() {

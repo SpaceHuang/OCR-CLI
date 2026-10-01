@@ -7,12 +7,12 @@ use ocrx_models::{
     community_manifest, recommend_device, recommend_profile,
 };
 use ocrx_output::{
-    CancellationToken, CheckpointResumeAction, CompatibilityKey, ErrorReport, ModelLoader,
-    OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageDiagnostic, PageMarkdown,
-    PageRenderer, ProgressEvent, ProgressMode, ProgressStage, RenderAudit, RenderedPage,
-    ReportFormat, Reporter, ResultReport, ScanService, collect_page_markdowns,
+    CancellationToken, CheckpointResumeAction, CompatibilityKey, ErrorReport, GenerationProgress,
+    ModelLoader, OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageDiagnostic,
+    PageMarkdown, PageRenderer, ProgressEvent, ProgressMode, ProgressStage, RenderAudit,
+    RenderedPage, ReportFormat, Reporter, ResultReport, ScanService, collect_page_markdowns,
     commit_native_page_and_collect, finalize_document, format_report, merge_ocr_queue,
-    read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
+    paths_overlap, read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
 };
 use ocrx_pdf::{
     PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
@@ -24,6 +24,12 @@ use std::io::{Cursor, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+
+mod platform_paths;
+use platform_paths::home_dir;
+
+mod system_probe;
+use system_probe::RealSystemProbe;
 
 #[derive(Debug, PartialEq, Eq)]
 enum CliCommand {
@@ -339,7 +345,11 @@ fn resolve_and_prepare_model(
             mmproj_bytes,
         )
         .and_then(|_| {
-            ocrx_models::validate_runtime_adapter_compatibility("0.1.152", "0.1.153", "ovisocr2")
+            ocrx_models::validate_runtime_adapter_compatibility(
+                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_2_version,
+                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_sys_2_version,
+                ocrx_core::RUNTIME_COMPATIBILITY.adapter_id,
+            )
         })
         .is_ok();
     if !assets_valid && offline {
@@ -378,7 +388,11 @@ fn resolve_and_prepare_model(
             mmproj_bytes,
         )
         .and_then(|_| {
-            ocrx_models::validate_runtime_adapter_compatibility("0.1.152", "0.1.153", "ovisocr2")
+            ocrx_models::validate_runtime_adapter_compatibility(
+                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_2_version,
+                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_sys_2_version,
+                ocrx_core::RUNTIME_COMPATIBILITY.adapter_id,
+            )
         })
         .is_ok();
         if !assets_valid {
@@ -1046,13 +1060,13 @@ fn validate_output_policy(input: &Path, output: &Path, protected: &[&Path]) -> R
     if !output.is_absolute() {
         return Err("output directory must be absolute".to_owned());
     }
-    if output == input || output.starts_with(input) || input.starts_with(output) {
+    // `paths_overlap` compares component-wise and case-insensitively on
+    // Windows, so an NTFS case variant of the input or a protected root
+    // cannot bypass the check (M3).
+    if paths_overlap(output, input) {
         return Err("output directory overlaps input".to_owned());
     }
-    if protected
-        .iter()
-        .any(|root| output == *root || output.starts_with(root) || root.starts_with(output))
-    {
+    if protected.iter().any(|root| paths_overlap(output, root)) {
         return Err("output directory overlaps a protected path".to_owned());
     }
     Ok(())
@@ -1246,7 +1260,7 @@ fn main() {
             };
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
+                .unwrap_or_else(ocrx_models::default_cache_root);
             let revision = ocrx_models::community_manifest(&profile)
                 .unwrap_or_else(|_| unreachable!("profile parsed by CLI"))
                 .identity
@@ -1268,7 +1282,9 @@ fn main() {
                     )
                     .and_then(|_| {
                         ocrx_models::validate_runtime_adapter_compatibility(
-                            "0.1.152", "0.1.153", "ovisocr2",
+                            ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_2_version,
+                            ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_sys_2_version,
+                            ocrx_core::RUNTIME_COMPATIBILITY.adapter_id,
                         )
                     }) {
                         Ok(()) => println!(
@@ -1349,12 +1365,7 @@ fn main() {
                 }
             };
             let (home, project): (Option<PathBuf>, Option<PathBuf>) = match scope {
-                ocrx_skill::SkillScope::User => (
-                    std::env::var_os("HOME")
-                        .or_else(|| std::env::var_os("USERPROFILE"))
-                        .map(PathBuf::from),
-                    None,
-                ),
+                ocrx_skill::SkillScope::User => (home_dir().ok(), None),
                 ocrx_skill::SkillScope::Project => (
                     None,
                     Some(
@@ -1536,6 +1547,51 @@ fn gcd(mut left: u64, mut right: u64) -> u64 {
     }
     left.max(1)
 }
+
+/// Parses the page number from a W3.3 test-only fault-injection env value.
+///
+/// The value is `None` when the env var is unset. Zero and non-numeric values are
+/// rejected so a misconfigured test never injects a fault into page 0.
+#[must_use]
+fn parse_injected_failure_page(value: Option<&str>) -> Option<u32> {
+    value
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|page| *page > 0)
+}
+
+/// Returns an error when the injected page matches, otherwise `Ok(())`.
+///
+/// This is the deterministic test seam for W3.3 real-model fault injection.
+/// Production scans leave the env vars unset, so the seam is a no-op in normal use.
+fn injected_failure(value: Option<&str>, page: u32, description: &str) -> std::io::Result<()> {
+    if parse_injected_failure_page(value) == Some(page) {
+        return Err(std::io::Error::other(description.to_owned()));
+    }
+    Ok(())
+}
+
+/// Injects a real render failure for `page` when `OCRX_E2E_INJECT_RENDER_FAIL_PAGE` matches.
+fn inject_render_failure(page: u32) -> std::io::Result<()> {
+    injected_failure(
+        std::env::var("OCRX_E2E_INJECT_RENDER_FAIL_PAGE")
+            .ok()
+            .as_deref(),
+        page,
+        "injected render failure",
+    )
+}
+
+/// Injects a real inference failure for `page` when `OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE` matches.
+fn inject_inference_failure(page: u32) -> std::io::Result<()> {
+    injected_failure(
+        std::env::var("OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE")
+            .ok()
+            .as_deref(),
+        page,
+        "injected inference failure",
+    )
+}
+
 impl PageRenderer for PdfScanRenderer {
     fn preflight(&mut self) -> std::io::Result<()> {
         self.renderer
@@ -1544,6 +1600,7 @@ impl PageRenderer for PdfScanRenderer {
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+        inject_render_failure(page)?;
         const PIXEL_BUDGET: u64 = 2880 * 2880;
         let (image, original_width, original_height) = self
             .renderer
@@ -1585,24 +1642,51 @@ impl PageRenderer for PdfScanRenderer {
     }
 }
 
-struct RuntimeLoader {
-    model: PathBuf,
-    mmproj: PathBuf,
+struct PreloadedLoader {
+    model: Option<LlamaMtmdRuntime>,
+}
+impl ModelLoader for PreloadedLoader {
+    type Model = LlamaMtmdRuntime;
+    fn load(&mut self) -> std::io::Result<Self::Model> {
+        self.model
+            .take()
+            .ok_or_else(|| std::io::Error::other("runtime already loaded"))
+    }
+}
+
+/// Loads the runtime, falling back to CPU when GPU initialization fails (W4.1).
+///
+/// Plan §3.2: a GPU backend that is compiled in but unavailable at runtime
+/// (missing Vulkan ICD, no CUDA driver) must degrade to CPU with an explicit
+/// warning instead of failing the whole scan with exit 6. The warning is
+/// returned alongside the runtime and recorded in `summary.warnings`.
+fn load_runtime_with_fallback(
+    model: &Path,
+    mmproj: &Path,
     gpu: bool,
     max_image_tokens: u32,
     context_size: u32,
-}
-impl ModelLoader for RuntimeLoader {
-    type Model = LlamaMtmdRuntime;
-    fn load(&mut self) -> std::io::Result<Self::Model> {
-        LlamaMtmdRuntime::load(
-            &self.model,
-            &self.mmproj,
-            self.gpu,
-            self.max_image_tokens,
-            self.context_size,
-        )
-        .map_err(std::io::Error::other)
+) -> std::io::Result<(LlamaMtmdRuntime, Option<String>)> {
+    if !gpu {
+        return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size)
+            .map(|runtime| (runtime, None))
+            .map_err(std::io::Error::other);
+    }
+    match LlamaMtmdRuntime::load(model, mmproj, true, max_image_tokens, context_size) {
+        Ok(runtime) => Ok((runtime, None)),
+        Err(gpu_error) => {
+            let cpu_runtime =
+                LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size)
+                    .map_err(|cpu_error| {
+                        std::io::Error::other(format!(
+                            "gpu load failed: {gpu_error}; cpu fallback failed: {cpu_error}"
+                        ))
+                    })?;
+            Ok((
+                cpu_runtime,
+                Some(format!("gpu init failed; fallback to cpu: {gpu_error}")),
+            ))
+        }
     }
 }
 
@@ -1663,7 +1747,25 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         page: u32,
         image: &RenderedPage,
     ) -> std::io::Result<PageArtifactResult> {
-        let artifact = ocrx_ovisocr2::write_page_artifacts_with_status(
+        self.recognize_artifact_cancelled(
+            model,
+            page,
+            image,
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+    }
+
+    fn recognize_artifact_cancelled(
+        &mut self,
+        model: &mut LlamaMtmdRuntime,
+        page: u32,
+        image: &RenderedPage,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> std::io::Result<PageArtifactResult> {
+        inject_inference_failure(page)?;
+        let artifact = ocrx_ovisocr2::write_page_artifacts_with_status_cancelled(
             model,
             page,
             image.width,
@@ -1671,10 +1773,14 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             image.rgb8.clone(),
             self.max_tokens,
             &self.output,
+            cancellation,
+            progress,
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let previous = *self.telemetry.borrow();
-        *self.telemetry.borrow_mut() = previous.merge(model.telemetry());
+        // Runtime telemetry is cumulative across pages for this loaded model,
+        // so the scan-wide value is the runtime's current total — merging it
+        // into the previous total would double-count every completed page.
+        *self.telemetry.borrow_mut() = model.telemetry();
         let mut png = Cursor::new(Vec::new());
         image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
             .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
@@ -1692,6 +1798,11 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
 
 fn run_scan(options: ScanOptions) -> ! {
     let started = Instant::now();
+    // Install the Ctrl+C handler before any slow phase (PDF analysis, native
+    // extraction, runtime load), so "exit 130 → resume with --resume" covers
+    // the whole scan window, not only the OCR loop (MINOR 3).
+    let cancellation = CancellationToken::new();
+    install_sigint_handler(cancellation.clone());
     let report_format = if options.report == "json" {
         ReportFormat::Json
     } else {
@@ -1766,6 +1877,27 @@ fn run_scan(options: ScanOptions) -> ! {
         print_reporter(reporter);
         std::process::exit(2);
     }
+    // W1.4/W4.1: an explicit device request must fail diagnosably when the
+    // backend is not compiled into this binary, even when the document needs
+    // no OCR at all (native-text routing never reaches runtime resolution).
+    if options.device != "auto" {
+        if let Err(device_error) = recommend_device(resource_snapshot(), &options.device) {
+            reporter.error(
+                &ErrorReport {
+                    code: 6,
+                    kind: "runtime".to_owned(),
+                    message: "requested device is unavailable".to_owned(),
+                    cause: Some(format!("{device_error:?}")),
+                    suggestion: Some(
+                        "run `ocrx doctor --report json` to see available backends".to_owned(),
+                    ),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(6);
+        }
+    }
     let required_tier = if options.quality_tier == "l1" {
         QualityTier::L1
     } else {
@@ -1812,7 +1944,7 @@ fn run_scan(options: ScanOptions) -> ! {
     let initial_queue = initial_ocr_queue_for_mode(&options.pdf_mode, &pages, &classifications);
     let cache = std::env::var_os("OCRX_MODEL_CACHE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
+        .unwrap_or_else(ocrx_models::default_cache_root);
     if output.exists()
         && (output.join("document.md").exists() || output.join("result.json").exists())
         && !options.resume
@@ -2345,8 +2477,6 @@ fn run_scan(options: ScanOptions) -> ! {
             progress_mode,
         );
     }
-    let cancellation = CancellationToken::new();
-    install_sigint_handler(cancellation.clone());
     // W4.4 GPU report: opt-in so a normal scan does not spawn a background
     // sampler or write an extra file by default. Enabled only when OCR actually
     // runs on a GPU backend and OCRX_GPU_REPORT is explicitly set.
@@ -2357,22 +2487,53 @@ fn run_scan(options: ScanOptions) -> ! {
         None
     };
     let summary = if execution_plan.initialize_runtime {
-        let loader = RuntimeLoader {
-            model,
-            mmproj,
-            gpu: device != "cpu",
-            max_image_tokens: options.max_image_tokens.unwrap_or(1024),
-            context_size: options.context_size.unwrap_or(16_384),
+        // W4.1: load once with GPU→CPU fallback so a machine whose GPU is
+        // absent or unusable degrades to CPU with a recorded warning instead
+        // of aborting the whole scan with exit 6.
+        let (loaded_model, gpu_fallback_warning) = match load_runtime_with_fallback(
+            &model,
+            &mmproj,
+            device != "cpu",
+            options.max_image_tokens.unwrap_or(1024),
+            options.context_size.unwrap_or(16_384),
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                reporter.error(
+                    &ErrorReport {
+                        code: 6,
+                        kind: "runtime".to_owned(),
+                        message: "runtime initialization failed".to_owned(),
+                        cause: Some(error.to_string()),
+                        suggestion: Some(
+                            "verify model/runtime compatibility or use --device cpu".to_owned(),
+                        ),
+                    },
+                    report_format,
+                );
+                print_reporter(reporter);
+                std::process::exit(6);
+            }
+        };
+        let loader = PreloadedLoader {
+            model: Some(loaded_model),
         };
         let mut service = ScanService::new(renderer, loader, recognizer);
-        service.run_with_checkpoints_cancelled(
-            &ocr_service_pages,
-            &output,
-            &ocr_compatibility,
-            options.resume,
-            options.keep_pages,
-            &cancellation,
-        )
+        service
+            .run_with_checkpoints_cancelled(
+                &ocr_service_pages,
+                &output,
+                &ocr_compatibility,
+                options.resume,
+                options.keep_pages,
+                &cancellation,
+            )
+            .map(|mut summary| {
+                if let Some(warning) = gpu_fallback_warning {
+                    summary.warnings.push(warning);
+                }
+                summary
+            })
     } else {
         Ok(ocrx_output::JobSummary {
             selected_pages: 0,
@@ -2385,6 +2546,11 @@ fn run_scan(options: ScanOptions) -> ! {
         })
     };
     let vram_peak_bytes = stop_vram_sampler(vram_sampler);
+    // The GPU resource report is opt-in telemetry: a failure to write it must
+    // not discard a fully completed scan, so the error is recorded as a
+    // warning instead of aborting with exit 6 before result.json/document.md
+    // are committed.
+    let mut gpu_report_warning = None;
     if gpu_report_enabled && execution_plan.initialize_runtime && device != "cpu" {
         let scan_telemetry = *telemetry.borrow();
         let gpu_report = GpuResourceReport {
@@ -2401,22 +2567,15 @@ fn run_scan(options: ScanOptions) -> ! {
             output.join("gpu-resource.json"),
             gpu_report.to_json().as_bytes(),
         ) {
-            reporter.error(
-                &ErrorReport {
-                    code: 6,
-                    kind: "output".to_owned(),
-                    message: "gpu-resource.json commit failed".to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: None,
-                },
-                report_format,
-            );
-            print_reporter(reporter);
-            std::process::exit(6);
+            gpu_report_warning = Some(format!("gpu-resource.json write failed: {error}"));
         }
     }
     match summary {
-        Ok(summary) => {
+        Ok(mut summary) => {
+            if let Some(warning) = gpu_report_warning {
+                eprintln!("warning: {warning}");
+                summary.warnings.push(warning);
+            }
             let mut terminal_pending_pages = resume_pending_pages.clone();
             for diagnostic in &summary.diagnostics {
                 if diagnostic.status == "completed"
@@ -2871,9 +3030,16 @@ fn install_sigint_handler(token: CancellationToken) {
 }
 
 fn doctor_runtime_info(snapshot: ResourceSnapshot) -> RuntimeInfo {
+    // Mirrors `recommend_device`'s auto priority (metal > cuda > vulkan > cpu)
+    // so the reported backend can never contradict `recommended_device` on a
+    // Windows GPU machine (M10: Cuda/Vulkan used to be unreachable here).
     RuntimeInfo {
         backend: if snapshot.metal_available {
             Backend::Metal
+        } else if snapshot.cuda_available {
+            Backend::Cuda
+        } else if snapshot.vulkan_available {
+            Backend::Vulkan
         } else {
             Backend::Cpu
         },
@@ -2924,41 +3090,38 @@ fn print_help(topic: Option<&str>) {
     }
 }
 
+fn resource_snapshot_with_probe(
+    probe: &dyn system_probe::SystemProbe,
+    env_memory_gb: Option<u64>,
+) -> ResourceSnapshot {
+    let memory_gb = resolve_config(env_memory_gb, probe.detected_memory_gb(), None, 16).value;
+    // W1.1: hardware presence is intersected with the compiled-in backend set.
+    // A backend reports available only when the probe sees it AND this binary
+    // was built with its cargo feature, so `auto` and `doctor` can never
+    // select a backend that is not compiled in — and a compiled-in backend
+    // with no hardware (e.g. vulkan build without an ICD) is not recommended.
+    ResourceSnapshot {
+        memory_gb,
+        metal_available: probe.metal_available() && Backend::Metal.is_compiled(),
+        cuda_available: probe.cuda_available() && Backend::Cuda.is_compiled(),
+        vulkan_available: probe.vulkan_available() && Backend::Vulkan.is_compiled(),
+        cpu_available: probe.cpu_available(),
+    }
+}
+
 fn resource_snapshot() -> ResourceSnapshot {
-    let detected_memory = if cfg!(target_os = "macos") {
-        std::process::Command::new("sysctl")
-            .args(["-n", "hw.memsize"])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|value| value.trim().parse::<u64>().ok())
-            .map(|bytes| bytes / 1024 / 1024 / 1024)
-    } else {
-        None
-    };
-    let memory_gb = resolve_config(
+    resource_snapshot_with_probe(
+        &RealSystemProbe,
         std::env::var("OCRX_MEMORY_GB")
             .ok()
             .and_then(|value| value.parse().ok()),
-        detected_memory,
-        None,
-        16,
     )
-    .value;
-    ResourceSnapshot {
-        memory_gb,
-        metal_available: cfg!(target_os = "macos"),
-        cuda_available: ocrx_runtime::Backend::Cuda.is_compiled(),
-        vulkan_available: ocrx_runtime::Backend::Vulkan.is_compiled(),
-        cpu_available: true,
-    }
 }
 
 fn doctor_json_report(snapshot: ResourceSnapshot, info: RuntimeInfo) -> String {
     let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".ocrx-model-cache"));
+        .unwrap_or_else(ocrx_models::default_cache_root);
     doctor_json_report_with_cache(snapshot, info, cache_root)
 }
 
@@ -2979,13 +3142,7 @@ fn doctor_json_report_with_paths(
     let profile = recommend_profile(snapshot.memory_gb, &["compact", "balanced", "quality"])
         .unwrap_or_else(|_| "unavailable".to_owned());
     let device = recommend_device(snapshot, "auto").unwrap_or_else(|_| "unavailable".to_owned());
-    let platform = if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        "unsupported"
-    };
+    let platform = platform_paths::detect().as_str();
     let backend = match info.backend {
         Backend::Metal => "Metal",
         Backend::Cuda => "Cuda",
@@ -3003,7 +3160,10 @@ fn doctor_json_report_with_paths(
                 .unwrap_or(false)
         })
         .collect::<Vec<_>>();
-    let environment_home = std::env::var_os("HOME").map(PathBuf::from);
+    // `home_dir` covers the Windows USERPROFILE/HOMEDRIVE+HOMEPATH chain; a
+    // bare $HOME read is always unset in cmd.exe, which used to force
+    // skill_installed=false on Windows even after a successful install.
+    let environment_home = home_dir().ok();
     let skill_installed = home
         .map(|home| home.join(".codex/skills/ocrx/SKILL.md").is_file())
         .or_else(|| {
@@ -3018,7 +3178,7 @@ fn doctor_json_report_with_paths(
         snapshot.memory_gb,
         snapshot.metal_available,
         snapshot.cpu_available,
-        cache_root.display(),
+        json_escape_path(&cache_root),
         installed_profiles
             .iter()
             .map(|profile| format!("\"{profile}\""))
@@ -3038,14 +3198,15 @@ mod tests {
         NativeValidationRoute, ResolvedConfig, ResourceSnapshot, RoutingCounts, ScanExecutionPlan,
         ScanOptions, ScanResultFields, build_final_ocr_queue, doctor_json_report,
         dynamic_fallback_requires_model_assets, final_routing_diagnostics, format_routing_summary,
-        initial_ocr_queue, initial_ocr_queue_for_mode, native_candidate_outcome,
+        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
         native_candidate_pages, native_only_decision, ocr_queue_after_native_phase, parse_command,
-        parse_page_selection, parse_scan_args, pdf_reason_code_from_str, planned_ocr_pages,
-        prepare_model_if_required, resolve_config, restrict_ocr_queue_to_pages,
-        route_native_validation, routing_counts, routing_counts_for_mode, routing_diagnostic_json,
-        routing_diagnostic_with_processing, run_native_first_phase, service_pages_from_ocr_queue,
-        should_initialize_ocr_runtime, try_routing_diagnostic_with_processing,
-        validate_text_mode_classifications, with_ocr_runtime, write_routing_checkpoint_sidecars,
+        parse_injected_failure_page, parse_page_selection, parse_scan_args,
+        pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required, resolve_config,
+        restrict_ocr_queue_to_pages, route_native_validation, routing_counts,
+        routing_counts_for_mode, routing_diagnostic_json, routing_diagnostic_with_processing,
+        run_native_first_phase, service_pages_from_ocr_queue, should_initialize_ocr_runtime,
+        try_routing_diagnostic_with_processing, validate_text_mode_classifications,
+        with_ocr_runtime, write_routing_checkpoint_sidecars,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
@@ -3905,17 +4066,29 @@ mod tests {
 
     #[test]
     fn output_policy_rejects_input_and_protected_overlap() {
-        let input = Path::new("/work/input.pdf");
-        let cache = Path::new("/work/cache");
+        // Windows needs drive-qualified paths: "/work" and "/tmp" are not
+        // absolute there, which would change what the policy validates.
+        let (input, cache, outside) = if cfg!(target_os = "windows") {
+            (
+                Path::new("C:\\work\\input.pdf"),
+                Path::new("C:\\work\\cache"),
+                Path::new("C:\\tmp\\result"),
+            )
+        } else {
+            (
+                Path::new("/work/input.pdf"),
+                Path::new("/work/cache"),
+                Path::new("/tmp/result"),
+            )
+        };
         assert!(super::validate_output_policy(input, Path::new("relative"), &[cache]).is_err());
         assert!(
-            super::validate_output_policy(input, Path::new("/work/input.pdf/out"), &[cache])
-                .is_err()
+            super::validate_output_policy(input, input.join("out").as_path(), &[cache]).is_err()
         );
         assert!(
-            super::validate_output_policy(input, Path::new("/work/cache/job"), &[cache]).is_err()
+            super::validate_output_policy(input, cache.join("job").as_path(), &[cache]).is_err()
         );
-        assert!(super::validate_output_policy(input, Path::new("/tmp/result"), &[cache]).is_ok());
+        assert!(super::validate_output_policy(input, outside, &[cache]).is_ok());
     }
 
     #[test]
@@ -4105,13 +4278,25 @@ mod tests {
             Some(&empty),
         );
         let _ = std::fs::remove_dir_all(&empty);
+        // The platform field follows the running OS (macos/windows); keep the
+        // rest of the golden fixed so the JSON shape stays stable. The cache
+        // root must be JSON-escaped (Windows paths contain backslashes).
+        let platform = if cfg!(target_os = "windows") {
+            "windows"
+        } else {
+            "macos"
+        };
+        let escaped_cache_root = super::json_escape_path(&empty);
         assert_eq!(
             report,
             format!(
-                "{{\"schema_version\":2,\"platform\":\"macos\",\"model\":\"ovisocr2\",\"backend\":\"Metal\",\"image_token_limit\":1024,\"memory_gb\":16,\"metal_available\":true,\"cpu_available\":true,\"cache_root\":\"{}\",\"installed_profiles\":[],\"recommended_profile\":\"balanced\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
-                empty.display()
+                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"Metal\",\"image_token_limit\":1024,\"memory_gb\":16,\"metal_available\":true,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"balanced\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}"
             )
         );
+        // Golden text alone cannot catch an unescaped backslash (the fixture
+        // dir would bake the malformed bytes into the baseline), so also
+        // assert the report is a structurally valid single JSON object.
+        assert!(ocrx_core::is_valid_json(&report));
     }
 
     #[test]
@@ -4247,5 +4432,40 @@ mod tests {
         assert!(parse_page_selection("0").is_err());
         assert!(parse_page_selection("4-2").is_err());
         assert!(parse_page_selection("1,,3").is_err());
+    }
+
+    #[test]
+    fn injected_failure_page_parser_accepts_positive_and_rejects_invalid() {
+        assert_eq!(parse_injected_failure_page(Some("3")), Some(3));
+        assert_eq!(parse_injected_failure_page(Some("0")), None);
+        assert_eq!(parse_injected_failure_page(Some("abc")), None);
+        assert_eq!(parse_injected_failure_page(None), None);
+    }
+
+    #[test]
+    fn injected_failure_errors_only_for_the_matching_page() {
+        assert!(injected_failure(Some("2"), 1, "render").is_ok());
+        assert!(injected_failure(Some("2"), 2, "render").is_err());
+        assert!(injected_failure(None, 2, "render").is_ok());
+        assert!(injected_failure(Some("0"), 0, "render").is_ok());
+    }
+
+    #[test]
+    fn output_policy_rejects_case_variant_of_protected_path_on_windows() {
+        // M3 regression guard: NTFS matches paths case-insensitively, so a
+        // case-variant spelling of a protected root must be rejected.
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let input = Path::new("C:\\work\\input.pdf");
+        let cache = Path::new("C:\\Users\\u\\AppData\\Local");
+        assert!(
+            super::validate_output_policy(
+                input,
+                Path::new("c:\\users\\U\\appdata\\local"),
+                &[cache]
+            )
+            .is_err()
+        );
     }
 }

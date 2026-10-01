@@ -31,6 +31,22 @@ function Detect-GpuBackend {
   return 'cpu'
 }
 
+# Verify every file listed in the archive's SHA256SUMS (the archive carries its
+# own integrity manifest; a mismatch or missing file aborts the install).
+function Assert-ArchiveHashes([string]$StageRoot) {
+  $Sums = Join-Path $StageRoot 'SHA256SUMS'
+  if (-not (Test-Path $Sums)) { Fail 'archive SHA256SUMS missing' 5 }
+  foreach ($Line in (Get-Content $Sums)) {
+    if (-not $Line.Trim()) { continue }
+    $Parts = $Line -split '  ', 2
+    if ($Parts.Count -ne 2) { Fail 'archive SHA256SUMS malformed' 5 }
+    $File = Join-Path $StageRoot $Parts[1]
+    if (-not (Test-Path $File)) { Fail "archive file missing: $($Parts[1])" 5 }
+    $Actual = (Get-FileHash -Algorithm SHA256 $File).Hash.ToLower()
+    if ($Actual -ne $Parts[0].ToLower()) { Fail "archive hash mismatch: $($Parts[1])" 5 }
+  }
+}
+
 if ($env:OS -ne 'Windows_NT') { Fail 'OCR-CLI v0.1 supports Windows only' 2 }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail 'OCR-CLI v0.1 supports Windows x64 only' 2 }
 
@@ -43,6 +59,7 @@ New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 try {
   $InstallBinary = $null
   $InstallPdfium = $null
+  $ArchiveBinDir = $null
 
   if ($env:OCRX_RELEASE_ARCHIVE) {
     if (-not (Test-Path $env:OCRX_RELEASE_ARCHIVE)) { Fail 'release archive missing' 4 }
@@ -54,6 +71,8 @@ try {
     $InstallBinary = Get-ChildItem -Path $ExtractDir -Recurse -Filter 'ocrx.exe' | Select-Object -First 1 -ExpandProperty FullName
     if (-not $InstallBinary) { Fail 'archive has no ocrx binary' 4 }
     $InstallPdfium = Get-ChildItem -Path $ExtractDir -Recurse -Filter 'pdfium.dll' | Select-Object -First 1 -ExpandProperty FullName
+    $ArchiveBinDir = Split-Path $InstallBinary -Parent
+    Assert-ArchiveHashes (Split-Path $ArchiveBinDir -Parent)
   } elseif (Test-Path (Join-Path $RootDir 'target\release\ocrx.exe')) {
     $InstallBinary = Join-Path $RootDir 'target\release\ocrx.exe'
     $VendorPdfium = Join-Path $RootDir 'vendor\pdfium\bin\pdfium.dll'
@@ -72,6 +91,8 @@ try {
     $InstallBinary = Get-ChildItem -Path $ExtractDir -Recurse -Filter 'ocrx.exe' | Select-Object -First 1 -ExpandProperty FullName
     if (-not $InstallBinary) { Fail 'archive has no ocrx binary' 4 }
     $InstallPdfium = Get-ChildItem -Path $ExtractDir -Recurse -Filter 'pdfium.dll' | Select-Object -First 1 -ExpandProperty FullName
+    $ArchiveBinDir = Split-Path $InstallBinary -Parent
+    Assert-ArchiveHashes (Split-Path $ArchiveBinDir -Parent)
   } else {
     if ($Offline) { Fail 'OCRX_OFFLINE is set and no local release archive or build is available' 6 }
     Fail 'set OCRX_RELEASE_ARCHIVE or build target\release\ocrx.exe first' 4
@@ -79,13 +100,19 @@ try {
 
   $BinDir = Join-Path $Prefix 'bin'
   New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-  Copy-Item $InstallBinary (Join-Path $BinDir 'ocrx.exe') -Force
-  if ($InstallPdfium) { Copy-Item $InstallPdfium (Join-Path $BinDir 'pdfium.dll') -Force }
+  if ($ArchiveBinDir) {
+    # Copy the whole bin/ set (binary, pdfium.dll, VC++ runtime DLLs).
+    Get-ChildItem -File -Path $ArchiveBinDir | Copy-Item -Destination $BinDir -Force
+  } else {
+    Copy-Item $InstallBinary (Join-Path $BinDir 'ocrx.exe') -Force
+    if ($InstallPdfium) { Copy-Item $InstallPdfium (Join-Path $BinDir 'pdfium.dll') -Force }
+  }
 
   if ($env:OCRX_INSTALL_SKILL -eq '1') {
     if (-not $env:OCRX_SKILL_TARGET) { $env:OCRX_SKILL_TARGET = 'all' }
     if ($InstallPdfium) { $env:OCRX_PDFIUM_LIBRARY = Join-Path $BinDir 'pdfium.dll' }
     & (Join-Path $BinDir 'ocrx.exe') skill install
+    if ($LASTEXITCODE -ne 0) { Fail 'skill install failed' 4 }
   }
 
   Write-Host "installed $(Join-Path $BinDir 'ocrx.exe')"
@@ -93,7 +120,7 @@ try {
   $inPath = $false
   foreach ($d in $pathDirs) { if ($d -and ($d -ieq $BinDir)) { $inPath = $true; break } }
   if (-not $inPath) { Write-Host "add $BinDir to PATH" }
-  Write-Host 'model weights were not downloaded; run explicit model installation when configured'
+  Write-Host 'model weights were not downloaded; install them explicitly with the CLI when needed'
 } finally {
   Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 }

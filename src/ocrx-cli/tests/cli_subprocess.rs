@@ -24,6 +24,32 @@ fn cli_json_success_has_exactly_one_stdout_object() {
 }
 
 #[test]
+fn cli_doctor_json_report_parses_with_backslash_cache_root() {
+    // BLK-1 regression guard: a Windows cache root contains raw backslashes;
+    // the report used to emit them unescaped, producing invalid JSON that
+    // broke every jq/Agent consumer. Pin OCRX_MODEL_CACHE to a backslash
+    // path and require the output to be a parseable JSON object.
+    let cache = std::env::temp_dir().join(format!("ocrx-doctor-parse-{}", std::process::id()));
+    std::fs::create_dir_all(&cache).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args(["doctor", "--report", "json"])
+        .env("OCRX_MODEL_CACHE", &cache)
+        .output()
+        .expect("CLI test binary should run");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains('\\'),
+        "cache root with backslashes should appear escaped in: {stdout}"
+    );
+    assert!(
+        ocrx_core::is_valid_json(&stdout),
+        "doctor --report json must be parseable JSON, got: {stdout}"
+    );
+    let _ = std::fs::remove_dir_all(&cache);
+}
+
+#[test]
 fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
     let output = run_cli(&["scan", "input.pdf", "--model", "other"]);
     assert_eq!(output.status.code(), Some(2));
@@ -88,14 +114,34 @@ fn cli_scan_rejects_vulkan_on_cpu_only_build() {
     // W4.1 Red: a Windows CPU-only binary has `vulkan` compiled out, so an
     // explicit `--device vulkan` request must be rejected with exit code 6 and
     // exactly one JSON error object, never silently fall back to CPU.
-    let output = run_cli(&[
-        "scan",
-        "input.pdf",
-        "--device",
-        "vulkan",
-        "--report",
-        "json",
-    ]);
+    //
+    // The scan flow validates the input PDF (which requires PDFium) before it
+    // resolves the device request, so this contract needs a real pdfium.dll
+    // and a real PDF fixture. Skip when the local vendor layout is absent
+    // (clean CI), mirroring the PDFium probe test in ocrx-pdf.
+    let pdfium_dll =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/pdfium/bin/pdfium.dll");
+    if !pdfium_dll.is_file() {
+        eprintln!(
+            "skipping vulkan rejection check: vendor pdfium.dll not present at {}",
+            pdfium_dll.display()
+        );
+        return;
+    }
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf");
+    let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args([
+            "scan",
+            fixture.to_str().expect("fixture path is utf-8"),
+            "--device",
+            "vulkan",
+            "--report",
+            "json",
+        ])
+        .env("OCRX_PDFIUM_LIBRARY", &pdfium_dll)
+        .output()
+        .expect("CLI test binary should run");
     assert_eq!(output.status.code(), Some(6));
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(stdout.lines().count(), 1);

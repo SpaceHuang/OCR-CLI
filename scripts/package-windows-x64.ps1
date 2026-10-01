@@ -4,7 +4,10 @@
 #     SKILL.md
 #     bin/ocrx.exe
 #     bin/pdfium.dll
-#     licenses/pdfium/
+#     bin/ (VC++ runtime DLLs: msvcp140, vcruntime140, vcruntime140_1)
+#     licenses/
+#     LICENSE
+#     THIRD_PARTY_NOTICES.md
 #     INSTALL.txt
 # Model weights are never included.
 [CmdletBinding()]
@@ -36,8 +39,35 @@ function Assert-PeMachineType([string]$Path, [string]$Label, [uint16]$Expected) 
   if ($machine -ne $Expected) { Fail "$Label is not the expected architecture" 4 }
 }
 
+# Locate the VC++ redistributable CRT directory. The release binary links the
+# /MD CRT through llama.cpp, so these three DLLs must ship app-local in bin/
+# or a clean machine cannot start the binary. Override with OCRX_VC_RUNTIME_DIR.
+function Find-VcCrtDir {
+  $CrtDlls = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
+  if ($env:OCRX_VC_RUNTIME_DIR) { return $env:OCRX_VC_RUNTIME_DIR }
+  $Vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+  if (-not (Test-Path $Vswhere)) { return $null }
+  $VsRoot = & $Vswhere -latest -products * -property installationPath
+  if (-not $VsRoot) { return $null }
+  $RedistRoot = Join-Path $VsRoot 'VC\Redist\MSVC'
+  if (-not (Test-Path $RedistRoot)) { return $null }
+  $Candidates = Get-ChildItem -Directory -Path (Join-Path $RedistRoot '*\x64\Microsoft.VC*.CRT') -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending
+  foreach ($Candidate in $Candidates) {
+    $Complete = $true
+    foreach ($Dll in $CrtDlls) {
+      if (-not (Test-Path (Join-Path $Candidate.FullName $Dll))) { $Complete = $false; break }
+    }
+    if ($Complete) { return $Candidate.FullName }
+  }
+  return $null
+}
+
 if ($env:OS -ne 'Windows_NT') { Fail 'requires Windows' 2 }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail 'requires x64' 2 }
+if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+  Fail 'cmake not found on PATH; run from a VS developer prompt or add CMake to PATH' 4
+}
 
 if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
 if (Test-Path $LegacyStage) { Remove-Item -Recurse -Force $LegacyStage }
@@ -45,7 +75,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Stage 'bin') | Out-Null
 
 Push-Location $RootDir
 try {
-  & cargo build --release -p ocrx
+  & cargo build --release --locked -p ocrx
   if ($LASTEXITCODE -ne 0) { Fail 'cargo build failed' 4 }
 } finally {
   Pop-Location
@@ -74,6 +104,38 @@ if (Test-Path (Join-Path $PdfiumRoot 'LICENSE')) {
   Copy-Item (Join-Path $PdfiumRoot 'LICENSE') $LicenseDst -Force
 }
 
+# App-local VC++ runtime: ocrx.exe imports the /MD CRT DLLs, so they ship in
+# bin/ alongside the binary (find them, verify arch, hash them via SHA256SUMS).
+$VcCrtDir = Find-VcCrtDir
+if (-not $VcCrtDir) {
+  Fail 'VC++ runtime DLLs not found; set OCRX_VC_RUNTIME_DIR to a Microsoft.VC*.CRT directory' 4
+}
+foreach ($Dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+  $CrtSource = Join-Path $VcCrtDir $Dll
+  if (-not (Test-Path $CrtSource)) { Fail "VC runtime dll missing: $Dll" 4 }
+  Assert-PeMachineType -Path $CrtSource -Label $Dll -Expected ([uint16]0x8664)
+  Copy-Item $CrtSource (Join-Path (Join-Path $Stage 'bin') $Dll) -Force
+}
+
+# Ship the license set with the archive: the project Apache-2.0 text, the
+# third-party notices, the pinned llama.cpp MIT license, and the VC++ runtime
+# redistribution notice. Every bundled file is covered by SHA256SUMS below.
+foreach ($RepoFile in @('LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+  $NoticeSource = Join-Path $RootDir $RepoFile
+  if (-not (Test-Path $NoticeSource)) { Fail "license file missing in repo: $RepoFile" 4 }
+  Copy-Item $NoticeSource (Join-Path $Stage $RepoFile) -Force
+}
+$LlamaLicense = Join-Path $RootDir 'assets\licenses\llama.cpp\LICENSE'
+if (-not (Test-Path $LlamaLicense)) { Fail 'llama.cpp license missing under assets\licenses' 4 }
+$LlamaDst = Join-Path $Stage 'licenses\llama.cpp'
+New-Item -ItemType Directory -Force -Path $LlamaDst | Out-Null
+Copy-Item $LlamaLicense (Join-Path $LlamaDst 'LICENSE') -Force
+$VcNotice = Join-Path $RootDir 'assets\licenses\ms-vc-runtime\README.txt'
+if (-not (Test-Path $VcNotice)) { Fail 'VC runtime notice missing under assets\licenses' 4 }
+$VcDst = Join-Path $Stage 'licenses\ms-vc-runtime'
+New-Item -ItemType Directory -Force -Path $VcDst | Out-Null
+Copy-Item $VcNotice (Join-Path $VcDst 'README.txt') -Force
+
 Copy-Item (Join-Path $RootDir 'assets\skills\ocrx\SKILL.md') (Join-Path $Stage 'SKILL.md') -Force
 if (-not (Test-Path (Join-Path $Stage 'SKILL.md'))) { Fail 'SKILL.md missing at skill root' 4 }
 
@@ -85,7 +147,12 @@ Layout:
     SKILL.md
     bin/ocrx.exe
     bin/pdfium.dll
-    licenses/pdfium/
+    bin/msvcp140.dll
+    bin/vcruntime140.dll
+    bin/vcruntime140_1.dll
+    licenses/
+    LICENSE
+    THIRD_PARTY_NOTICES.md
     INSTALL.txt
 
 It does not contain model weights. Model installation is explicit.

@@ -109,6 +109,11 @@ $scanArgs = @(
     "`"$outputDir`""
     "--pages"
     "1,2"
+    # The fixture pages carry a reliable text layer, so default content-aware
+    # routing finishes them natively without ever reaching the OCR generation
+    # loop the Ctrl+C contract covers. Force the OCR queue.
+    "--pdf-mode"
+    "ocr"
     "--model-profile"
     "compact"
     "--device"
@@ -159,18 +164,31 @@ try {
 
     $childPid = $pi.dwProcessId
     $firstCheckpoint = Join-Path $outputDir "page-0001.checkpoint"
+    $secondCheckpoint = Join-Path $outputDir "page-0002.checkpoint"
     $deadline = (Get-Date).AddMinutes(12)
     while (-not (Test-Path -LiteralPath $firstCheckpoint)) {
         if ((Get-Date) -gt $deadline) {
             throw "page 1 did not commit before deadline; output was not produced"
         }
-        Start-Sleep -Seconds 2
+        Start-Sleep -Milliseconds 250
+    }
+    if (Test-Path -LiteralPath $secondCheckpoint) {
+        throw "page 2 already committed before the cancel could be exercised; the workload is too small to smoke-test cancellation"
     }
 
     # CTRL_BREAK_EVENT (1) targets the new process group reliably on Windows.
     [void][CtrlCNative]::GenerateConsoleCtrlEvent(1, [uint32]$childPid)
 
-    [void][CtrlCNative]::WaitForSingleObject($pi.hProcess, 120000)
+    $waitDeadline = (Get-Date).AddSeconds(120)
+    while ($true) {
+        [uint32]$exitCode = 0
+        [void][CtrlCNative]::GetExitCodeProcess($pi.hProcess, [ref]$exitCode)
+        if ($exitCode -ne 259) { break } # 259 = STILL_ACTIVE
+        if ((Get-Date) -gt $waitDeadline) {
+            throw "child did not exit within 120s of Ctrl+C; cancellation did not reach the generation loop"
+        }
+        Start-Sleep -Milliseconds 250
+    }
     [uint32]$exitCode = 0
     [void][CtrlCNative]::GetExitCodeProcess($pi.hProcess, [ref]$exitCode)
 
@@ -184,10 +202,16 @@ try {
         throw "temporary .part files were left behind after cancellation"
     }
 
-    # Resume must reuse page 1 and finish page 2.
-    & $Binary scan $Fixture --output-dir $outputDir --pages 1,2 --model-profile compact `
+    # Resume must reuse page 1 and finish page 2. The model load writes
+    # llama.cpp progress logs to stderr; with a Stop preference PowerShell 5.1
+    # turns each stderr line into a terminating error, so relax the preference
+    # around this native invocation (the exit code is the contract here).
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $Binary scan $Fixture --output-dir $outputDir --pages 1,2 --pdf-mode ocr --model-profile compact `
         --device cpu --offline --non-interactive --report json --resume `
         --max-image-tokens 128 --max-output-tokens 128 2>&1 | Out-Null
+    $ErrorActionPreference = $previousPreference
     $resumeCode = $LASTEXITCODE
     if ($resumeCode -notin @(0, 10)) {
         throw "resume scan failed with exit code $resumeCode"

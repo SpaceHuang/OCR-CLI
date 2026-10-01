@@ -12,8 +12,21 @@ grep -q 'uname -s' "$ROOT_DIR/scripts/package-macos-arm64.sh"
 grep -q 'arm64' "$ROOT_DIR/scripts/package-macos-arm64.sh"
 grep -q 'macOS only' "$ROOT_DIR/scripts/install.sh"
 grep -q 'arm64 only' "$ROOT_DIR/scripts/install.sh"
-! grep -qE 'gguf|download.*model|model.*download' "$ROOT_DIR/scripts/package-macos-arm64.sh"
-! grep -qE 'gguf|download.*model' "$ROOT_DIR/scripts/install.sh"
+# Privacy gate: release scripts must never download or embed model weights.
+# `! grep` is exempt from errexit in bash, so the negation form was a silent
+# no-op; use an explicit failure branch instead.
+if grep -qEi 'gguf|download.*model|model.*download' "$ROOT_DIR/scripts/package-macos-arm64.sh"; then
+  echo "package-macos-arm64.sh mentions model downloads/gguf" >&2; exit 1
+fi
+if grep -qEi 'gguf|download.*model' "$ROOT_DIR/scripts/install.sh"; then
+  echo "install.sh mentions model downloads/gguf" >&2; exit 1
+fi
+if grep -qEi 'gguf|download.*model' "$ROOT_DIR/scripts/install.ps1"; then
+  echo "install.ps1 mentions model downloads/gguf" >&2; exit 1
+fi
+if grep -qEi 'gguf|download.*model|model.*download' "$ROOT_DIR/scripts/package-windows-x64.ps1"; then
+  echo "package-windows-x64.ps1 mentions model downloads/gguf" >&2; exit 1
+fi
 # Release stage must be a standard skill root (SKILL.md beside bin/), not assets/skills nesting.
 grep -q 'STAGE="$OUT_DIR/ocrx"' "$ROOT_DIR/scripts/package-macos-arm64.sh"
 grep -q 'cp "$ROOT_DIR/assets/skills/ocrx/SKILL.md" "$STAGE/SKILL.md"' "$ROOT_DIR/scripts/package-macos-arm64.sh"

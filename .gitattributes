@@ -1,1 +1,5 @@
 *.rs text eol=lf
+# Fixtures are hash-locked test inputs; their bytes must survive checkout
+# byte-identically on every platform (Windows autocrlf corrupted *.txt and
+# even some generated *.pdf fixtures before this rule).
+benchmarks/fixtures/** -text
