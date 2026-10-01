@@ -3,3 +3,11 @@
 # byte-identically on every platform (Windows autocrlf corrupted *.txt and
 # even some generated *.pdf fixtures before this rule).
 benchmarks/fixtures/** -text
+# Vendored native binaries and archives must never be text-normalized: a
+# CRLF-mangled pdfium.dll would not load and a rewritten GGUF or release
+# archive would fail its pinned SHA-256 verification.
+*.dll binary
+*.dylib binary
+*.gguf binary
+*.zip binary
+*.tgz binary
