@@ -205,15 +205,34 @@ impl Runtime for LlamaMtmdRuntime {
                     elapsed_seconds,
                 });
             }
-            let logits = context.get_logits();
-            let (index, _) = logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, left), (_, right)| left.total_cmp(right))
-                .ok_or_else(|| "empty logits".to_owned())?;
-            let token = LlamaToken::new(
-                i32::try_from(index).map_err(|_| "logits index exceeds token range".to_owned())?,
-            );
+            // Fallible per-token steps: every error path records the telemetry
+            // gathered so far before failing the page, so mid-generation
+            // failures still contribute token/timing counts (MINOR 10).
+            let next_token = (|| -> Result<LlamaToken, String> {
+                let logits = context.get_logits();
+                let (index, _) = logits
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, left), (_, right)| left.total_cmp(right))
+                    .ok_or_else(|| "empty logits".to_owned())?;
+                let token = LlamaToken::new(
+                    i32::try_from(index)
+                        .map_err(|_| "logits index exceeds token range".to_owned())?,
+                );
+                Ok(token)
+            })();
+            let token = match next_token {
+                Ok(token) => token,
+                Err(error) => {
+                    drop(context);
+                    self.record_generation(
+                        generated_tokens,
+                        started.elapsed().as_millis() as u64,
+                        first_token_ms,
+                    );
+                    return Err(error);
+                }
+            };
             if token == self.model.token_eos() {
                 drop(context);
                 self.record_generation(
@@ -226,22 +245,33 @@ impl Runtime for LlamaMtmdRuntime {
                     finish_reason: "eos".to_owned(),
                 });
             }
-            output.push_str(&String::from_utf8_lossy(
-                &self
-                    .model
-                    .token_to_piece_bytes(token, 64, false, None)
-                    .map_err(|error| error.to_string())?,
-            ));
-            let mut batch = LlamaBatch::new(1, 1);
-            let token_position = position
-                + i32::try_from(generated)
-                    .map_err(|_| "token position exceeds range".to_owned())?;
-            batch
-                .add(token, token_position, &[0], true)
-                .map_err(|error| error.to_string())?;
-            context
-                .decode(&mut batch)
-                .map_err(|error| error.to_string())?;
+            let decode_step = (|| -> Result<(), String> {
+                output.push_str(&String::from_utf8_lossy(
+                    &self
+                        .model
+                        .token_to_piece_bytes(token, 64, false, None)
+                        .map_err(|error| error.to_string())?,
+                ));
+                let mut batch = LlamaBatch::new(1, 1);
+                let token_position = position
+                    + i32::try_from(generated)
+                        .map_err(|_| "token position exceeds range".to_owned())?;
+                batch
+                    .add(token, token_position, &[0], true)
+                    .map_err(|error| error.to_string())?;
+                context
+                    .decode(&mut batch)
+                    .map_err(|error| error.to_string())
+            })();
+            if let Err(error) = decode_step {
+                drop(context);
+                self.record_generation(
+                    generated_tokens,
+                    started.elapsed().as_millis() as u64,
+                    first_token_ms,
+                );
+                return Err(error);
+            }
             generated_tokens += 1;
         }
         drop(context);

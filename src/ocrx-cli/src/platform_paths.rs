@@ -47,7 +47,11 @@ pub fn detect() -> Platform {
 
 /// Resolves the user home directory from explicit environment values.
 ///
-/// Order: `HOME`, then `USERPROFILE`, then `HOMEDRIVE`+`HOMEPATH`. Returns an
+/// On Windows the order is `USERPROFILE`, then `HOME`, then `HOMEDRIVE`+
+/// `HOMEPATH`: Git Bash sets `HOME` to an MSYS-style path (`/c/Users/x`)
+/// that is not a valid Windows path for Rust filesystem operations, so the
+/// native `USERPROFILE` must win there (review MINOR 2). Elsewhere the order
+/// is `HOME`, then `USERPROFILE`, then `HOMEDRIVE`+`HOMEPATH`. Returns an
 /// error when none are set — never falls back to the current directory (B5:
 /// never silently write skills into the project directory).
 pub fn home_dir_from_env(
@@ -56,10 +60,15 @@ pub fn home_dir_from_env(
     homedrive: Option<&str>,
     homepath: Option<&str>,
 ) -> Result<PathBuf, String> {
-    if let Some(value) = home.filter(|s| !s.is_empty()) {
+    let (primary, secondary) = if cfg!(target_os = "windows") {
+        (userprofile, home)
+    } else {
+        (home, userprofile)
+    };
+    if let Some(value) = primary.filter(|s| !s.is_empty()) {
         return Ok(PathBuf::from(value));
     }
-    if let Some(value) = userprofile.filter(|s| !s.is_empty()) {
+    if let Some(value) = secondary.filter(|s| !s.is_empty()) {
         return Ok(PathBuf::from(value));
     }
     if let (Some(drive), Some(path)) = (
@@ -186,19 +195,34 @@ mod tests {
 
     #[test]
     fn home_dir_prefers_home_then_userprofile_then_drive_pair() {
+        // Precedence is platform-dependent (Windows: USERPROFILE first, see
+        // MINOR 2); assert both orders through the pure helper.
+        let (first, second) = if cfg!(target_os = "windows") {
+            ("C:\\Users\\a", "/Users/a")
+        } else {
+            ("/Users/a", "C:\\Users\\a")
+        };
         assert_eq!(
             home_dir_from_env(Some("/Users/a"), None, None, None).unwrap(),
-            PathBuf::from("/Users/a")
-        );
-        // HOME wins over USERPROFILE.
-        assert_eq!(
-            home_dir_from_env(Some("/Users/a"), Some("C:\\Users\\a"), None, None).unwrap(),
             PathBuf::from("/Users/a")
         );
         // USERPROFILE fallback.
         assert_eq!(
             home_dir_from_env(None, Some("C:\\Users\\a"), None, None).unwrap(),
             PathBuf::from("C:\\Users\\a")
+        );
+        // The platform-primary variable wins when both are set.
+        assert_eq!(
+            home_dir_from_env(Some("/Users/a"), Some("C:\\Users\\a"), None, None).unwrap(),
+            PathBuf::from(first)
+        );
+        assert_eq!(
+            home_dir_from_env(Some(second), Some("C:\\Users\\a"), None, None).unwrap(),
+            PathBuf::from(if cfg!(target_os = "windows") {
+                "C:\\Users\\a"
+            } else {
+                "/Users/a"
+            })
         );
         // HOMEDRIVE + HOMEPATH fallback, tolerating leading backslash.
         assert_eq!(

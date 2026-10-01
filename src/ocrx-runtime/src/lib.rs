@@ -50,7 +50,9 @@ pub enum Backend {
 }
 
 impl Backend {
-    /// Stable lowercase identifier used in doctor JSON and runtime reports.
+    /// Stable backend identifier used in doctor JSON and runtime reports
+    /// (title case, e.g. `Cpu`); the doctor JSON consumes this directly so
+    /// the spelling lives in exactly one place.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

@@ -662,7 +662,10 @@ pub fn download_asset(
     if offline {
         return Err(ManifestError::Offline);
     }
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
+    // Model provenance contract (AGENTS.md): weights come only from pinned
+    // HTTPS URLs; plaintext HTTP would let a network rewrite the bytes
+    // between download and SHA-256 verification.
+    if !url.starts_with("https://") {
         return Err(ManifestError::Network);
     }
     let part_path = part_path.as_ref();
@@ -975,6 +978,17 @@ mod tests {
         assert_eq!(
             download_asset(
                 "file:///tmp/model",
+                root.join("model.part"),
+                root.join("model.etag"),
+                false
+            ),
+            Err(ManifestError::Network)
+        );
+        // HTTPS-only provenance: plaintext http is refused like any other
+        // non-pinned scheme (MINOR 12).
+        assert_eq!(
+            download_asset(
+                "http://example.invalid/model.gguf",
                 root.join("model.part"),
                 root.join("model.etag"),
                 false

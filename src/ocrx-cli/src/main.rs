@@ -3144,12 +3144,9 @@ fn doctor_json_report_with_paths(
         .unwrap_or_else(|_| "unavailable".to_owned());
     let device = recommend_device(snapshot, "auto").unwrap_or_else(|_| "unavailable".to_owned());
     let platform = platform_paths::detect().as_str();
-    let backend = match info.backend {
-        Backend::Metal => "Metal",
-        Backend::Cuda => "Cuda",
-        Backend::Vulkan => "Vulkan",
-        Backend::Cpu => "Cpu",
-    };
+    // Single source of the doctor spelling; the frozen golden strings
+    // ("Metal"/"Cuda"/"Vulkan"/"Cpu") live in `Backend::as_str`.
+    let backend = info.backend.as_str();
     let installed_profiles = ["compact", "balanced", "quality", "reference"]
         .into_iter()
         .filter(|profile| {

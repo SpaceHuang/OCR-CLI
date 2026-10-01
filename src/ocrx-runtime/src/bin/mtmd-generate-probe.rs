@@ -1,11 +1,11 @@
 //! Standalone MTMD probe binary.
 //!
-//! The real probe binds `llama_cpp_2`, which is only a dependency on macOS today
-//! (see `ocrx-runtime/Cargo.toml`). Until the Windows runtime is aligned
-//! (plan WP.2/W3.1), the probe is built only on macOS; on other targets it
-//! exits with a diagnostic so the workspace still compiles everywhere.
+//! `llama_cpp_2` (with `mtmd`) is a declared dependency on macOS and, since
+//! the WP.2 Windows build freeze, on Windows too — matching the
+//! `llama_mtmd` runtime gate. The probe builds on both; other targets get a
+//! diagnostic so the workspace still compiles everywhere.
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod probe {
     use std::num::NonZeroU32;
     use std::path::Path;
@@ -104,16 +104,16 @@ mod probe {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     probe::run()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn main() {
     eprintln!(
         "mtmd-generate-probe: the llama_cpp_2 runtime is not built on this target; \
-         run on macOS (or after the Windows runtime is aligned, plan WP.2/W3.1)."
+         run on macOS or Windows (plan WP.2/W3.1)."
     );
     std::process::exit(1);
 }
