@@ -1297,6 +1297,18 @@ pub struct PdfWorkerScheduler {
     /// behavior without touching the process-wide environment (edition 2024
     /// forbids `std::env::set_var`).
     pub env: Vec<(String, String)>,
+    /// Password forwarded to the worker as its optional 7th protocol argument
+    /// so encrypted PDFs render in worker mode exactly like in-process.
+    pub password: Option<String>,
+}
+
+impl PdfWorkerScheduler {
+    /// Sets the password passed to every worker (encrypted PDF support).
+    #[must_use]
+    pub fn with_password(mut self, password: impl Into<String>) -> Self {
+        self.password = Some(password.into());
+        self
+    }
 }
 
 impl PdfWorkerScheduler {
@@ -1355,10 +1367,25 @@ impl PdfWorkerScheduler {
                 segment_root.to_string_lossy().as_ref(),
                 &self.dpi.to_string(),
             ]);
+            if let Some(password) = &self.password {
+                command.arg(password);
+            }
             for (key, value) in &self.env {
                 command.env(key, value);
             }
+            // Worker diagnostics go to the parent's stderr, never stdout: the
+            // CLI owns stdout for `--report json` / `--progress jsonl`, and a
+            // chatty worker printing `page=N` progress lines must not
+            // interleave with those contracts (review MINOR 4).
+            command.stdout(std::process::Stdio::piped());
+            command.stderr(std::process::Stdio::inherit());
             let mut child = command.spawn()?;
+            if let Some(stdout) = child.stdout.take() {
+                std::thread::spawn(move || {
+                    let mut stdout = stdout;
+                    let _ = std::io::copy(&mut stdout, &mut std::io::stderr());
+                });
+            }
             let mut peak_rss_kb = 0;
             let mut tick = 0u32;
             let status = loop {
@@ -1450,10 +1477,12 @@ pub struct PdfiumRenderer {
     password: Option<String>,
 }
 
-// pdfium-render bindings are process-global; bind once and reuse them for a scan job.
-// The bind happens inside `OnceLock::get_or_init` so concurrent callers never race
-// on `Pdfium::new` (which asserts bindings are uninitialized); the closure runs at
-// most once and the result - success or failure - is cached for the process.
+// pdfium-render bindings are process-global; bind once and reuse them for a
+// scan job. Successes are cached in a `OnceLock` so every later call reuses
+// the same binding; bind attempts are serialized by a mutex because
+// `Pdfium::new` asserts process-global uninitialized bindings. A failed bind
+// is deliberately NOT cached: a transiently wrong `OCRX_PDFIUM_LIBRARY` must
+// not poison every later call in the process — the next call retries.
 
 /// Resolves the platform PDFium library file path under `library_dir`, rejecting
 /// path-escape (`..` components) so a crafted `library_dir` can never traverse
@@ -1474,30 +1503,58 @@ pub fn pdfium_library_path(library_dir: &Path) -> Result<PathBuf, PdfErrorKind> 
 }
 
 fn shared_pdfium(library_dir: &Path) -> Result<&'static Pdfium, Box<dyn std::error::Error>> {
-    use std::sync::OnceLock;
-    static PDFIUM: OnceLock<Result<Pdfium, String>> = OnceLock::new();
-    let result = PDFIUM.get_or_init(|| {
-        // OCRX_PDFIUM_LIBRARY may point at the library file itself or its
-        // containing directory; accept both forms at this boundary.
-        let library = if library_dir.is_file() {
-            library_dir.to_path_buf()
-        } else {
-            match pdfium_library_path(library_dir) {
-                Ok(path) => path,
-                Err(_) => {
-                    return Err(
-                        "library_dir contains parent-dir (..) traversal; refused to load"
-                            .to_owned(),
-                    );
-                }
-            }
-        };
+    use std::sync::{Mutex, OnceLock};
+    static PDFIUM: OnceLock<&'static Pdfium> = OnceLock::new();
+    static BIND_MUTEX: Mutex<()> = Mutex::new(());
+
+    if let Some(pdfium) = PDFIUM.get() {
+        return Ok(pdfium);
+    }
+    let _bind_guard = BIND_MUTEX
+        .lock()
+        .map_err(|_| "pdfium bind mutex poisoned")?;
+    if let Some(pdfium) = PDFIUM.get() {
+        return Ok(pdfium);
+    }
+    // OCRX_PDFIUM_LIBRARY may point at the library file itself or its
+    // containing directory. A non-existent relative spelling with `..`
+    // components is refused outright; a file that actually exists is
+    // canonicalized to its real location first, which both absorbs `..`
+    // spellings in legitimate paths (tests embed `../../vendor/...`) and
+    // pins the load to the file that is really there — the file form can no
+    // longer bypass the traversal guard by naming a file directly (MINOR 7).
+    let is_file_form = library_dir.is_file();
+    if !is_file_form
+        && library_dir
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(
+            "pdfium library path contains parent-dir (..) traversal; refused to load"
+                .to_owned()
+                .into(),
+        );
+    }
+    let library = if is_file_form {
+        std::fs::canonicalize(library_dir)
+            .map_err(|error| format!("pdfium library path unavailable: {error}"))?
+    } else {
+        pdfium_library_path(library_dir).map_err(|error| format!("{error:?}"))?
+    };
+    let leaked: &'static Pdfium = Box::leak(Box::new(
         Pdfium::bind_to_library(library)
             .map(Pdfium::new)
-            .map_err(|error| error.to_string())
-    });
-    result.as_ref().map_err(|error| error.clone().into())
+            .map_err(|error| error.to_string())?,
+    ));
+    Ok(PDFIUM.get_or_init(|| leaked))
 }
+
+/// Pre-rasterization pixel budget shared by every render entry point: a page
+/// whose MediaBox at the requested DPI would exceed this is rasterized at a
+/// proportionally reduced size instead of allocating an unbounded bitmap
+/// (a hostile `200000x200000` pt MediaBox at 300 DPI used to allocate ~200 GB
+/// before any scaling could happen downstream).
+const MAX_RENDER_PIXELS: u64 = 2880 * 2880;
 
 impl PdfiumRenderer {
     pub fn new(library_dir: impl Into<PathBuf>) -> Self {
@@ -1522,10 +1579,18 @@ impl PdfiumRenderer {
         let input = input.as_ref();
         let document = pdfium.load_pdf_from_file(input, self.password.as_deref())?;
         let page = document.pages().get(page_number.try_into()?)?;
-        let width = (page.width().value * f32::from(options.dpi) / 72.0).round() as i32;
-        let height = (page.height().value * f32::from(options.dpi) / 72.0).round() as i32;
+        let raw_width = (page.width().value * f32::from(options.dpi) / 72.0)
+            .round()
+            .max(1.0) as u32;
+        let raw_height = (page.height().value * f32::from(options.dpi) / 72.0)
+            .round()
+            .max(1.0) as u32;
+        let (width, height, _) = fit_pixel_budget(raw_width, raw_height, MAX_RENDER_PIXELS);
         Ok(page
-            .render_with_config(&render_config(width, height))?
+            .render_with_config(&render_config(
+                i32::try_from(width)?,
+                i32::try_from(height)?,
+            ))?
             .as_image()?
             .into_rgb8())
     }
@@ -1547,6 +1612,10 @@ impl PdfiumRenderer {
     }
 
     /// Renders a page and returns its source-at-72-DPI dimensions for audit metadata.
+    ///
+    /// The bitmap size is clamped to [`MAX_RENDER_PIXELS`] before allocation;
+    /// `original_*` stays the true page size at 72 DPI so the audit still
+    /// reports the unscaled geometry.
     pub fn render_page_rgb8_with_audit(
         &self,
         input: impl AsRef<Path>,
@@ -1558,10 +1627,18 @@ impl PdfiumRenderer {
         let page = document.pages().get(page_number.try_into()?)?;
         let original_width = page.width().value.round().max(1.0) as u32;
         let original_height = page.height().value.round().max(1.0) as u32;
-        let width = (page.width().value * f32::from(options.dpi) / 72.0).round() as i32;
-        let height = (page.height().value * f32::from(options.dpi) / 72.0).round() as i32;
+        let raw_width = (page.width().value * f32::from(options.dpi) / 72.0)
+            .round()
+            .max(1.0) as u32;
+        let raw_height = (page.height().value * f32::from(options.dpi) / 72.0)
+            .round()
+            .max(1.0) as u32;
+        let (width, height, _) = fit_pixel_budget(raw_width, raw_height, MAX_RENDER_PIXELS);
         let image = page
-            .render_with_config(&render_config(width, height))?
+            .render_with_config(&render_config(
+                i32::try_from(width)?,
+                i32::try_from(height)?,
+            ))?
             .as_image()?
             .into_rgb8();
         Ok((image, original_width, original_height))
@@ -2132,6 +2209,42 @@ mod tests {
     }
 
     #[test]
+    fn shared_pdfium_rejects_parent_dir_in_file_form_library_path() {
+        // The `..` guard must also apply when the library variable names the
+        // library file itself, not only when it names a directory (MINOR 7).
+        // The check runs before any binding, so no pdfium.dll is required.
+        let renderer = PdfiumRenderer::new("../evil/libpdfium.dll");
+        let error = renderer
+            .render_page_rgb8("does-not-matter.pdf", 0, RenderOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("parent-dir"),
+            "expected traversal rejection, got: {error}"
+        );
+    }
+
+    #[test]
+    fn pre_raster_pixel_budget_clamps_before_bitmap_allocation() {
+        // MINOR 17: the render entry points clamp the computed bitmap size to
+        // MAX_RENDER_PIXELS via fit_pixel_budget before allocation, so a
+        // hostile MediaBox cannot allocate an unbounded bitmap. Pin the math
+        // the entry points rely on (a 200000 pt square at 300 DPI).
+        let raw_width = (200_000.0_f32 * 300.0 / 72.0).round() as u32;
+        let raw_height = raw_width;
+        let (width, height, scaled) = super::fit_pixel_budget(raw_width, raw_height, 2880 * 2880);
+        assert!(scaled);
+        assert!(
+            u64::from(width) * u64::from(height) <= 2880 * 2880,
+            "clamped bitmap must fit the budget: {width}x{height}"
+        );
+        assert_eq!(
+            super::fit_pixel_budget(1000, 1000, 2880 * 2880),
+            (1000, 1000, false)
+        );
+    }
+
+    #[test]
     fn bbox_iou_and_png_output_are_deterministic() {
         let image = RgbImage::from_pixel(100, 100, image::Rgb([255, 0, 0]));
         let bbox = NormalizedBbox::new(100, 100, 500, 500).unwrap();
@@ -2276,6 +2389,7 @@ mod tests {
             timeout: Duration::from_secs(1),
             dpi: 300,
             env: Vec::new(),
+            password: None,
         };
         assert!(
             scheduler

@@ -2017,6 +2017,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 timeout: Duration::from_secs(20 * 60),
                 dpi,
                 env: Vec::new(),
+                password: None,
             },
             input: input.clone(),
             output: worker_output,

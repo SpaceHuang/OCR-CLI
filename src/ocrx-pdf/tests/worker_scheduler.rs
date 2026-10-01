@@ -36,6 +36,7 @@ fn worker_scheduler(env: &[(&str, &str)], timeout: Duration) -> PdfWorkerSchedul
             .iter()
             .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
             .collect(),
+        password: None,
     }
 }
 
@@ -63,7 +64,8 @@ fn worker_scheduler_commits_only_valid_segments_and_reports_resources() {
 
 #[test]
 fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
-    // Abnormal exit (non-zero) -> segment rejected, nothing committed.
+    // Abnormal exit (non-zero) -> segment rejected, segment dir removed,
+    // nothing committed.
     let fail_out = unique_dir("worker-fail");
     assert!(
         worker_scheduler(&[("OCRX_FAKE_WORKER_MODE", "fail")], Duration::from_secs(2))
@@ -71,8 +73,9 @@ fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
             .is_err()
     );
     assert!(!fail_out.join("page-0001.png").exists());
+    assert!(!fail_out.join(".worker-0000-0001").exists());
 
-    // Timeout -> worker killed, segment rejected.
+    // Timeout -> worker killed, segment dir removed.
     let timeout_out = unique_dir("worker-timeout");
     assert!(
         worker_scheduler(
@@ -82,6 +85,7 @@ fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
         .run("input.pdf", &timeout_out, 0, 1)
         .is_err()
     );
+    assert!(!timeout_out.join(".worker-0000-0001").exists());
 
     // Cancel -> worker killed, segment root cleaned, nothing committed.
     let cancel_out = unique_dir("worker-cancel");
@@ -93,8 +97,9 @@ fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
         .run_with_cancel("input.pdf", &cancel_out, 0, 1, || true)
         .is_err()
     );
+    assert!(!cancel_out.join(".worker-0000-0001").exists());
 
-    // Invalid PNG -> validated and rejected before commit.
+    // Invalid PNG -> validated and rejected before commit, segment removed.
     let badpng_out = unique_dir("worker-badpng");
     assert!(
         worker_scheduler(
@@ -104,8 +109,9 @@ fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
         .run("input.pdf", &badpng_out, 0, 1)
         .is_err()
     );
+    assert!(!badpng_out.join(".worker-0000-0001").exists());
 
-    // Missing page -> count mismatch, rejected.
+    // Missing page -> count mismatch, rejected, segment removed.
     let missing_out = unique_dir("worker-missing");
     assert!(
         worker_scheduler(
@@ -115,8 +121,9 @@ fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
         .run("input.pdf", &missing_out, 0, 2)
         .is_err()
     );
+    assert!(!missing_out.join(".worker-0000-0002").exists());
 
-    // Leftover .part file -> rejected.
+    // Leftover .part file -> rejected, segment removed.
     let part_out = unique_dir("worker-part");
     assert!(
         worker_scheduler(
@@ -126,6 +133,7 @@ fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
         .run("input.pdf", &part_out, 0, 1)
         .is_err()
     );
+    assert!(!part_out.join(".worker-0000-0001").exists());
 
     for out in [
         fail_out,
@@ -137,4 +145,55 @@ fn worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output() {
     ] {
         let _ = fs::remove_dir_all(out);
     }
+}
+
+#[test]
+fn worker_scheduler_passes_password_as_optional_seventh_argument() {
+    // Protocol pin: the scheduler must forward its configured password as the
+    // worker's 7th positional argument, and spawn exactly 6 arguments without
+    // one — otherwise encrypted PDFs fail only in worker mode.
+    let args_out = unique_dir("worker-args-out");
+    fs::create_dir_all(&args_out).unwrap();
+    let args_file = args_out.join("args.txt");
+    let output = unique_dir("worker-args-output");
+
+    let with_password = worker_scheduler(
+        &[
+            ("OCRX_FAKE_WORKER_MODE", "args"),
+            ("OCRX_FAKE_ARGS_OUT", args_file.to_str().unwrap()),
+        ],
+        Duration::from_secs(10),
+    )
+    .with_password("p@ss word with spaces")
+    .run("input.pdf", &output, 0, 2)
+    .unwrap();
+    assert_eq!(with_password.len(), 1);
+    let argv = fs::read_to_string(&args_file).unwrap();
+    let argv: Vec<&str> = argv.lines().collect();
+    // argv[0] is the worker executable; 7 positional arguments follow
+    // (library, pdf, start, end, output, dpi, password).
+    assert_eq!(argv.len(), 8, "expected 8 argv entries: {argv:?}");
+    assert_eq!(argv[7], "p@ss word with spaces");
+
+    let output_plain = unique_dir("worker-args-plain");
+    let args_file_plain = args_out.join("args-plain.txt");
+    worker_scheduler(
+        &[
+            ("OCRX_FAKE_WORKER_MODE", "args"),
+            ("OCRX_FAKE_ARGS_OUT", args_file_plain.to_str().unwrap()),
+        ],
+        Duration::from_secs(10),
+    )
+    .run("input.pdf", &output_plain, 0, 2)
+    .unwrap();
+    let argv_plain = fs::read_to_string(&args_file_plain).unwrap();
+    assert_eq!(
+        argv_plain.lines().count(),
+        7,
+        "no password argument expected"
+    );
+
+    let _ = fs::remove_dir_all(args_out);
+    let _ = fs::remove_dir_all(output);
+    let _ = fs::remove_dir_all(output_plain);
 }

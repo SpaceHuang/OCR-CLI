@@ -27,6 +27,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(output)?;
     match mode.as_str() {
         "fail" => std::process::exit(7),
+        // Records the exact argv it received (one argument per line) at the
+        // path given by OCRX_FAKE_ARGS_OUT before producing a valid segment,
+        // so tests can pin the spawn protocol — including the optional 7th
+        // password argument. The segment directory itself is wiped by the
+        // scheduler after validation, hence the out-of-band path.
+        "args" => {
+            let Some(args_out) = std::env::var_os("OCRX_FAKE_ARGS_OUT") else {
+                return Err("args mode requires OCRX_FAKE_ARGS_OUT".into());
+            };
+            fs::write(args_out, std::env::args().collect::<Vec<_>>().join("\n"))?;
+        }
         "sleep" => {
             // Run longer than any scheduler timeout used in tests so the
             // scheduler exercises its kill-on-timeout / kill-on-cancel paths.

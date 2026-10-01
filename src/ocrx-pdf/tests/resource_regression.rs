@@ -53,6 +53,9 @@ fn pdfium_resource_regression_collects_rss_curve() {
 
     let probe = RealProcessMemorySampler;
     let pid = child.id();
+    // The 100-page fixture with 20 ms delays finishes in a few seconds; if the
+    // worker hangs, kill it and fail instead of hanging CI forever (MINOR 6).
+    let deadline = started + Duration::from_secs(180);
     let mut rss_kb_samples: Vec<u64> = Vec::new();
     loop {
         match child.try_wait().expect("worker must stay waitable") {
@@ -61,6 +64,11 @@ fn pdfium_resource_regression_collects_rss_curve() {
                 break;
             }
             None => {
+                if std::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("pdfium-check did not exit within 180s; killed to keep CI responsive");
+                }
                 if let Some(sample) = probe.sample_rss(pid) {
                     rss_kb_samples.push(sample.rss_kb);
                 }

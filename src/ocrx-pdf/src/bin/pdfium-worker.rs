@@ -46,10 +46,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     image.height()
                 ),
             )?;
-            println!("page={} path={}", index + 1, path.display());
+            // Progress diagnostics belong on stderr: the parent CLI owns
+            // stdout for `--report json` / `--progress jsonl` (review MINOR 4).
+            eprintln!("page={} path={}", index + 1, path.display());
             Ok(())
         })?;
     validate_worker_segment(&output, start, end)?;
-    println!("worker_complete pages={count}");
+    eprintln!("worker_complete pages={count}");
     Ok(())
 }
