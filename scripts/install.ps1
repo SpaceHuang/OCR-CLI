@@ -31,6 +31,20 @@ function Detect-GpuBackend {
   return 'cpu'
 }
 
+# The installer copies the VC++ runtime DLLs app-local into <prefix>\bin.
+# An OCRX_INSTALL_PREFIX pointing into Windows or Program Files must be
+# refused so the install can never overwrite operating-system files
+# (review MINOR 13).
+function Test-SafeInstallPrefix([string]$Path) {
+  $Resolved = [System.IO.Path]::GetFullPath($Path)
+  foreach ($Root in @($env:WINDIR, ${env:ProgramFiles}, ${env:ProgramFiles(x86)})) {
+    if (-not $Root) { continue }
+    $RootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    if ($Resolved.ToLower().StartsWith($RootFull.ToLower())) { return $false }
+  }
+  return $true
+}
+
 # Verify every file listed in the archive's SHA256SUMS (the archive carries its
 # own integrity manifest; a mismatch or missing file aborts the install).
 function Assert-ArchiveHashes([string]$StageRoot) {
@@ -49,6 +63,9 @@ function Assert-ArchiveHashes([string]$StageRoot) {
 
 if ($env:OS -ne 'Windows_NT') { Fail 'OCR-CLI v0.1 supports Windows only' 2 }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail 'OCR-CLI v0.1 supports Windows x64 only' 2 }
+if (-not (Test-SafeInstallPrefix $Prefix)) {
+  Fail "refusing to install into a system directory: $Prefix" 3
+}
 
 $Offline = $env:OCRX_OFFLINE -eq '1'
 $Gpu = Detect-GpuBackend
@@ -99,13 +116,34 @@ try {
   }
 
   $BinDir = Join-Path $Prefix 'bin'
-  New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+  # Stage the complete bin set first, then swap directories: a multi-file
+  # copy straight into bin\ used to leave a half-old/half-new installation
+  # when it failed midway (review MINOR 13).
+  $StagingName = 'bin.staging-' + [System.Guid]::NewGuid().ToString('N')
+  $OldName = 'bin.old-' + [System.Guid]::NewGuid().ToString('N')
+  $StagingBin = Join-Path $Prefix $StagingName
+  New-Item -ItemType Directory -Force -Path $StagingBin | Out-Null
   if ($ArchiveBinDir) {
     # Copy the whole bin/ set (binary, pdfium.dll, VC++ runtime DLLs).
-    Get-ChildItem -File -Path $ArchiveBinDir | Copy-Item -Destination $BinDir -Force
+    Get-ChildItem -File -Path $ArchiveBinDir | Copy-Item -Destination $StagingBin -Force
   } else {
-    Copy-Item $InstallBinary (Join-Path $BinDir 'ocrx.exe') -Force
-    if ($InstallPdfium) { Copy-Item $InstallPdfium (Join-Path $BinDir 'pdfium.dll') -Force }
+    Copy-Item $InstallBinary (Join-Path $StagingBin 'ocrx.exe') -Force
+    if ($InstallPdfium) { Copy-Item $InstallPdfium (Join-Path $StagingBin 'pdfium.dll') -Force }
+  }
+  if (-not (Test-Path (Join-Path $StagingBin 'ocrx.exe') -PathType Leaf)) {
+    Remove-Item -Recurse -Force $StagingBin -ErrorAction SilentlyContinue
+    Fail 'no binary staged for install' 4
+  }
+  $HadExisting = Test-Path $BinDir
+  if ($HadExisting) { Rename-Item $BinDir -NewName $OldName }
+  try {
+    Rename-Item $StagingBin -NewName 'bin'
+  } catch {
+    if ($HadExisting) { Rename-Item (Join-Path $Prefix $OldName) -NewName 'bin' }
+    Fail "bin swap failed: $_" 4
+  }
+  if ($HadExisting) {
+    Remove-Item -Recurse -Force (Join-Path $Prefix $OldName) -ErrorAction SilentlyContinue
   }
 
   if ($env:OCRX_INSTALL_SKILL -eq '1') {

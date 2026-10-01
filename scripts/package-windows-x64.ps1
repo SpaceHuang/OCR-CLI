@@ -1,4 +1,10 @@
-# Build a reproducible Windows x64 Skill+CLI archive.
+# Build a Windows x64 Skill+CLI archive.
+#
+# Archive content is deterministic for a given source revision (same file
+# set, same bytes, SHA256SUMS verifies it), but PS 5.1 `Compress-Archive`
+# writes backslash entry separators and current timestamps, so the zip
+# bytes themselves are NOT reproducible across runs; the sole consumer
+# (install.ps1) unpacks it fine on both PowerShell editions.
 # Layout matches the standard Skill directory contract:
 #   ocrx/
 #     SKILL.md
@@ -51,8 +57,19 @@ function Find-VcCrtDir {
   if (-not $VsRoot) { return $null }
   $RedistRoot = Join-Path $VsRoot 'VC\Redist\MSVC'
   if (-not (Test-Path $RedistRoot)) { return $null }
+  # Sort by the Redist version directory parsed as [version] so 14.40 wins
+  # over 14.9 (plain name order is lexicographic and picks 14.9 first).
+  # Candidate layout is <root>\<version>\x64\Microsoft.VC*.CRT, so the
+  # version name is the CRT dir's grandparent. Unparseable names sort last.
   $Candidates = Get-ChildItem -Directory -Path (Join-Path $RedistRoot '*\x64\Microsoft.VC*.CRT') -ErrorAction SilentlyContinue |
-    Sort-Object FullName -Descending
+    Sort-Object -Property @{
+      Expression = {
+        try {
+          [version](Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent $_.FullName)))
+        } catch { [version]'0.0.0.0' }
+      }
+      Descending = $true
+    }
   foreach ($Candidate in $Candidates) {
     $Complete = $true
     foreach ($Dll in $CrtDlls) {
