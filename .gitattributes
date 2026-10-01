@@ -11,3 +11,9 @@ benchmarks/fixtures/** -text
 *.gguf binary
 *.zip binary
 *.tgz binary
+# Files that ship inside release archives keep LF on every platform so the
+# macOS and Windows archives stay byte-identical for the same source
+# revision (these three were checked in as CRLF from Windows).
+/assets/skills/ocrx/SKILL.md text eol=lf
+/THIRD_PARTY_NOTICES.md text eol=lf
+/LICENSE text eol=lf
