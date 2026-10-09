@@ -38,10 +38,15 @@ fn cli_doctor_json_report_parses_with_backslash_cache_root() {
         .expect("CLI test binary should run");
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        stdout.contains('\\'),
-        "cache root with backslashes should appear escaped in: {stdout}"
-    );
+    // Only Windows paths contain backslashes; on macOS the temp dir has none,
+    // so the escaped-spelling assertion is platform-gated (M-4: the ungated
+    // check failed every macOS CI run).
+    if cfg!(target_os = "windows") {
+        assert!(
+            stdout.contains('\\'),
+            "cache root with backslashes should appear escaped in: {stdout}"
+        );
+    }
     assert!(
         ocrx_core::is_valid_json(&stdout),
         "doctor --report json must be parseable JSON, got: {stdout}"
@@ -101,7 +106,10 @@ fn cli_skill_project_scope_installs_and_uninstalls_under_project_dir() {
 #[test]
 fn cli_initialization_error_is_one_json_error_object() {
     let output = run_cli(&["scan", "input.pdf", "--report", "json"]);
-    assert_eq!(output.status.code(), Some(4));
+    // The nonexistent input fails at PDF page-count validation: exit 3, same
+    // as the crate-level twin test (M-4: this copy expected 4 and would fail
+    // every macOS CI run).
+    assert_eq!(output.status.code(), Some(3));
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("\"schema_version\":1"));
@@ -147,4 +155,110 @@ fn cli_scan_rejects_vulkan_on_cpu_only_build() {
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("\"code\":6"));
     assert!(stdout.contains("\"kind\":\"runtime\""));
+}
+
+/// Shared gate for scan-path contract tests: real PDFium + a text-layer
+/// fixture, skipped on clean checkouts without the vendored runtime.
+fn scan_prerequisites() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let pdfium_dll =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/pdfium/bin");
+    let pdfium_dll = if cfg!(target_os = "windows") {
+        pdfium_dll.join("pdfium.dll")
+    } else {
+        pdfium_dll.join("libpdfium.dylib")
+    };
+    if !pdfium_dll.is_file() {
+        eprintln!(
+            "skipping scan contract check: pdfium runtime not present at {}",
+            pdfium_dll.display()
+        );
+        return None;
+    }
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf");
+    Some((pdfium_dll, fixture))
+}
+
+#[test]
+fn cli_scan_rejects_output_inside_model_cache_on_every_scan() {
+    // BLK-1 regression vector: a plain scan (no --overwrite) whose output
+    // directory is the model cache root must be refused with exit 9 — it
+    // used to exit 0 and write document.md/page-*/result.json into the cache.
+    let Some((pdfium, fixture)) = scan_prerequisites() else {
+        return;
+    };
+    let cache_root = std::env::temp_dir().join(format!("ocrx-blk1-cache-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&cache_root);
+    std::fs::create_dir_all(&cache_root).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args([
+            "scan",
+            fixture.to_str().unwrap(),
+            "--output-dir",
+            cache_root.to_str().unwrap(),
+            "--report",
+            "json",
+        ])
+        .env("OCRX_PDFIUM_LIBRARY", &pdfium)
+        .env("OCRX_MODEL_CACHE", &cache_root)
+        .output()
+        .expect("CLI test binary should run");
+    assert_eq!(
+        output.status.code(),
+        Some(9),
+        "scan into the cache root must be refused: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        !cache_root.join("document.md").exists(),
+        "no scan artifacts may land in the cache root"
+    );
+    let _ = std::fs::remove_dir_all(&cache_root);
+}
+
+#[test]
+fn cli_scan_resume_after_native_text_scan_succeeds() {
+    // BLK-3 regression vector: scanning a PDF with native-text pages and
+    // resuming used to fail with exit 5 "duplicate page number" because the
+    // native checkpoint satisfied both the native and the OCR compatibility
+    // questions and was collected twice.
+    let Some((pdfium, fixture)) = scan_prerequisites() else {
+        return;
+    };
+    let output_dir = std::env::temp_dir().join(format!("ocrx-blk3-resume-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&output_dir);
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ocrx"))
+            .args(
+                [
+                    "scan",
+                    fixture.to_str().unwrap(),
+                    "--output-dir",
+                    output_dir.to_str().unwrap(),
+                    "--report",
+                    "json",
+                ]
+                .iter()
+                .copied()
+                .chain(extra.iter().copied()),
+            )
+            .env("OCRX_PDFIUM_LIBRARY", &pdfium)
+            .output()
+            .expect("CLI test binary should run")
+    };
+    let first = run(&[]);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "initial scan should succeed: {}",
+        String::from_utf8_lossy(&first.stdout)
+    );
+    let resume = run(&["--resume"]);
+    assert_eq!(
+        resume.status.code(),
+        Some(0),
+        "resume after a native-text scan must not hit 'duplicate page number': {}",
+        String::from_utf8_lossy(&resume.stdout)
+    );
+    let _ = std::fs::remove_dir_all(&output_dir);
 }

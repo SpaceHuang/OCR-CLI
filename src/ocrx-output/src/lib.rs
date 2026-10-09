@@ -554,6 +554,36 @@ where
         keep_pages: bool,
         cancellation: &CancellationToken,
     ) -> io::Result<JobSummary> {
+        self.run_with_checkpoints_heartbeat(
+            page_numbers,
+            output_root,
+            compatibility,
+            resume,
+            keep_pages,
+            cancellation,
+            &mut |_, _| {},
+        )
+    }
+
+    /// [`run_with_checkpoints_cancelled`] with a generation heartbeat
+    /// callback (W3.1/R-1): invoked with `(page, progress)` at least once per
+    /// elapsed second while a page generates tokens, so the CLI can surface
+    /// liveness on multi-minute CPU pages instead of only at page boundaries.
+    ///
+    /// # Errors
+    ///
+    /// Same failure surface as [`run_with_checkpoints_cancelled`].
+    #[allow(clippy::too_many_arguments)] // mirrors the cancelled variant + one callback
+    pub fn run_with_checkpoints_heartbeat(
+        &mut self,
+        page_numbers: &[u32],
+        output_root: impl AsRef<Path>,
+        compatibility: &CompatibilityKey,
+        resume: bool,
+        keep_pages: bool,
+        cancellation: &CancellationToken,
+        heartbeat: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> io::Result<JobSummary> {
         self.renderer.preflight()?;
         let mut model = self.loader.load()?;
         let root = output_root.as_ref();
@@ -612,12 +642,13 @@ where
                     continue;
                 }
             };
+            let mut page_heartbeat = |event: GenerationProgress| heartbeat(page, event);
             match self.recognizer.recognize_artifact_cancelled(
                 &mut model,
                 page,
                 &image,
                 cancellation,
-                &mut |_| {},
+                &mut page_heartbeat,
             ) {
                 Ok(artifact) => {
                     let mut artifact_warnings = artifact.warnings;
@@ -945,7 +976,13 @@ impl CompatibilityKey {
     pub fn matches_page_compatibility(&self, expected: &Self) -> bool {
         if self.parameters.contains("ocr-profile=") {
             self == expected
-        } else if self.parameters.contains("route=native") {
+        } else if self.parameters.contains("route=native")
+            // A native checkpoint only satisfies a native expectation; an
+            // OCR-expected key matching through the lenient public-parameter
+            // prefix is what used to double-collect native pages on resume
+            // (review BLK-3) and let cross-route resumes through.
+            && expected.parameters.contains("route=native")
+        {
             self.input_sha256 == expected.input_sha256
                 && self.model == expected.model
                 && public_pdf_parameters(&self.parameters)
@@ -1616,6 +1653,97 @@ pub fn paths_overlap(left: &Path, right: &Path) -> bool {
     path_contains(left, right) || path_contains(right, left)
 }
 
+/// Canonicalizes `path` when it exists; otherwise canonicalizes its deepest
+/// existing ancestor and rejoins the remaining components.
+///
+/// Both sides of an overlap check must go through this helper: Windows
+/// `canonicalize` returns `\\?\`-prefixed extended paths, so mixing a
+/// canonicalized spelling with a plain one would never match. Resolving
+/// through the deepest existing ancestor also unfolds `..`, 8.3 short names
+/// (`PROGRA~1`), and reparse points for the parts of the path that exist
+/// (review BLK-2: component-wise comparison alone was bypassable).
+fn canonical_form(path: &Path) -> PathBuf {
+    if let Ok(canonical) = fs::canonicalize(path) {
+        return canonical;
+    }
+    let components: Vec<std::path::Component<'_>> = path.components().collect();
+    // Try every split point from the deepest prefix downwards; when the
+    // prefix exists, its canonical form plus the (non-existent) remainder is
+    // the canonical spelling of the whole path. Every component — including
+    // the leaf — is rejoined; dropping the leaf would silently compare the
+    // parent directory instead (found by the BLK-3 regression test: a temp
+    // output under an existing temp root compared as the temp root itself).
+    for index in (1..components.len()).rev() {
+        let ancestor: PathBuf = components[..index].iter().collect();
+        if let Ok(mut joined) = fs::canonicalize(&ancestor) {
+            for component in &components[index..] {
+                joined = joined.join(component.as_os_str());
+            }
+            return joined;
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Resolves `.` and `..` lexically for absolute paths (relative paths are
+/// joined onto the current directory first), matching Win32 resolution
+/// (review BLK-2 fix sequence: normalize first, then check). A `..` at a
+/// root boundary is a no-op.
+fn lexically_normalize(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
+/// Rejects output-path spellings whose meaning the filesystem resolves
+/// differently than the component-wise comparison sees (review BLK-2):
+///
+/// - `..` components are never resolved by `Path::components`, so
+///   `E:\a\..\b` compares as `E:\a\..\b` while the filesystem means `E:\b`;
+///   output paths containing them are refused outright.
+/// - Windows strips trailing dots and spaces from each path component, so
+///   `"dir "` compares as a distinct component but deletes `dir` — the
+///   trailing-space `--overwrite` deletion vector. A bare `.` component
+///   (current directory) is legal and exempt.
+fn reject_ambiguous_output_path(output: &Path) -> io::Result<()> {
+    if output
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "output path must not contain '..' components",
+        ));
+    }
+    if cfg!(target_os = "windows")
+        && output.components().any(|component| {
+            let text = component.as_os_str().to_string_lossy();
+            text.len() > 1 && (text.ends_with(' ') || text.ends_with('.'))
+        })
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "output path components must not end with dots or spaces on Windows",
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_output_root(
     input: impl AsRef<Path>,
     output: impl AsRef<Path>,
@@ -1629,14 +1757,28 @@ pub fn validate_output_root(
             "output root must be absolute",
         ));
     }
-    if paths_overlap(output, input) {
+    // Normalize first (review BLK-2 sequence): a default output derived from
+    // a relative input legitimately contains `..` (cwd.join("../../x"));
+    // lexical resolution turns it into its real absolute spelling, and only
+    // genuinely ambiguous spellings (trailing dots/spaces on Windows) are
+    // then refused outright.
+    let output_normalized = lexically_normalize(output);
+    let input_normalized = lexically_normalize(input);
+    reject_ambiguous_output_path(&output_normalized)?;
+    // Compare canonical forms: residual `..` in existing prefixes, 8.3 short
+    // names, and case variants all resolve to one spelling before the
+    // overlap test.
+    let output_canonical = canonical_form(&output_normalized);
+    let input_canonical = canonical_form(&input_normalized);
+    if paths_overlap(&output_canonical, &input_canonical) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "output root is the input path",
         ));
     }
     for protected in protected_roots {
-        if paths_overlap(output, protected) {
+        let protected_canonical = canonical_form(protected);
+        if paths_overlap(&output_canonical, &protected_canonical) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "output root overlaps a protected path",
@@ -2208,6 +2350,76 @@ mod tests {
             root,
             std::path::Path::new("/work/cache")
         ));
+    }
+
+    #[test]
+    fn output_root_dot_dot_vector_is_resolved_before_overlap_check() {
+        // BLK-2 vector 1: `Path::components` never resolves `..`, so the
+        // check lexically normalizes first — an output that lands inside a
+        // protected root after resolution must be rejected even though its
+        // raw components never spell the root, while one that resolves
+        // elsewhere stays allowed.
+        let base = std::env::temp_dir().join(format!("ocrx-dotdot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let protected = base.join("cache");
+        std::fs::create_dir_all(&protected).unwrap();
+        let input = base.join("input.pdf");
+        let overlap = base.join("elsewhere").join("..").join("cache").join("out");
+        assert!(
+            super::validate_output_root(&input, &overlap, &[protected.as_path()]).is_err(),
+            "dot-dot spelling resolving into the protected root must be rejected"
+        );
+        let safe = base.join("elsewhere").join("..").join("other").join("out");
+        assert!(
+            super::validate_output_root(&input, &safe, &[protected.as_path()]).is_ok(),
+            "dot-dot spelling resolving outside the protected root is fine"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn output_root_rejects_trailing_space_or_dot_components_on_windows() {
+        // BLK-2 vector 3: Win32 strips trailing dots/spaces per component, so
+        // `dir<space>` would compare as distinct but delete `dir`; refuse the
+        // spelling instead. A bare `.` component stays legal.
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let input = std::path::Path::new("C:\\work\\input.pdf");
+        let cache = std::path::Path::new("C:\\work\\cache3");
+        let trailing_space = std::path::Path::new("C:\\work\\cache3 \\out");
+        let trailing_dot = std::path::Path::new("C:\\work\\cache3.\\out");
+        assert!(
+            super::validate_output_root(input, trailing_space, &[cache]).is_err(),
+            "trailing-space component must be rejected"
+        );
+        assert!(
+            super::validate_output_root(input, trailing_dot, &[cache]).is_err(),
+            "trailing-dot component must be rejected"
+        );
+    }
+
+    #[test]
+    fn output_root_overlap_uses_canonical_forms() {
+        // BLK-2 vector 2: an output whose *existing* ancestor sits inside the
+        // protected root must be caught even when the spelled suffix differs
+        // (case variant of an existing directory).
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("ocrx-canon-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let protected = base.join("Cache");
+        std::fs::create_dir_all(&protected).unwrap();
+        // Deep output under a case-variant spelling of the existing protected
+        // directory; the output itself does not exist yet.
+        let output = base.join("CACHE").join("deep").join("out");
+        let input = base.join("input.pdf");
+        assert!(
+            super::validate_output_root(&input, &output, &[protected.as_path()]).is_err(),
+            "canonicalized comparison must catch the case-variant ancestor"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

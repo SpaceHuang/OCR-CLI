@@ -12,7 +12,7 @@ use ocrx_output::{
     PageMarkdown, PageRenderer, ProgressEvent, ProgressMode, ProgressStage, RenderAudit,
     RenderedPage, ReportFormat, Reporter, ResultReport, ScanService, collect_page_markdowns,
     commit_native_page_and_collect, finalize_document, format_report, merge_ocr_queue,
-    paths_overlap, read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
+    read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
 };
 use ocrx_pdf::{
     PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
@@ -1057,19 +1057,12 @@ fn resolve_output_dir(input: &str, explicit: Option<&str>) -> Result<PathBuf, St
 }
 
 fn validate_output_policy(input: &Path, output: &Path, protected: &[&Path]) -> Result<(), String> {
-    if !output.is_absolute() {
-        return Err("output directory must be absolute".to_owned());
-    }
-    // `paths_overlap` compares component-wise and case-insensitively on
-    // Windows, so an NTFS case variant of the input or a protected root
-    // cannot bypass the check (M3).
-    if paths_overlap(output, input) {
-        return Err("output directory overlaps input".to_owned());
-    }
-    if protected.iter().any(|root| paths_overlap(output, root)) {
-        return Err("output directory overlaps a protected path".to_owned());
-    }
-    Ok(())
+    // Delegates to the shared output-root validator so every scan gets the
+    // full protection set in one place (review BLK-2): absolute-path check,
+    // refusal of `..` and Windows trailing dot/space spellings, and
+    // case-folded comparison through canonicalized forms (which also unfolds
+    // 8.3 short names and reparse points on existing prefixes).
+    ocrx_output::validate_output_root(input, output, protected).map_err(|error| error.to_string())
 }
 
 #[allow(dead_code)]
@@ -1259,6 +1252,7 @@ fn main() {
                 std::process::exit(2);
             };
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
+                .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
                 .unwrap_or_else(ocrx_models::default_cache_root);
             let revision = ocrx_models::community_manifest(&profile)
@@ -1943,8 +1937,45 @@ fn run_scan(options: ScanOptions) -> ! {
     }
     let initial_queue = initial_ocr_queue_for_mode(&options.pdf_mode, &pages, &classifications);
     let cache = std::env::var_os("OCRX_MODEL_CACHE")
+        .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(ocrx_models::default_cache_root);
+    // W2.3 (review BLK-1): protected-root validation runs on EVERY scan, not
+    // only for --overwrite — a mistyped --output-dir must never write
+    // document.md/page-*/result.json into the model cache or the working
+    // directory. The input is compared through its absolute form so a
+    // relative spelling cannot slip past the overlap check (m2).
+    //
+    // The protected cache paths are the model subtrees (`<root>/ocrx/models`
+    // new layout, `<root>/ovisocr2` legacy layout), not the whole cache root:
+    // on Windows the default root is %LOCALAPPDATA%, which also contains
+    // %TEMP%, and protecting the root itself would outlaw every temp-dir
+    // output. An output AT the cache root is still rejected because it is an
+    // ancestor of the protected subtree.
+    let protected_cache_roots = [cache.join("ocrx").join("models"), cache.join("ovisocr2")];
+    {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let protected = [
+            canonical_input.as_path(),
+            protected_cache_roots[0].as_path(),
+            protected_cache_roots[1].as_path(),
+            cwd.as_path(),
+        ];
+        if let Err(error) = validate_output_policy(&canonical_input, &output, &protected) {
+            reporter.error(
+                &ErrorReport {
+                    code: 9,
+                    kind: "output".to_owned(),
+                    message: "output directory overlaps a protected path".to_owned(),
+                    cause: Some(error),
+                    suggestion: Some("choose a dedicated output directory".to_owned()),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(9);
+        }
+    }
     if output.exists()
         && (output.join("document.md").exists() || output.join("result.json").exists())
         && !options.resume
@@ -1964,10 +1995,17 @@ fn run_scan(options: ScanOptions) -> ! {
         std::process::exit(9);
     }
     if options.overwrite {
-        let cache_root = cache.clone();
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let protected = [input.as_path(), cache_root.as_path(), cwd.as_path()];
-        if let Err(error) = remove_for_overwrite(&input, &output, &protected) {
+        // Same protected set as the per-scan check above (model subtrees, not
+        // the whole cache root) — the deletion target must not be able to
+        // reach the model layout through any spelling.
+        let protected = [
+            canonical_input.as_path(),
+            protected_cache_roots[0].as_path(),
+            protected_cache_roots[1].as_path(),
+            cwd.as_path(),
+        ];
+        if let Err(error) = remove_for_overwrite(&canonical_input, &output, &protected) {
             reporter.error(
                 &ErrorReport {
                     code: 9,
@@ -2065,14 +2103,20 @@ fn run_scan(options: ScanOptions) -> ! {
         input_sha256,
         model: "ovisocr2".to_owned(),
         profile: "native".to_owned(),
+        // `platform=` sits inside the first five parameters on purpose: the
+        // lenient native matching branch compares exactly those, so checkpoints
+        // stay isolated per platform (M-1: macOS cpu vs Windows cpu used to
+        // share one key). Checkpoints written before this field exist no
+        // longer match and are reprocessed instead of resumed.
         parameters: format!(
-            "{};dpi={dpi};tokens={:?};max_image_tokens={};context_size={};device={};route=native",
+            "{};platform={};dpi={dpi};tokens={:?};max_image_tokens={};context_size={};device={};route=native",
             ocrx_output::pdf_compatibility_parameters(
                 &options.pdf_mode,
                 &options.quality_tier,
                 "pdf-route-v1",
                 "pdf-text-v1",
             ),
+            current_platform(),
             options.max_output_tokens,
             options.max_image_tokens.unwrap_or(1024),
             options.context_size.unwrap_or(16_384),
@@ -2118,14 +2162,20 @@ fn run_scan(options: ScanOptions) -> ! {
                 }
                 CheckpointResumeAction::Reprocess => {}
             }
-            if let Some(expected_ocr) = &resume_ocr_compatibility {
-                if checkpoint.resume_action(expected_ocr, &output, *page as u32)
+            // BLK-3: only ask the OCR compatibility key when the native key
+            // did not already commit this page. The lenient native branch of
+            // `matches_page_compatibility` matches on the shared parameter
+            // prefix, so an OCR-expected key also "matches" a native
+            // checkpoint — asking both unconditionally collected the same
+            // page twice and broke finalize with "duplicate page number".
+            if !resume_skip_pages.contains(&(*page as u32))
+                && let Some(expected_ocr) = &resume_ocr_compatibility
+                && checkpoint.resume_action(expected_ocr, &output, *page as u32)
                     == CheckpointResumeAction::SkipCommitted
-                {
-                    if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
-                        resume_committed_markdown.append(&mut markdown);
-                        resume_skip_pages.insert(*page as u32);
-                    }
+            {
+                if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
+                    resume_committed_markdown.append(&mut markdown);
+                    resume_skip_pages.insert(*page as u32);
                 }
             }
         }
@@ -2487,6 +2537,9 @@ fn run_scan(options: ScanOptions) -> ! {
     } else {
         None
     };
+    // M-10: the reported backend must reflect the runtime that actually ran;
+    // set to "cpu" when the GPU→CPU fallback triggered inside the branch below.
+    let mut runtime_fallback_to_cpu = false;
     let summary = if execution_plan.initialize_runtime {
         // W4.1: load once with GPU→CPU fallback so a machine whose GPU is
         // absent or unusable degrades to CPU with a recorded warning instead
@@ -2516,18 +2569,35 @@ fn run_scan(options: ScanOptions) -> ! {
                 std::process::exit(6);
             }
         };
+        runtime_fallback_to_cpu = gpu_fallback_warning.is_some();
         let loader = PreloadedLoader {
             model: Some(loaded_model),
         };
         let mut service = ScanService::new(renderer, loader, recognizer);
+        // W3.1/R-1 heartbeat wiring: forward the runtime's per-second
+        // generation progress to the reporter so multi-minute CPU pages show
+        // liveness instead of silence between page boundaries.
+        let total_pages = ocr_service_pages.len() as u32;
+        let mut heartbeat = |page: u32, event: GenerationProgress| {
+            reporter.progress(
+                &ProgressEvent::for_stage(
+                    ProgressStage::Recognizing,
+                    Some(page),
+                    event.generated_tokens,
+                    total_pages,
+                ),
+                progress_mode,
+            );
+        };
         service
-            .run_with_checkpoints_cancelled(
+            .run_with_checkpoints_heartbeat(
                 &ocr_service_pages,
                 &output,
                 &ocr_compatibility,
                 options.resume,
                 options.keep_pages,
                 &cancellation,
+                &mut heartbeat,
             )
             .map(|mut summary| {
                 if let Some(warning) = gpu_fallback_warning {
@@ -2547,6 +2617,13 @@ fn run_scan(options: ScanOptions) -> ! {
         })
     };
     let vram_peak_bytes = stop_vram_sampler(vram_sampler);
+    // M-10: the effective backend label — a GPU→CPU fallback means the scan
+    // really ran on CPU even though `--device` requested a GPU backend.
+    let effective_device = if runtime_fallback_to_cpu {
+        "cpu".to_owned()
+    } else {
+        device.clone()
+    };
     // The GPU resource report is opt-in telemetry: a failure to write it must
     // not discard a fully completed scan, so the error is recorded as a
     // warning instead of aborting with exit 6 before result.json/document.md
@@ -2555,7 +2632,7 @@ fn run_scan(options: ScanOptions) -> ! {
     if gpu_report_enabled && execution_plan.initialize_runtime && device != "cpu" {
         let scan_telemetry = *telemetry.borrow();
         let gpu_report = GpuResourceReport {
-            backend: device.clone(),
+            backend: effective_device.clone(),
             vram_peak_bytes,
             unified_memory_peak_bytes: None,
             load_time_ms: Some(scan_telemetry.load_time_ms),
@@ -2712,7 +2789,7 @@ fn run_scan(options: ScanOptions) -> ! {
             ) {
                 reporter.error(
                     &ErrorReport {
-                        code: 6,
+                        code: 5,
                         kind: "output".to_owned(),
                         message: "routing checkpoint commit failed".to_owned(),
                         cause: Some(error.to_string()),
@@ -2721,7 +2798,7 @@ fn run_scan(options: ScanOptions) -> ! {
                     report_format,
                 );
                 print_reporter(reporter);
-                std::process::exit(6);
+                std::process::exit(5);
             }
             let markdown_output = output
                 .join("document.md")
@@ -2740,7 +2817,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 required_quality_tier: &options.quality_tier,
                 document_type: ocrx_pdf::summarize_document_type(&classifications).as_str(),
                 ocr_model_loaded: execution_plan.initialize_runtime,
-                backend: &device,
+                backend: &effective_device,
                 total_pages,
                 completed_pages,
                 failed_pages: summary.failed_pages,
@@ -2782,7 +2859,7 @@ fn run_scan(options: ScanOptions) -> ! {
             {
                 reporter.error(
                     &ErrorReport {
-                        code: 6,
+                        code: 5,
                         kind: "output".to_owned(),
                         message: "result.json commit failed".to_owned(),
                         cause: Some(error.to_string()),
@@ -2791,7 +2868,7 @@ fn run_scan(options: ScanOptions) -> ! {
                     report_format,
                 );
                 print_reporter(reporter);
-                std::process::exit(6);
+                std::process::exit(5);
             }
             if report_format == ReportFormat::Json {
                 reporter.stdout.push_str(&result_json);
@@ -3119,8 +3196,15 @@ fn resource_snapshot() -> ResourceSnapshot {
     )
 }
 
+/// Reports the current platform identifier for compatibility keys and the
+/// doctor JSON report (single spelling source: `platform_paths::detect`).
+fn current_platform() -> &'static str {
+    platform_paths::detect().as_str()
+}
+
 fn doctor_json_report(snapshot: ResourceSnapshot, info: RuntimeInfo) -> String {
     let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
+        .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(ocrx_models::default_cache_root);
     doctor_json_report_with_cache(snapshot, info, cache_root)
@@ -4276,14 +4360,10 @@ mod tests {
             Some(&empty),
         );
         let _ = std::fs::remove_dir_all(&empty);
-        // The platform field follows the running OS (macos/windows); keep the
-        // rest of the golden fixed so the JSON shape stays stable. The cache
-        // root must be JSON-escaped (Windows paths contain backslashes).
-        let platform = if cfg!(target_os = "windows") {
-            "windows"
-        } else {
-            "macos"
-        };
+        // The platform field follows the running OS (macos/windows; other
+        // targets report "unsupported"); keep the rest of the golden fixed so
+        // the JSON shape stays stable (m28).
+        let platform = super::current_platform();
         let escaped_cache_root = super::json_escape_path(&empty);
         assert_eq!(
             report,

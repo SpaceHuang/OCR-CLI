@@ -49,6 +49,11 @@ impl CancellationToken {
 /// must call the progress observer at least once per elapsed second (and may
 /// call it more often); the CLI maps those calls to the visible
 /// heartbeat/page_progress contract.
+///
+/// One documented exception: the image/prompt encoding phase (mmproj eval) is
+/// a single blocking native call that cannot tick — the runtime emits one
+/// event when encoding starts and the per-second cadence applies to the
+/// decode loop that follows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GenerationProgress {
     pub generated_tokens: u32,
