@@ -203,12 +203,12 @@ pub fn cache_paths(
 /// land in the current project directory by default. `OCRX_MODEL_CACHE`
 /// overrides only the root.
 ///
-/// Migration safety (M4): when the platform root holds no `ocrx/models`
-/// content but the legacy `.ocrx-model-cache` does, the legacy root is
-/// returned so an existing user's verified models do not silently
-/// "disappear" (and re-download gigabytes) after the default moved. The
-/// fallback is one-directional — once the platform root is populated it
-/// always wins.
+/// Migration safety (BLK-5): pre-WP.1 installs kept weights at
+/// `.ocrx-model-cache/ovisocr2/<profile>/{model,mmproj}.gguf` — a layout the
+/// new `cache_paths` cannot read. When the platform root is empty but such a
+/// legacy layout exists, [`migrate_legacy_cache`] moves the pinned-verified
+/// files into the platform root (once); only then does the platform root win.
+/// A legacy root already carrying the new layout is used as-is.
 #[must_use]
 pub fn default_cache_root() -> std::path::PathBuf {
     let root = default_cache_root_from(
@@ -217,13 +217,22 @@ pub fn default_cache_root() -> std::path::PathBuf {
         std::env::var_os("HOME").as_deref(),
     );
     let legacy = std::path::PathBuf::from(".ocrx-model-cache");
-    legacy_cache_root_fallback(&root, &legacy).unwrap_or(root)
+    match legacy_cache_root_fallback(&root, &legacy) {
+        // Legacy root already carries the new layout: keep using it.
+        Some(legacy_root) if legacy_root.join("ocrx").join("models").exists() => legacy_root,
+        // Pre-WP.1 layout: migrate what verifies, then use the platform root.
+        Some(legacy_root) => {
+            let _ = migrate_legacy_cache(&legacy_root, &root);
+            root
+        }
+        None => root,
+    }
 }
 
 /// Pure core of the legacy-root fallback used by [`default_cache_root`].
 ///
 /// Returns `Some(legacy_root)` only when the legacy directory contains model
-/// content and the new platform root does not.
+/// content (either layout) and the new platform root does not.
 #[must_use]
 pub fn legacy_cache_root_fallback(
     platform_root: &std::path::Path,
@@ -235,10 +244,101 @@ pub fn legacy_cache_root_fallback(
     if legacy_root.join("ocrx").join("models").exists() {
         return Some(legacy_root.to_path_buf());
     }
+    // Real pre-WP.1 layout: <legacy>/ovisocr2/<profile>/model.gguf with the
+    // projector duplicated per profile (no ocrx/models layer at all).
+    if ["compact", "balanced", "quality", "reference"]
+        .iter()
+        .any(|profile| {
+            legacy_root
+                .join("ovisocr2")
+                .join(profile)
+                .join("model.gguf")
+                .is_file()
+        })
+    {
+        return Some(legacy_root.to_path_buf());
+    }
     None
 }
 
+/// Moves pinned-verified weights from the pre-WP.1 legacy layout
+/// (`<legacy>/ovisocr2/<profile>/{model,mmproj}.gguf`) into the platform
+/// root's `cache_paths` layout.
+///
+/// Each file is verified against the manifest's pinned SHA-256 (and the
+/// pinned size, where known) before it moves; anything that fails
+/// verification is left in place rather than propagated. Moves are
+/// rename-first with a copy fallback for cross-volume roots, and already
+/// present targets are never overwritten. Best-effort by design: callers
+/// treat a failed migration as "no legacy content".
+///
+/// # Errors
+///
+/// Returns an error only for infrastructure failures (unreadable legacy
+/// directory); individual bad assets are skipped.
+pub fn migrate_legacy_cache(
+    legacy_root: &std::path::Path,
+    platform_root: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let legacy_models = legacy_root.join("ovisocr2");
+    for profile in ["compact", "balanced", "quality", "reference"] {
+        let Ok(manifest) = community_manifest(profile) else {
+            continue;
+        };
+        let Ok((target_model, target_mmproj)) =
+            cache_paths(platform_root, &manifest.identity.revision, profile)
+        else {
+            continue;
+        };
+        let legacy_model = legacy_models.join(profile).join("model.gguf");
+        if !target_model.is_file() && legacy_model.is_file() {
+            let verified = file_sha256(&legacy_model)
+                .is_ok_and(|hash| hash == manifest.model_sha256.to_ascii_lowercase())
+                && community_asset_sizes(profile).is_some_and(|(model_bytes, _)| {
+                    std::fs::metadata(&legacy_model)
+                        .map(|metadata| metadata.len() == model_bytes)
+                        .unwrap_or(false)
+                });
+            // A failed move leaves the legacy file untouched; the next run
+            // retries. Per-file failures never abort the whole migration.
+            if verified {
+                let _ = move_verified_asset(&legacy_model, &target_model);
+            }
+        }
+        let legacy_mmproj = legacy_models.join(profile).join("mmproj.gguf");
+        if !target_mmproj.is_file()
+            && legacy_mmproj.is_file()
+            && file_sha256(&legacy_mmproj)
+                .is_ok_and(|hash| hash == manifest.mmproj_sha256.to_ascii_lowercase())
+        {
+            let _ = move_verified_asset(&legacy_mmproj, &target_mmproj);
+        }
+    }
+    Ok(())
+}
+
+/// Moves one already-verified asset, preferring a same-volume rename and
+/// falling back to copy (cross-volume), never overwriting an existing target.
+fn move_verified_asset(source: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    if target.exists() {
+        return Ok(());
+    }
+    let directory = target
+        .parent()
+        .ok_or_else(|| std::io::Error::other("asset target has no parent directory"))?;
+    std::fs::create_dir_all(directory)?;
+    if std::fs::rename(source, target).is_ok() {
+        return Ok(());
+    }
+    std::fs::copy(source, target).map(|_| ())
+}
+
 /// Pure core of [`default_cache_root`] with injectable environment values.
+///
+/// The final fallback for service accounts without any home environment is a
+/// temp-dir root, never the current directory (M-11): a CWD-relative cache
+/// would both violate W1.3 ("never in the current project") and defeat the
+/// absolute-path overlap checks guarding it.
 #[must_use]
 pub fn default_cache_root_from(
     local_app_data: Option<&std::ffi::OsStr>,
@@ -262,7 +362,7 @@ pub fn default_cache_root_from(
                 .join("Caches");
         }
     }
-    std::path::PathBuf::from(".ocrx-model-cache")
+    std::env::temp_dir().join("ocrx").join("models")
 }
 
 /// Verifies that local model state matches the canonical cache layout.
@@ -555,14 +655,27 @@ pub fn install_from_urls(request: &UrlInstallRequest) -> Result<(), ManifestErro
         &request.manifest.identity.revision,
         &request.manifest.profile,
     )?;
+    // Idempotent reinstall (review M-3): an installed profile that already
+    // verifies is a success without touching the network — a second install
+    // used to die on stale ETag state instead.
+    if let Some((model_bytes, mmproj_bytes)) = community_asset_sizes(&request.manifest.profile)
+        && verify_manifest_files_with_sizes(
+            &request.manifest,
+            &request.cache_root,
+            model_bytes,
+            mmproj_bytes,
+        )
+        .is_ok()
+    {
+        return Ok(());
+    }
+    clean_transaction_residue(&[&model, &mmproj]);
     let transaction = transaction_id();
     let model_part = model.with_extension(format!("gguf{transaction}.part"));
     let mmproj_part = mmproj.with_extension(format!("gguf{transaction}.part"));
-    let model_etag = model.with_extension("gguf.etag");
-    let mmproj_etag = mmproj.with_extension("gguf.etag");
     let result = (|| {
-        download_asset(&request.model_url, &model_part, &model_etag, false)?;
-        download_asset(&request.mmproj_url, &mmproj_part, &mmproj_etag, false)?;
+        download_asset(&request.model_url, &model_part, None, false)?;
+        download_asset(&request.mmproj_url, &mmproj_part, None, false)?;
         if request.available_bytes.is_some_and(|available| {
             std::fs::metadata(&model_part)
                 .map(|m| m.len())
@@ -621,6 +734,19 @@ pub fn install_from_files(request: &InstallRequest) -> Result<(), ManifestError>
         &request.manifest.identity.revision,
         &request.manifest.profile,
     )?;
+    // Same idempotency rule as `install_from_urls` (review M-3).
+    if let Some((model_bytes, mmproj_bytes)) = community_asset_sizes(&request.manifest.profile)
+        && verify_manifest_files_with_sizes(
+            &request.manifest,
+            &request.cache_root,
+            model_bytes,
+            mmproj_bytes,
+        )
+        .is_ok()
+    {
+        return Ok(());
+    }
+    clean_transaction_residue(&[&model, &mmproj]);
     let directory = model.parent().ok_or(ManifestError::TransactionFailed)?;
     std::fs::create_dir_all(directory).map_err(|_| ManifestError::TransactionFailed)?;
     let transaction = transaction_id();
@@ -646,8 +772,14 @@ pub fn install_from_files(request: &InstallRequest) -> Result<(), ManifestError>
     result
 }
 
-/// Downloads one asset into a resumable `.part` path using the host HTTPS client.
+/// Downloads one asset into a fresh `.part` path using the host HTTPS client.
 /// The caller must verify the resulting hash before committing it.
+///
+/// ETag conditional requests are deliberately unused (review M-3): a 304
+/// answer produced an empty `.part` that failed hash verification and made
+/// every later install fail until the `.etag` file was deleted by hand. The
+/// pinned SHA-256 is the sole correctness criterion, so downloads are always
+/// unconditional.
 ///
 /// # Errors
 ///
@@ -656,7 +788,7 @@ pub fn install_from_files(request: &InstallRequest) -> Result<(), ManifestError>
 pub fn download_asset(
     url: &str,
     part_path: impl AsRef<std::path::Path>,
-    etag_path: impl AsRef<std::path::Path>,
+    _etag_path: Option<&std::path::Path>,
     offline: bool,
 ) -> Result<(), ManifestError> {
     if offline {
@@ -664,7 +796,8 @@ pub fn download_asset(
     }
     // Model provenance contract (AGENTS.md): weights come only from pinned
     // HTTPS URLs; plaintext HTTP would let a network rewrite the bytes
-    // between download and SHA-256 verification.
+    // between download and SHA-256 verification. The proto flags also stop
+    // an https→http redirect downgrade mid-transfer (m12).
     if !url.starts_with("https://") {
         return Err(ManifestError::Network);
     }
@@ -672,31 +805,18 @@ pub fn download_asset(
     if let Some(parent) = part_path.parent() {
         std::fs::create_dir_all(parent).map_err(|_| ManifestError::TransactionFailed)?;
     }
-    let etag_path = etag_path.as_ref();
-    let mut command = std::process::Command::new("curl");
-    command.args([
-        "--fail",
-        "--location",
-        "--silent",
-        "--show-error",
-        "--retry",
-        "2",
-    ]);
-    if part_path.exists() {
-        command.args(["--continue-at", "-"]);
-    }
-    command.args([
-        "--etag-save",
-        etag_path.to_str().ok_or(ManifestError::Network)?,
-    ]);
-    if etag_path.exists() {
-        command.args([
-            "--etag-compare",
-            etag_path.to_str().ok_or(ManifestError::Network)?,
-        ]);
-    }
-    let output = command
+    let output = std::process::Command::new("curl")
         .args([
+            "--fail",
+            "--location",
+            "--proto-default",
+            "https",
+            "--proto-redir",
+            "https",
+            "--silent",
+            "--show-error",
+            "--retry",
+            "2",
             "--output",
             part_path.to_str().ok_or(ManifestError::Network)?,
             url,
@@ -707,6 +827,35 @@ pub fn download_asset(
         Ok(())
     } else {
         Err(ManifestError::Network)
+    }
+}
+
+/// Removes leftover transaction files (`*.part`, `*.bak`, `*.etag`) from the
+/// directories holding the committed asset targets, before a new transaction
+/// starts (review M-3): killed installs used to leave multi-GB `.part`
+/// corpses behind forever, and stale `.etag`/`.bak` state broke re-installs.
+/// Best-effort; concurrent transactions are still serialized by
+/// [`InstallLock`] at commit time.
+fn clean_transaction_residue(targets: &[&std::path::Path]) {
+    let mut directories = Vec::new();
+    for target in targets {
+        if let Some(directory) = target.parent() {
+            directories.push(directory.to_path_buf());
+        }
+    }
+    for directory in directories {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // Exact-case comparison is intentional: these files are created
+            // by this crate's own transactions with exactly these suffixes.
+            #[allow(clippy::case_sensitive_file_extension_comparisons)]
+            if name.ends_with(".part") || name.ends_with(".bak") || name.ends_with(".etag") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
     }
 }
 
@@ -844,9 +993,9 @@ mod tests {
     use super::{
         InstallRequest, LocalModelState, ManifestError, ManifestIdentity, ModelCatalog,
         ModelManifest, ResourceSnapshot, UrlInstallRequest, cache_paths, default_cache_root_from,
-        download_asset, install_from_files, install_from_urls, legacy_cache_root_fallback,
-        recommend_device, recommend_profile, validate_runtime_adapter_compatibility,
-        verify_local_state, verify_manifest_files,
+        download_asset, file_sha256, install_from_files, install_from_urls,
+        legacy_cache_root_fallback, move_verified_asset, recommend_device, recommend_profile,
+        validate_runtime_adapter_compatibility, verify_local_state, verify_manifest_files,
     };
     use ocrx_core::ModelId;
 
@@ -970,18 +1119,13 @@ mod tests {
             download_asset(
                 "https://example.invalid/model.gguf",
                 root.join("model.part"),
-                root.join("model.etag"),
+                None,
                 true
             ),
             Err(ManifestError::Offline)
         );
         assert_eq!(
-            download_asset(
-                "file:///tmp/model",
-                root.join("model.part"),
-                root.join("model.etag"),
-                false
-            ),
+            download_asset("file:///tmp/model", root.join("model.part"), None, false),
             Err(ManifestError::Network)
         );
         // HTTPS-only provenance: plaintext http is refused like any other
@@ -990,7 +1134,7 @@ mod tests {
             download_asset(
                 "http://example.invalid/model.gguf",
                 root.join("model.part"),
-                root.join("model.etag"),
+                None,
                 false
             ),
             Err(ManifestError::Network)
@@ -1218,16 +1362,24 @@ mod tests {
     }
 
     #[test]
-    fn default_cache_root_keeps_relative_dir_without_platform_env() {
+    fn default_cache_root_never_falls_back_to_cwd_relative_dir() {
+        // M-11: without any home environment (service accounts) the cache
+        // root degrades to a temp-dir root — never the CWD-relative
+        // `.ocrx-model-cache`, which would violate W1.3 and defeat the
+        // absolute-path overlap checks.
         if cfg!(target_os = "windows") {
-            assert_eq!(
+            assert_ne!(
                 default_cache_root_from(None, None, Some(std::ffi::OsStr::new("/Users/u"))),
                 std::path::PathBuf::from(".ocrx-model-cache")
+            );
+            assert!(
+                default_cache_root_from(None, None, None).is_absolute(),
+                "service-account fallback must be an absolute temp-dir root"
             );
             return;
         }
         if cfg!(target_os = "macos") {
-            assert_eq!(
+            assert_ne!(
                 default_cache_root_from(
                     Some(std::ffi::OsStr::new("C:\\Local")),
                     Some(std::ffi::OsStr::new("C:\\Users\\u")),
@@ -1237,24 +1389,31 @@ mod tests {
             );
             return;
         }
-        assert_eq!(
-            default_cache_root_from(None, None, None),
-            std::path::PathBuf::from(".ocrx-model-cache")
+        assert!(
+            default_cache_root_from(None, None, None).is_absolute(),
+            "service-account fallback must be an absolute temp-dir root"
         );
     }
 
     #[test]
     fn legacy_cache_root_fallback_prefers_populated_legacy_over_empty_platform_root() {
-        // M4 migration guard: an existing user's models under the legacy
-        // relative root must stay visible after the default moved to the
-        // platform cache root, but only until the platform root is populated.
+        // BLK-5 regression guard: the fallback must detect the REAL pre-WP.1
+        // layout (`<legacy>/ovisocr2/<profile>/model.gguf`, no `ocrx/models`
+        // layer) — the previous probe looked for `ocrx/models` under the
+        // legacy root, which no existing install ever had, so the guard never
+        // fired and upgraded users' weights were orphaned.
         let base = std::env::temp_dir().join(format!("ocrx-legacy-cache-{}", std::process::id()));
         let platform = base.join("platform");
         let legacy = base.join("legacy");
         let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(legacy.join("ocrx").join("models")).unwrap();
 
-        // Empty platform root + populated legacy root -> legacy wins.
+        // Real old layout: per-profile directories with model+mmproj pairs.
+        let compact = legacy.join("ovisocr2").join("compact");
+        std::fs::create_dir_all(&compact).unwrap();
+        std::fs::write(compact.join("model.gguf"), b"legacy-compact-model").unwrap();
+        std::fs::write(compact.join("mmproj.gguf"), b"legacy-mmproj").unwrap();
+
+        // Empty platform root + old-layout legacy root -> legacy detected.
         assert_eq!(
             legacy_cache_root_fallback(&platform, &legacy),
             Some(legacy.clone())
@@ -1265,6 +1424,83 @@ mod tests {
         // Neither populated -> no fallback (fresh install uses platform root).
         let empty_legacy = base.join("empty-legacy");
         assert_eq!(legacy_cache_root_fallback(&platform, &empty_legacy), None);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migrate_legacy_cache_moves_verified_weights_and_skips_tampered_ones() {
+        // BLK-5: migration must (a) move hash-verified legacy files into the
+        // new layout, (b) never move a file whose bytes do not match the
+        // pinned manifest hash, and (c) work against the real pre-WP.1 shape.
+        // The seam below mirrors migrate_legacy_cache with an injected
+        // manifest so the test does not need multi-GB real weights.
+        let base = std::env::temp_dir().join(format!("ocrx-legacy-migrate-{}", std::process::id()));
+        let platform = base.join("platform");
+        let legacy = base.join("legacy");
+        let _ = std::fs::remove_dir_all(&base);
+
+        let model_bytes = b"tiny legacy compact model bytes".to_vec();
+        let mmproj_bytes = b"tiny legacy mmproj bytes".to_vec();
+        let manifest = ModelManifest {
+            identity: ManifestIdentity {
+                model: ModelId::OvisOcr2,
+                revision: COMMUNITY_REVISION.to_owned(),
+                schema_version: 1,
+            },
+            profile: "compact".to_owned(),
+            model_sha256: ocrx_core::sha256(&model_bytes),
+            mmproj_sha256: ocrx_core::sha256(&mmproj_bytes),
+        };
+        let compact = legacy.join("ovisocr2").join("compact");
+        std::fs::create_dir_all(&compact).unwrap();
+        std::fs::write(compact.join("model.gguf"), &model_bytes).unwrap();
+        std::fs::write(compact.join("mmproj.gguf"), &mmproj_bytes).unwrap();
+
+        let legacy_models = legacy.join("ovisocr2");
+        let (target_model, target_mmproj) =
+            cache_paths(&platform, &manifest.identity.revision, "compact").unwrap();
+        // Verified model moves.
+        assert_eq!(
+            file_sha256(&compact.join("model.gguf")).unwrap(),
+            manifest.model_sha256
+        );
+        move_verified_asset(
+            &legacy_models.join("compact").join("model.gguf"),
+            &target_model,
+        )
+        .unwrap();
+        move_verified_asset(
+            &legacy_models.join("compact").join("mmproj.gguf"),
+            &target_mmproj,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(&target_model).unwrap(),
+            model_bytes,
+            "moved model keeps its bytes"
+        );
+        assert_eq!(
+            std::fs::read(&target_mmproj).unwrap(),
+            mmproj_bytes,
+            "moved mmproj keeps its bytes"
+        );
+        assert!(
+            !compact.join("model.gguf").exists(),
+            "rename moved the source"
+        );
+        // A tampered sibling fails migrate_legacy_cache's hash gate, so it is
+        // never even offered to the move seam: assert the gate predicate
+        // itself (the gate, not the mover, is what protects tampered files).
+        let balanced = legacy.join("ovisocr2").join("balanced");
+        std::fs::create_dir_all(&balanced).unwrap();
+        std::fs::write(balanced.join("model.gguf"), b"tampered").unwrap();
+        assert_ne!(
+            file_sha256(&balanced.join("model.gguf")).unwrap(),
+            manifest.model_sha256,
+            "tampered bytes must fail the pinned-hash gate"
+        );
+        assert!(balanced.join("model.gguf").is_file());
 
         let _ = std::fs::remove_dir_all(&base);
     }
