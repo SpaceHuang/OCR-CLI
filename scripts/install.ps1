@@ -34,22 +34,27 @@ function Detect-GpuBackend {
 # The installer copies the VC++ runtime DLLs app-local into <prefix>\bin.
 # An OCRX_INSTALL_PREFIX pointing into Windows or Program Files must be
 # refused so the install can never overwrite operating-system files
-# (review MINOR 13).
+# (review MINOR 13 / M-5). Both sides are trimmed + separator-terminated and
+# compared case-insensitively, so exact spellings ('C:\Windows'), child
+# paths, and GetFullPath-expanded short names are all caught.
 function Test-SafeInstallPrefix([string]$Path) {
-  $Resolved = [System.IO.Path]::GetFullPath($Path)
+  $Resolved = [System.IO.Path]::GetFullPath($Path).TrimEnd('\').ToLower() + '\'
   foreach ($Root in @($env:WINDIR, ${env:ProgramFiles}, ${env:ProgramFiles(x86)})) {
     if (-not $Root) { continue }
-    $RootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
-    if ($Resolved.ToLower().StartsWith($RootFull.ToLower())) { return $false }
+    $RootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\').ToLower() + '\'
+    if ($Resolved.StartsWith($RootFull)) { return $false }
   }
   return $true
 }
 
 # Verify every file listed in the archive's SHA256SUMS (the archive carries its
-# own integrity manifest; a mismatch or missing file aborts the install).
+# own integrity manifest; a mismatch or missing file aborts the install), then
+# verify no file under the staged root escapes the manifest (M-5): a staged
+# file that SHA256SUMS does not name must never be installed.
 function Assert-ArchiveHashes([string]$StageRoot) {
   $Sums = Join-Path $StageRoot 'SHA256SUMS'
   if (-not (Test-Path $Sums)) { Fail 'archive SHA256SUMS missing' 5 }
+  $Listed = @{}
   foreach ($Line in (Get-Content $Sums)) {
     if (-not $Line.Trim()) { continue }
     $Parts = $Line -split '  ', 2
@@ -58,6 +63,13 @@ function Assert-ArchiveHashes([string]$StageRoot) {
     if (-not (Test-Path $File)) { Fail "archive file missing: $($Parts[1])" 5 }
     $Actual = (Get-FileHash -Algorithm SHA256 $File).Hash.ToLower()
     if ($Actual -ne $Parts[0].ToLower()) { Fail "archive hash mismatch: $($Parts[1])" 5 }
+    $Listed[$Parts[1].ToLower()] = $true
+  }
+  foreach ($Staged in (Get-ChildItem -File -Recurse -Path $StageRoot)) {
+    $Relative = $Staged.FullName.Substring($StageRoot.Length).TrimStart('\').ToLower()
+    if (-not $Listed.ContainsKey($Relative)) {
+      Fail "archive file not covered by SHA256SUMS: $($Staged.Name)" 5
+    }
   }
 }
 
@@ -80,6 +92,9 @@ try {
 
   if ($env:OCRX_RELEASE_ARCHIVE) {
     if (-not (Test-Path $env:OCRX_RELEASE_ARCHIVE)) { Fail 'release archive missing' 4 }
+    # The outer archive hash is mandatory even for a local file (M-5): a
+    # local zip without a pinned hash is an unverified artifact.
+    if (-not $env:OCRX_RELEASE_SHA256) { Fail 'OCRX_RELEASE_SHA256 is required to verify the release archive' 5 }
     if (-not (Test-Sha256 $env:OCRX_RELEASE_ARCHIVE $env:OCRX_RELEASE_SHA256)) {
       Fail 'release archive hash mismatch' 5
     }
@@ -97,6 +112,11 @@ try {
   } elseif ($env:OCRX_RELEASE_URL) {
     if ($Offline) { Fail 'OCRX_OFFLINE is set but no local release archive or build is available' 6 }
     if (-not $env:OCRX_RELEASE_SHA256) { Fail 'OCRX_RELEASE_SHA256 is required to verify the downloaded release' 5 }
+    # Frozen trust decision: release downloads are HTTPS-only (M-5). The
+    # archive hash below guards integrity; this guards the transport.
+    if (-not $env:OCRX_RELEASE_URL.StartsWith('https://')) {
+      Fail 'OCRX_RELEASE_URL must use https' 5
+    }
     $DownloadedZip = Join-Path $TempDir 'release.zip'
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocol]::Tls12
     Invoke-WebRequest -Uri $env:OCRX_RELEASE_URL -OutFile $DownloadedZip

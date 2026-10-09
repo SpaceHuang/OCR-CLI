@@ -78,7 +78,10 @@ def remove_confident_tail_repetition(markdown: str) -> tuple[str, bool]:
         return markdown, False
     body, last = trimmed.rsplit("\n", 1)
     last_trimmed = last.strip()
-    if len(last_trimmed) < 8:
+    # Byte length, matching Rust's `&str::len` (M-7 drift 2): CJK lines are
+    # few characters but many bytes, so a character count here diverged from
+    # the adapter exactly on the pages most likely to repeat.
+    if len(last_trimmed.encode("utf-8")) < 8:
         return markdown, False
     if "\n" not in body:
         return markdown, False
@@ -88,17 +91,40 @@ def remove_confident_tail_repetition(markdown: str) -> tuple[str, bool]:
     return f"{prefix.rstrip()}\n{last_trimmed}\n", True
 
 
+def find_formula_start(value: str) -> tuple[int, bool] | None:
+    """Port of ``find_formula_start`` in the OvisOCR2 adapter."""
+    candidates: list[tuple[int, bool]] = []
+    for delimiter, display in (("$$", True), ("$", False), ("\\(", False)):
+        index = value.find(delimiter)
+        if index != -1:
+            candidates.append((index, display))
+    return min(candidates, key=lambda item: item[0]) if candidates else None
+
+
+def formula_delimiter(value: str) -> tuple[int, str] | None:
+    """Port of ``formula_delimiter`` in the OvisOCR2 adapter."""
+    if value.startswith("$$"):
+        return 2, "$$"
+    if value.startswith("\\("):
+        return 2, "\\)"
+    if value.startswith("$"):
+        return 1, "$"
+    return None
+
+
 def parse_structured_blocks(markdown: str) -> list[dict]:
     """Port of ``parse_structured_blocks`` in the OvisOCR2 adapter."""
     blocks: list[dict] = []
     remaining = markdown
     while remaining:
         table_position = remaining.find("<table")
-        formula_position = remaining.find("$$")
-        if formula_position != -1 and (table_position == -1 or formula_position < table_position):
-            start, is_table = formula_position, False
+        formula = find_formula_start(remaining)
+        if table_position != -1 and formula and formula[0] < table_position:
+            start, is_table = formula[0], False
         elif table_position != -1:
             start, is_table = table_position, True
+        elif formula:
+            start, is_table = formula[0], False
         else:
             start, is_table = -1, False
 
@@ -111,18 +137,24 @@ def parse_structured_blocks(markdown: str) -> list[dict]:
             blocks.append({"type": "markdown", "content": remaining[:start]})
 
         if not is_table:
-            formula_start = remaining[start + 2 :]
-            end = formula_start.find("$$")
-            if end != -1:
-                blocks.append(
-                    {
-                        "type": "formula",
-                        "latex": formula_start[:end].strip(),
-                        "display": True,
-                    }
-                )
-                remaining = formula_start[end + 2 :]
-                continue
+            # Full delimiter set from the adapter (M-7 drift 1): inline `$`
+            # and `\(...\)` formulas become formula blocks with display=False
+            # exactly like the Rust parser, instead of staying in markdown.
+            opened = formula_delimiter(remaining[start:])
+            if opened:
+                open_len, close = opened
+                formula_start = remaining[start + open_len :]
+                end = formula_start.find(close)
+                if end != -1:
+                    blocks.append(
+                        {
+                            "type": "formula",
+                            "latex": formula_start[:end].strip(),
+                            "display": remaining[start:].startswith("$$"),
+                        }
+                    )
+                    remaining = formula_start[end + len(close) :]
+                    continue
             blocks.append({"type": "markdown", "content": remaining})
             break
 
@@ -143,6 +175,16 @@ def _valid_bbox(left: int, top: int, right: int, bottom: int) -> bool:
     return left < right and top < bottom and right < 1000 and bottom < 1000
 
 
+def _parse_u16_strict(value: str) -> int | None:
+    """Rust `u16::from_str` semantics: digits only, no sign, whitespace, or
+    leading `+`, range-checked. Python's `int()` accepted spellings the
+    adapter rejects (M-7 drift 3)."""
+    if not value.isdigit():
+        return None
+    parsed = int(value)
+    return parsed if parsed <= 0xFFFF else None
+
+
 def extract_bboxes(raw: str) -> list[tuple[int, int, int, int]]:
     """Port of ``extract_bboxes`` in the OvisOCR2 adapter."""
     result: list[tuple[int, int, int, int]] = []
@@ -154,12 +196,11 @@ def extract_bboxes(raw: str) -> list[tuple[int, int, int, int]]:
         candidate = rest[start + 5 :]
         fields = _BBOX_SPLIT.split(candidate)
         if len(fields) >= 4:
-            try:
-                bbox = tuple(int(fields[i]) for i in range(4))
-            except ValueError:
-                bbox = None
-            if bbox is not None and _valid_bbox(*bbox):
-                result.append(bbox)
+            parsed = [_parse_u16_strict(fields[i]) for i in range(4)]
+            if all(value is not None for value in parsed):
+                bbox = tuple(value for value in parsed if value is not None)
+                if _valid_bbox(*bbox):
+                    result.append(bbox)
         rest = candidate[1:] if candidate else ""
     return result
 
@@ -200,7 +241,16 @@ def adapt_response(page_number: int, raw: str, finish_reason: str) -> dict:
             }
         )
 
-    termination = "max_tokens" if finish_reason == "max_tokens" else "eos"
+    # Mirror the adapter's termination mapping (M-7 drift 4): `stop` and
+    # `stop_token` map to stop_token, everything unrecognized falls back to
+    # eos — not only an exact `max_tokens`/`eos` split.
+    termination = (
+        "max_tokens"
+        if finish_reason == "max_tokens"
+        else "stop_token"
+        if finish_reason in ("stop", "stop_token")
+        else "eos"
+    )
     warnings: list[str] = []
     if termination == "max_tokens":
         warnings.append("truncated")

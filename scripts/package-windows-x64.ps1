@@ -40,7 +40,9 @@ function Assert-PeMachineType([string]$Path, [string]$Label, [uint16]$Expected) 
   $bytes = [System.IO.File]::ReadAllBytes($Path)
   if ($bytes.Length -lt 64) { Fail "$Label is not a valid PE image" 4 }
   $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-  if ($peOffset -lt 0 -or $peOffset -gt $bytes.Length - 4) { Fail "$Label is not a valid PE image" 4 }
+  # The machine type lives at peOffset+4..peOffset+6, so the offset must
+  # leave room for two full bytes (m26: `- 4` threw on crafted boundary PEs).
+  if ($peOffset -lt 0 -or $peOffset -gt $bytes.Length - 6) { Fail "$Label is not a valid PE image" 4 }
   $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
   if ($machine -ne $Expected) { Fail "$Label is not the expected architecture" 4 }
 }
@@ -106,6 +108,18 @@ if (-not $env:OCRX_PDFIUM_LIBRARY) {
   Fail 'set OCRX_PDFIUM_LIBRARY to package the required x64 PDFium dll' 4
 }
 if (-not (Test-Path $env:OCRX_PDFIUM_LIBRARY)) { Fail 'PDFium dll missing' 4 }
+# Frozen-baseline pin (M-6): the dll must byte-match the reviewed
+# pdfium-windows-release baseline (docs/develop/pdfium-windows-release-
+# baseline-2026-08-11.md). PE arch alone would let any renamed x64 binary in.
+$PdfiumBaselineSha256 = 'd3d9f4b7c9dabe3363f30779c5c3c715c47332749fa590e4b4a2b8b6780cb1c4'
+$ActualPdfiumSha256 = (Get-FileHash -Algorithm SHA256 $env:OCRX_PDFIUM_LIBRARY).Hash.ToLower()
+if ($ActualPdfiumSha256 -ne $PdfiumBaselineSha256) {
+  if ($env:OCRX_ALLOW_UNPINNED_PDFIUM -eq '1') {
+    Write-Host "warning: packaging UNPINNED pdfium.dll (sha256 $ActualPdfiumSha256); a new compatibility-matrix entry is required"
+  } else {
+    Fail "pdfium.dll does not match the frozen baseline sha256 (got $ActualPdfiumSha256); set OCRX_ALLOW_UNPINNED_PDFIUM=1 only after registering a new baseline entry" 4
+  }
+}
 Assert-PeMachineType -Path $env:OCRX_PDFIUM_LIBRARY -Label 'PDFium dll' -Expected ([uint16]0x8664)
 Copy-Item $env:OCRX_PDFIUM_LIBRARY (Join-Path $Stage 'bin\pdfium.dll') -Force
 

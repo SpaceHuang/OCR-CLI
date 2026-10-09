@@ -17,3 +17,4 @@ benchmarks/fixtures/** -text
 /assets/skills/ocrx/SKILL.md text eol=lf
 /THIRD_PARTY_NOTICES.md text eol=lf
 /LICENSE text eol=lf
+/assets/licenses/** text eol=lf

@@ -45,9 +45,10 @@ grep -q "requires Windows" "$ROOT_DIR/scripts/package-windows-x64.ps1"
 grep -qE "requires x64|requires AMD64" "$ROOT_DIR/scripts/package-windows-x64.ps1"
 grep -q "Windows only" "$ROOT_DIR/scripts/install.ps1"
 grep -qE "x64 only|AMD64 only" "$ROOT_DIR/scripts/install.ps1"
-# privacy: package never bundles/downloads models; install never bulk-downloads models.
-! grep -qEi "gguf|download.*model|model.*download" "$ROOT_DIR/scripts/package-windows-x64.ps1"
-! grep -qEi "gguf|download.*model" "$ROOT_DIR/scripts/install.ps1"
+# privacy: package never bundles/downloads models; install never bulk-downloads
+# models — enforced by the explicit failure-branch gates near the top of this
+# file, which cover these same two scripts (the former `! grep` lines here were
+# a silent no-op under `set -e`, review R-4/m23).
 # release stage is a standard skill root (SKILL.md beside bin/), not assets/skills nesting.
 grep -Fq 'Join-Path $OutDir ' "$ROOT_DIR/scripts/package-windows-x64.ps1"
 grep -q "SKILL.md" "$ROOT_DIR/scripts/package-windows-x64.ps1"
