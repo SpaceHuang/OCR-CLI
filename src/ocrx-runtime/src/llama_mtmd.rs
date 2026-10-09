@@ -159,10 +159,17 @@ impl Runtime for LlamaMtmdRuntime {
             .map_err(|error| error.to_string())?;
         // Ctrl+C must stay responsive across the (potentially hundreds of
         // seconds on CPU) image-encoding phase: check before and after the
-        // blocking eval (M9). eval_chunks itself cannot be interrupted.
+        // blocking eval (M9). eval_chunks itself is a single blocking FFI
+        // call and cannot tick the per-second heartbeat; the heartbeat
+        // contract therefore covers the decode loop, and one progress event
+        // is emitted at encoding start so consumers see the page is alive.
         if cancellation.is_cancelled() {
             return Err("cancelled".to_owned());
         }
+        progress(GenerationProgress {
+            generated_tokens: 0,
+            elapsed_seconds: started.elapsed().as_secs(),
+        });
         let params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(self.context_size))
             .with_op_offload(self.use_gpu)
@@ -175,6 +182,11 @@ impl Runtime for LlamaMtmdRuntime {
             .eval_chunks(&self.mtmd, &context, 0, 0, 512, true)
             .map_err(|error| error.to_string())?;
         if cancellation.is_cancelled() {
+            // Keep the encoding time in the telemetry even though no tokens
+            // were generated, so tokens/s is not inflated by pages that were
+            // interrupted mid-encode (m14).
+            drop(context);
+            self.record_generation(0, started.elapsed().as_millis() as u64, 0);
             return Err("cancelled".to_owned());
         }
         let mut output = String::new();

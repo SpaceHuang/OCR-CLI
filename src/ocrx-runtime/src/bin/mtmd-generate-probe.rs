@@ -29,13 +29,17 @@ mod probe {
         let backend = LlamaBackend::init()?;
         let use_gpu = std::env::var("OCRX_RUNTIME_USE_GPU").map_or(true, |v| v != "0");
         let model_layers = if use_gpu { u32::MAX } else { 0 };
-        let model = LlamaModel::load_from_file(
-            &backend,
-            Path::new(&model_path),
-            &LlamaModelParams::default()
-                .with_n_gpu_layers(model_layers)
-                .with_split_mode(LlamaSplitMode::None),
-        )?;
+        let mut model_params = LlamaModelParams::default()
+            .with_n_gpu_layers(model_layers)
+            .with_split_mode(LlamaSplitMode::None);
+        if !use_gpu {
+            // Mirror the runtime's CPU fix (llama_mtmd.rs): llama.cpp rejects
+            // the default main_gpu=0 when no backend device exists in a
+            // CPU-only build (M-8) — without this the probe's CPU mode fails
+            // at model load instead of probing generation.
+            model_params = model_params.with_main_gpu(-1);
+        }
+        let model = LlamaModel::load_from_file(&backend, Path::new(&model_path), &model_params)?;
         let mtmd = MtmdContext::init_from_file(
             &mmproj_path,
             &model,

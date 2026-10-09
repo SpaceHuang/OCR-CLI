@@ -709,11 +709,15 @@ fn has_geometry_anomaly(blocks: &[NativeTextBlock]) -> bool {
                 .min(right.bbox.bottom)
                 .saturating_sub(left.bbox.top.max(right.bbox.top));
             let intersection = u32::from(intersection_width) * u32::from(intersection_height);
-            let smaller =
-                u32::from((left.bbox.right - left.bbox.left) * (left.bbox.bottom - left.bbox.top))
-                    .min(u32::from(
-                        (right.bbox.right - right.bbox.left) * (right.bbox.bottom - right.bbox.top),
-                    ));
+            // Widen before multiplying (M-9): in u16 the products overflow at
+            // ~300-unit squares, panicking debug builds and silently wrapping
+            // in release — the overlap detector then randomly passes
+            // overlapping text blocks as valid native text.
+            let left_area = u32::from(left.bbox.right - left.bbox.left)
+                * u32::from(left.bbox.bottom - left.bbox.top);
+            let right_area = u32::from(right.bbox.right - right.bbox.left)
+                * u32::from(right.bbox.bottom - right.bbox.top);
+            let smaller = left_area.min(right_area);
             left.text != right.text && smaller > 0 && intersection * 100 >= smaller * 80
         })
     })
@@ -1556,6 +1560,23 @@ fn shared_pdfium(library_dir: &Path) -> Result<&'static Pdfium, Box<dyn std::err
 /// before any scaling could happen downstream).
 const MAX_RENDER_PIXELS: u64 = 2880 * 2880;
 
+/// Computes the rasterization bitmap size for one page: points → pixels at
+/// the requested DPI, NaN/negative guarded to at least 1 px, then clamped to
+/// [`MAX_RENDER_PIXELS`] by proportional downscale. Every render entry point
+/// must go through this helper so no spelling of a hostile MediaBox can reach
+/// `set_fixed_size` with an unbounded size (review BLK-4: the worker-mode
+/// `render_range` path used to bypass the clamp).
+fn clamped_bitmap_size(
+    page_width: f32,
+    page_height: f32,
+    dpi: u16,
+) -> Result<(i32, i32), Box<dyn std::error::Error>> {
+    let raw_width = (page_width * f32::from(dpi) / 72.0).round().max(1.0) as u32;
+    let raw_height = (page_height * f32::from(dpi) / 72.0).round().max(1.0) as u32;
+    let (width, height, _) = fit_pixel_budget(raw_width, raw_height, MAX_RENDER_PIXELS);
+    Ok((i32::try_from(width)?, i32::try_from(height)?))
+}
+
 impl PdfiumRenderer {
     pub fn new(library_dir: impl Into<PathBuf>) -> Self {
         Self {
@@ -1579,18 +1600,10 @@ impl PdfiumRenderer {
         let input = input.as_ref();
         let document = pdfium.load_pdf_from_file(input, self.password.as_deref())?;
         let page = document.pages().get(page_number.try_into()?)?;
-        let raw_width = (page.width().value * f32::from(options.dpi) / 72.0)
-            .round()
-            .max(1.0) as u32;
-        let raw_height = (page.height().value * f32::from(options.dpi) / 72.0)
-            .round()
-            .max(1.0) as u32;
-        let (width, height, _) = fit_pixel_budget(raw_width, raw_height, MAX_RENDER_PIXELS);
+        let (width, height) =
+            clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
         Ok(page
-            .render_with_config(&render_config(
-                i32::try_from(width)?,
-                i32::try_from(height)?,
-            ))?
+            .render_with_config(&render_config(width, height))?
             .as_image()?
             .into_rgb8())
     }
@@ -1627,18 +1640,10 @@ impl PdfiumRenderer {
         let page = document.pages().get(page_number.try_into()?)?;
         let original_width = page.width().value.round().max(1.0) as u32;
         let original_height = page.height().value.round().max(1.0) as u32;
-        let raw_width = (page.width().value * f32::from(options.dpi) / 72.0)
-            .round()
-            .max(1.0) as u32;
-        let raw_height = (page.height().value * f32::from(options.dpi) / 72.0)
-            .round()
-            .max(1.0) as u32;
-        let (width, height, _) = fit_pixel_budget(raw_width, raw_height, MAX_RENDER_PIXELS);
+        let (width, height) =
+            clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
         let image = page
-            .render_with_config(&render_config(
-                i32::try_from(width)?,
-                i32::try_from(height)?,
-            ))?
+            .render_with_config(&render_config(width, height))?
             .as_image()?
             .into_rgb8();
         Ok((image, original_width, original_height))
@@ -1900,8 +1905,8 @@ impl PdfiumRenderer {
         let page_count = document.pages().len();
         for index in 0..page_count {
             let page = document.pages().get(index)?;
-            let width = (page.width().value * f32::from(options.dpi) / 72.0).round() as i32;
-            let height = (page.height().value * f32::from(options.dpi) / 72.0).round() as i32;
+            let (width, height) =
+                clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
             let image = {
                 let bitmap = page.render_with_config(&render_config(width, height))?;
                 let image = bitmap.as_image()?.into_rgb8();
@@ -1930,8 +1935,8 @@ impl PdfiumRenderer {
         for index in 0..page_count {
             let document = pdfium.load_pdf_from_file(input, self.password.as_deref())?;
             let page = document.pages().get(index.try_into()?)?;
-            let width = (page.width().value * f32::from(options.dpi) / 72.0).round() as i32;
-            let height = (page.height().value * f32::from(options.dpi) / 72.0).round() as i32;
+            let (width, height) =
+                clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
             let image = {
                 let bitmap = page.render_with_config(&render_config(width, height))?;
                 let image = bitmap.as_image()?.into_rgb8();
@@ -1967,8 +1972,8 @@ impl PdfiumRenderer {
             let end = (start + segment_pages).min(page_count);
             for index in start..end {
                 let page = document.pages().get(index.try_into()?)?;
-                let width = (page.width().value * f32::from(options.dpi) / 72.0).round() as i32;
-                let height = (page.height().value * f32::from(options.dpi) / 72.0).round() as i32;
+                let (width, height) =
+                    clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
                 let image = {
                     let bitmap = page.render_with_config(&render_config(width, height))?;
                     let image = bitmap.as_image()?.into_rgb8();
@@ -2001,8 +2006,8 @@ impl PdfiumRenderer {
         let end_page = end_page.min(total);
         for index in start_page..end_page {
             let page = document.pages().get(index.try_into()?)?;
-            let width = (page.width().value * f32::from(options.dpi) / 72.0).round() as i32;
-            let height = (page.height().value * f32::from(options.dpi) / 72.0).round() as i32;
+            let (width, height) =
+                clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
             let bitmap = page.render_with_config(&render_config(width, height))?;
             let image = bitmap.as_image()?.into_rgb8();
             drop(bitmap);
@@ -2242,6 +2247,74 @@ mod tests {
             super::fit_pixel_budget(1000, 1000, 2880 * 2880),
             (1000, 1000, false)
         );
+    }
+
+    #[test]
+    fn huge_mediabox_fixture_is_hash_locked() {
+        let data = include_bytes!("../../../benchmarks/fixtures/pdf/huge-mediabox-1-page.pdf");
+        assert_eq!(
+            ocrx_core::sha256(data),
+            "080463987ae54d0719cede53517c23b5458345c5f5fbf69fe045831fcf01391b"
+        );
+    }
+
+    #[test]
+    fn real_huge_mediabox_renders_clamped_through_worker_path() {
+        run_pdfium_probe("tests::pdfium_probe_huge_mediabox_renders_clamped");
+    }
+
+    #[ignore = "probe runs in an isolated subprocess via run_pdfium_probe"]
+    #[test]
+    fn pdfium_probe_huge_mediabox_renders_clamped() {
+        // BLK-4 regression vector: `render_range` (the OCRX_PDF_WORKER path)
+        // must clamp the bitmap to MAX_RENDER_PIXELS instead of handing a
+        // 20000x20000 pt MediaBox at 300 DPI (~83k px per side) to PDFium.
+        let Some(lib) = ensure_pdfium() else {
+            return;
+        };
+        let renderer = PdfiumRenderer::new(lib);
+        let mut rendered_sizes = Vec::new();
+        let count = renderer
+            .render_range(
+                fixture("huge-mediabox-1-page.pdf"),
+                RenderOptions { dpi: 300 },
+                0,
+                1,
+                |_index, image| {
+                    rendered_sizes.push(image.dimensions());
+                    Ok(())
+                },
+            )
+            .expect("huge-mediabox page should render clamped");
+        assert_eq!(count, 1);
+        let (width, height) = rendered_sizes[0];
+        assert!(
+            u64::from(width) * u64::from(height) <= 2880 * 2880,
+            "worker-path render must fit the pixel budget, got {width}x{height}"
+        );
+        assert!(width > 1 && height > 1, "clamped render is still real work");
+    }
+
+    #[test]
+    fn geometry_anomaly_detects_overlapping_large_blocks_without_u16_overflow() {
+        // M-9 regression: ~300-unit squares overflowed in the u16 multiply,
+        // panicking debug builds and wrapping in release, so overlapping
+        // cover-page blocks passed validation as successful native text.
+        let block = |text: &str| NativeTextBlock {
+            text: text.to_owned(),
+            bbox: NormalizedBbox::new(0, 0, 500, 500).unwrap(),
+            order: 1,
+            source: ocrx_core::BlockSource::PdfText,
+        };
+        // Two 500x500 (=250000 > u16::MAX) identical-geometry blocks overlap:
+        // the anomaly detector must flag them, not panic or wrap.
+        assert!(has_geometry_anomaly(&[block("a"), block("b")]));
+        // Distinct far-apart blocks stay clean.
+        let mut apart = block("a");
+        apart.bbox = NormalizedBbox::new(0, 0, 100, 100).unwrap();
+        let mut other = block("b");
+        other.bbox = NormalizedBbox::new(500, 500, 600, 600).unwrap();
+        assert!(!has_geometry_anomaly(&[apart, other]));
     }
 
     #[test]
