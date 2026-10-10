@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const SKILL_ID: &str = "ocrx";
@@ -110,8 +111,19 @@ pub fn install(
         let path = directory.join("SKILL.md");
         let marked = format!("{START}{content}{END}");
         let temporary = directory.join(".SKILL.md.part");
-        fs::write(&temporary, marked)?;
-        fs::rename(&temporary, &path)?;
+        // Write + sync + rename mirrors ocrx-output::atomic_write (review
+        // m11): the sync guarantees the marker file survives a crash, and a
+        // failed write must not leave the .part corpse behind.
+        let result = (|| -> io::Result<()> {
+            let mut file = fs::File::create(&temporary)?;
+            file.write_all(marked.as_bytes())?;
+            file.sync_all()?;
+            fs::rename(&temporary, &path)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result?;
         paths.push(path);
     }
     Ok(paths)
@@ -129,10 +141,15 @@ pub fn uninstall(
     let root = scope.root(home, project)?;
     let mut removed = Vec::new();
     for target in parse_target(target)? {
-        let path = target.directory(&root).join("SKILL.md");
+        let directory = target.directory(&root);
+        let path = directory.join("SKILL.md");
         if let Ok(content) = fs::read_to_string(&path) {
             if content.starts_with(START) && content.ends_with(END) {
                 fs::remove_file(&path)?;
+                // Drop the directory we created when it is now empty
+                // (review m11): an uninstall used to leave empty
+                // .codex/skills/ocrx shells behind.
+                let _ = fs::remove_dir(&directory);
                 removed.push(path);
             }
         }

@@ -82,15 +82,24 @@ impl GpuResourceReport {
     pub fn to_json(&self) -> String {
         let optional =
             |value: Option<u64>| value.map_or_else(|| "null".to_owned(), |value| value.to_string());
+        // Non-finite floats have no JSON literal; emit null instead of the
+        // bare `NaN`/`inf` a strict parser rejects (review m16).
+        let finite = |value: f64| {
+            if value.is_finite() {
+                format!("{value:.3}")
+            } else {
+                "null".to_owned()
+            }
+        };
         format!(
-            "{{\"schema_version\":1,\"backend\":\"{}\",\"vram_peak_bytes\":{},\"unified_memory_peak_bytes\":{},\"load_time_ms\":{},\"first_token_ms\":{},\"output_tokens\":{},\"output_tokens_per_sec\":{:.3},\"peak_memory_bytes\":{}}}",
+            "{{\"schema_version\":1,\"backend\":\"{}\",\"vram_peak_bytes\":{},\"unified_memory_peak_bytes\":{},\"load_time_ms\":{},\"first_token_ms\":{},\"output_tokens\":{},\"output_tokens_per_sec\":{},\"peak_memory_bytes\":{}}}",
             json_escape(&self.backend),
             optional(self.vram_peak_bytes),
             optional(self.unified_memory_peak_bytes),
             optional(self.load_time_ms),
             optional(self.first_token_ms),
             self.output_tokens,
-            self.output_tokens_per_sec,
+            finite(self.output_tokens_per_sec),
             optional(self.peak_memory_bytes),
         )
     }
@@ -989,56 +998,6 @@ impl PageDocument {
             warnings,
         };
         document.validate()?;
-        return Ok(document);
-        #[allow(unreachable_code)]
-        let schema_version = json_number(value, "schema_version")?;
-        let page_number = json_number(value, "page_number")?;
-        let termination = match json_string(value, "termination")?.as_str() {
-            "eos" => Termination::Eos,
-            "stop_token" => Termination::StopToken,
-            "max_tokens" => Termination::MaxTokens,
-            "invalid" => Termination::Invalid,
-            _ => return Err(DomainError::InvalidJson),
-        };
-        let warnings_value = value
-            .split_once("\"warnings\":[")
-            .and_then(|(_, rest)| rest.split_once(']'))
-            .ok_or(DomainError::InvalidJson)?
-            .0;
-        let warnings = if warnings_value.trim().is_empty() {
-            Vec::new()
-        } else {
-            warnings_value
-                .split(',')
-                .map(|item| match item.trim().trim_matches('"') {
-                    "truncated" => Ok(PageWarning::Truncated),
-                    "repetition_removed" => Ok(PageWarning::RepetitionRemoved),
-                    "render_scaled" => Ok(PageWarning::RenderScaled),
-                    _ => Err(DomainError::InvalidJson),
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        let blocks_value = value
-            .split_once("\"blocks\":[")
-            .and_then(|(_, rest)| rest.split_once("],\"termination\""))
-            .ok_or(DomainError::InvalidJson)?
-            .0;
-        let blocks = if blocks_value.trim().is_empty() {
-            Vec::new()
-        } else {
-            blocks_value
-                .split("},{")
-                .map(parse_block)
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        let document = Self {
-            schema_version,
-            page_number,
-            blocks,
-            termination,
-            warnings,
-        };
-        document.validate()?;
         Ok(document)
     }
 }
@@ -1148,74 +1107,7 @@ impl PdfPageDocument {
     }
 
     pub fn from_json(value: &str) -> Result<Self, DomainError> {
-        return Self::from_json_serde(value);
-        #[allow(unreachable_code)]
-        if json_number(value, "schema_version")? != Self::SCHEMA_VERSION {
-            return Err(DomainError::InvalidJson);
-        }
-        let classification = PageClassification {
-            page_type: match json_string(value, "page_type")?.as_str() {
-                "text" => PageType::Text,
-                "image" => PageType::Image,
-                "mixed" => PageType::Mixed,
-                "empty" => PageType::Empty,
-                "uncertain" => PageType::Uncertain,
-                _ => return Err(DomainError::InvalidJson),
-            },
-            confidence: match json_string(value, "confidence")?.as_str() {
-                "high" => RouteConfidence::High,
-                "medium" => RouteConfidence::Medium,
-                "low" => RouteConfidence::Low,
-                _ => return Err(DomainError::InvalidJson),
-            },
-            recommended_method: match json_string(value, "recommended_method")?.as_str() {
-                "native_text" => ProcessingMethod::NativeText,
-                "ocr" => ProcessingMethod::Ocr,
-                "empty" => ProcessingMethod::Empty,
-                _ => return Err(DomainError::InvalidJson),
-            },
-            reason: match json_string(value, "reason")?.as_str() {
-                "native_text_reliable" => PdfReasonCode::NativeTextReliable,
-                "no_visible_content" => PdfReasonCode::NoVisibleContent,
-                "image_coverage_high" => PdfReasonCode::ImageCoverageHigh,
-                "mixed_content" => PdfReasonCode::MixedContent,
-                "text_coverage_low" => PdfReasonCode::TextCoverageLow,
-                "unicode_validity_low" => PdfReasonCode::UnicodeValidityLow,
-                "duplicate_text" => PdfReasonCode::DuplicateText,
-                "geometry_anomaly" => PdfReasonCode::GeometryAnomaly,
-                "native_structure_unresolved" => PdfReasonCode::NativeStructureUnresolved,
-                "native_validation_failed" => PdfReasonCode::NativeValidationFailed,
-                _ => return Err(DomainError::InvalidJson),
-            },
-        };
-        let processing = PageProcessing {
-            planned_method: classification.recommended_method,
-            actual_method: match json_string(value, "actual_method") {
-                Ok(method) => Some(match method.as_str() {
-                    "native_text" => ProcessingMethod::NativeText,
-                    "ocr" => ProcessingMethod::Ocr,
-                    "empty" => ProcessingMethod::Empty,
-                    _ => return Err(DomainError::InvalidJson),
-                }),
-                Err(_) => None,
-            },
-            fallback_reason: None,
-        };
-        let document_start = value
-            .find("\"document\":")
-            .ok_or(DomainError::InvalidJson)?
-            + 11;
-        let document = PageDocument::from_json(&value[document_start..])?;
-        let provenance = Vec::new();
-        let result = Self {
-            schema_version: Self::SCHEMA_VERSION,
-            document,
-            classification,
-            processing,
-            provenance,
-        };
-        result.validate()?;
-        Ok(result)
+        Self::from_json_serde(value)
     }
 
     fn from_json_serde(value: &str) -> Result<Self, DomainError> {

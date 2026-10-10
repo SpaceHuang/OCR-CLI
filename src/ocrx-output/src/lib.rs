@@ -64,6 +64,11 @@ fn json_escape(value: &str) -> String {
 }
 
 /// Redacts sensitive values before any diagnostic field is serialized.
+///
+/// A key only redacts when it appears as an actual key — followed by `=` or
+/// `:` — so a value that merely contains the letters (e.g. the message
+/// `ocr:failed`, where `ocr` IS the payload) keeps its readability
+/// (review m21: substring `ocr` used to redact its own diagnostics).
 #[must_use]
 pub fn redact_sensitive(input: &str) -> String {
     let mut output = input.to_owned();
@@ -74,6 +79,12 @@ pub fn redact_sensitive(input: &str) -> String {
             let Some(separator) = output[start..].find(['=', ':']) else {
                 break;
             };
+            // Only treat this as a key/value pair when the separator directly
+            // follows the key (`key=value`, `key: value`, `"key":`).
+            if start + key.len() != start + separator {
+                cursor = start + key.len();
+                continue;
+            }
             let value_start = start + separator + 1;
             let value_end = output[value_start..]
                 .find([',', ' ', '\n'])

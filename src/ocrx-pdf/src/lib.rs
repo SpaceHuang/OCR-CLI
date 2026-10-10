@@ -6,7 +6,7 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use image::{GenericImageView, RgbImage};
+use image::RgbImage;
 use ocrx_core::{
     NormalizedBbox, PageBlock, PageClassification, PageDocument, PageType, PdfPageDocument,
     PdfReasonCode, ProcessingMethod, QualityTier, RouteConfidence, Termination,
@@ -1249,7 +1249,10 @@ pub fn validate_worker_segment(
         if !path.is_file() {
             return Err(format!("worker output missing: {}", path.display()).into());
         }
-        image::open(&path)
+        // Header-only dimension read (review m19): validating the audit
+        // dimensions does not need the pixels, and each full decode of a
+        // 300-DPI page PNG costs real time in the scan hot path.
+        let actual_dimensions = image::image_dimensions(&path)
             .map_err(|error| format!("invalid worker PNG {}: {error}", path.display()))?;
         let audit_path = root.join(format!("page-{:04}.audit", page + 1));
         let audit = fs::read_to_string(&audit_path)
@@ -1266,9 +1269,6 @@ pub fn validate_worker_segment(
             )
         })?;
         let metadata_dimensions = (width.parse::<u32>(), height.parse::<u32>());
-        let actual_dimensions = image::open(&path)
-            .map_err(|error| format!("invalid worker PNG {}: {error}", path.display()))?
-            .dimensions();
         if metadata_dimensions != (Ok(actual_dimensions.0), Ok(actual_dimensions.1)) {
             return Err(format!(
                 "worker audit dimensions do not match PNG {}",
@@ -1394,15 +1394,18 @@ impl PdfWorkerScheduler {
             let mut tick = 0u32;
             let status = loop {
                 if cancelled() {
-                    child.kill()?;
+                    // Best-effort cleanup (review m1): a transient
+                    // remove_dir_all failure (AV/indexer lock) must not
+                    // replace the cancelled semantics with an io error.
+                    let _ = child.kill();
                     let _ = child.wait();
-                    fs::remove_dir_all(&segment_root)?;
+                    let _ = fs::remove_dir_all(&segment_root);
                     return Err("worker cancelled".into());
                 }
                 if began.elapsed() > self.timeout {
-                    child.kill()?;
+                    let _ = child.kill();
                     let _ = child.wait();
-                    fs::remove_dir_all(&segment_root)?;
+                    let _ = fs::remove_dir_all(&segment_root);
                     return Err("worker timed out".into());
                 }
                 if let Some(status) = child.try_wait()? {
@@ -1418,7 +1421,7 @@ impl PdfWorkerScheduler {
                 thread::sleep(Duration::from_millis(10));
             };
             if !status.success() {
-                fs::remove_dir_all(&segment_root)?;
+                let _ = fs::remove_dir_all(&segment_root);
                 return Err(format!("worker failed for [{start},{end}) with {status}").into());
             }
             if let Err(error) = validate_worker_segment(&segment_root, start, end) {
@@ -1441,7 +1444,10 @@ impl PdfWorkerScheduler {
                     return Err(error.into());
                 }
             }
-            fs::remove_dir_all(&segment_root)?;
+            // All pages of the segment are committed by now: cleanup is
+            // best-effort, and a locked leftover directory must not fail an
+            // otherwise complete segment (review m1).
+            let _ = fs::remove_dir_all(&segment_root);
             reports.push(WorkerSegmentReport {
                 start_page: start,
                 end_page: end,
@@ -1521,29 +1527,33 @@ fn shared_pdfium(library_dir: &Path) -> Result<&'static Pdfium, Box<dyn std::err
         return Ok(pdfium);
     }
     // OCRX_PDFIUM_LIBRARY may point at the library file itself or its
-    // containing directory. A non-existent relative spelling with `..`
-    // components is refused outright; a file that actually exists is
-    // canonicalized to its real location first, which both absorbs `..`
-    // spellings in legitimate paths (tests embed `../../vendor/...`) and
-    // pins the load to the file that is really there — the file form can no
-    // longer bypass the traversal guard by naming a file directly (MINOR 7).
-    let is_file_form = library_dir.is_file();
-    if !is_file_form
-        && library_dir
-            .components()
-            .any(|component| matches!(component, std::path::Component::ParentDir))
-    {
-        return Err(
-            "pdfium library path contains parent-dir (..) traversal; refused to load"
-                .to_owned()
-                .into(),
-        );
-    }
-    let library = if is_file_form {
-        std::fs::canonicalize(library_dir)
-            .map_err(|error| format!("pdfium library path unavailable: {error}"))?
-    } else {
-        pdfium_library_path(library_dir).map_err(|error| format!("{error:?}"))?
+    // containing directory. Policy is applied to the canonical location, not
+    // the spelling (review m18): a path that resolves on disk loads from its
+    // real canonical location — the same `..`-containing spelling therefore
+    // behaves identically whether it names the file or the directory, and
+    // cannot name anywhere else than where it resolves. Only a spelling that
+    // cannot be resolved (non-existent) falls back to the strict lexical
+    // parent-dir rejection.
+    let library = match std::fs::canonicalize(library_dir) {
+        Ok(canonical) if canonical.is_file() => canonical,
+        Ok(canonical_directory) => {
+            // Canonical location exists and is a directory: resolve the
+            // platform library file inside it.
+            Pdfium::pdfium_platform_library_name_at_path(&canonical_directory)
+        }
+        Err(error) => {
+            if library_dir
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+            {
+                return Err(
+                    "pdfium library path contains parent-dir (..) traversal; refused to load"
+                        .to_owned()
+                        .into(),
+                );
+            }
+            return Err(format!("pdfium library path unavailable: {error}").into());
+        }
     };
     let leaked: &'static Pdfium = Box::leak(Box::new(
         Pdfium::bind_to_library(library)
@@ -1699,7 +1709,10 @@ impl PdfiumRenderer {
             }
             text.push(value);
             if !value.is_whitespace() {
-                valid += 1;
+                // Validity counts characters with a real mapping (review m20):
+                // pdfium surfaces unmapped glyphs as U+FFFD, and counting them
+                // as valid made the ratio identically 1.0 - a dead signal.
+                valid += usize::from(value != char::REPLACEMENT_CHARACTER);
             }
             if let Ok(bounds) = character.tight_bounds() {
                 let left = (bounds.left().value.max(0.0) / width * 1000.0)
@@ -1823,7 +1836,9 @@ impl PdfiumRenderer {
                 continue;
             }
             if !value.is_whitespace() {
-                valid += 1;
+                // Same non-replacement validity semantics as extract_native_page
+                // (review m20).
+                valid += usize::from(value != char::REPLACEMENT_CHARACTER);
                 visible_characters += 1;
             }
             if let Ok(bounds) = character.tight_bounds() {
