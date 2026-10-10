@@ -63,10 +63,17 @@ function Assert-ArchiveHashes([string]$StageRoot) {
     if (-not (Test-Path $File)) { Fail "archive file missing: $($Parts[1])" 5 }
     $Actual = (Get-FileHash -Algorithm SHA256 $File).Hash.ToLower()
     if ($Actual -ne $Parts[0].ToLower()) { Fail "archive hash mismatch: $($Parts[1])" 5 }
-    $Listed[$Parts[1].ToLower()] = $true
+    # The manifest writes paths with a leading ./ (found by the install
+    # smoke); normalize it so the enumeration below compares like with like.
+    $Relative = $Parts[1] -replace '^\./', ''
+    $Listed[$Relative.ToLower()] = $true
   }
   foreach ($Staged in (Get-ChildItem -File -Recurse -Path $StageRoot)) {
-    $Relative = $Staged.FullName.Substring($StageRoot.Length).TrimStart('\').ToLower()
+    # Normalize separators too: the manifest uses forward slashes while the
+    # extracted tree enumerates with backslashes.
+    $Relative = $Staged.FullName.Substring($StageRoot.Length).TrimStart('\').Replace('\', '/').ToLower()
+    # The manifest cannot list itself.
+    if ($Relative -eq 'sha256sums') { continue }
     if (-not $Listed.ContainsKey($Relative)) {
       Fail "archive file not covered by SHA256SUMS: $($Staged.Name)" 5
     }
