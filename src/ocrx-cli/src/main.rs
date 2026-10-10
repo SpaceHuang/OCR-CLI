@@ -73,6 +73,8 @@ struct ScanOptions {
     offline: bool,
     non_interactive: bool,
     keep_pages: bool,
+    /// PDF open password (--password). Sensitive: never printed or logged.
+    password: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,6 +146,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         offline: false,
         non_interactive: false,
         keep_pages: false,
+        password: None,
     };
     let mut index = 1;
     while index < args.len() {
@@ -238,6 +241,13 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             "--offline" => options.offline = true,
             "--non-interactive" => options.non_interactive = true,
             "--keep-pages" => options.keep_pages = true,
+            "--password" => {
+                let Some(value) = args.get(index + 1) else {
+                    return Err("--password requires a value".to_owned());
+                };
+                options.password = Some((*value).to_owned());
+                index += 1;
+            }
             "--resume" => options.resume = true,
             "--overwrite" => options.overwrite = true,
             flag => return Err(format!("unsupported scan option: {flag}")),
@@ -1341,6 +1351,30 @@ fn main() {
                             std::process::exit(9);
                         }
                     }
+                    // Reclaim the revision-shared projector (review m9): when
+                    // no other profile of this revision remains, its ~205 MB
+                    // mmproj used to survive every remove.
+                    let shared_mmproj = model_path
+                        .parent()
+                        .and_then(|directory| directory.parent())
+                        .map(|revision_dir| revision_dir.join("mmproj.gguf"));
+                    if let Some(mmproj_path) = shared_mmproj
+                        && mmproj_path.is_file()
+                        && let Some(revision_dir) = mmproj_path.parent()
+                    {
+                        let other_profiles = std::fs::read_dir(revision_dir)
+                            .map(|entries| {
+                                entries
+                                    .flatten()
+                                    .filter(|entry| entry.path().is_dir())
+                                    .count()
+                            })
+                            .unwrap_or(0);
+                        if other_profiles == 0 {
+                            let _ = std::fs::remove_file(&mmproj_path);
+                            let _ = std::fs::remove_dir(revision_dir);
+                        }
+                    }
                     println!("model=ovisocr2 profile={profile} status=removed");
                 }
                 _ => unreachable!("model action parsed by CLI"),
@@ -1430,7 +1464,10 @@ struct WorkerScanRenderer {
 impl PageRenderer for WorkerScanRenderer {
     fn preflight(&mut self) -> std::io::Result<()> {
         if self.page_count.is_none() {
-            let direct = PdfiumRenderer::new(self.scheduler.library_dir.clone());
+            let mut direct = PdfiumRenderer::new(self.scheduler.library_dir.clone());
+            if let Some(password) = &self.scheduler.password {
+                direct = direct.with_password(password);
+            }
             let count = direct
                 .page_count(&self.input)
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -1600,7 +1637,11 @@ impl PageRenderer for PdfScanRenderer {
             .renderer
             .render_page_rgb8_with_audit(
                 &self.input,
-                usize::try_from(page - 1).map_err(std::io::Error::other)?,
+                usize::try_from(
+                    page.checked_sub(1)
+                        .ok_or_else(|| std::io::Error::other("page number must be positive"))?,
+                )
+                .map_err(std::io::Error::other)?,
                 self.options,
             )
             .map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -1829,7 +1870,14 @@ fn run_scan(options: ScanOptions) -> ! {
     // Validate the input before resolving or downloading model assets. Invalid,
     // encrypted, and corrupt PDFs are input errors even on a machine with no
     // installed OCR model.
-    let page_count = match PdfiumRenderer::new(library.clone()).page_count(&input) {
+    let page_count_renderer = {
+        let mut renderer = PdfiumRenderer::new(library.clone());
+        if let Some(password) = &options.password {
+            renderer = renderer.with_password(password);
+        }
+        renderer
+    };
+    let page_count = match page_count_renderer.page_count(&input) {
         Ok(count) => count,
         Err(error) => {
             let error_kind = match classify_input_error(&input, &error.to_string()) {
@@ -1897,7 +1945,10 @@ fn run_scan(options: ScanOptions) -> ! {
     } else {
         QualityTier::L2
     };
-    let pdf = PdfiumRenderer::new(library.clone());
+    let mut pdf = PdfiumRenderer::new(library.clone());
+    if let Some(password) = &options.password {
+        pdf = pdf.with_password(password);
+    }
     reporter.progress(
         &ProgressEvent::for_stage(ProgressStage::Analyzing, None, 0, pages.len() as u32),
         progress_mode,
@@ -2024,20 +2075,8 @@ fn run_scan(options: ScanOptions) -> ! {
         .pages
         .clone()
         .unwrap_or_else(|| (1..=page_count).collect());
-    if pages.iter().any(|page| *page == 0 || *page > page_count) {
-        reporter.error(
-            &ErrorReport {
-                code: 2,
-                kind: "usage".to_owned(),
-                message: "page selection is out of range".to_owned(),
-                cause: Some(format!("pdf has {page_count} pages")),
-                suggestion: Some("adjust --pages".to_owned()),
-            },
-            report_format,
-        );
-        print_reporter(reporter);
-        std::process::exit(2);
-    }
+    // Page-range validation happened above, immediately after analysis; this
+    // late copy of the check was unreachable (review m3).
     reporter.progress(
         &ProgressEvent::for_stage(ProgressStage::Extracting, None, 0, pages.len() as u32),
         progress_mode,
@@ -2055,7 +2094,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 timeout: Duration::from_secs(20 * 60),
                 dpi,
                 env: Vec::new(),
-                password: None,
+                password: options.password.clone(),
             },
             input: input.clone(),
             output: worker_output,
@@ -2064,7 +2103,13 @@ fn run_scan(options: ScanOptions) -> ! {
         })
     } else {
         Box::new(PdfScanRenderer {
-            renderer: PdfiumRenderer::new(library),
+            renderer: {
+                let mut renderer = PdfiumRenderer::new(library);
+                if let Some(password) = &options.password {
+                    renderer = renderer.with_password(password);
+                }
+                renderer
+            },
             input: input.clone(),
             options: RenderOptions { dpi },
         })
@@ -2532,7 +2577,7 @@ fn run_scan(options: ScanOptions) -> ! {
     // sampler or write an extra file by default. Enabled only when OCR actually
     // runs on a GPU backend and OCRX_GPU_REPORT is explicitly set.
     let gpu_report_enabled = std::env::var_os("OCRX_GPU_REPORT").is_some() && device != "cpu";
-    let vram_sampler = if gpu_report_enabled && execution_plan.initialize_runtime {
+    let mut vram_sampler = if gpu_report_enabled && execution_plan.initialize_runtime {
         start_vram_sampler()
     } else {
         None
@@ -2570,6 +2615,11 @@ fn run_scan(options: ScanOptions) -> ! {
             }
         };
         runtime_fallback_to_cpu = gpu_fallback_warning.is_some();
+        if runtime_fallback_to_cpu {
+            // Review m4: the sampler reads SYSTEM-wide VRAM via nvidia-smi,
+            // which is meaningless for a scan that now runs on the CPU.
+            let _peak_discarded = stop_vram_sampler(vram_sampler.take());
+        }
         let loader = PreloadedLoader {
             model: Some(loaded_model),
         };
@@ -3080,16 +3130,18 @@ fn resolve_scan_profile(profile: &str, memory_gb: u64) -> Result<String, String>
 }
 
 fn resolve_progress_mode(progress: &str, log_level: &str) -> ProgressMode {
-    if matches!(log_level, "error") && progress != "jsonl" {
-        return ProgressMode::Off;
-    }
+    // An explicit --progress always wins (review m6): `--log-level error`
+    // used to silently override an explicit bar/plain. The downgrade only
+    // shapes the automatic choice.
     match progress {
         "jsonl" => ProgressMode::Jsonl,
         "bar" => ProgressMode::Bar,
         "plain" => ProgressMode::Plain,
         "off" => ProgressMode::Off,
         _ => {
-            if std::io::stderr().is_terminal() {
+            if matches!(log_level, "error") {
+                ProgressMode::Off
+            } else if std::io::stderr().is_terminal() {
                 ProgressMode::Bar
             } else {
                 ProgressMode::Plain
@@ -3152,6 +3204,7 @@ fn print_help(topic: Option<&str>) {
             println!("  --offline                    do not download");
             println!("  --non-interactive            disable interactive prompts");
             println!("  --keep-pages                 keep full-page PNGs after merge");
+            println!("  --password VALUE             PDF open password (never logged)");
             println!("  --resume | --overwrite       mutually exclusive");
         }
         Some("doctor") => println!("ocrx doctor [--report json]"),
@@ -3320,6 +3373,7 @@ mod tests {
                 offline: false,
                 non_interactive: false,
                 keep_pages: false,
+                password: None,
             })
         );
         assert!(parse_scan_args(&["input.pdf", "--model", "other"]).is_err());
@@ -4041,15 +4095,10 @@ mod tests {
             .expect("cargo should launch the CLI test binary")
     }
 
-    #[test]
-    fn cli_json_success_has_exactly_one_stdout_object() {
-        let output = run_cli(&["doctor", "--report", "json"]);
-        assert!(output.status.success());
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        assert_eq!(stdout.lines().count(), 1);
-        assert!(stdout.starts_with('{') && stdout.ends_with("}\n"));
-        assert!(String::from_utf8(output.stderr).unwrap().is_empty());
-    }
+    // NOTE: the doctor stdout/stderr contract lives in tests/cli_subprocess.rs,
+    // which spawns the binary directly. A `cargo run`-based twin here
+    // intermittently captured cargo's own "Blocking waiting for file lock"
+    // stderr chatter under parallel test load and false-failed.
 
     #[test]
     fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
@@ -4392,6 +4441,8 @@ mod tests {
             "--offline",
             "--non-interactive",
             "--keep-pages",
+            "--password",
+            "open-sesame",
         ])
         .unwrap();
         assert_eq!(parsed.max_image_tokens, Some(1024));
@@ -4399,6 +4450,7 @@ mod tests {
         assert_eq!(parsed.context_size, Some(8192));
         assert_eq!(parsed.progress, "jsonl");
         assert!(parsed.offline && parsed.non_interactive && parsed.keep_pages);
+        assert_eq!(parsed.password.as_deref(), Some("open-sesame"));
     }
 
     #[test]
@@ -4462,6 +4514,7 @@ mod tests {
                 offline: false,
                 non_interactive: false,
                 keep_pages: false,
+                password: None,
             }))
         );
         assert_eq!(

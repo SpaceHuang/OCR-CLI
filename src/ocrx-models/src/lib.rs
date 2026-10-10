@@ -582,17 +582,22 @@ fn process_liveness(pid: u32) -> ProcessLiveness {
 
 #[cfg(not(unix))]
 fn process_liveness(pid: u32) -> ProcessLiveness {
+    // /FO CSV keeps fields quoted and comma-separated; the default
+    // whitespace split misparsed image names containing spaces and could
+    // declare a live holder dead (review m10).
     let output = match std::process::Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
         .output()
     {
         Ok(output) if output.status.success() => output,
         _ => return ProcessLiveness::Unknown,
     };
     if String::from_utf8_lossy(&output.stdout).lines().any(|line| {
-        line.split_whitespace()
+        // CSV row: "name","pid",... — second quoted field is the PID.
+        line.split("\",\"")
             .nth(1)
-            .and_then(|value| value.parse::<u32>().ok())
+            .map(|field| field.trim_matches('"').parse::<u32>().ok())
+            .unwrap_or(None)
             == Some(pid)
     }) {
         ProcessLiveness::Alive
@@ -669,6 +674,15 @@ pub fn install_from_urls(request: &UrlInstallRequest) -> Result<(), ManifestErro
     {
         return Ok(());
     }
+    // Pre-flight disk check against the pinned manifest sizes (review m8):
+    // the old check ran after the download and compared bytes already on
+    // disk, so an under-provisioned disk paid the full transfer first.
+    if let Some(available) = request.available_bytes
+        && let Some((model_bytes, mmproj_bytes)) = community_asset_sizes(&request.manifest.profile)
+        && available < model_bytes.saturating_add(mmproj_bytes)
+    {
+        return Err(ManifestError::InsufficientDisk);
+    }
     clean_transaction_residue(&[&model, &mmproj]);
     let transaction = transaction_id();
     let model_part = model.with_extension(format!("gguf{transaction}.part"));
@@ -676,17 +690,6 @@ pub fn install_from_urls(request: &UrlInstallRequest) -> Result<(), ManifestErro
     let result = (|| {
         download_asset(&request.model_url, &model_part, None, false)?;
         download_asset(&request.mmproj_url, &mmproj_part, None, false)?;
-        if request.available_bytes.is_some_and(|available| {
-            std::fs::metadata(&model_part)
-                .map(|m| m.len())
-                .unwrap_or(u64::MAX)
-                + std::fs::metadata(&mmproj_part)
-                    .map(|m| m.len())
-                    .unwrap_or(u64::MAX)
-                > available
-        }) {
-            return Err(ManifestError::InsufficientDisk);
-        }
         if file_sha256(&model_part)? != request.manifest.model_sha256.to_ascii_lowercase()
             || file_sha256(&mmproj_part)? != request.manifest.mmproj_sha256.to_ascii_lowercase()
         {

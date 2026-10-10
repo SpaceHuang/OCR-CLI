@@ -131,7 +131,9 @@ $commandLine = "`"$Binary`" " + ($scanArgs -join " ")
 
 $allocatedConsole = $false
 if ([CtrlCNative]::GetConsoleWindow() -eq [IntPtr]::Zero) {
-    [void][CtrlCNative]::AllocConsole()
+    if (-not [CtrlCNative]::AllocConsole()) {
+      throw "AllocConsole failed with error $([Runtime.InteropServices.Marshal]::GetLastWin32Error()); the child cannot register a Ctrl+C handler"
+    }
     $allocatedConsole = $true
 }
 
@@ -177,7 +179,9 @@ try {
     }
 
     # CTRL_BREAK_EVENT (1) targets the new process group reliably on Windows.
-    [void][CtrlCNative]::GenerateConsoleCtrlEvent(1, [uint32]$childPid)
+    if (-not [CtrlCNative]::GenerateConsoleCtrlEvent(1, [uint32]$childPid)) {
+      throw "GenerateConsoleCtrlEvent failed with error $([Runtime.InteropServices.Marshal]::GetLastWin32Error()); the smoke result would be meaningless"
+    }
 
     $waitDeadline = (Get-Date).AddSeconds(120)
     while ($true) {

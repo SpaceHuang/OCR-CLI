@@ -31,13 +31,20 @@ pub struct RealSystemProbe;
 
 impl SystemProbe for RealSystemProbe {
     fn detected_memory_gb(&self) -> Option<u64> {
-        if cfg!(target_os = "macos") {
-            detect_memory_macos()
-        } else if cfg!(target_os = "windows") {
-            detect_memory_windows()
-        } else {
-            None
-        }
+        // Memoized per process (review m5): the Windows probe spawns a
+        // PowerShell CIM query per call (~hundreds of ms), and a single scan
+        // builds the snapshot several times. Total physical memory does not
+        // change within a process lifetime.
+        static CACHED: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+        *CACHED.get_or_init(|| {
+            if cfg!(target_os = "macos") {
+                detect_memory_macos()
+            } else if cfg!(target_os = "windows") {
+                detect_memory_windows()
+            } else {
+                None
+            }
+        })
     }
 
     fn metal_available(&self) -> bool {

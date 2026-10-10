@@ -26,6 +26,7 @@ pub struct LlamaMtmdRuntime {
     mtmd: MtmdContext,
     use_gpu: bool,
     context_size: u32,
+    image_token_limit: u32,
     telemetry: RuntimeTelemetry,
 }
 
@@ -43,7 +44,7 @@ impl LlamaMtmdRuntime {
         context_size: u32,
     ) -> Result<Self, String> {
         let started = Instant::now();
-        let image_tokens = i32::try_from(image_tokens)
+        let image_tokens_i32 = i32::try_from(image_tokens)
             .map_err(|_| "image token limit exceeds runtime range".to_owned())?;
         let backend = LlamaBackend::init().map_err(|error| error.to_string())?;
         let layers = if use_gpu { u32::MAX } else { 0 };
@@ -62,8 +63,8 @@ impl LlamaMtmdRuntime {
             &model,
             &MtmdContextParams {
                 use_gpu,
-                image_min_tokens: image_tokens,
-                image_max_tokens: image_tokens,
+                image_min_tokens: image_tokens_i32,
+                image_max_tokens: image_tokens_i32,
                 ..Default::default()
             },
         )
@@ -74,6 +75,7 @@ impl LlamaMtmdRuntime {
             mtmd,
             use_gpu,
             context_size,
+            image_token_limit: image_tokens,
             telemetry: RuntimeTelemetry {
                 load_time_ms: started.elapsed().as_millis() as u64,
                 ..RuntimeTelemetry::default()
@@ -110,7 +112,7 @@ impl Runtime for LlamaMtmdRuntime {
             } else {
                 Backend::Cpu
             },
-            image_token_limit: 1024,
+            image_token_limit: self.image_token_limit,
         }
     }
 

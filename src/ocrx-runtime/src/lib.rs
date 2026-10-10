@@ -21,24 +21,6 @@ impl RuntimeTelemetry {
             self.generated_tokens as f64 / (self.generation_time_ms as f64 / 1_000.0)
         }
     }
-
-    #[must_use]
-    pub fn merge(self, other: Self) -> Self {
-        Self {
-            load_time_ms: self.load_time_ms.max(other.load_time_ms),
-            first_token_ms: if self.first_token_ms == 0 {
-                other.first_token_ms
-            } else if other.first_token_ms == 0 {
-                self.first_token_ms
-            } else {
-                self.first_token_ms.min(other.first_token_ms)
-            },
-            generated_tokens: self.generated_tokens.saturating_add(other.generated_tokens),
-            generation_time_ms: self
-                .generation_time_ms
-                .saturating_add(other.generation_time_ms),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,10 +206,10 @@ impl Runtime for FakeRuntime {
             elapsed_seconds: 0,
         });
         if cancellation.is_cancelled() {
-            return Ok(InferenceResponse {
-                raw_output: format!("page {}", request.page),
-                finish_reason: "cancelled".to_owned(),
-            });
+            // Mirrors LlamaMtmdRuntime: a pre-cancelled token fails the page
+            // instead of returning a synthetic response, so the adapter's
+            // cancellation handling is exercised identically in tests (m15).
+            return Err("cancelled".to_owned());
         }
         Ok(InferenceResponse {
             raw_output: format!("page {}", request.page),
@@ -303,14 +285,17 @@ mod tests {
         let mut runtime = FakeRuntime;
         let cancellation = CancellationToken::new();
         cancellation.request_cancel();
-        let response = runtime
+        // Aligned with LlamaMtmdRuntime (m15): a pre-cancelled token fails
+        // the page with "cancelled" instead of returning a synthetic
+        // response, so the adapter sees the same shape in tests and prod.
+        let error = runtime
             .generate_with_progress(
                 InferenceRequest::new(1, 1, 1, vec![1, 2, 3], 128).unwrap(),
                 &cancellation,
                 &mut |_| {},
             )
-            .unwrap();
-        assert_eq!(response.finish_reason, "cancelled");
+            .unwrap_err();
+        assert_eq!(error, "cancelled");
     }
 
     #[test]

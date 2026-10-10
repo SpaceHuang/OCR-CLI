@@ -163,17 +163,20 @@ try {
     Fail "bin swap failed: $_" 4
   }
   if ($HadExisting) {
-    Remove-Item -Recurse -Force (Join-Path $Prefix $OldName) -ErrorAction SilentlyContinue
+    $Cleanup = Remove-Item -Recurse -Force (Join-Path $Prefix $OldName) -ErrorAction SilentlyContinue -PassThru
+    if (-not $Cleanup) {
+      Write-Host "warning: could not remove $(Join-Path $Prefix $OldName); remove it manually"
+    }
   }
+
+  Write-Host "installed $(Join-Path $BinDir 'ocrx.exe')"
 
   if ($env:OCRX_INSTALL_SKILL -eq '1') {
     if (-not $env:OCRX_SKILL_TARGET) { $env:OCRX_SKILL_TARGET = 'all' }
     if ($InstallPdfium) { $env:OCRX_PDFIUM_LIBRARY = Join-Path $BinDir 'pdfium.dll' }
     & (Join-Path $BinDir 'ocrx.exe') skill install
-    if ($LASTEXITCODE -ne 0) { Fail 'skill install failed' 4 }
+    if ($LASTEXITCODE -ne 0) { Fail 'skill install failed (binaries are installed)' 4 }
   }
-
-  Write-Host "installed $(Join-Path $BinDir 'ocrx.exe')"
   $pathDirs = $env:PATH -split ';'
   $inPath = $false
   foreach ($d in $pathDirs) { if ($d -and ($d -ieq $BinDir)) { $inPath = $true; break } }
