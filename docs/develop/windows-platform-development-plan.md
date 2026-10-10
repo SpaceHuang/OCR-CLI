@@ -519,3 +519,15 @@ WP 先于 W0 补齐 macOS 与 Windows 共享的缓存布局与 runtime 对齐契
 - 本计划复用 macOS 已冻结的公共契约、fixture、评分器与 worker 协议；Windows 阶段的“已完成”状态以 macOS 契约为基准。
 - macOS v0.1 的 P6 发布证据包与 Windows 的 W6 证据包共同构成需求第 17 节的双平台验收；任一平台的硬门禁失败均阻断对应平台发布，但不允许以另一平台的结果替代。
 - 当本计划 W6 完成时，需求第 3.1 节的 Windows 首发承诺才具备兑现证据；在此之前，仓库对 Windows 的支持状态保持为“需求已承诺、实现待交付”。
+
+## 17. 第三轮评审修复记录（2026-10-09 评审，2026-10-11 回填）
+
+第三轮代码评审（`docs/review/windows-tdd-code-review-2026-10-09.md`）发现 5 项阻断、11 项重要、28 项次要问题，指出本计划多处"已完成"状态与代码不符。全部问题已在分支 `windows-platform-dev` 修复（提交 `e1ce629`→`af74e92`），评审 §5 所列 5 处状态失真对应的验证已重新执行：
+
+1. **§0.2 W2.3 路径保护**（BLK-1/BLK-2）：普通扫描现在对每次扫描校验保护根（模型子树 + CWD + 输入）；输出路径先词法归一再以规范形式比较，`..`/大小写/尾随空格/短名向量全部闭合。评审的三条实机复现向量已用构建产物重新验证：写入缓存根 exit 9、dot-dot 进缓存子树 exit 9、尾随空格 `--overwrite` 被拒且金丝雀文件存活。
+2. **§0.2 W3.3 checkpoint 平台隔离**（M-1）：native 与 OCR 兼容键均在被比较的参数前缀内携带 `platform=`，跨平台恢复被测试钉死；旧 checkpoint 重处理而非误恢复。
+3. **§0.2/复核 M4 存量安装不孤立**（BLK-5）：回退探测已指向真实旧布局（`<legacy>/ovisocr2/<profile>/`），并对通过哈希+尺寸校验的旧文件执行向平台根的单次迁移；探测与迁移均有针对真实布局的测试。
+4. **§0.3 W3.3 resume 复用**（BLK-3）：native checkpoint 不再被兼容键双收集，含原生文本/空页的输出 `--resume` 端到端回归测试通过（exit 0）。
+5. **`ocrx-pdf` 渲染钳制注释**（BLK-4）：钳制收敛为共享辅助 `clamped_bitmap_size`，全部 6 个渲染入口（含 worker 的 `render_range`）生效；20000×20000pt MediaBox 夹具经 worker 路径实测钳制在预算内。
+
+其余 11 项重要（M-2 心跳接线、M-3 安装幂等、M-4 macOS 测试、M-5 安装器信任边界、M-6 pdfium 基线钉死、M-7 BF16 生成器漂移、M-8 探针 CPU 加载、M-9 u16 溢出、M-10 退出码一致、M-11 缓存根退化）与 26/28 项次要已同批修复；m24（测试夹具 argv 记录）与 m26 后半（Compress-Archive 分隔符，已注释声明）按记录保留。门禁：`cargo test --workspace` 298 通过 0 失败（连续三遍）、`cargo fmt --check`/`clippy` 干净、`test-release-scripts.sh` 通过。
