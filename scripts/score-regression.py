@@ -20,10 +20,12 @@ audit items in docs/test/p0-30-page-truth-quality-gate.md §5.5:
 Formula, table, and bbox metrics are computed only on pages whose truth
 carries the corresponding block type; sample counts accompany every average.
 
-Report schema_version 2 (v1 was the pre-gate skeleton: inverted NED, no
-truth-char weighting, IoU 0.8, single-key formula lookup that silently
-dropped `formula_latex` truth blocks, and blank truth pages counted as blank
-failures).
+Report schema_version 3. v1 was the pre-gate skeleton; v2 aligned metric
+definitions with 17.2.2 but aggregated rates against counts (bbox recall
+divided per-page rates by truth-item totals). v3 stores counts per page and
+aggregates as required: formula/bbox micro ratios over items, table TEDS
+averaged per truth table, reading order averaged per page, and a hit
+requires the prediction formula itself to parse.
 """
 import html
 import json
@@ -177,15 +179,20 @@ def formula_completeness(truth_formulas, pred_formulas):
     equations the model emits separately. Both stacks face the same truth,
     so the GGUF-vs-BF16 delta stays meaningful.
     """
-    remaining = list(pred_formulas)
+    remaining = [formula_norm(value) for value in pred_formulas]
     hits = 0
-    for expected in truth_formulas:
+    for raw_expected in truth_formulas:
+        expected = formula_norm(raw_expected)
         for index, actual in enumerate(remaining):
             if actual != expected and not (
                 _STRUCTURE_SIMILARITY(None, actual, expected).ratio() >= 0.9
             ):
                 continue
-            if katex_syntax_ok(expected) or katex_syntax_ok(actual):
+            # The preserved formula is the prediction's; it must parse on its
+            # own. A syntactically valid truth must not launder a broken
+            # prediction (review 2026-10-30: ["E=mc^2"] vs ["E=mc^2}"] was a
+            # hit under truth-or-prediction acceptance).
+            if katex_syntax_ok(actual):
                 hits += 1
                 remaining = remaining[index + 1:]
                 break
@@ -422,14 +429,13 @@ def score_page(pred, truth):
         for block in pred.get("blocks", [])
         if block.get("type") == "html_table"
     ]
-    table_score = None
-    if truth_tables:
-        # Each truth table takes its best pred match; a missing pred table
-        # scores 0 for that truth table.
-        table_score = sum(
-            max((teds(item, candidate) for candidate in pred_tables), default=0.0)
-            for item in truth_tables
-        ) / len(truth_tables)
+    # One similarity score per truth table (requirement 17.2.2: TEDS is
+    # averaged over tables); a missing pred table scores 0 for that table.
+    table_scores = (
+        [max((teds(item, candidate) for candidate in pred_tables), default=0.0) for item in truth_tables]
+        if truth_tables
+        else None
+    )
 
     order_hits, order_total, order_excluded = reading_order_accuracy(
         [block for block in truth.get("blocks", []) if block.get("type") == "markdown"],
@@ -438,16 +444,8 @@ def score_page(pred, truth):
 
     truth_regions = [normalize_region(r) for r in regions(truth)]
     pred_regions = [normalize_region(r) for r in regions(pred)]
-    valid_rate = (
-        sum(1 for r in pred_regions if region_valid(r)) / len(pred_regions)
-        if pred_regions
-        else None
-    )
-    recall = (
-        bbox_matches(pred_regions, truth_regions) / len(truth_regions)
-        if truth_regions
-        else None
-    )
+    bbox_valid_count = sum(1 for r in pred_regions if region_valid(r))
+    bbox_hit_count = bbox_matches(pred_regions, truth_regions) if truth_regions else None
 
     truth_has_content = bool(visible_truth)
     blank = truth_has_content and not visible_pred
@@ -459,13 +457,13 @@ def score_page(pred, truth):
         "truth_chars": len(visible_truth),
         "formula_hits": formula_hits,
         "formula_truth_count": len(truth_formulas),
-        "table_teds": table_score,
-        "table_truth_count": len(truth_tables),
+        "table_scores": table_scores,
         "reading_order_hits": order_hits,
         "reading_order_pairs": order_total,
         "reading_order_excluded_pairs": order_excluded,
-        "bbox_valid_rate": valid_rate,
-        "bbox_recall": recall,
+        "bbox_valid_count": bbox_valid_count if pred_regions else None,
+        "bbox_pred_count": len(pred_regions),
+        "bbox_hit_count": bbox_hit_count,
         "bbox_truth_count": len(truth_regions),
         "duplicate": has_periodic_tail(visible_pred),
         "truncated": truncated,
@@ -474,25 +472,40 @@ def score_page(pred, truth):
 
 
 def _order_average(pages):
-    hits = sum(page["reading_order_hits"] for page in pages)
-    total = sum(page["reading_order_pairs"] for page in pages)
-    excluded = sum(page["reading_order_excluded_pairs"] for page in pages)
+    """Reading order is averaged per page ("按页面平均"): each page with at
+    least one measurable pair contributes its own pairwise accuracy equally."""
+    accuracies = [
+        page["reading_order_hits"] / page["reading_order_pairs"]
+        for page in pages
+        if page["reading_order_pairs"]
+    ]
     return {
-        "mean": hits / total if total else None,
-        "pairs": total,
-        "excluded_pairs": excluded,
-        "pages_measured": sum(1 for p in pages if p["reading_order_pairs"]),
+        "mean": sum(accuracies) / len(accuracies) if accuracies else None,
+        "pairs": sum(page["reading_order_pairs"] for page in pages),
+        "excluded_pairs": sum(page["reading_order_excluded_pairs"] for page in pages),
+        "pages_measured": len(accuracies),
+    }
+
+
+def _table_average(pages):
+    """Table TEDS is averaged per truth table ("按表格数平均") across the
+    whole set, so a 1-table page cannot outweigh a 5-table page."""
+    scores = [s for page in pages if page["table_scores"] for s in page["table_scores"]]
+    return {
+        "mean": sum(scores) / len(scores) if scores else None,
+        "pages": sum(1 for page in pages if page["table_scores"]),
+        "items": len(scores),
     }
 
 
 def _average(pages, key, count_key=None):
-    """Mean over applicable pages; with a count key the mean is the global
-    hit ratio (sum hits / sum truth items), not a mean of per-page ratios,
-    so a 1-formula page cannot outweigh a 7-formula page."""
+    """Micro aggregation: numerator and denominator are counts, summed over
+    every applicable page before dividing (hits/total), so a 1-item page
+    cannot outweigh a 7-item page. Page values must therefore be counts."""
     values = [page[key] for page in pages if page[key] is not None]
     if count_key:
         items = sum(page[count_key] for page in pages if page[key] is not None)
-        hits = sum(page[key] for page in pages if page[key] is not None)
+        hits = sum(values)
         return {
             "mean": hits / items if items else None,
             "pages": len(values),
@@ -532,7 +545,7 @@ def main():
     weighted_ned = sum(page["text_ned"] * page["truth_chars"] for page in pages) / total_chars
 
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "set_id": metadata.get("set_id"),
         "page_count": len(pages),
         "metadata": {
@@ -543,10 +556,10 @@ def main():
             "text_ned": weighted_ned,
             "text_ned_truth_chars": total_chars,
             "formula_completeness": _average(pages, "formula_hits", "formula_truth_count"),
-            "table_teds": _average(pages, "table_teds", "table_truth_count"),
+            "table_teds": _table_average(pages),
             "reading_order": _order_average(pages),
-            "bbox_valid_rate": _average(pages, "bbox_valid_rate"),
-            "bbox_recall": _average(pages, "bbox_recall", "bbox_truth_count"),
+            "bbox_valid_rate": _average(pages, "bbox_valid_count", "bbox_pred_count"),
+            "bbox_recall": _average(pages, "bbox_hit_count", "bbox_truth_count"),
             "duplicate_rate": sum(page["duplicate"] for page in pages) / len(pages),
             "truncated_rate": sum(page["truncated"] for page in pages) / len(pages),
             "blank_or_failed_rate": sum(page["blank_or_failed"] for page in pages) / len(pages),

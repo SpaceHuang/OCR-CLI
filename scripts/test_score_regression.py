@@ -70,10 +70,39 @@ truth_bbox = {"blocks": [{"type": "visual_region", "bbox": {"left": 100, "top": 
 pred_same_0_1 = {"blocks": [{"type": "visual_region", "bbox": {"left": 0.1, "top": 0.1, "right": 0.5, "bottom": 0.5}}]}
 pred_half = {"blocks": [{"type": "visual_region", "bbox": {"left": 100, "top": 100, "right": 300, "bottom": 500}}]}
 p = sr.score_page(pred_same_0_1, truth_bbox)
-check("bbox scale-normalized recall", p["bbox_recall"] == 1.0)
-check("bbox valid rate", p["bbox_valid_rate"] == 1.0)
+check("bbox scale-normalized recall", p["bbox_hit_count"] == 1)
+check("bbox valid count", p["bbox_valid_count"] == 1)
 p = sr.score_page(pred_half, truth_bbox)
-check("bbox iou 0.5 boundary matches", p["bbox_recall"] == 1.0)
+check("bbox iou 0.5 boundary matches", p["bbox_hit_count"] == 1)
+
+# Review 2026-10-30 blocker 2: a syntactically broken prediction must not
+# count as a hit just because the truth formula parses.
+check("broken prediction formula rejected", sr.formula_completeness(
+    ["E=mc^2"], ["E=mc^2}"]) == 0)
+check("valid prediction formula counts", sr.formula_completeness(
+    ["E=mc^2"], ["E = mc^2"]) == 1)
+
+# Review 2026-10-30 blocker 1: aggregation semantics.
+# formula/bbox are micro ratios over counts: sum(hits)/sum(items).
+micro_pages = [
+    {"formula_hits": 1, "formula_truth_count": 1},
+    {"formula_hits": 3, "formula_truth_count": 7},
+]
+check("formula micro ratio", abs(sr._average(micro_pages, "formula_hits", "formula_truth_count")["mean"] - 4 / 8) < 1e-12)
+# table TEDS averages per truth table across the whole set.
+table_pages = [
+    {"table_scores": [1.0, 0.0]},
+    {"table_scores": [0.5]},
+]
+check("table per-table average", abs(sr._table_average(table_pages)["mean"] - 0.5) < 1e-12)
+check("table item count", sr._table_average(table_pages)["items"] == 3)
+# reading order is averaged per page (macro): 1/1 page and 0/1 page -> 0.5.
+order_pages = [
+    {"reading_order_hits": 1, "reading_order_pairs": 1, "reading_order_excluded_pairs": 0},
+    {"reading_order_hits": 0, "reading_order_pairs": 1, "reading_order_excluded_pairs": 0},
+]
+check("reading order macro per page", abs(sr._order_average(order_pages)["mean"] - 0.5) < 1e-12)
+check("reading order macro not micro", abs(sr._order_average(order_pages)["mean"] - 1 / 2) < 1e-12 and sr._order_average(order_pages)["pages_measured"] == 2)
 
 # Blank truth page with blank pred is NOT a blank failure; blank pred on
 # content truth IS.
