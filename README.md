@@ -94,6 +94,30 @@ Useful scan options include:
 
 The exact behavior of model installation, output schemas, and profile selection remains subject to the v0.1 compatibility and quality gates.
 
+## Windows GPU support (Vulkan)
+
+Windows builds default to the CPU baseline. A Vulkan-enabled binary is built
+opt-in and rides the W4.2 evidence path
+(`docs/test/reports/quality-gate-ovisocr2-draft-v1-2026-10-30.md`):
+
+```bash
+# Build the GPU variant (requires VULKAN_SDK with Bin/glslc.exe on PATH).
+cargo build --release -p ocrx --features vulkan
+ocrx scan input.pdf --model ovisocr2 --device vulkan --non-interactive
+
+# Package the CPU binary plus a Vulkan variant in one archive.
+powershell -File scripts/package-windows-x64.ps1 -GpuPackages vulkan
+```
+
+`install.ps1` promotes `bin/ocrx-vulkan.exe` to the default `ocrx.exe` when the
+machine reports a Vulkan driver and the variant launches (the CPU binary is
+kept as `ocrx-cpu.exe`); otherwise it silently keeps the CPU build. `--device
+auto` selects Vulkan only when the backend is compiled in and the probe
+reports it; a GPU initialization failure falls back to CPU with a warning.
+On the W0.4 30-page gate set, the Vulkan reference scan matched CPU output
+page-for-page (mean text similarity 0.9999) at 9.6x the CPU throughput on an
+RTX 4090 D. CUDA remains out of scope until the toolkit gate (W4.3) lands.
+
 ## Model provenance and licensing
 
 OCR-CLI does not bundle model weights in its release archive. The current manifest identifies the following model assets:

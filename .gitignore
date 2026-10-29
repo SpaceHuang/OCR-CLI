@@ -14,6 +14,10 @@ __pycache__/
 .venv-liteparse/
 # Bootstrap working artifacts (large page PNGs); keep truth/selection/manifest
 /assets/regression/*/preview/
+# Gate predictions are reproducible scan outputs (and derivative of the
+# non-redistributable composite); keep reports/ as the durable evidence.
+/assets/regression/*/predictions/
 /assets/regression/*/work/
 /assets/regression/*/inputs/*.pdf
 /.worktree/
+.venv-w04/

@@ -88,7 +88,7 @@ if (-not (Test-SafeInstallPrefix $Prefix)) {
 
 $Offline = $env:OCRX_OFFLINE -eq '1'
 $Gpu = Detect-GpuBackend
-Write-Host "detected GPU backend: $Gpu (v0.1 ships a CPU-only build)"
+Write-Host "detected GPU backend: $Gpu"
 
 $TempDir = Join-Path $env:TEMP ('ocrx-install-' + [System.Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
@@ -153,6 +153,28 @@ try {
   if ($ArchiveBinDir) {
     # Copy the whole bin/ set (binary, pdfium.dll, VC++ runtime DLLs).
     Get-ChildItem -File -Path $ArchiveBinDir | Copy-Item -Destination $StagingBin -Force
+    # GPU variant (W4.2, 2026-10-30 gate report): when the archive ships
+    # ocrx-vulkan.exe and this machine reports a Vulkan driver, promote it to
+    # the default `ocrx.exe` (the CPU build stays as ocrx-cpu.exe). A missing
+    # driver or a failed launch keeps the CPU binary authoritative.
+    $VulkanVariant = Join-Path $StagingBin 'ocrx-vulkan.exe'
+    if (($Gpu -eq 'vulkan' -or $Gpu -eq 'cuda') -and (Test-Path $VulkanVariant -PathType Leaf)) {
+      Copy-Item (Join-Path $StagingBin 'ocrx.exe') (Join-Path $StagingBin 'ocrx-cpu.exe') -Force
+      try {
+        & $VulkanVariant version | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+          Remove-Item (Join-Path $StagingBin 'ocrx.exe') -Force
+          Move-Item $VulkanVariant (Join-Path $StagingBin 'ocrx.exe') -Force
+          Write-Host 'selected GPU (Vulkan) build as default ocrx.exe; CPU build kept as ocrx-cpu.exe'
+        } else {
+          Remove-Item $VulkanVariant -Force
+          Write-Host 'vulkan variant failed to launch; keeping CPU-only build'
+        }
+      } catch {
+        Remove-Item $VulkanVariant -Force -ErrorAction SilentlyContinue
+        Write-Host 'vulkan variant could not start on this driver; keeping CPU-only build'
+      }
+    }
   } else {
     Copy-Item $InstallBinary (Join-Path $StagingBin 'ocrx.exe') -Force
     if ($InstallPdfium) { Copy-Item $InstallPdfium (Join-Path $StagingBin 'pdfium.dll') -Force }

@@ -19,7 +19,13 @@
 [CmdletBinding()]
 param(
   [string]$OutDir,
-  [string]$Version = $(if ($env:OCRX_VERSION) { $env:OCRX_VERSION } else { '0.1.0' })
+  [string]$Version = $(if ($env:OCRX_VERSION) { $env:OCRX_VERSION } else { '0.1.0' }),
+  # W4.2 (2026-10-30 gate report): a Vulkan build may ship alongside the CPU
+  # baseline. The GPU variant is opt-in per profile: -GpuPackages vulkan
+  # builds `--features vulkan` (requires VULKAN_SDK with glslc) and packages
+  # bin/ocrx-vulkan.exe next to the CPU binary; install.ps1 picks it when the
+  # machine reports a Vulkan driver and `--device auto` prefers it.
+  [string[]]$GpuPackages = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -96,13 +102,21 @@ Push-Location $RootDir
 try {
   & cargo build --release --locked -p ocrx
   if ($LASTEXITCODE -ne 0) { Fail 'cargo build failed' 4 }
+  # Copy the CPU baseline before any GPU build: `cargo build --features
+  # vulkan` overwrites target\release\ocrx.exe in place.
+  $BuiltBinary = Join-Path $RootDir 'target\release\ocrx.exe'
+  if (-not (Test-Path $BuiltBinary)) { Fail 'release binary missing' 4 }
+  Copy-Item $BuiltBinary (Join-Path $Stage 'bin\ocrx.exe') -Force
+  foreach ($GpuProfile in $GpuPackages) {
+    if ($GpuProfile -ne 'vulkan') { Fail "unsupported GpuPackages entry: $GpuProfile" 4 }
+    if (-not $env:VULKAN_SDK) { Fail 'GpuPackages vulkan requires VULKAN_SDK (with Bin/glslc.exe on PATH)' 4 }
+    & cargo build --release --locked -p ocrx --features vulkan
+    if ($LASTEXITCODE -ne 0) { Fail 'vulkan cargo build failed' 4 }
+    Copy-Item $BuiltBinary (Join-Path $Stage 'bin\ocrx-vulkan.exe') -Force
+  }
 } finally {
   Pop-Location
 }
-
-$BuiltBinary = Join-Path $RootDir 'target\release\ocrx.exe'
-if (-not (Test-Path $BuiltBinary)) { Fail 'release binary missing' 4 }
-Copy-Item $BuiltBinary (Join-Path $Stage 'bin\ocrx.exe') -Force
 
 if (-not $env:OCRX_PDFIUM_LIBRARY) {
   Fail 'set OCRX_PDFIUM_LIBRARY to package the required x64 PDFium dll' 4

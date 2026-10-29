@@ -1,0 +1,29 @@
+{
+ "schema_version": 1,
+ "type": "composite-rebuild-verification",
+ "rebuilt_at": "2026-10-29",
+ "rebuild_command": "python scripts/assemble-regression-pdf.py assets/regression/ovisocr2-draft-v1 --qpdf \"<qpdf 12.4.2>\"",
+ "source_books": [
+  {
+   "path": "test-data/苏科版-江苏凤凰科学技术出版社/九年级/义务教育教科书·数学九年级上册.pdf",
+   "sha256": "87ebcc10627e2ec6f411cc6b4c8a03e6384921564e77f4447d7df9415342841d",
+   "matches_acquisition_md": true
+  },
+  {
+   "path": "test-data/《[经济学原理_宏观经济学分册](第5版).(美)曼昆》Unknown【文字版_PDF电子书_下载】.pdf",
+   "sha256": "ef788630cb21bd878ac8f89019dcdff9fc7f1cc5c9806db2ca9c8ec07c2cb82a",
+   "matches_acquisition_md": true
+  }
+ ],
+ "rebuilt_sha256": "31fe86711985c3dbbb9fa44295a3a4c44bf7479fa9a40d69f72e5a26d2165e05",
+ "manifest_input_sha256": "ab3235512ef1f60122c3b060c5cf43c12947839e82875d940e10c36e37963477",
+ "byte_identical": false,
+ "byte_mismatch_cause": "original qpdf version not recorded in the repo; object-stream packing differs across qpdf releases (no /Info metadata in output)",
+ "pixel_verification": {
+  "method": "pymupdf 1.28.2, render each composite page and its mapped source page at dpi=72, compare MD5 of RGB samples + dimensions",
+  "pages_checked": 30,
+  "pixel_identical": 30,
+  "mismatch": 0
+ },
+ "conclusion": "Rebuilt composite is content-equivalent to the pinned exam (all 30 pages render pixel-identical to the mapped source-book pages); byte pin remains unsatisfied pending the original qpdf version."
+}

@@ -32,7 +32,7 @@
 | W0.1 CPU runtime 对齐 | ⛔ | — | 绑定/构建已由 WP.2 冻结 | 取得 OvisOCR2 GGUF 权重后，完成 model/mmproj 加载、生成、`llama-mtmd-cli` 结构化比对 |
 | W0.2 PDFium 实机验证 | ◐ | `18e7004` | DLL 加载防护（缺失/路径逃逸/错误架构不静默成功）+ 实机渲染验证全绿：页数、300 DPI RGB8、审计尺寸、选页映射、像素预算等比缩放、损坏/非 PDF 分类 | 补加密/密码恢复实机用例；与 macOS 像素/hash 级比对 |
 | W0.3 资源基线 | ◐ | `8b811b0` | 跨平台 RSS 采样器（Windows tasklist / Unix ps，纯安全实现）+ 100 页回归骨架；本机试运行 43 样本/12.4s，RSS 回落基线（峰值 40 MB / 末值 12 MB） | 16 GB CPU-only 基准设备官方测量（真实复杂 PDF、worker 页段峰值、退出状态）；与 macOS 曲线对比记录 |
-| W0.4 质量回归 | ◐ | 官方 BF16 权重已落地、参考生成器已交付 | 官方 BF16 权重已下载并 SHA-256 校验（`benchmarks/official-bf16/manifest.json`）；`scripts/generate-official-bf16-reference.py` 已实现、单页冒烟通过，且解析输出与 `page-01.page.json` golden 完全一致 | 补齐 30 页回归集后跑 BF16 对照与四 profile 评分 |
+| W0.4 质量回归 | ◐ | 官方 BF16 权重已落地、参考生成器已交付；真值集 `ovisocr2-draft-v1` 已存在（30 页、30/30 人工校准、validate 通过——原"尚未构造"为滞后记录）；2026-10-30 首次全量执行门禁 | 官方 BF16 权重已下载并 SHA-256 校验（`benchmarks/official-bf16/manifest.json`）；`scripts/generate-official-bf16-reference.py` 已实现、单页冒烟通过，且解析输出与 `page-01.page.json` golden 完全一致；30 页 composite 重建（像素级等价验证）+ 四 profile/BF16/Vulkan 全量评分完成，文本维度 GGUF↔BF16 等价（NED 差 0.0003），0 重复/截断/空白失败页；执行报告 `docs/test/reports/quality-gate-ovisocr2-draft-v1-2026-10-30.md` | 公式项 INCONCLUSIVE（29 条样本低于 0.02 阈值粒度，需扩至 n≥50）；200/250 DPI 附录跑；17.2.3 绝对阈值与量化降差门禁解耦的决策 |
 | W1.1 Backend/feature 扩展 | ✅ | `23c9cfd` | `vulkan`/`cuda` cargo 特性（保留 `mtmd`）；`Backend::is_compiled()` 编译集契约；快照与编译集求交（实测：CUDA 机器 + CPU-only 构建 → `cuda_available:false`，auto 选 CPU）；macOS 行为不变 | — |
 | W1.2 探测/ResourceSnapshot | ✅ | `424d9cd` | `SystemProbe` trait 注入 + GPU 字段；doctor Windows 报告离线、不下载模型 | — |
 | W1.3 平台路径解析 | ✅ | `424d9cd` | `platform_paths`（home 回退链 HOME→USERPROFILE→HOMEDRIVE+HOMEPATH、缓存/配置目录） | — |
@@ -44,9 +44,9 @@
 | W3.2 bbox 裁图 | ✅ | `731dae4` / `90e74ba`(Vulkan) | 纯逻辑完成（floor/ceil 映射、clamp、IoU 去重、稳定程序名原子写）+ fake 测试；真实模型 E2E 已在 Windows CPU/Vulkan 跑通，`figure-1-page.pdf` 产出 `images.count=1` | — |
 | W3.3 取消/部分完成/恢复 | ✅ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) / `587d88c`(真实故障注入) / `windows-ctrl-c-smoke.ps1` | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有；runtime 内取消契约已由 W3.1 落地；真实 scan 路径用 `PageLifecycle` 状态机；真实 render/inference 失败注入 E2E 与真实 Ctrl+C 信号自动化均通过 | — |
 | W4.1 Vulkan 构建 | ✅ | `4017d1f`(Red) / `90e74ba`(enum) / `8622114`(fallback) | Vulkan SDK 1.4.357.0 已安装；`--features vulkan` 短 `CARGO_TARGET_DIR` 构建通过；`RealSystemProbe` 已用 `vulkano` 做安全 instance + physical-device 枚举；`run_scan` 已实现 GPU 初始化失败自动回退 CPU 并写入 warning；doctor 报告 `backend=Vulkan`、`vulkan_available=true`、`recommended_device=vulkan`；无 GPU 回退分支由注入式 `SystemProbe`/`ResourceSnapshot` 测试覆盖 | — |
-| W4.2 Vulkan E2E | ◐ | `90e74ba`(Vulkan) | 本机 RTX 2070 已登记为官方 NVIDIA GPU 基准设备；Vulkan 真实 E2E 与 CPU 对照完成（`docs/develop/windows-gpu-baseline-2026-08-18.md`），结构一致且 speedup 约 7.02x | 结构化质量评分仍待 W0.4/官方 BF16 |
+| W4.2 Vulkan E2E | ◐ | `90e74ba`(Vulkan) | 本机 RTX 2070 已登记为官方 NVIDIA GPU 基准设备；Vulkan 真实 E2E 与 CPU 对照完成（`docs/develop/windows-gpu-baseline-2026-08-18.md`），结构一致且 speedup 约 7.02x；2026-10-30 RTX 4090 D 复验：30 页 reference 全量门禁集 Vulkan 58.4s vs CPU 562.6s ≈ 9.6x，逐页文本相似度 mean 0.9999 / min 0.9974，评分与 CPU 等值（见执行报告） | 结构化质量评分已完成（同 W0.4 遗留公式粒度项）；正式发布前需在登记基准机复跑 |
 | W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
-| W4.4 GPU 资源报告 | ◐ | `83066f6`(schema) / `2cecdfc`(采样) | 官方 GPU 基准设备已登记；自动报告已采集 `load_time_ms=1444`、`first_token_ms=49`、`output_tokens=26`、`output_tokens_per_sec=76.246`、`vram_peak_bytes=1637875712`；CPU 对照 350014ms | 质量评分仍待 W0.4/官方 BF16 |
+| W4.4 GPU 资源报告 | ◐ | `83066f6`(schema) / `2cecdfc`(采样) | 官方 GPU 基准设备已登记；自动报告已采集 `load_time_ms=1444`、`first_token_ms=49`、`output_tokens=26`、`output_tokens_per_sec=76.246`、`vram_peak_bytes=1637875712`；CPU 对照 350014ms；2026-10-30 4090 D 门禁集复验通过（见执行报告） | 正式发布前需在登记基准机复跑 |
 | W5.1 日志/隐私/doctor | ✅ | `f20ba05` | 脱敏统一收敛到 `ocrx-output::redact_sensitive`（单一来源，无平台分支调用点）；doctor 离线 | — |
 | W5.2 Skill Windows 安装 | ✅ | `83da793` | `SkillScope { User, Project }`，用户级/项目级与待决策项 5 冻结结论一致；原子写 + 卸载边界测试 | — |
 | W5.3 Windows 安装包 | ✅ | `c1f3ef1` | `package-windows-x64.ps1` + `install.ps1` + 脚本测试；烟测矩阵 7 项（安装 0/哈希不符 5/缺档 4/offline 6 等）、归档 20 文件 `sha256sum -c` 全过；干净环境安装烟测属 W6 | — |
