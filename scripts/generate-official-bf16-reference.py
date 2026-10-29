@@ -344,8 +344,23 @@ def run_inference(
     )
     if next(model.parameters()).device.type == "cuda":
         inputs = {key: value.to("cuda") for key, value in inputs.items()}
+    # The pinned checkpoint ships no generation_config.json, so generate()
+    # does not stop at the chat `<|im_end|>` turn delimiter and every page
+    # runs to the token budget (W0.4 2026-10-30 run: 30/30 truncated, 83%
+    # periodic tails). Pass the stop ids explicitly; sampling stays greedy.
+    tokenizer = getattr(processor, "tokenizer", processor)
+    stop_ids = {
+        tokenizer.convert_tokens_to_ids("<|im_end|>"),
+        tokenizer.eos_token_id,
+    }
+    stop_ids.discard(None)
     with torch.inference_mode():
-        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            eos_token_id=sorted(stop_ids),
+        )
     input_length = inputs["input_ids"].shape[1]
     new_tokens = outputs[0][input_length:]
     raw = processor.decode(new_tokens, skip_special_tokens=True)
