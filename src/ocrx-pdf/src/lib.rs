@@ -50,6 +50,7 @@ pub struct PageSignals {
     pub text_bbox_coverage: f32,
     pub visible_characters: usize,
     pub unicode_validity: f32,
+    pub alphanumeric_ratio: f32,
     pub text_coverage: f32,
     pub image_coverage: f32,
     pub duplicate_text: bool,
@@ -880,6 +881,7 @@ pub fn validate_native_page(
         analysis.page_height,
         analysis.text_bbox_coverage,
         analysis.unicode_validity,
+        analysis.alphanumeric_ratio,
         analysis.text_coverage,
         analysis.image_coverage,
     ]
@@ -891,7 +893,11 @@ pub fn validate_native_page(
     if blocks.is_empty() || analysis.visible_characters == 0 {
         return Err(PdfReasonCode::NativeValidationFailed);
     }
-    if analysis.duplicate_text || analysis.geometry_anomaly || analysis.unicode_validity < 0.90 {
+    if analysis.duplicate_text
+        || analysis.geometry_anomaly
+        || analysis.unicode_validity < 0.90
+        || analysis.alphanumeric_ratio < 0.70
+    {
         return Err(PdfReasonCode::NativeValidationFailed);
     }
     let block_character_count = blocks
@@ -929,6 +935,7 @@ impl Default for PageSignals {
             text_bbox_coverage: 0.0,
             visible_characters: 0,
             unicode_validity: 1.0,
+            alphanumeric_ratio: 1.0,
             text_coverage: 0.0,
             image_coverage: 0.0,
             duplicate_text: false,
@@ -944,6 +951,7 @@ pub struct ClassifierConfig {
     pub mixed_image_threshold: f32,
     pub text_coverage_threshold: f32,
     pub min_unicode_validity: f32,
+    pub min_alphanumeric_ratio: f32,
 }
 
 impl Default for ClassifierConfig {
@@ -954,6 +962,12 @@ impl Default for ClassifierConfig {
             mixed_image_threshold: 0.10,
             text_coverage_threshold: 0.20,
             min_unicode_validity: 0.90,
+            // Separation measured on the W0.4 truth composite: real prose
+            // pages sit at ~0.84 (CJK ideographs are alphanumeric), broken
+            // ToUnicode garbage at <=0.55. A false positive only sends the
+            // page to OCR, so the threshold leans high rather than risk
+            // garbage native output.
+            min_alphanumeric_ratio: 0.70,
         }
     }
 }
@@ -992,6 +1006,7 @@ pub fn classify_page_with_config(
         signals.page_height,
         signals.text_bbox_coverage,
         signals.unicode_validity,
+        signals.alphanumeric_ratio,
         signals.text_coverage,
         signals.image_coverage,
     ]
@@ -1023,9 +1038,18 @@ pub fn classify_page_with_config(
             reason: PdfReasonCode::ImageCoverageHigh,
         };
     }
+    // A text layer can be structurally valid (real glyphs, sane geometry) yet
+    // carry a broken ToUnicode CMap: every char maps to arbitrary punctuation,
+    // which passes the unicode-validity ratio. Real text in any script is
+    // dominated by letters/digits (CJK ideographs are alphanumeric), so a
+    // near-zero ratio means the extracted text cannot be trusted and the page
+    // must go to OCR instead. The reason reuses the stable
+    // `unicode_validity_low` code: a broken CMap is a text-mapping failure.
     if signals.duplicate_text
         || signals.geometry_anomaly
         || signals.unicode_validity < config.min_unicode_validity
+        || (signals.visible_characters > 0
+            && signals.alphanumeric_ratio < config.min_alphanumeric_ratio)
     {
         return PageClassification {
             page_type: PageType::Uncertain,
@@ -1698,6 +1722,7 @@ impl PdfiumRenderer {
         let mut text = String::new();
         let mut blocks = Vec::new();
         let mut valid = 0usize;
+        let mut alphanumeric = 0usize;
         let text_chars = text_page.chars();
         let chars: Vec<_> = text_chars.iter().collect();
         for (index, character) in chars.iter().enumerate() {
@@ -1713,6 +1738,7 @@ impl PdfiumRenderer {
                 // pdfium surfaces unmapped glyphs as U+FFFD, and counting them
                 // as valid made the ratio identically 1.0 - a dead signal.
                 valid += usize::from(value != char::REPLACEMENT_CHARACTER);
+                alphanumeric += usize::from(value.is_alphanumeric());
             }
             if let Ok(bounds) = character.tight_bounds() {
                 let left = (bounds.left().value.max(0.0) / width * 1000.0)
@@ -1774,6 +1800,11 @@ impl PdfiumRenderer {
                 } else {
                     valid as f32 / character_count as f32
                 },
+                alphanumeric_ratio: if character_count == 0 {
+                    1.0
+                } else {
+                    alphanumeric as f32 / character_count as f32
+                },
                 text_coverage: if has_blocks { 1.0 } else { 0.0 },
                 image_coverage: (image_area / (width * height)).clamp(0.0, 1.0),
                 duplicate_text,
@@ -1826,6 +1857,7 @@ impl PdfiumRenderer {
             .count();
 
         let mut valid = 0usize;
+        let mut alphanumeric = 0usize;
         let mut visible_characters = 0usize;
         let mut analysis_blocks = Vec::new();
         for (index, character) in text_page.chars().iter().enumerate() {
@@ -1839,6 +1871,7 @@ impl PdfiumRenderer {
                 // Same non-replacement validity semantics as extract_native_page
                 // (review m20).
                 valid += usize::from(value != char::REPLACEMENT_CHARACTER);
+                alphanumeric += usize::from(value.is_alphanumeric());
                 visible_characters += 1;
             }
             if let Ok(bounds) = character.tight_bounds() {
@@ -1887,6 +1920,11 @@ impl PdfiumRenderer {
                 1.0
             } else {
                 valid as f32 / visible_characters as f32
+            },
+            alphanumeric_ratio: if visible_characters == 0 {
+                1.0
+            } else {
+                alphanumeric as f32 / visible_characters as f32
             },
             text_coverage: if has_blocks { 1.0 } else { 0.0 },
             image_coverage: (image_area / (width * height)).clamp(0.0, 1.0),
@@ -3194,6 +3232,74 @@ mod tests {
         assert_eq!(classification.confidence, RouteConfidence::Low);
         assert_eq!(classification.recommended_method, ProcessingMethod::Ocr);
         assert_eq!(classification.reason, PdfReasonCode::GeometryAnomaly);
+    }
+
+    #[test]
+    fn classifier_routes_broken_cmap_punctuation_text_to_ocr() {
+        // A broken ToUnicode CMap maps every glyph to arbitrary punctuation
+        // and stray Latin-1 code points: unicode validity stays 1.0 while the
+        // alphanumeric ratio lands well under real prose (measured separation
+        // on the W0.4 composite: garbage <=0.55, real text ~0.84).
+        let classification = classify_page(
+            PageSignals {
+                visible_characters: 120,
+                unicode_validity: 1.0,
+                alphanumeric_ratio: 0.37,
+                text_coverage: 0.8,
+                ..Default::default()
+            },
+            QualityTier::L2,
+        );
+        assert_eq!(classification.page_type, PageType::Uncertain);
+        assert_eq!(classification.confidence, RouteConfidence::Low);
+        assert_eq!(classification.recommended_method, ProcessingMethod::Ocr);
+        assert_eq!(classification.reason, PdfReasonCode::UnicodeValidityLow);
+    }
+
+    #[test]
+    fn classifier_keeps_symbol_light_but_legible_text_on_native_path() {
+        // Pure-CJK prose is alphanumeric under Unicode (ideographs are
+        // letters), so ordinary Chinese text must keep routing to native.
+        let classification = classify_page(
+            PageSignals {
+                visible_characters: 500,
+                unicode_validity: 1.0,
+                alphanumeric_ratio: 0.84,
+                text_coverage: 0.8,
+                ..Default::default()
+            },
+            QualityTier::L2,
+        );
+        assert_eq!(classification.page_type, PageType::Text);
+        assert_eq!(classification.confidence, RouteConfidence::High);
+        assert_eq!(
+            classification.recommended_method,
+            ProcessingMethod::NativeText
+        );
+        assert_eq!(classification.reason, PdfReasonCode::NativeTextReliable);
+    }
+
+    #[test]
+    fn native_validation_rejects_punctuation_only_text_layers() {
+        let signals = PageSignals {
+            page_width: 541.0,
+            page_height: 754.0,
+            visible_characters: 100,
+            unicode_validity: 1.0,
+            alphanumeric_ratio: 0.48,
+            text_coverage: 1.0,
+            ..Default::default()
+        };
+        let blocks = vec![NativeTextBlock {
+            text: "!\"#$%&'()".to_owned(),
+            bbox: NormalizedBbox::new(10, 10, 900, 900).unwrap(),
+            order: 1,
+            source: ocrx_core::BlockSource::PdfText,
+        }];
+        assert_eq!(
+            validate_native_page(QualityTier::L2, signals, &blocks),
+            Err(PdfReasonCode::NativeValidationFailed)
+        );
     }
 
     #[test]
