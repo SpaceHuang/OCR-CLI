@@ -546,69 +546,81 @@ fn crop_inline_level_period(text: &str) -> Option<String> {
     // never sliced at an unverified byte offset, so no UTF-8 input can panic
     // the crop (review BLK-1).
     //
-    // Phase 1: the whole segment is periodic with period `p` and ends exactly
-    // on a period boundary — keep the last period. A rotation-aligned `p`
-    // with `len % p != 0` must NOT match here: it would fold a genuinely
-    // non-periodic (or truncated) tail into the "period" and mis-crop normal
-    // text like `abcdefghabcdefghabcdefghXYZ` (review round 2).
+    // Candidates are anchored at the tail: a run of complete periods ends at
+    // `end = len - partial`, preceded by arbitrary normal line content, and
+    // optionally followed by a truncated next period (`partial` bytes that
+    // must be a byte prefix of the period — an unrelated tail means this is
+    // normal text and must not be cropped, review round 2).
+    //
+    // A rotation-aligned candidate can describe the same bytes with a shifted
+    // period, folding loop content into the kept prefix or an unrelated tail
+    // into the period (`abcdefgh` x4 read as run `bcdefgha` x3 + tail
+    // `bcdefgh`; `abcdefgh` x3 + `XYZ` read as period `defghabc`). Two guards
+    // keep the honest reading: a candidate is rejected when its kept prefix
+    // itself continues the period (left-maximality, the `k` loop below), and
+    // among surviving candidates the one covering the most periods — then the
+    // leftmost run start — wins.
+    let mut best: Option<(usize, usize, usize, usize)> = None; // (repeats, start, end, p)
     for p in INLINE_MIN_PERIOD..=INLINE_MAX_PERIOD {
         if p * INLINE_MIN_REPEATS > len {
             break;
         }
-        if len % p != 0 || !(0..len - p).all(|i| bytes[i] == bytes[i + p]) {
-            continue;
+        let max_partial = (p - 1).min(len - p * INLINE_MIN_REPEATS);
+        for partial in 0..=max_partial {
+            let end = len - partial;
+            let period = &bytes[end - p..end];
+            if bytes[end - 2 * p..end - p] != *period || bytes[end - 3 * p..end - 2 * p] != *period
+            {
+                continue;
+            }
+            if partial > 0 && !bytes[end..].starts_with(&period[..partial]) {
+                continue;
+            }
+            // Count the full trailing repeats and locate the run start.
+            let mut repeats = INLINE_MIN_REPEATS;
+            while end >= (repeats + 1) * p
+                && bytes[end - (repeats + 1) * p..end - repeats * p] == *period
+            {
+                repeats += 1;
+            }
+            let start = end - repeats * p;
+            // Left-maximality: the kept prefix must not itself continue the
+            // period, otherwise the run really starts further left and this
+            // shifted reading would keep loop content as "pre-loop text".
+            let mut continues = false;
+            for k in 1..=start.min(p) {
+                if bytes[start - k..start] == period[p - k..p] {
+                    continues = true;
+                    break;
+                }
+            }
+            if continues {
+                continue;
+            }
+            // The output slices are only taken at verified char boundaries;
+            // when a boundary falls inside a multi-byte character this
+            // candidate cannot be cropped exactly, so try the next one
+            // instead of panicking.
+            if !segment.is_char_boundary(start) || !segment.is_char_boundary(end - p) {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some((best_repeats, best_start, _, _)) => {
+                    repeats > best_repeats || (repeats == best_repeats && start < best_start)
+                }
+            };
+            if better {
+                best = Some((repeats, start, end, p));
+            }
         }
-        let start = len - p;
-        if !segment.is_char_boundary(start) {
-            continue;
-        }
-        return Some(join_head_and_period(head, "", &segment[start..]));
     }
-    // Phase 2: complete periods end at `end`, followed by a truncated next
-    // period that must be a byte prefix of the period; keep the pre-loop
-    // content plus one period and drop the partial tail (plan §3.2.2:
-    // 不完整块随环一起裁剪). The complete-period region must sit on the
-    // segment's own period grid (`end % p == 0`): a rotation-aligned window
-    // would fold the trailing bytes into a shifted "period" and mis-crop
-    // (the same false-positive family as phase 1).
-    for p in INLINE_MIN_PERIOD..=INLINE_MAX_PERIOD {
-        if p * INLINE_MIN_REPEATS > len {
-            break;
-        }
-        let end = (len / p) * p;
-        if end == len || end < p * INLINE_MIN_REPEATS {
-            continue;
-        }
-        let partial = len - end;
-        let period = &bytes[end - p..end];
-        if bytes[end - 2 * p..end - p] != *period || bytes[end - 3 * p..end - 2 * p] != *period {
-            continue;
-        }
-        if !bytes[end..].starts_with(&period[..partial]) {
-            continue;
-        }
-        // Count the full trailing repeats and keep exactly one period.
-        let mut repeats = INLINE_MIN_REPEATS;
-        while end >= (repeats + 1) * p
-            && bytes[end - (repeats + 1) * p..end - repeats * p] == *period
-        {
-            repeats += 1;
-        }
-        let start = end - repeats * p;
-        // The output slices are only taken at verified char boundaries; when
-        // a boundary falls inside a multi-byte character this candidate
-        // cannot be cropped exactly, so try the next period instead of
-        // panicking.
-        if !segment.is_char_boundary(start) || !segment.is_char_boundary(end - p) {
-            continue;
-        }
-        return Some(join_head_and_period(
-            head,
-            &segment[..start],
-            &segment[end - p..end],
-        ));
-    }
-    None
+    let (_, start, end, p) = best?;
+    Some(join_head_and_period(
+        head,
+        &segment[..start],
+        &segment[end - p..end],
+    ))
 }
 
 /// Assembles the cropped text: pre-loop content, then exactly one full period.
@@ -1083,6 +1095,29 @@ mod tests {
         let crop = degenerate_tail_crop("abcdefghabcdefghabcdefghabcdefgh");
         assert!(crop.degenerated);
         assert_eq!(crop.text, "abcdefgh");
+    }
+
+    #[test]
+    fn loop_after_same_line_prefix_is_detected() {
+        // Review round 3: the run is anchored at the tail, so a loop that
+        // starts mid-line after normal content must still be detected.
+        // Boundary case: run ends exactly at end-of-segment.
+        let crop = degenerate_tail_crop("正文abcdefghabcdefghabcdefgh");
+        assert!(crop.degenerated);
+        assert_eq!(crop.text, "正文abcdefgh");
+        // Truncated next period (true prefix) is cropped with the loop.
+        let crop = degenerate_tail_crop("正文abcdefghabcdefghabcdefghabc");
+        assert!(crop.degenerated);
+        assert_eq!(crop.text, "正文abcdefgh");
+        // Same shapes with the incident Chinese period.
+        let period = "依次按键 $\\tan^{1}F$ 2 2 1 8";
+        let crop = degenerate_tail_crop(&format!("正文{period}{period}{period}"));
+        assert!(crop.degenerated);
+        assert_eq!(crop.text, format!("正文{period}"));
+        // Re-cropping is idempotent.
+        let second = degenerate_tail_crop(&crop.text);
+        assert_eq!(second.text, crop.text);
+        assert!(!second.degenerated);
     }
 
     #[test]
