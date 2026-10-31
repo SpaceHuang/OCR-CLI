@@ -555,9 +555,11 @@ fn crop_inline_level_period(text: &str) -> Option<String> {
             {
                 continue;
             }
-            if partial > 0 && !segment[end..].starts_with(&period[..partial]) {
-                continue;
-            }
+            // The trailing partial (at most `p - 1` bytes after the last
+            // complete period) is an incomplete next period at the
+            // max_tokens cut and is cropped with the loop regardless of its
+            // content — byte-prefix compatibility must not be required, or a
+            // non-prefix cut tail would defeat detection (BLK-1).
             // Count the full trailing repeats and keep exactly one period.
             let mut repeats = 3_usize;
             while end >= (repeats + 1) * p
@@ -999,6 +1001,38 @@ mod tests {
         assert!(bbox_loop.degenerated);
         assert!(!bbox_loop.repetition_removed);
         assert_eq!(bbox_loop.text, format!("text\n{bbox_tag}"));
+    }
+
+    #[test]
+    fn non_ascii_period_with_different_partial_tail_does_not_panic() {
+        // BLK-1 regression: the partial tail's byte offset is not a char
+        // boundary of the multi-byte period; the crop must return a
+        // degenerated result instead of panicking.
+        let crop = degenerate_tail_crop("循环片段循环片段循环片段a");
+        assert!(crop.degenerated);
+        assert!(crop.repetition_removed);
+        assert_eq!(crop.text, "循环片段");
+        // Re-cropping is idempotent.
+        let second = degenerate_tail_crop(&crop.text);
+        assert_eq!(second.text, crop.text);
+        assert!(!second.degenerated);
+        // Chinese partial tail of a Chinese period.
+        let crop = degenerate_tail_crop("循环片段循环片段循环片段循环");
+        assert!(crop.degenerated);
+        // Incident-shape Chinese period with an unrelated ASCII tail.
+        let period = "依次按键 $\\tan^{1}F$ 2 2 1 8";
+        let crop = degenerate_tail_crop(&format!("{period}{period}{period}ab"));
+        assert!(crop.degenerated);
+        // Production path: an adapter response with this shape must not panic.
+        let page = adapt_response(
+            1,
+            &InferenceResponse {
+                raw_output: "正文\n循环片段循环片段循环片段a".to_owned(),
+                finish_reason: "max_tokens".to_owned(),
+            },
+        )
+        .unwrap();
+        assert!(page.warnings.contains(&PageWarning::Degenerated));
     }
 
     #[test]

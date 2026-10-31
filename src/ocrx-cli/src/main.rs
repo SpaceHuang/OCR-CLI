@@ -2244,6 +2244,10 @@ fn run_scan(options: ScanOptions) -> ! {
     let mut resume_committed_markdown = Vec::new();
     let mut resume_skip_pages = std::collections::HashSet::new();
     let mut resume_pending_pages = std::collections::HashSet::new();
+    // Incomplete state of pages reused as-is this run (BLK-2): a
+    // SkipCommitted truncated/degenerated page keeps its marker and must keep
+    // the result partial even though the page was not reprocessed.
+    let mut resume_incomplete_checkpoints = Vec::new();
     let resume_effective_configuration = if options.resume {
         resolve_effective_ocr_configuration(&options.profile, &options.device).ok()
     } else {
@@ -2263,6 +2267,9 @@ fn run_scan(options: ScanOptions) -> ! {
                     if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
                         resume_committed_markdown.append(&mut markdown);
                         resume_skip_pages.insert(*page as u32);
+                        if checkpoint.truncated || checkpoint.degenerated {
+                            resume_incomplete_checkpoints.push(checkpoint.clone());
+                        }
                     }
                 }
                 CheckpointResumeAction::QueueOcr => {
@@ -2284,6 +2291,9 @@ fn run_scan(options: ScanOptions) -> ! {
                 if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
                     resume_committed_markdown.append(&mut markdown);
                     resume_skip_pages.insert(*page as u32);
+                    if checkpoint.truncated || checkpoint.degenerated {
+                        resume_incomplete_checkpoints.push(checkpoint.clone());
+                    }
                 }
             }
         }
@@ -2771,6 +2781,33 @@ fn run_scan(options: ScanOptions) -> ! {
     }
     match summary {
         Ok(mut summary) => {
+            // Reused (SkipCommitted) pages never re-enter the scan service, so
+            // their incomplete state must be merged here before any success
+            // decision is made (BLK-2). Pages reprocessed this run are not in
+            // the skip set, so counting them here cannot double-count.
+            for checkpoint in &resume_incomplete_checkpoints {
+                if checkpoint.degenerated {
+                    summary.degenerated_pages += 1;
+                }
+                if checkpoint.truncated {
+                    summary.truncated_pages += 1;
+                }
+                summary.warnings.extend(checkpoint.warnings.iter().cloned());
+                summary.diagnostics.push(ocrx_output::PageDiagnostic {
+                    page: checkpoint.page_number,
+                    status: if checkpoint.truncated || checkpoint.degenerated {
+                        "partial"
+                    } else {
+                        "completed"
+                    }
+                    .to_owned(),
+                    stage: "resume".to_owned(),
+                    error_code: None,
+                    message: None,
+                    audit: checkpoint.audit,
+                    warnings: checkpoint.warnings.clone(),
+                });
+            }
             if let Some(warning) = gpu_report_warning {
                 eprintln!("warning: {warning}");
                 summary.warnings.push(warning);
@@ -3458,7 +3495,7 @@ mod tests {
     use super::{
         CliCommand, ConfigSource, NativeFirstPhaseResult, NativeOnlyDecision,
         NativeValidationRoute, ResolvedConfig, ResourceSnapshot, RoutingCounts, ScanExecutionPlan,
-        ScanOptions, ScanResultFields, build_final_ocr_queue, doctor_json_report,
+        ScanOptions, ScanResultFields, build_final_ocr_queue, current_platform, doctor_json_report,
         dynamic_fallback_requires_model_assets, final_routing_diagnostics, format_routing_summary,
         initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
         native_candidate_pages, native_only_decision, ocr_queue_after_native_phase, parse_command,
@@ -4220,6 +4257,144 @@ mod tests {
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .output()
             .expect("cargo should launch the CLI test binary")
+    }
+
+    #[test]
+    fn cli_resume_of_truncated_page_keeps_partial_status_and_exit_10() {
+        // BLK-2 regression (real CLI subprocess): a same-parameter --resume
+        // that reuses a committed truncated OCR page must keep the document
+        // marker, report status=partial with pages.truncated=1, and exit 10 —
+        // never success/exit 0.
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let input = workspace.join("benchmarks/fixtures/pdf/normal-1-page.pdf");
+        if !input.is_file() {
+            panic!("pdf fixture missing: {}", input.display());
+        }
+        // pdfium is a vendored, gitignored binary: prefer the vendored copy,
+        // then the ambient OCRX_PDFIUM_LIBRARY, and skip when neither exists.
+        let pdfium = workspace.join("vendor/pdfium/bin/pdfium.dll");
+        let pdfium = if pdfium.is_file() {
+            pdfium
+        } else if let Some(library) = std::env::var_os("OCRX_PDFIUM_LIBRARY") {
+            std::path::PathBuf::from(library)
+        } else {
+            eprintln!("skipping: no vendored or OCRX_PDFIUM_LIBRARY pdfium available");
+            return;
+        };
+        if !pdfium.is_file() {
+            eprintln!("skipping: pdfium library not found: {}", pdfium.display());
+            return;
+        }
+        let root = std::env::temp_dir().join(format!(
+            "ocrx-resume-truncated-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input_sha = ocrx_core::sha256_file(&input).unwrap();
+        let compatibility = ocrx_output::CompatibilityKey {
+            input_sha256: input_sha,
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: format!(
+                "{};platform={};dpi={};tokens={};max_image_tokens={};context_size={};device={};route=native",
+                ocrx_output::pdf_compatibility_parameters(
+                    "ocr",
+                    "l2",
+                    "pdf-route-v1",
+                    "pdf-text-v1"
+                ),
+                current_platform(),
+                300,
+                16_384,
+                1024,
+                20_480,
+                "cpu"
+            ),
+        };
+        let page_json = r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated","degenerated"]}"#;
+        ocrx_output::commit_page(
+            &root,
+            1,
+            b"png",
+            "truncated page body",
+            page_json,
+            &ocrx_output::PageCheckpoint {
+                page_number: 1,
+                compatibility: compatibility.clone(),
+                complete: true,
+                output_sha256: String::new(),
+                truncated: true,
+                degenerated: false,
+                attempts: 1,
+                raw: None,
+                warnings: vec!["truncated".to_owned()],
+                audit: None,
+            },
+        )
+        .unwrap();
+        let input = input.canonicalize().unwrap();
+        let output_arg = root.canonicalize().unwrap();
+        let mut command = match std::env::var("CARGO_BIN_EXE_ocrx") {
+            Ok(binary) => Command::new(binary),
+            Err(_) => {
+                // Keep the subprocess contract even under cargo-run fallback.
+                let mut command = Command::new("cargo");
+                command
+                    .args(["run", "--quiet", "--bin", "ocrx", "--"])
+                    .current_dir(env!("CARGO_MANIFEST_DIR"));
+                command
+            }
+        };
+        let output = command
+            .args([
+                "scan",
+                input.to_str().unwrap(),
+                "--pages",
+                "1",
+                "--pdf-mode",
+                "ocr",
+                "--model-profile",
+                "reference",
+                "--device",
+                "cpu",
+                "--dpi",
+                "300",
+                "--output-dir",
+                output_arg.to_str().unwrap(),
+                "--resume",
+                "--report",
+                "json",
+                "--offline",
+                "--non-interactive",
+            ])
+            .env("OCRX_PDFIUM_LIBRARY", pdfium.canonicalize().unwrap())
+            .output()
+            .expect("CLI subprocess should run");
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        assert_eq!(
+            output.status.code(),
+            Some(10),
+            "exit code: {stdout}
+--- stderr ---
+{stderr}"
+        );
+        assert!(stdout.contains("\"status\":\"partial\""), "{stdout}");
+        assert!(stdout.contains("\"truncated\":1"), "{stdout}");
+        let result = root.join("result.json");
+        if result.is_file() {
+            let text = std::fs::read_to_string(&result).unwrap();
+            assert!(text.contains("\"status\":\"partial\""), "{text}");
+            assert!(text.contains("\"truncated\":1"), "{text}");
+        }
+        let document = std::fs::read_to_string(root.join("document.md")).unwrap();
+        assert!(document.contains("输出被截断"), "{document}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     // NOTE: the doctor stdout/stderr contract lives in tests/cli_subprocess.rs,
