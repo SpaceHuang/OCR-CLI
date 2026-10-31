@@ -176,6 +176,51 @@ pub use llama_mtmd::LlamaMtmdRuntime;
 #[derive(Debug, Default)]
 pub struct FakeRuntime;
 
+/// Fake runtime whose generation always ends in a repetition loop
+/// (`finish_reason: "repetition_loop"`, plan D2.2), driving adapter and scan
+/// integration tests without a model.
+#[derive(Debug, Default)]
+pub struct LoopFakeRuntime;
+
+impl Runtime for LoopFakeRuntime {
+    fn info(&self) -> RuntimeInfo {
+        RuntimeInfo {
+            backend: Backend::Cpu,
+            image_token_limit: 1024,
+        }
+    }
+
+    fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String> {
+        self.generate_with_progress(request, &CancellationToken::new(), &mut |_| {})
+    }
+
+    fn generate_with_progress(
+        &mut self,
+        request: InferenceRequest,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> Result<InferenceResponse, String> {
+        if request.width == 0
+            || request.height == 0
+            || request.image_rgb8.len() != (request.width as usize * request.height as usize * 3)
+            || request.max_output_tokens == 0
+        {
+            return Err("invalid inference request".to_owned());
+        }
+        progress(GenerationProgress {
+            generated_tokens: 1,
+            elapsed_seconds: 0,
+        });
+        if cancellation.is_cancelled() {
+            return Err("cancelled".to_owned());
+        }
+        Ok(InferenceResponse {
+            raw_output: format!("page {} body\n{}", request.page, "循环片段".repeat(9)),
+            finish_reason: "repetition_loop".to_owned(),
+        })
+    }
+}
+
 impl Runtime for FakeRuntime {
     fn info(&self) -> RuntimeInfo {
         RuntimeInfo {
@@ -277,6 +322,33 @@ mod tests {
                     max_output_tokens: 128,
                 })
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn loop_fake_runtime_reports_repetition_loop_and_emits_progress() {
+        let mut runtime = LoopFakeRuntime;
+        let mut progress = Vec::new();
+        let response = runtime
+            .generate_with_progress(
+                InferenceRequest::new(9, 1, 1, vec![1, 2, 3], 128).unwrap(),
+                &CancellationToken::new(),
+                &mut |event| progress.push(event),
+            )
+            .unwrap();
+        assert_eq!(response.finish_reason, "repetition_loop");
+        assert_eq!(progress.len(), 1);
+        let cancellation = CancellationToken::new();
+        cancellation.request_cancel();
+        assert_eq!(
+            runtime
+                .generate_with_progress(
+                    InferenceRequest::new(9, 1, 1, vec![1, 2, 3], 128).unwrap(),
+                    &cancellation,
+                    &mut |_| {},
+                )
+                .unwrap_err(),
+            "cancelled"
         );
     }
 
