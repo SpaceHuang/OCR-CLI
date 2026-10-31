@@ -13,7 +13,8 @@ source: ocrx
 4. Run non-interactively with `ocrx scan <absolute-input.pdf> --model ovisocr2 --non-interactive`.
 5. Use only the OvisOCR2 model and an installed local profile.
 6. On exit code `10` (partial): read `result.json` `pages.degenerated`/`truncated` and the per-page `warnings`. Degenerated pages (repetition loop) are retried automatically with `--resume`; pure truncated pages need a fresh rescan with different render/budget parameters. The merged `document.md` marks incomplete pages with a visible `⚠️ ocrx` blockquote line — never present them as final content.
-7. On exit code `130`, resume with `--resume`; on model or runtime errors, report the code and stop.
-7. For long Markdown, read only the required pages/sections instead of loading the whole file.
-8. Keep processing local; do not upload PDFs, OCR text, prompts, tokens, or credentials.
-9. Ask for human verification of the final Markdown and extracted images.
+7. A pure truncated page (`pages.truncated` > 0 with `pages.degenerated` = 0) whose per-page audit `original` size is an unusually tall image (height more than 3× width — a whole document packed into one tall page) will not fit the output budget no matter how often it is rescanned. Split it and rescan instead: with Python + pypdf, copy the page N times and give each copy a crop box holding one horizontal band (N ≈ height / width / 2, with a small overlap between consecutive bands — about 1% of page height — so no text line is cut in half), scan the split PDF into a separate `--output-dir`, and join the per-page Markdown in page order.
+8. On exit code `130`, resume with `--resume`; on model or runtime errors, report the code and stop.
+9. For long Markdown, read only the required pages/sections instead of loading the whole file.
+10. Keep processing local; do not upload PDFs, OCR text, prompts, tokens, or credentials.
+11. Ask for human verification of the final Markdown and extracted images.
