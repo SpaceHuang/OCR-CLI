@@ -969,6 +969,7 @@ impl PageDocument {
             "stop_token" => Termination::StopToken,
             "max_tokens" => Termination::MaxTokens,
             "invalid" => Termination::Invalid,
+            "repetition_loop" => Termination::RepetitionLoop,
             _ => return Err(DomainError::InvalidJson),
         };
         let warnings = root
@@ -980,6 +981,7 @@ impl PageDocument {
                 Some("truncated") => Ok(PageWarning::Truncated),
                 Some("repetition_removed") => Ok(PageWarning::RepetitionRemoved),
                 Some("render_scaled") => Ok(PageWarning::RenderScaled),
+                Some("degenerated") => Ok(PageWarning::Degenerated),
                 _ => Err(DomainError::InvalidJson),
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1271,6 +1273,7 @@ pub enum Termination {
     StopToken,
     MaxTokens,
     Invalid,
+    RepetitionLoop,
 }
 
 impl Termination {
@@ -1280,6 +1283,7 @@ impl Termination {
             Self::StopToken => "stop_token",
             Self::MaxTokens => "max_tokens",
             Self::Invalid => "invalid",
+            Self::RepetitionLoop => "repetition_loop",
         }
     }
 }
@@ -1289,6 +1293,7 @@ pub enum PageWarning {
     Truncated,
     RepetitionRemoved,
     RenderScaled,
+    Degenerated,
 }
 
 impl PageWarning {
@@ -1297,6 +1302,7 @@ impl PageWarning {
             Self::Truncated => "truncated",
             Self::RepetitionRemoved => "repetition_removed",
             Self::RenderScaled => "render_scaled",
+            Self::Degenerated => "degenerated",
         }
     }
 }
@@ -1838,10 +1844,8 @@ mod tests {
         for (termination, warnings) in [
             (Termination::Eos, vec![]),
             (Termination::MaxTokens, vec![PageWarning::Truncated]),
-            (
-                Termination::Invalid,
-                vec![PageWarning::RepetitionRemoved, PageWarning::RenderScaled],
-            ),
+            (Termination::Invalid, vec![PageWarning::RepetitionRemoved, PageWarning::RenderScaled]),
+            (Termination::RepetitionLoop, vec![PageWarning::Degenerated]),
         ] {
             let document = PageDocument {
                 schema_version: 1,
