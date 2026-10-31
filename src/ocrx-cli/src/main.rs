@@ -1075,6 +1075,22 @@ fn validate_output_policy(input: &Path, output: &Path, protected: &[&Path]) -> R
     ocrx_output::validate_output_root(input, output, protected).map_err(|error| error.to_string())
 }
 
+/// Full output policy for a scan: the shared root validator plus the
+/// working-directory rule. The working directory is protected
+/// one-directionally — an output at or above it is refused (`--overwrite`
+/// deletes the whole output tree), while a subdirectory of it is the normal
+/// layout and must pass.
+fn validate_scan_output_policy(
+    input: &Path,
+    output: &Path,
+    protected: &[&Path],
+    working_directory: &Path,
+) -> Result<(), String> {
+    validate_output_policy(input, output, protected)?;
+    ocrx_output::validate_output_not_containing(output, working_directory)
+        .map_err(|error| error.to_string())
+}
+
 #[allow(dead_code)]
 fn format_cli_result(report: &ResultReport, report_format: &str) -> Result<String, String> {
     let format = match report_format {
@@ -2003,16 +2019,21 @@ fn run_scan(options: ScanOptions) -> ! {
     // %TEMP%, and protecting the root itself would outlaw every temp-dir
     // output. An output AT the cache root is still rejected because it is an
     // ancestor of the protected subtree.
+    //
+    // The working directory is NOT in this symmetric list: an output below it
+    // (`--output-dir out`, the default `<input dir>/<stem>-ocr`) is the normal
+    // layout and must pass. It gets the one-directional rule instead — the
+    // directory itself and every ancestor of it are still refused.
     let protected_cache_roots = [cache.join("ocrx").join("models"), cache.join("ovisocr2")];
     {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let protected = [
             canonical_input.as_path(),
             protected_cache_roots[0].as_path(),
             protected_cache_roots[1].as_path(),
-            cwd.as_path(),
         ];
-        if let Err(error) = validate_output_policy(&canonical_input, &output, &protected) {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        if let Err(error) = validate_scan_output_policy(&canonical_input, &output, &protected, &cwd)
+        {
             reporter.error(
                 &ErrorReport {
                     code: 9,
@@ -2049,20 +2070,26 @@ fn run_scan(options: ScanOptions) -> ! {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         // Same protected set as the per-scan check above (model subtrees, not
         // the whole cache root) — the deletion target must not be able to
-        // reach the model layout through any spelling.
+        // reach the model layout through any spelling. The working directory
+        // uses the one-directional rule: removing the output tree must not be
+        // able to take the cwd (or anything above it) with it.
         let protected = [
             canonical_input.as_path(),
             protected_cache_roots[0].as_path(),
             protected_cache_roots[1].as_path(),
-            cwd.as_path(),
         ];
-        if let Err(error) = remove_for_overwrite(&canonical_input, &output, &protected) {
+        let policy = validate_scan_output_policy(&canonical_input, &output, &protected, &cwd)
+            .and_then(|()| {
+                remove_for_overwrite(&canonical_input, &output, &protected)
+                    .map_err(|error| error.to_string())
+            });
+        if let Err(error) = policy {
             reporter.error(
                 &ErrorReport {
                     code: 9,
                     kind: "output".to_owned(),
                     message: "overwrite refused for unsafe output path".to_owned(),
-                    cause: Some(error.to_string()),
+                    cause: Some(error),
                     suggestion: Some("choose a dedicated output directory".to_owned()),
                 },
                 report_format,
@@ -4598,5 +4625,40 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn scan_output_policy_allows_subdirectory_but_not_ancestor_of_working_directory() {
+        // Regression guard: the working directory used to sit in the symmetric
+        // protected list, which rejected every output below it and made scans
+        // run from the PDF's own directory (`--output-dir out`, the default
+        // `<input dir>/<stem>-ocr`) fail with exit 9.
+        let (input, cache, cwd) = if cfg!(target_os = "windows") {
+            (
+                Path::new("C:\\work\\input.pdf"),
+                Path::new("C:\\work\\cache\\ocrx\\models"),
+                Path::new("C:\\work\\project"),
+            )
+        } else {
+            (
+                Path::new("/work/input.pdf"),
+                Path::new("/work/cache/ocrx/models"),
+                Path::new("/work/project"),
+            )
+        };
+        assert!(
+            super::validate_scan_output_policy(input, cwd.join("out").as_path(), &[cache], cwd)
+                .is_ok(),
+            "a subdirectory of the working directory is the normal layout"
+        );
+        // The working directory itself and every ancestor of it stay refused:
+        // --overwrite deletes the whole output tree.
+        assert!(super::validate_scan_output_policy(input, cwd, &[cache], cwd).is_err());
+        let ancestor = if cfg!(target_os = "windows") {
+            Path::new("C:\\work")
+        } else {
+            Path::new("/work")
+        };
+        assert!(super::validate_scan_output_policy(input, ancestor, &[cache], cwd).is_err());
     }
 }

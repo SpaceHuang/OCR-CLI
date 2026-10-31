@@ -1799,6 +1799,30 @@ pub fn validate_output_root(
     Ok(())
 }
 
+/// Validates the working-directory rule for a scan output root: `output` must
+/// not be `protected` itself and must not live ABOVE it, while a dedicated
+/// subdirectory underneath `protected` stays allowed.
+///
+/// Deliberately one-directional, unlike `paths_overlap`: `--overwrite` removes
+/// the whole output tree, so an output at or above the working directory would
+/// take the working directory with it, but an output below it
+/// (`--output-dir out`, the default `<input dir>/<stem>-ocr`) is the normal
+/// layout and must pass.
+pub fn validate_output_not_containing(
+    output: impl AsRef<Path>,
+    protected: impl AsRef<Path>,
+) -> io::Result<()> {
+    let output_canonical = canonical_form(&lexically_normalize(output.as_ref()));
+    let protected_canonical = canonical_form(&lexically_normalize(protected.as_ref()));
+    if path_contains(&output_canonical, &protected_canonical) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "output root is the working directory or an ancestor of it",
+        ));
+    }
+    Ok(())
+}
+
 pub fn remove_for_overwrite(
     input: impl AsRef<Path>,
     output: impl AsRef<Path>,
@@ -2429,6 +2453,54 @@ mod tests {
         assert!(
             super::validate_output_root(&input, &output, &[protected.as_path()]).is_err(),
             "canonicalized comparison must catch the case-variant ancestor"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn output_may_sit_below_but_not_at_or_above_the_working_directory() {
+        // The working-directory rule is one-directional: a subdirectory is the
+        // normal `--output-dir out` layout, while the directory itself and
+        // every ancestor are refused because --overwrite deletes the whole
+        // output tree.
+        let (root, cwd) = if cfg!(target_os = "windows") {
+            (
+                std::path::Path::new("C:\\"),
+                std::path::PathBuf::from("C:\\work\\project"),
+            )
+        } else {
+            (std::path::Path::new("/"), std::path::PathBuf::from("/work/project"))
+        };
+        assert!(super::validate_output_not_containing(&cwd.join("paper-ocr"), &cwd).is_ok());
+        assert!(
+            super::validate_output_not_containing(&cwd.join("out").join("x"), &cwd).is_ok()
+        );
+        assert!(super::validate_output_not_containing(root, &cwd).is_err());
+        assert!(super::validate_output_not_containing(&cwd, &cwd).is_err());
+    }
+
+    #[test]
+    fn output_containing_working_directory_folds_case_on_windows() {
+        // NTFS matches paths case-insensitively: `C:\...\PROJECT` contains the
+        // working directory `C:\...\Project` even though the components differ
+        // in case, while a subdirectory spelled with a case variant stays
+        // allowed.
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("ocrx-wdcwd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let working_directory = base.join("Project");
+        std::fs::create_dir_all(&working_directory).unwrap();
+        assert!(
+            super::validate_output_not_containing(&base.join("PROJECT"), &working_directory)
+                .is_err(),
+            "case-variant ancestor of the working directory must be rejected"
+        );
+        assert!(
+            super::validate_output_not_containing(&base.join("project").join("out"), &working_directory)
+                .is_ok(),
+            "case-variant subdirectory of the working directory is the normal layout"
         );
         let _ = std::fs::remove_dir_all(&base);
     }
