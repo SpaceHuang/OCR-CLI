@@ -1823,12 +1823,18 @@ pub fn validate_output_not_containing(
     Ok(())
 }
 
+/// Removes `output` after the full overwrite guard set: the shared root
+/// validator (absolute path, `..`/trailing-dot-spaces refusal, input overlap,
+/// protected roots) plus the one-directional working-directory rule — the
+/// deletion target must not be the working directory or an ancestor of it.
 pub fn remove_for_overwrite(
     input: impl AsRef<Path>,
     output: impl AsRef<Path>,
     protected_roots: &[&Path],
+    working_directory: impl AsRef<Path>,
 ) -> io::Result<()> {
     validate_output_root(&input, &output, protected_roots)?;
+    validate_output_not_containing(&output, working_directory)?;
     let output = output.as_ref();
     if output.exists() {
         fs::remove_dir_all(output)?;
@@ -3058,9 +3064,17 @@ mod tests {
         fs::write(directory.join("old"), b"old").unwrap();
         let input = std::path::Path::new("/work/input.pdf");
         let protected = std::path::Path::new("/work/.cache");
-        super::remove_for_overwrite(input, &directory, &[protected]).unwrap();
+        let working_directory = std::path::Path::new("/work/elsewhere");
+        super::remove_for_overwrite(input, &directory, &[protected], working_directory).unwrap();
         assert!(!directory.exists());
-        assert!(super::remove_for_overwrite(input, "/work", &[protected]).is_err());
+        assert!(super::remove_for_overwrite(input, "/work", &[protected], working_directory)
+            .is_err());
+        // The working-directory guard travels with the deletion API itself,
+        // not only with the CLI wrapper.
+        assert!(
+            super::remove_for_overwrite(input, working_directory, &[protected], working_directory)
+                .is_err()
+        );
     }
 
     #[test]

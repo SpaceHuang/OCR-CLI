@@ -1880,6 +1880,27 @@ fn run_scan(options: ScanOptions) -> ! {
             std::process::exit(2);
         }
     };
+    // Fail closed: a working directory that cannot be resolved (deleted cwd)
+    // must abort the scan instead of silently skipping the cwd rule below —
+    // an empty fallback path would make every output pass that rule.
+    let working_directory = match std::env::current_dir() {
+        Ok(directory) => directory,
+        Err(error) => {
+            reporter.error(
+                &ErrorReport {
+                    code: 9,
+                    kind: "output".to_owned(),
+                    message: "cannot resolve the working directory for output validation"
+                        .to_owned(),
+                    cause: Some(error.to_string()),
+                    suggestion: Some("run ocrx from an existing directory".to_owned()),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(9);
+        }
+    };
     let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
@@ -2031,14 +2052,20 @@ fn run_scan(options: ScanOptions) -> ! {
             protected_cache_roots[0].as_path(),
             protected_cache_roots[1].as_path(),
         ];
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        if let Err(error) = validate_scan_output_policy(&canonical_input, &output, &protected, &cwd)
-        {
+        if let Err(error) = validate_scan_output_policy(
+            &canonical_input,
+            &output,
+            &protected,
+            &working_directory,
+        ) {
             reporter.error(
                 &ErrorReport {
                     code: 9,
                     kind: "output".to_owned(),
-                    message: "output directory overlaps a protected path".to_owned(),
+                    // The cause distinguishes the rules (absolute spelling,
+                    // input overlap, protected root, working directory); the
+                    // top-level message must stay accurate for all of them.
+                    message: "output directory refused by the output policy".to_owned(),
                     cause: Some(error),
                     suggestion: Some("choose a dedicated output directory".to_owned()),
                 },
@@ -2067,29 +2094,25 @@ fn run_scan(options: ScanOptions) -> ! {
         std::process::exit(9);
     }
     if options.overwrite {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         // Same protected set as the per-scan check above (model subtrees, not
         // the whole cache root) — the deletion target must not be able to
-        // reach the model layout through any spelling. The working directory
-        // uses the one-directional rule: removing the output tree must not be
-        // able to take the cwd (or anything above it) with it.
+        // reach the model layout through any spelling. The working-directory
+        // rule is applied inside remove_for_overwrite itself, so a direct
+        // library caller cannot delete the cwd (or anything above it) either.
         let protected = [
             canonical_input.as_path(),
             protected_cache_roots[0].as_path(),
             protected_cache_roots[1].as_path(),
         ];
-        let policy = validate_scan_output_policy(&canonical_input, &output, &protected, &cwd)
-            .and_then(|()| {
-                remove_for_overwrite(&canonical_input, &output, &protected)
-                    .map_err(|error| error.to_string())
-            });
-        if let Err(error) = policy {
+        if let Err(error) =
+            remove_for_overwrite(&canonical_input, &output, &protected, &working_directory)
+        {
             reporter.error(
                 &ErrorReport {
                     code: 9,
                     kind: "output".to_owned(),
                     message: "overwrite refused for unsafe output path".to_owned(),
-                    cause: Some(error),
+                    cause: Some(error.to_string()),
                     suggestion: Some("choose a dedicated output directory".to_owned()),
                 },
                 report_format,
