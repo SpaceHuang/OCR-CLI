@@ -499,9 +499,7 @@ fn crop_line_level_period(text: &str) -> Option<String> {
         // The block must already repeat twice; count the total number of
         // trailing repeats to keep exactly one.
         let mut repeats = 1_usize;
-        while repeats * p * 2 <= n
-            && lines[n - (repeats + 1) * p..n - repeats * p] == *block
-        {
+        while repeats * p * 2 <= n && lines[n - (repeats + 1) * p..n - repeats * p] == *block {
             repeats += 1;
         }
         if repeats < 2 {
@@ -971,7 +969,10 @@ mod tests {
         let with_partial =
             degenerate_tail_crop(&format!("real content\n{period}{period}{period}{partial}"));
         assert!(with_partial.degenerated);
-        assert_eq!(with_partial.text, format!("real content\n{period}{partial}"));
+        assert_eq!(
+            with_partial.text,
+            format!("real content\n{period}{partial}")
+        );
         // bbox tag loop: degenerated, but the stripped text did not change.
         let bbox_tag = "<img src=\"images/bbox_10_20_300_400.jpg\">";
         let bbox_loop = degenerate_tail_crop(&format!("text\n{bbox_tag}{bbox_tag}{bbox_tag}"));
@@ -1058,7 +1059,9 @@ mod tests {
             finish_reason: reason.to_owned(),
         };
         assert_eq!(
-            adapt_response(1, &response("repetition_loop")).unwrap().termination,
+            adapt_response(1, &response("repetition_loop"))
+                .unwrap()
+                .termination,
             Termination::RepetitionLoop
         );
         assert_eq!(
@@ -1070,7 +1073,9 @@ mod tests {
             Termination::Eos
         );
         assert_eq!(
-            adapt_response(1, &response("stop_token")).unwrap().termination,
+            adapt_response(1, &response("stop_token"))
+                .unwrap()
+                .termination,
             Termination::StopToken
         );
     }
@@ -1130,14 +1135,18 @@ mod tests {
         let period = "依次按键 $\\tan^{1}F$ 2 2 1 8";
         assert!(!output.markdown.contains(&period.repeat(2)));
         assert!(output.degenerated);
-        assert!(output
-            .warnings
-            .iter()
-            .any(|warning| warning == "degenerated"));
-        assert!(output
-            .warnings
-            .iter()
-            .any(|warning| warning == "repetition_removed"));
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning == "degenerated")
+        );
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning == "repetition_removed")
+        );
         assert!(output.truncated);
         // page.json carries the entry crop metadata; artifacts are persisted
         // by the output layer, so the in-process json is the contract here.
@@ -1146,7 +1155,10 @@ mod tests {
         assert!(document.warnings.contains(&PageWarning::RepetitionRemoved));
         assert_eq!(document.termination, Termination::MaxTokens);
         // The raw sidecar payload (pre-crop normalized output) is available.
-        assert_eq!(output.raw_output, format!("real content\n{period}{period}{period}"));
+        assert_eq!(
+            output.raw_output,
+            format!("real content\n{period}{period}{period}")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -1844,7 +1844,10 @@ mod tests {
         for (termination, warnings) in [
             (Termination::Eos, vec![]),
             (Termination::MaxTokens, vec![PageWarning::Truncated]),
-            (Termination::Invalid, vec![PageWarning::RepetitionRemoved, PageWarning::RenderScaled]),
+            (
+                Termination::Invalid,
+                vec![PageWarning::RepetitionRemoved, PageWarning::RenderScaled],
+            ),
             (Termination::RepetitionLoop, vec![PageWarning::Degenerated]),
         ] {
             let document = PageDocument {

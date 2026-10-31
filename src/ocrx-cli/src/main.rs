@@ -9,10 +9,10 @@ use ocrx_models::{
 use ocrx_output::{
     CancellationToken, CheckpointResumeAction, CompatibilityKey, ErrorReport, GenerationProgress,
     ModelLoader, OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageDiagnostic,
-    PageMarkdown, PageRenderer, ProgressEvent, ProgressMode, ProgressStage, RenderAudit,
-    RenderedPage, ReportFormat, Reporter, ResultReport, ScanService, collect_page_markdowns,
-    commit_native_page_and_collect, finalize_document, format_report, merge_ocr_queue,
-    read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
+    PageIncomplete, PageMarkdown, PageRenderer, ProgressEvent, ProgressMode, ProgressStage,
+    RenderAudit, RenderedPage, ReportFormat, Reporter, ResultReport, ScanService,
+    collect_page_markdowns, commit_native_page_and_collect, finalize_document, format_report,
+    merge_ocr_queue, read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
 };
 use ocrx_pdf::{
     PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
@@ -952,12 +952,19 @@ fn collect_verified_page_markdowns(
             let checkpoint = read_checkpoint(checkpoint_path).ok()?;
             checkpoint
                 .is_reusable_at(compatibility, output, *page)
-                .then_some(*page)
+                .then_some((*page, checkpoint))
         })
-        .map(|page| {
+        .map(|(page, checkpoint)| {
             Ok(PageMarkdown {
                 page_number: page,
                 content: std::fs::read_to_string(output.join(format!("page-{page:04}.md")))?,
+                incomplete: if checkpoint.degenerated {
+                    Some(PageIncomplete::Degenerated)
+                } else if checkpoint.truncated {
+                    Some(PageIncomplete::Truncated)
+                } else {
+                    None
+                },
             })
         })
         .collect()
@@ -1631,6 +1638,29 @@ impl PageRenderer for PdfScanRenderer {
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+        self.render_with_scale(page, 1, 1)
+    }
+    fn render_perturbed(
+        &mut self,
+        page: u32,
+        numerator: u32,
+        denominator: u32,
+    ) -> std::io::Result<RenderedPage> {
+        self.render_with_scale(page, numerator, denominator)
+    }
+}
+
+impl PdfScanRenderer {
+    /// Renders one page, optionally rescaling the model input by
+    /// `numerator`/`denominator` (degeneration retry perturbation, plan §3.5):
+    /// the resample changes pixels and therefore logits while aspect ratio and
+    /// the pixel budget constraint are preserved; the audit records it.
+    fn render_with_scale(
+        &mut self,
+        page: u32,
+        scale_numerator: u32,
+        scale_denominator: u32,
+    ) -> std::io::Result<RenderedPage> {
         inject_render_failure(page)?;
         const PIXEL_BUDGET: u64 = 2880 * 2880;
         let (image, original_width, original_height) = self
@@ -1647,8 +1677,31 @@ impl PageRenderer for PdfScanRenderer {
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         let rendered_width = image.width();
         let rendered_height = image.height();
+        let image = if scale_numerator == scale_denominator {
+            image
+        } else {
+            let scaled_width = u32::try_from(
+                (u64::from(rendered_width) * u64::from(scale_numerator))
+                    / u64::from(scale_denominator),
+            )
+            .map_err(|_| std::io::Error::other("scaled width out of range"))?
+            .max(1);
+            let scaled_height = u32::try_from(
+                (u64::from(rendered_height) * u64::from(scale_numerator))
+                    / u64::from(scale_denominator),
+            )
+            .map_err(|_| std::io::Error::other("scaled height out of range"))?
+            .max(1);
+            image::imageops::resize(
+                &image,
+                scaled_width,
+                scaled_height,
+                image::imageops::FilterType::Triangle,
+            )
+        };
         let (model_width, model_height, scaled) =
-            fit_pixel_budget(rendered_width, rendered_height, PIXEL_BUDGET);
+            fit_pixel_budget(image.width(), image.height(), PIXEL_BUDGET);
+        let scaled_input_width = image.width();
         let rgb = if scaled {
             image::imageops::resize(
                 &image,
@@ -1660,7 +1713,7 @@ impl PageRenderer for PdfScanRenderer {
             image
         };
         let (scale_ratio_numerator, scale_ratio_denominator) =
-            linear_scale_ratio(model_width, rendered_width);
+            linear_scale_ratio(model_width, scaled_input_width);
         RenderedPage::new(rgb.width(), rgb.height(), rgb.into_raw()).map(|page| {
             page.with_audit(RenderAudit {
                 original_width,
@@ -1826,7 +1879,9 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             markdown: artifact.markdown,
             page_json: artifact.page_json,
             truncated: artifact.truncated,
+            degenerated: artifact.degenerated,
             warnings: artifact.warnings,
+            raw_output: artifact.raw_output,
         })
     }
 }
@@ -2267,6 +2322,9 @@ fn run_scan(options: ScanOptions) -> ! {
                 complete: true,
                 output_sha256: String::new(),
                 truncated: false,
+                degenerated: false,
+                attempts: 1,
+                raw: None,
                 warnings: Vec::new(),
                 audit: None,
             };
@@ -2327,6 +2385,9 @@ fn run_scan(options: ScanOptions) -> ! {
             complete: true,
             output_sha256: String::new(),
             truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
             warnings: Vec::new(),
             audit: None,
         };
@@ -2486,6 +2547,7 @@ fn run_scan(options: ScanOptions) -> ! {
                     completed_pages,
                     failed_pages: ocr_service_pages.len() as u32,
                     truncated_pages: 0,
+                    degenerated_pages: 0,
                     warnings: vec![unavailable_reason],
                     diagnostics: ocr_service_pages
                         .iter()
@@ -2661,6 +2723,7 @@ fn run_scan(options: ScanOptions) -> ! {
             completed_pages: 0,
             failed_pages: 0,
             truncated_pages: 0,
+            degenerated_pages: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -2713,7 +2776,10 @@ fn run_scan(options: ScanOptions) -> ! {
                     terminal_pending_pages.remove(&diagnostic.page);
                 }
             }
-            if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+            if summary.failed_pages == 0
+                && summary.truncated_pages == 0
+                && summary.degenerated_pages == 0
+            {
                 for page in &ocr_service_pages {
                     terminal_pending_pages.remove(page);
                 }
@@ -2799,7 +2865,10 @@ fn run_scan(options: ScanOptions) -> ! {
                 + summary.completed_pages;
             let report = ResultReport {
                 job_id: "scan".to_owned(),
-                status: if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+                status: if summary.failed_pages == 0
+                    && summary.truncated_pages == 0
+                    && summary.degenerated_pages == 0
+                {
                     ocrx_output::ResultStatus::Success
                 } else {
                     ocrx_output::ResultStatus::Partial
@@ -2855,7 +2924,10 @@ fn run_scan(options: ScanOptions) -> ! {
                 .is_file()
                 .then(|| output.join("document.md"));
             let result_json = serialize_scan_result(&ScanResultFields {
-                status: if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+                status: if summary.failed_pages == 0
+                    && summary.truncated_pages == 0
+                    && summary.degenerated_pages == 0
+                {
                     "success"
                 } else {
                     "partial"
@@ -2872,6 +2944,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 completed_pages,
                 failed_pages: summary.failed_pages,
                 truncated_pages: summary.truncated_pages,
+                degenerated_pages: summary.degenerated_pages,
                 warnings: summary.warnings.clone(),
                 diagnostics: summary.diagnostics.clone(),
                 pdf_routing: final_routing_diagnostics_with_pending(
@@ -2935,6 +3008,10 @@ fn run_scan(options: ScanOptions) -> ! {
                     ocrx_pdf::summarize_document_type(&classifications),
                     counts,
                 ));
+                if let Some(line) = incomplete_pages_warning(&summary, options.max_output_tokens) {
+                    reporter.stdout.push_str(&line);
+                    reporter.stdout.push('\n');
+                }
             }
             reporter.progress(
                 &ProgressEvent::for_stage(
@@ -2947,7 +3024,10 @@ fn run_scan(options: ScanOptions) -> ! {
             );
             print_reporter(reporter);
             std::process::exit(
-                if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+                if summary.failed_pages == 0
+                    && summary.truncated_pages == 0
+                    && summary.degenerated_pages == 0
+                {
                     0
                 } else {
                     10
@@ -2976,6 +3056,41 @@ fn run_scan(options: ScanOptions) -> ! {
             std::process::exit(6);
         }
     }
+}
+
+/// Builds the actionable exit-10 advice line (plan §3.5, G5): lists the
+/// affected pages with their cause and points at the working recovery path.
+fn incomplete_pages_warning(
+    summary: &ocrx_output::JobSummary,
+    requested_budget: Option<u32>,
+) -> Option<String> {
+    let mut entries = Vec::new();
+    let mut has_degenerated = false;
+    for diagnostic in &summary.diagnostics {
+        let degenerated = diagnostic.warnings.iter().any(|w| w == "degenerated");
+        let truncated = diagnostic.warnings.iter().any(|w| w == "truncated");
+        if degenerated {
+            entries.push(format!("page {} (degenerated)", diagnostic.page));
+            has_degenerated = true;
+        } else if truncated {
+            entries.push(format!("page {} (truncated)", diagnostic.page));
+        }
+    }
+    if entries.is_empty() {
+        return None;
+    }
+    let advice = if has_degenerated {
+        "rerun with --resume to retry degenerated pages"
+    } else if requested_budget.is_some_and(|budget| budget < ocrx_ovisocr2::MAX_OUTPUT_TOKENS) {
+        "rerun with the default --max-output-tokens to raise the per-page budget and rescan"
+    } else {
+        "the page exceeds the single-page output budget cap and stays marked incomplete"
+    };
+    Some(format!(
+        "warning: {} page(s) incomplete — {}; {advice}",
+        entries.len(),
+        entries.join(", ")
+    ))
 }
 
 fn classify_input_error(input: &Path, message: &str) -> PdfErrorKind {
@@ -3034,6 +3149,7 @@ struct ScanResultFields<'a> {
     completed_pages: u32,
     failed_pages: u32,
     truncated_pages: u32,
+    degenerated_pages: u32,
     warnings: Vec<String>,
     diagnostics: Vec<PageDiagnostic>,
     pdf_routing: Vec<String>,
@@ -3088,7 +3204,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         .join(",");
     let pdf_routing = fields.pdf_routing.join(",");
     format!(
-        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
+        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
         fields.status,
         json_escape_path(fields.input),
         markdown,
@@ -3102,6 +3218,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         fields.completed_pages,
         fields.failed_pages,
         fields.truncated_pages,
+        fields.degenerated_pages,
         fields.routing_counts.native_text,
         fields.routing_counts.ocr,
         fields.routing_counts.empty,
@@ -4244,6 +4361,7 @@ mod tests {
     fn scan_result_json_preserves_truncation_and_escapes_paths() {
         let input = Path::new("/tmp/input\tname\n.pdf");
         let json = super::serialize_scan_result(&ScanResultFields {
+            degenerated_pages: 0,
             status: "partial",
             input,
             markdown_path: None,
@@ -4285,6 +4403,7 @@ mod tests {
     fn scan_result_json_exposes_routing_metadata_alias() {
         let routing = "{\"page\":3,\"classification\":{},\"processing\":{\"planned_method\":\"native_text\",\"actual_method\":\"ocr\",\"fallback_reason\":\"native_validation_failed\"}}".to_owned();
         let json = super::serialize_scan_result(&ScanResultFields {
+            degenerated_pages: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,
@@ -4318,6 +4437,7 @@ mod tests {
     #[test]
     fn scan_result_json_preserves_page_diagnostic_warnings_and_audit() {
         let json = super::serialize_scan_result(&ScanResultFields {
+            degenerated_pages: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,
