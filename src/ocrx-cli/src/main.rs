@@ -4267,9 +4267,7 @@ mod tests {
         // never success/exit 0.
         let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let input = workspace.join("benchmarks/fixtures/pdf/normal-1-page.pdf");
-        if !input.is_file() {
-            panic!("pdf fixture missing: {}", input.display());
-        }
+        assert!(input.is_file(), "pdf fixture missing: {}", input.display());
         // pdfium is a vendored, gitignored binary: prefer the vendored copy,
         // then the ambient OCRX_PDFIUM_LIBRARY, and skip when neither exists.
         let pdfium = workspace.join("vendor/pdfium/bin/pdfium.dll");
@@ -4285,6 +4283,7 @@ mod tests {
             eprintln!("skipping: pdfium library not found: {}", pdfium.display());
             return;
         }
+        let _ = 0;
         let root = std::env::temp_dir().join(format!(
             "ocrx-resume-truncated-{}-{}",
             std::process::id(),

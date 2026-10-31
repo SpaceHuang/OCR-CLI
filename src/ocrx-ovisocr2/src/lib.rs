@@ -523,6 +523,12 @@ fn crop_line_level_period(text: &str) -> Option<String> {
 /// repetitions (at least [`INLINE_MIN_REPEATS`]) end at the segment tail,
 /// tolerating one incomplete period at the very end; keeps exactly one period
 /// and drops the incomplete tail.
+///
+/// All periodicity comparisons run on raw bytes — a multi-byte period never
+/// gets sliced at an unverified byte offset, so no UTF-8 input can panic the
+/// crop (review BLK-1). The trailing partial must be a byte prefix of the
+/// period (a genuinely truncated next period); an unrelated tail after the
+/// repeats means this is normal text and must not be cropped (review round 2).
 fn crop_inline_level_period(text: &str) -> Option<String> {
     // Trailing newlines belong to no content line; the detector inspects the
     // trimmed tail so a loop line followed by a final newline still matches.
@@ -531,53 +537,90 @@ fn crop_inline_level_period(text: &str) -> Option<String> {
         Some((head, segment)) => (Some(head), segment),
         None => (None, trimmed),
     };
-    let len = segment.len();
+    let bytes = segment.as_bytes();
+    let len = bytes.len();
+    if len < INLINE_MIN_PERIOD * INLINE_MIN_REPEATS {
+        return None;
+    }
+    // All periodicity comparisons run on raw bytes — a multi-byte period is
+    // never sliced at an unverified byte offset, so no UTF-8 input can panic
+    // the crop (review BLK-1).
+    //
+    // Phase 1: the whole segment is periodic with period `p` and ends exactly
+    // on a period boundary — keep the last period. A rotation-aligned `p`
+    // with `len % p != 0` must NOT match here: it would fold a genuinely
+    // non-periodic (or truncated) tail into the "period" and mis-crop normal
+    // text like `abcdefghabcdefghabcdefghXYZ` (review round 2).
     for p in INLINE_MIN_PERIOD..=INLINE_MAX_PERIOD {
-        if len < p * INLINE_MIN_REPEATS {
+        if p * INLINE_MIN_REPEATS > len {
             break;
         }
-        // `end` is where the region of complete periods ends; everything after
-        // it (at most `p - 1` bytes) is an incomplete period cropped with the
-        // loop. `end == len` means the segment ends exactly on a period
-        // boundary. All slice points must land on char boundaries.
-        let max_partial = (p - 1).min(len - p * INLINE_MIN_REPEATS);
-        for partial in 0..=max_partial {
-            let end = len - partial;
-            if !segment.is_char_boundary(end)
-                || !segment.is_char_boundary(end - p)
-                || !segment.is_char_boundary(end - 2 * p)
-            {
-                continue;
-            }
-            let period = &segment[end - p..end];
-            if &segment[end - 2 * p..end - p] != period
-                || &segment[end - 3 * p..end - 2 * p] != period
-            {
-                continue;
-            }
-            // The trailing partial (at most `p - 1` bytes after the last
-            // complete period) is an incomplete next period at the
-            // max_tokens cut and is cropped with the loop regardless of its
-            // content — byte-prefix compatibility must not be required, or a
-            // non-prefix cut tail would defeat detection (BLK-1).
-            // Count the full trailing repeats and keep exactly one period.
-            let mut repeats = 3_usize;
-            while end >= (repeats + 1) * p
-                && &segment[end - (repeats + 1) * p..end - repeats * p] == period
-            {
-                repeats += 1;
-            }
-            let mut output = String::with_capacity(text.len());
-            if let Some(head) = head {
-                output.push_str(head);
-                output.push('\n');
-            }
-            output.push_str(&segment[..end - repeats * p]);
-            output.push_str(period);
-            return Some(output);
+        if len % p != 0 || !(0..len - p).all(|i| bytes[i] == bytes[i + p]) {
+            continue;
         }
+        let start = len - p;
+        if !segment.is_char_boundary(start) {
+            continue;
+        }
+        return Some(join_head_and_period(head, "", &segment[start..]));
+    }
+    // Phase 2: complete periods end at `end`, followed by a truncated next
+    // period that must be a byte prefix of the period; keep the pre-loop
+    // content plus one period and drop the partial tail (plan §3.2.2:
+    // 不完整块随环一起裁剪). The complete-period region must sit on the
+    // segment's own period grid (`end % p == 0`): a rotation-aligned window
+    // would fold the trailing bytes into a shifted "period" and mis-crop
+    // (the same false-positive family as phase 1).
+    for p in INLINE_MIN_PERIOD..=INLINE_MAX_PERIOD {
+        if p * INLINE_MIN_REPEATS > len {
+            break;
+        }
+        let end = (len / p) * p;
+        if end == len || end < p * INLINE_MIN_REPEATS {
+            continue;
+        }
+        let partial = len - end;
+        let period = &bytes[end - p..end];
+        if bytes[end - 2 * p..end - p] != *period || bytes[end - 3 * p..end - 2 * p] != *period {
+            continue;
+        }
+        if !bytes[end..].starts_with(&period[..partial]) {
+            continue;
+        }
+        // Count the full trailing repeats and keep exactly one period.
+        let mut repeats = INLINE_MIN_REPEATS;
+        while end >= (repeats + 1) * p
+            && bytes[end - (repeats + 1) * p..end - repeats * p] == *period
+        {
+            repeats += 1;
+        }
+        let start = end - repeats * p;
+        // The output slices are only taken at verified char boundaries; when
+        // a boundary falls inside a multi-byte character this candidate
+        // cannot be cropped exactly, so try the next period instead of
+        // panicking.
+        if !segment.is_char_boundary(start) || !segment.is_char_boundary(end - p) {
+            continue;
+        }
+        return Some(join_head_and_period(
+            head,
+            &segment[..start],
+            &segment[end - p..end],
+        ));
     }
     None
+}
+
+/// Assembles the cropped text: pre-loop content, then exactly one full period.
+fn join_head_and_period(head: Option<&str>, pre: &str, period: &str) -> String {
+    let mut output = String::with_capacity(pre.len() + period.len() + 2);
+    if let Some(head) = head {
+        output.push_str(head);
+        output.push('\n');
+    }
+    output.push_str(pre);
+    output.push_str(period);
+    output
 }
 
 fn remove_bbox_image_placeholders(raw: &str) -> String {
@@ -984,17 +1027,13 @@ mod tests {
         let repeated = degenerate_tail_crop(&format!("real content\n{period}{period}{period}"));
         assert!(repeated.degenerated && repeated.repetition_removed);
         assert_eq!(repeated.text, format!("real content\n{period}"));
-        // Trailing incomplete period: because the partial is a prefix of the
-        // full period, the overlap keeps one full period plus the incomplete
-        // one — still a correct, idempotent degenerate crop.
+        // Trailing incomplete period (a true prefix of the period) is cropped
+        // together with the loop; exactly one period is kept.
         let partial: String = period.chars().take(6).collect();
         let with_partial =
             degenerate_tail_crop(&format!("real content\n{period}{period}{period}{partial}"));
         assert!(with_partial.degenerated);
-        assert_eq!(
-            with_partial.text,
-            format!("real content\n{period}{partial}")
-        );
+        assert_eq!(with_partial.text, format!("real content\n{period}"));
         // bbox tag loop: degenerated, but the stripped text did not change.
         let bbox_tag = "<img src=\"images/bbox_10_20_300_400.jpg\">";
         let bbox_loop = degenerate_tail_crop(&format!("text\n{bbox_tag}{bbox_tag}{bbox_tag}"));
@@ -1005,34 +1044,45 @@ mod tests {
 
     #[test]
     fn non_ascii_period_with_different_partial_tail_does_not_panic() {
-        // BLK-1 regression: the partial tail's byte offset is not a char
-        // boundary of the multi-byte period; the crop must return a
-        // degenerated result instead of panicking.
+        // BLK-1 regression: any multi-byte input must return a verdict, never
+        // panic — including unverified byte-offset slices (review round 1/2).
+        // The 'a' tail is not a prefix of the period: normal text, uncropped.
         let crop = degenerate_tail_crop("循环片段循环片段循环片段a");
+        assert!(!crop.degenerated);
+        assert_eq!(crop.text, "循环片段循环片段循环片段a");
+        // A Chinese truncated period prefix is detected and cropped.
+        let crop = degenerate_tail_crop("循环片段循环片段循环片段循环");
         assert!(crop.degenerated);
-        assert!(crop.repetition_removed);
         assert_eq!(crop.text, "循环片段");
         // Re-cropping is idempotent.
         let second = degenerate_tail_crop(&crop.text);
         assert_eq!(second.text, crop.text);
         assert!(!second.degenerated);
-        // Chinese partial tail of a Chinese period.
-        let crop = degenerate_tail_crop("循环片段循环片段循环片段循环");
-        assert!(crop.degenerated);
-        // Incident-shape Chinese period with an unrelated ASCII tail.
-        let period = "依次按键 $\\tan^{1}F$ 2 2 1 8";
-        let crop = degenerate_tail_crop(&format!("{period}{period}{period}ab"));
-        assert!(crop.degenerated);
-        // Production path: an adapter response with this shape must not panic.
+        // Production path with the same shape must not panic either.
         let page = adapt_response(
             1,
             &InferenceResponse {
-                raw_output: "正文\n循环片段循环片段循环片段a".to_owned(),
+                raw_output: "正文
+循环片段循环片段循环片段a"
+                    .to_owned(),
                 finish_reason: "max_tokens".to_owned(),
             },
         )
         .unwrap();
-        assert!(page.warnings.contains(&PageWarning::Degenerated));
+        assert!(!page.warnings.contains(&PageWarning::Degenerated));
+    }
+
+    #[test]
+    fn unrelated_tail_after_repeats_is_never_cropped() {
+        // Review round 2 false-positive: three ASCII repeats followed by an
+        // unrelated tail must stay byte-identical.
+        let crop = degenerate_tail_crop("abcdefghabcdefghabcdefghXYZ");
+        assert!(!crop.degenerated);
+        assert_eq!(crop.text, "abcdefghabcdefghabcdefghXYZ");
+        // The same body ending on a true period boundary is a real loop.
+        let crop = degenerate_tail_crop("abcdefghabcdefghabcdefghabcdefgh");
+        assert!(crop.degenerated);
+        assert_eq!(crop.text, "abcdefgh");
     }
 
     #[test]
