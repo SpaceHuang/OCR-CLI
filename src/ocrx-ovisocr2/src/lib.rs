@@ -7,7 +7,7 @@ use ocrx_runtime::{GenerationProgress, InferenceRequest, InferenceResponse, Runt
 use std::path::Path;
 
 pub const ADAPTER_ID: &str = "ovisocr2";
-pub const MAX_OUTPUT_TOKENS: u32 = 4096;
+pub const MAX_OUTPUT_TOKENS: u32 = 16_384;
 
 /// Runs one rendered page through runtime, adapter, bbox cropping and atomic PNG output.
 ///
@@ -35,6 +35,7 @@ pub fn write_page_artifacts(
     .markdown)
 }
 
+#[derive(Debug)]
 pub struct PageArtifactOutput {
     pub markdown: String,
     pub page_json: String,
@@ -85,7 +86,9 @@ pub fn write_page_artifacts_with_status_cancelled(
     cancellation: &CancellationToken,
     progress: &mut dyn FnMut(GenerationProgress),
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
-    let request = request(max_output_tokens);
+    // D5.1: an over-cap budget fails the page explicitly; the old silent
+    // clamp hid that the requested budget was not in effect.
+    let request = try_request(max_output_tokens).map_err(std::io::Error::other)?;
     let response = runtime.generate_with_progress(
         InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?,
         cancellation,
@@ -208,7 +211,7 @@ pub struct OvisRequest {
 pub fn request(max_output_tokens: u32) -> OvisRequest {
     OvisRequest {
         temperature_milli: 0,
-        max_output_tokens: max_output_tokens.min(MAX_OUTPUT_TOKENS),
+        max_output_tokens,
         thinking: false,
     }
 }
@@ -637,9 +640,26 @@ mod tests {
     fn request_rejects_tokens_above_manifest_limit() {
         assert!(try_request(MAX_OUTPUT_TOKENS).is_ok());
         assert!(try_request(MAX_OUTPUT_TOKENS + 1).is_err());
-        assert_eq!(
-            request(MAX_OUTPUT_TOKENS + 1).max_output_tokens,
-            MAX_OUTPUT_TOKENS
+    }
+
+    #[test]
+    fn over_cap_budget_fails_production_path_explicitly() {
+        let error = write_page_artifacts_with_status_cancelled(
+            &mut FixtureRuntime,
+            1,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            MAX_OUTPUT_TOKENS + 1,
+            std::env::temp_dir(),
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("exceeds the manifest safety limit")
         );
     }
 

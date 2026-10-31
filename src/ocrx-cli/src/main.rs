@@ -1030,12 +1030,20 @@ fn validate_numeric_options(
     if max_output_tokens.is_some_and(|value| value < 128) {
         return Err("max output tokens must be at least 128".to_owned());
     }
+    // Mirror the adapter cap (plan §3.7/D5.1): an over-cap budget must fail
+    // once before the scan starts, never as a per-page adapter error.
+    if max_output_tokens.is_some_and(|value| value > ocrx_ovisocr2::MAX_OUTPUT_TOKENS) {
+        return Err(format!(
+            "max output tokens must not exceed {}",
+            ocrx_ovisocr2::MAX_OUTPUT_TOKENS
+        ));
+    }
     if context_size.is_some_and(|value| value < 1024) {
         return Err("context size must be at least 1024".to_owned());
     }
     let image_budget = max_image_tokens.unwrap_or(1024);
-    let output_budget = max_output_tokens.unwrap_or(4096);
-    let context_budget = context_size.unwrap_or(16_384);
+    let output_budget = max_output_tokens.unwrap_or(16_384);
+    let context_budget = context_size.unwrap_or(20_480);
     let required = image_budget
         .saturating_add(output_budget)
         .saturating_add(1024);
@@ -2172,7 +2180,7 @@ fn run_scan(options: ScanOptions) -> ! {
     let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let recognizer = OvisRecognizer {
         output: output.clone(),
-        max_tokens: options.max_output_tokens.unwrap_or(4096),
+        max_tokens: options.max_output_tokens.unwrap_or(16_384),
         telemetry: Rc::clone(&telemetry),
     };
     // Keep compatibility metadata stable without touching model resources.
@@ -2209,7 +2217,7 @@ fn run_scan(options: ScanOptions) -> ! {
         // share one key). Checkpoints written before this field exist no
         // longer match and are reprocessed instead of resumed.
         parameters: format!(
-            "{};platform={};dpi={dpi};tokens={:?};max_image_tokens={};context_size={};device={};route=native",
+            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};route=native",
             ocrx_output::pdf_compatibility_parameters(
                 &options.pdf_mode,
                 &options.quality_tier,
@@ -2217,9 +2225,9 @@ fn run_scan(options: ScanOptions) -> ! {
                 "pdf-text-v1",
             ),
             current_platform(),
-            options.max_output_tokens,
+            options.max_output_tokens.unwrap_or(16_384),
             options.max_image_tokens.unwrap_or(1024),
-            options.context_size.unwrap_or(16_384),
+            options.context_size.unwrap_or(20_480),
             options.device
         ),
     };
@@ -2656,7 +2664,7 @@ fn run_scan(options: ScanOptions) -> ! {
             &mmproj,
             device != "cpu",
             options.max_image_tokens.unwrap_or(1024),
-            options.context_size.unwrap_or(16_384),
+            options.context_size.unwrap_or(20_480),
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -3314,8 +3322,10 @@ fn print_help(topic: Option<&str>) {
             println!("  --report text|json");
             println!("  --dpi DPI                    render resolution (1-600, default 300)");
             println!("  --max-image-tokens N         image token budget (>=128, default 1024)");
-            println!("  --max-output-tokens N        output token budget (>=128, default 4096)");
-            println!("  --context-size N             context size (>=1024, default 16384)");
+            println!(
+                "  --max-output-tokens N        output token budget (128-16384, default 16384)"
+            );
+            println!("  --context-size N             context size (>=1024, default 20480)");
             println!("  --progress auto|bar|plain|jsonl|off");
             println!("  --log-level error|warn|info|debug|trace");
             println!("  --offline                    do not download");
@@ -4506,6 +4516,31 @@ mod tests {
         assert!(super::validate_numeric_options(Some(601), None, None, None).is_err());
         assert!(super::validate_numeric_options(None, Some(64), None, None).is_err());
         assert!(super::validate_numeric_options(None, None, None, Some(512)).is_err());
+    }
+
+    #[test]
+    fn budget_contract_mirrors_adapter_cap_and_default_combo_fits_context() {
+        // D5.1: over-cap budgets fail the preflight validation once, never as
+        // per-page adapter errors.
+        assert!(
+            super::validate_numeric_options(Some(300), Some(1024), Some(20_000), Some(24_576))
+                .is_err()
+        );
+        assert!(
+            super::validate_numeric_options(
+                Some(300),
+                Some(1024),
+                Some(ocrx_ovisocr2::MAX_OUTPUT_TOKENS),
+                Some(20_480)
+            )
+            .is_ok()
+        );
+        // D5.2: the default combo (image 1024 + output 16384 + prompt 1024 =
+        // 18432) must pass the capacity check against the 20480 context.
+        assert!(super::validate_numeric_options(None, None, None, None).is_ok());
+        // n_ctx_train=262144 for the frozen model (D5.0): no fallback needed,
+        // defaults stay at the §3.7.1/§3.7.2 values.
+        assert_eq!(ocrx_ovisocr2::MAX_OUTPUT_TOKENS, 16_384);
     }
 
     #[test]
