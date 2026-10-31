@@ -9,10 +9,10 @@ use ocrx_models::{
 use ocrx_output::{
     CancellationToken, CheckpointResumeAction, CompatibilityKey, ErrorReport, GenerationProgress,
     ModelLoader, OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageDiagnostic,
-    PageMarkdown, PageRenderer, ProgressEvent, ProgressMode, ProgressStage, RenderAudit,
-    RenderedPage, ReportFormat, Reporter, ResultReport, ScanService, collect_page_markdowns,
-    commit_native_page_and_collect, finalize_document, format_report, merge_ocr_queue,
-    read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
+    PageIncomplete, PageMarkdown, PageRenderer, ProgressEvent, ProgressMode, ProgressStage,
+    RenderAudit, RenderedPage, ReportFormat, Reporter, ResultReport, ScanService,
+    collect_page_markdowns, commit_native_page_and_collect, finalize_document, format_report,
+    merge_ocr_queue, read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
 };
 use ocrx_pdf::{
     PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
@@ -952,12 +952,19 @@ fn collect_verified_page_markdowns(
             let checkpoint = read_checkpoint(checkpoint_path).ok()?;
             checkpoint
                 .is_reusable_at(compatibility, output, *page)
-                .then_some(*page)
+                .then_some((*page, checkpoint))
         })
-        .map(|page| {
+        .map(|(page, checkpoint)| {
             Ok(PageMarkdown {
                 page_number: page,
                 content: std::fs::read_to_string(output.join(format!("page-{page:04}.md")))?,
+                incomplete: if checkpoint.degenerated {
+                    Some(PageIncomplete::Degenerated)
+                } else if checkpoint.truncated {
+                    Some(PageIncomplete::Truncated)
+                } else {
+                    None
+                },
             })
         })
         .collect()
@@ -1023,12 +1030,20 @@ fn validate_numeric_options(
     if max_output_tokens.is_some_and(|value| value < 128) {
         return Err("max output tokens must be at least 128".to_owned());
     }
+    // Mirror the adapter cap (plan §3.7/D5.1): an over-cap budget must fail
+    // once before the scan starts, never as a per-page adapter error.
+    if max_output_tokens.is_some_and(|value| value > ocrx_ovisocr2::MAX_OUTPUT_TOKENS) {
+        return Err(format!(
+            "max output tokens must not exceed {}",
+            ocrx_ovisocr2::MAX_OUTPUT_TOKENS
+        ));
+    }
     if context_size.is_some_and(|value| value < 1024) {
         return Err("context size must be at least 1024".to_owned());
     }
     let image_budget = max_image_tokens.unwrap_or(1024);
-    let output_budget = max_output_tokens.unwrap_or(4096);
-    let context_budget = context_size.unwrap_or(16_384);
+    let output_budget = max_output_tokens.unwrap_or(16_384);
+    let context_budget = context_size.unwrap_or(20_480);
     let required = image_budget
         .saturating_add(output_budget)
         .saturating_add(1024);
@@ -1647,6 +1662,29 @@ impl PageRenderer for PdfScanRenderer {
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+        self.render_with_scale(page, 1, 1)
+    }
+    fn render_perturbed(
+        &mut self,
+        page: u32,
+        numerator: u32,
+        denominator: u32,
+    ) -> std::io::Result<RenderedPage> {
+        self.render_with_scale(page, numerator, denominator)
+    }
+}
+
+impl PdfScanRenderer {
+    /// Renders one page, optionally rescaling the model input by
+    /// `numerator`/`denominator` (degeneration retry perturbation, plan §3.5):
+    /// the resample changes pixels and therefore logits while aspect ratio and
+    /// the pixel budget constraint are preserved; the audit records it.
+    fn render_with_scale(
+        &mut self,
+        page: u32,
+        scale_numerator: u32,
+        scale_denominator: u32,
+    ) -> std::io::Result<RenderedPage> {
         inject_render_failure(page)?;
         const PIXEL_BUDGET: u64 = 2880 * 2880;
         let (image, original_width, original_height) = self
@@ -1663,8 +1701,31 @@ impl PageRenderer for PdfScanRenderer {
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         let rendered_width = image.width();
         let rendered_height = image.height();
+        let image = if scale_numerator == scale_denominator {
+            image
+        } else {
+            let scaled_width = u32::try_from(
+                (u64::from(rendered_width) * u64::from(scale_numerator))
+                    / u64::from(scale_denominator),
+            )
+            .map_err(|_| std::io::Error::other("scaled width out of range"))?
+            .max(1);
+            let scaled_height = u32::try_from(
+                (u64::from(rendered_height) * u64::from(scale_numerator))
+                    / u64::from(scale_denominator),
+            )
+            .map_err(|_| std::io::Error::other("scaled height out of range"))?
+            .max(1);
+            image::imageops::resize(
+                &image,
+                scaled_width,
+                scaled_height,
+                image::imageops::FilterType::Triangle,
+            )
+        };
         let (model_width, model_height, scaled) =
-            fit_pixel_budget(rendered_width, rendered_height, PIXEL_BUDGET);
+            fit_pixel_budget(image.width(), image.height(), PIXEL_BUDGET);
+        let scaled_input_width = image.width();
         let rgb = if scaled {
             image::imageops::resize(
                 &image,
@@ -1676,7 +1737,7 @@ impl PageRenderer for PdfScanRenderer {
             image
         };
         let (scale_ratio_numerator, scale_ratio_denominator) =
-            linear_scale_ratio(model_width, rendered_width);
+            linear_scale_ratio(model_width, scaled_input_width);
         RenderedPage::new(rgb.width(), rgb.height(), rgb.into_raw()).map(|page| {
             page.with_audit(RenderAudit {
                 original_width,
@@ -1842,7 +1903,9 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             markdown: artifact.markdown,
             page_json: artifact.page_json,
             truncated: artifact.truncated,
+            degenerated: artifact.degenerated,
             warnings: artifact.warnings,
+            raw_output: artifact.raw_output,
         })
     }
 }
@@ -2167,7 +2230,7 @@ fn run_scan(options: ScanOptions) -> ! {
     let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let recognizer = OvisRecognizer {
         output: output.clone(),
-        max_tokens: options.max_output_tokens.unwrap_or(4096),
+        max_tokens: options.max_output_tokens.unwrap_or(16_384),
         telemetry: Rc::clone(&telemetry),
     };
     // Keep compatibility metadata stable without touching model resources.
@@ -2204,7 +2267,7 @@ fn run_scan(options: ScanOptions) -> ! {
         // share one key). Checkpoints written before this field exist no
         // longer match and are reprocessed instead of resumed.
         parameters: format!(
-            "{};platform={};dpi={dpi};tokens={:?};max_image_tokens={};context_size={};device={};route=native",
+            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};route=native",
             ocrx_output::pdf_compatibility_parameters(
                 &options.pdf_mode,
                 &options.quality_tier,
@@ -2212,9 +2275,9 @@ fn run_scan(options: ScanOptions) -> ! {
                 "pdf-text-v1",
             ),
             current_platform(),
-            options.max_output_tokens,
+            options.max_output_tokens.unwrap_or(16_384),
             options.max_image_tokens.unwrap_or(1024),
-            options.context_size.unwrap_or(16_384),
+            options.context_size.unwrap_or(20_480),
             options.device
         ),
     };
@@ -2231,6 +2294,10 @@ fn run_scan(options: ScanOptions) -> ! {
     let mut resume_committed_markdown = Vec::new();
     let mut resume_skip_pages = std::collections::HashSet::new();
     let mut resume_pending_pages = std::collections::HashSet::new();
+    // Incomplete state of pages reused as-is this run (BLK-2): a
+    // SkipCommitted truncated/degenerated page keeps its marker and must keep
+    // the result partial even though the page was not reprocessed.
+    let mut resume_incomplete_checkpoints = Vec::new();
     let resume_effective_configuration = if options.resume {
         resolve_effective_ocr_configuration(&options.profile, &options.device).ok()
     } else {
@@ -2250,6 +2317,9 @@ fn run_scan(options: ScanOptions) -> ! {
                     if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
                         resume_committed_markdown.append(&mut markdown);
                         resume_skip_pages.insert(*page as u32);
+                        if checkpoint.truncated || checkpoint.degenerated {
+                            resume_incomplete_checkpoints.push(checkpoint.clone());
+                        }
                     }
                 }
                 CheckpointResumeAction::QueueOcr => {
@@ -2271,6 +2341,9 @@ fn run_scan(options: ScanOptions) -> ! {
                 if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
                     resume_committed_markdown.append(&mut markdown);
                     resume_skip_pages.insert(*page as u32);
+                    if checkpoint.truncated || checkpoint.degenerated {
+                        resume_incomplete_checkpoints.push(checkpoint.clone());
+                    }
                 }
             }
         }
@@ -2317,6 +2390,9 @@ fn run_scan(options: ScanOptions) -> ! {
                 complete: true,
                 output_sha256: String::new(),
                 truncated: false,
+                degenerated: false,
+                attempts: 1,
+                raw: None,
                 warnings: Vec::new(),
                 audit: None,
             };
@@ -2377,6 +2453,9 @@ fn run_scan(options: ScanOptions) -> ! {
             complete: true,
             output_sha256: String::new(),
             truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
             warnings: Vec::new(),
             audit: None,
         };
@@ -2536,6 +2615,7 @@ fn run_scan(options: ScanOptions) -> ! {
                     completed_pages,
                     failed_pages: ocr_service_pages.len() as u32,
                     truncated_pages: 0,
+                    degenerated_pages: 0,
                     warnings: vec![unavailable_reason],
                     diagnostics: ocr_service_pages
                         .iter()
@@ -2644,7 +2724,7 @@ fn run_scan(options: ScanOptions) -> ! {
             &mmproj,
             device != "cpu",
             options.max_image_tokens.unwrap_or(1024),
-            options.context_size.unwrap_or(16_384),
+            options.context_size.unwrap_or(20_480),
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -2711,6 +2791,7 @@ fn run_scan(options: ScanOptions) -> ! {
             completed_pages: 0,
             failed_pages: 0,
             truncated_pages: 0,
+            degenerated_pages: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -2750,6 +2831,33 @@ fn run_scan(options: ScanOptions) -> ! {
     }
     match summary {
         Ok(mut summary) => {
+            // Reused (SkipCommitted) pages never re-enter the scan service, so
+            // their incomplete state must be merged here before any success
+            // decision is made (BLK-2). Pages reprocessed this run are not in
+            // the skip set, so counting them here cannot double-count.
+            for checkpoint in &resume_incomplete_checkpoints {
+                if checkpoint.degenerated {
+                    summary.degenerated_pages += 1;
+                }
+                if checkpoint.truncated {
+                    summary.truncated_pages += 1;
+                }
+                summary.warnings.extend(checkpoint.warnings.iter().cloned());
+                summary.diagnostics.push(ocrx_output::PageDiagnostic {
+                    page: checkpoint.page_number,
+                    status: if checkpoint.truncated || checkpoint.degenerated {
+                        "partial"
+                    } else {
+                        "completed"
+                    }
+                    .to_owned(),
+                    stage: "resume".to_owned(),
+                    error_code: None,
+                    message: None,
+                    audit: checkpoint.audit,
+                    warnings: checkpoint.warnings.clone(),
+                });
+            }
             if let Some(warning) = gpu_report_warning {
                 eprintln!("warning: {warning}");
                 summary.warnings.push(warning);
@@ -2763,7 +2871,10 @@ fn run_scan(options: ScanOptions) -> ! {
                     terminal_pending_pages.remove(&diagnostic.page);
                 }
             }
-            if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+            if summary.failed_pages == 0
+                && summary.truncated_pages == 0
+                && summary.degenerated_pages == 0
+            {
                 for page in &ocr_service_pages {
                     terminal_pending_pages.remove(page);
                 }
@@ -2849,7 +2960,10 @@ fn run_scan(options: ScanOptions) -> ! {
                 + summary.completed_pages;
             let report = ResultReport {
                 job_id: "scan".to_owned(),
-                status: if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+                status: if summary.failed_pages == 0
+                    && summary.truncated_pages == 0
+                    && summary.degenerated_pages == 0
+                {
                     ocrx_output::ResultStatus::Success
                 } else {
                     ocrx_output::ResultStatus::Partial
@@ -2905,7 +3019,10 @@ fn run_scan(options: ScanOptions) -> ! {
                 .is_file()
                 .then(|| output.join("document.md"));
             let result_json = serialize_scan_result(&ScanResultFields {
-                status: if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+                status: if summary.failed_pages == 0
+                    && summary.truncated_pages == 0
+                    && summary.degenerated_pages == 0
+                {
                     "success"
                 } else {
                     "partial"
@@ -2922,6 +3039,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 completed_pages,
                 failed_pages: summary.failed_pages,
                 truncated_pages: summary.truncated_pages,
+                degenerated_pages: summary.degenerated_pages,
                 warnings: summary.warnings.clone(),
                 diagnostics: summary.diagnostics.clone(),
                 pdf_routing: final_routing_diagnostics_with_pending(
@@ -2985,6 +3103,10 @@ fn run_scan(options: ScanOptions) -> ! {
                     ocrx_pdf::summarize_document_type(&classifications),
                     counts,
                 ));
+                if let Some(line) = incomplete_pages_warning(&summary, options.max_output_tokens) {
+                    reporter.stdout.push_str(&line);
+                    reporter.stdout.push('\n');
+                }
             }
             reporter.progress(
                 &ProgressEvent::for_stage(
@@ -2997,7 +3119,10 @@ fn run_scan(options: ScanOptions) -> ! {
             );
             print_reporter(reporter);
             std::process::exit(
-                if summary.failed_pages == 0 && summary.truncated_pages == 0 {
+                if summary.failed_pages == 0
+                    && summary.truncated_pages == 0
+                    && summary.degenerated_pages == 0
+                {
                     0
                 } else {
                     10
@@ -3026,6 +3151,41 @@ fn run_scan(options: ScanOptions) -> ! {
             std::process::exit(6);
         }
     }
+}
+
+/// Builds the actionable exit-10 advice line (plan §3.5, G5): lists the
+/// affected pages with their cause and points at the working recovery path.
+fn incomplete_pages_warning(
+    summary: &ocrx_output::JobSummary,
+    requested_budget: Option<u32>,
+) -> Option<String> {
+    let mut entries = Vec::new();
+    let mut has_degenerated = false;
+    for diagnostic in &summary.diagnostics {
+        let degenerated = diagnostic.warnings.iter().any(|w| w == "degenerated");
+        let truncated = diagnostic.warnings.iter().any(|w| w == "truncated");
+        if degenerated {
+            entries.push(format!("page {} (degenerated)", diagnostic.page));
+            has_degenerated = true;
+        } else if truncated {
+            entries.push(format!("page {} (truncated)", diagnostic.page));
+        }
+    }
+    if entries.is_empty() {
+        return None;
+    }
+    let advice = if has_degenerated {
+        "rerun with --resume to retry degenerated pages"
+    } else if requested_budget.is_some_and(|budget| budget < ocrx_ovisocr2::MAX_OUTPUT_TOKENS) {
+        "rerun with the default --max-output-tokens to raise the per-page budget and rescan"
+    } else {
+        "the page exceeds the single-page output budget cap and stays marked incomplete"
+    };
+    Some(format!(
+        "warning: {} page(s) incomplete — {}; {advice}",
+        entries.len(),
+        entries.join(", ")
+    ))
 }
 
 fn classify_input_error(input: &Path, message: &str) -> PdfErrorKind {
@@ -3084,6 +3244,7 @@ struct ScanResultFields<'a> {
     completed_pages: u32,
     failed_pages: u32,
     truncated_pages: u32,
+    degenerated_pages: u32,
     warnings: Vec<String>,
     diagnostics: Vec<PageDiagnostic>,
     pdf_routing: Vec<String>,
@@ -3138,7 +3299,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         .join(",");
     let pdf_routing = fields.pdf_routing.join(",");
     format!(
-        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
+        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
         fields.status,
         json_escape_path(fields.input),
         markdown,
@@ -3152,6 +3313,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         fields.completed_pages,
         fields.failed_pages,
         fields.truncated_pages,
+        fields.degenerated_pages,
         fields.routing_counts.native_text,
         fields.routing_counts.ocr,
         fields.routing_counts.empty,
@@ -3247,8 +3409,10 @@ fn print_help(topic: Option<&str>) {
             println!("  --report text|json");
             println!("  --dpi DPI                    render resolution (1-600, default 300)");
             println!("  --max-image-tokens N         image token budget (>=128, default 1024)");
-            println!("  --max-output-tokens N        output token budget (>=128, default 4096)");
-            println!("  --context-size N             context size (>=1024, default 16384)");
+            println!(
+                "  --max-output-tokens N        output token budget (128-16384, default 16384)"
+            );
+            println!("  --context-size N             context size (>=1024, default 20480)");
             println!("  --progress auto|bar|plain|jsonl|off");
             println!("  --log-level error|warn|info|debug|trace");
             println!("  --offline                    do not download");
@@ -3381,7 +3545,7 @@ mod tests {
     use super::{
         CliCommand, ConfigSource, NativeFirstPhaseResult, NativeOnlyDecision,
         NativeValidationRoute, ResolvedConfig, ResourceSnapshot, RoutingCounts, ScanExecutionPlan,
-        ScanOptions, ScanResultFields, build_final_ocr_queue, doctor_json_report,
+        ScanOptions, ScanResultFields, build_final_ocr_queue, current_platform, doctor_json_report,
         dynamic_fallback_requires_model_assets, final_routing_diagnostics, format_routing_summary,
         initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
         native_candidate_pages, native_only_decision, ocr_queue_after_native_phase, parse_command,
@@ -4145,6 +4309,143 @@ mod tests {
             .expect("cargo should launch the CLI test binary")
     }
 
+    #[test]
+    fn cli_resume_of_truncated_page_keeps_partial_status_and_exit_10() {
+        // BLK-2 regression (real CLI subprocess): a same-parameter --resume
+        // that reuses a committed truncated OCR page must keep the document
+        // marker, report status=partial with pages.truncated=1, and exit 10 —
+        // never success/exit 0.
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let input = workspace.join("benchmarks/fixtures/pdf/normal-1-page.pdf");
+        assert!(input.is_file(), "pdf fixture missing: {}", input.display());
+        // pdfium is a vendored, gitignored binary: prefer the vendored copy,
+        // then the ambient OCRX_PDFIUM_LIBRARY, and skip when neither exists.
+        let pdfium = workspace.join("vendor/pdfium/bin/pdfium.dll");
+        let pdfium = if pdfium.is_file() {
+            pdfium
+        } else if let Some(library) = std::env::var_os("OCRX_PDFIUM_LIBRARY") {
+            std::path::PathBuf::from(library)
+        } else {
+            eprintln!("skipping: no vendored or OCRX_PDFIUM_LIBRARY pdfium available");
+            return;
+        };
+        if !pdfium.is_file() {
+            eprintln!("skipping: pdfium library not found: {}", pdfium.display());
+            return;
+        }
+        let _ = 0;
+        let root = std::env::temp_dir().join(format!(
+            "ocrx-resume-truncated-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input_sha = ocrx_core::sha256_file(&input).unwrap();
+        let compatibility = ocrx_output::CompatibilityKey {
+            input_sha256: input_sha,
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: format!(
+                "{};platform={};dpi={};tokens={};max_image_tokens={};context_size={};device={};route=native",
+                ocrx_output::pdf_compatibility_parameters(
+                    "ocr",
+                    "l2",
+                    "pdf-route-v1",
+                    "pdf-text-v1"
+                ),
+                current_platform(),
+                300,
+                16_384,
+                1024,
+                20_480,
+                "cpu"
+            ),
+        };
+        let page_json = r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated","degenerated"]}"#;
+        ocrx_output::commit_page(
+            &root,
+            1,
+            b"png",
+            "truncated page body",
+            page_json,
+            &ocrx_output::PageCheckpoint {
+                page_number: 1,
+                compatibility: compatibility.clone(),
+                complete: true,
+                output_sha256: String::new(),
+                truncated: true,
+                degenerated: false,
+                attempts: 1,
+                raw: None,
+                warnings: vec!["truncated".to_owned()],
+                audit: None,
+            },
+        )
+        .unwrap();
+        let input = input.canonicalize().unwrap();
+        let output_arg = root.canonicalize().unwrap();
+        let mut command = match std::env::var("CARGO_BIN_EXE_ocrx") {
+            Ok(binary) => Command::new(binary),
+            Err(_) => {
+                // Keep the subprocess contract even under cargo-run fallback.
+                let mut command = Command::new("cargo");
+                command
+                    .args(["run", "--quiet", "--bin", "ocrx", "--"])
+                    .current_dir(env!("CARGO_MANIFEST_DIR"));
+                command
+            }
+        };
+        let output = command
+            .args([
+                "scan",
+                input.to_str().unwrap(),
+                "--pages",
+                "1",
+                "--pdf-mode",
+                "ocr",
+                "--model-profile",
+                "reference",
+                "--device",
+                "cpu",
+                "--dpi",
+                "300",
+                "--output-dir",
+                output_arg.to_str().unwrap(),
+                "--resume",
+                "--report",
+                "json",
+                "--offline",
+                "--non-interactive",
+            ])
+            .env("OCRX_PDFIUM_LIBRARY", pdfium.canonicalize().unwrap())
+            .output()
+            .expect("CLI subprocess should run");
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        assert_eq!(
+            output.status.code(),
+            Some(10),
+            "exit code: {stdout}
+--- stderr ---
+{stderr}"
+        );
+        assert!(stdout.contains("\"status\":\"partial\""), "{stdout}");
+        assert!(stdout.contains("\"truncated\":1"), "{stdout}");
+        let result = root.join("result.json");
+        if result.is_file() {
+            let text = std::fs::read_to_string(&result).unwrap();
+            assert!(text.contains("\"status\":\"partial\""), "{text}");
+            assert!(text.contains("\"truncated\":1"), "{text}");
+        }
+        let document = std::fs::read_to_string(root.join("document.md")).unwrap();
+        assert!(document.contains("输出被截断"), "{document}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     // NOTE: the doctor stdout/stderr contract lives in tests/cli_subprocess.rs,
     // which spawns the binary directly. A `cargo run`-based twin here
     // intermittently captured cargo's own "Blocking waiting for file lock"
@@ -4294,6 +4595,7 @@ mod tests {
     fn scan_result_json_preserves_truncation_and_escapes_paths() {
         let input = Path::new("/tmp/input\tname\n.pdf");
         let json = super::serialize_scan_result(&ScanResultFields {
+            degenerated_pages: 0,
             status: "partial",
             input,
             markdown_path: None,
@@ -4335,6 +4637,7 @@ mod tests {
     fn scan_result_json_exposes_routing_metadata_alias() {
         let routing = "{\"page\":3,\"classification\":{},\"processing\":{\"planned_method\":\"native_text\",\"actual_method\":\"ocr\",\"fallback_reason\":\"native_validation_failed\"}}".to_owned();
         let json = super::serialize_scan_result(&ScanResultFields {
+            degenerated_pages: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,
@@ -4368,6 +4671,7 @@ mod tests {
     #[test]
     fn scan_result_json_preserves_page_diagnostic_warnings_and_audit() {
         let json = super::serialize_scan_result(&ScanResultFields {
+            degenerated_pages: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,
@@ -4436,6 +4740,31 @@ mod tests {
         assert!(super::validate_numeric_options(Some(601), None, None, None).is_err());
         assert!(super::validate_numeric_options(None, Some(64), None, None).is_err());
         assert!(super::validate_numeric_options(None, None, None, Some(512)).is_err());
+    }
+
+    #[test]
+    fn budget_contract_mirrors_adapter_cap_and_default_combo_fits_context() {
+        // D5.1: over-cap budgets fail the preflight validation once, never as
+        // per-page adapter errors.
+        assert!(
+            super::validate_numeric_options(Some(300), Some(1024), Some(20_000), Some(24_576))
+                .is_err()
+        );
+        assert!(
+            super::validate_numeric_options(
+                Some(300),
+                Some(1024),
+                Some(ocrx_ovisocr2::MAX_OUTPUT_TOKENS),
+                Some(20_480)
+            )
+            .is_ok()
+        );
+        // D5.2: the default combo (image 1024 + output 16384 + prompt 1024 =
+        // 18432) must pass the capacity check against the 20480 context.
+        assert!(super::validate_numeric_options(None, None, None, None).is_ok());
+        // n_ctx_train=262144 for the frozen model (D5.0): no fallback needed,
+        // defaults stay at the §3.7.1/§3.7.2 values.
+        assert_eq!(ocrx_ovisocr2::MAX_OUTPUT_TOKENS, 16_384);
     }
 
     #[test]

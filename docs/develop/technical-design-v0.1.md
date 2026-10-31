@@ -271,13 +271,17 @@ profile 推荐器只从已通过质量门槛且与 runtime 兼容的 OvisOCR2 pr
 
 ```text
 preflight → load model once → for each selected page serially:
-render → resize → MTMD encode → generate → adapter parse/validate
-→ repetition/anomaly handling → crop images → atomic checkpoint
-→ release page image/tensors
-then merge Markdown → write result.json → unload runtime
+render [→ perturbed re-render 0.94x/1.06x on degeneration retry, ≤3 attempts]
+→ resize → MTMD encode → generate (token-ring loop detection → early stop,
+finish_reason=repetition_loop) → degenerate_tail_crop (single entry, drives
+.md/.json/bbox alike) → adapter parse/validate → crop images
+→ [degenerated/repetition_removed: write page-NNNN.raw sidecar]
+→ atomic checkpoint (degenerated/attempts/raw) → release page image/tensors
+then merge Markdown (incomplete pages carry frozen visible markers)
+→ write result.json (pages.degenerated) → unload runtime
 ```
 
-模型和 projector 每个任务只加载一次；页面图像、编码上下文和临时 tensor 每页释放。第一版不实现并发推理。
+模型和 projector 每个任务只加载一次；页面图像、编码上下文和临时 tensor 每页释放。第一版不实现并发推理。输出预算默认 16384（=适配器上限，超限在扫描启动前拒绝），上下文默认 20480（冻结模型 n_ctx_train=262144，完整默认组合适用，见 D5.0）。`--resume` 对 `degenerated` 页以扰动重试自动重处理，纯 `truncated` 页维持 SkipCommitted。
 
 ### 7.2 渲染与缩放
 
@@ -303,9 +307,9 @@ then merge Markdown → write result.json → unload runtime
 
 ### 7.3 推理
 
-adapter 固定 temperature 0、关闭 reasoning、构造 OvisOCR2 prompt/chat template，传入 effective context、最大图像 token 和最大输出 token。用户只能降低默认 16384 输出 token；若实现允许更高值将超出需求，故 v0.1 校验上限为 manifest 默认/安全上限。
+adapter 固定 temperature 0、关闭 reasoning、构造 OvisOCR2 prompt/chat template，传入 effective context、最大图像 token 和最大输出 token。输出预算默认与适配器上限均为 16384（需求 §7.3）；超过上限的 `--max-output-tokens` 在扫描启动前一次性拒绝，适配器对超限请求显式报错（无静默钳位）。
 
-生成循环向取消令牌轮询，至少每秒发出可见 heartbeat/page_progress。出现 EOS/stop 正常结束；达到 max token 标记 `truncated`；runtime 错误标记页面失败。任务处理中绝不切换 model/profile/backend。
+生成循环向取消令牌轮询，至少每秒发出可见 heartbeat/page_progress。解码循环内维护最近 256 个 token 的环形窗口做 token 级复读环检测（周期 1/2–8/9–64 档位分别要求重复 ≥16/≥8/≥4 次），命中即早停并返回 `finish_reason = repetition_loop`；达到 max token 标记 `truncated`；runtime 错误标记页面失败。任务处理中绝不切换 model/profile/backend。
 
 ### 7.4 解析、异常和重复处理
 

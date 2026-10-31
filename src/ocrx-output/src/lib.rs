@@ -341,6 +341,7 @@ pub struct JobSummary {
     pub completed_pages: u32,
     pub failed_pages: u32,
     pub truncated_pages: u32,
+    pub degenerated_pages: u32,
     pub warnings: Vec<String>,
     pub diagnostics: Vec<PageDiagnostic>,
     pub cancelled: bool,
@@ -356,6 +357,7 @@ pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
         completed_pages: native.completed_pages + ocr.completed_pages,
         failed_pages: native.failed_pages + ocr.failed_pages,
         truncated_pages: native.truncated_pages + ocr.truncated_pages,
+        degenerated_pages: native.degenerated_pages + ocr.degenerated_pages,
         warnings,
         diagnostics,
         cancelled: native.cancelled || ocr.cancelled,
@@ -398,6 +400,21 @@ pub struct ScanController {
 pub trait PageRenderer {
     fn preflight(&mut self) -> io::Result<()>;
     fn render(&mut self, page: u32) -> io::Result<RenderedPage>;
+
+    /// Renders a perturbed variant used by the degeneration retry path
+    /// (plan §3.5): `numerator`/`denominator` scales the model input while
+    /// keeping aspect ratio and pixel budget constraints; the RenderAudit
+    /// must record the scaling faithfully. The default ignores the ratio
+    /// (fakes are deterministic anyway).
+    fn render_perturbed(
+        &mut self,
+        page: u32,
+        numerator: u32,
+        denominator: u32,
+    ) -> io::Result<RenderedPage> {
+        let _ = (numerator, denominator);
+        self.render(page)
+    }
 }
 
 impl<T: PageRenderer + ?Sized> PageRenderer for Box<T> {
@@ -529,7 +546,11 @@ pub struct PageArtifactResult {
     pub markdown: String,
     pub page_json: String,
     pub truncated: bool,
+    pub degenerated: bool,
     pub warnings: Vec<String>,
+    /// Pre-crop normalized raw output, preserved to the `page-NNNN.raw`
+    /// sidecar for degenerated/repetition-cleaned pages (plan §3.3).
+    pub raw_output: String,
 }
 
 impl<R, L, A, M> ScanService<R, L, A>
@@ -602,6 +623,7 @@ where
         let mut completed = 0_u32;
         let mut failed = 0_u32;
         let mut truncated = 0_u32;
+        let mut degenerated = 0_u32;
         let mut warnings = std::collections::BTreeSet::new();
         let mut diagnostics = Vec::new();
         for &page in page_numbers {
@@ -624,44 +646,81 @@ where
                     }
                 }
             }
-            let image = match self.renderer.render(page) {
-                Ok(image) => image,
-                Err(_error) => {
-                    // A page interrupted by cancellation stays resumable: it is
-                    // reported as "cancelled", not "failed", so the CLI's
-                    // resume logic does not treat it as a terminal page.
-                    let cancelled = cancellation.is_cancelled();
-                    if !cancelled {
-                        failed += 1;
-                    }
-                    diagnostics.push(PageDiagnostic {
-                        page,
-                        status: if cancelled {
-                            "cancelled".to_owned()
-                        } else {
-                            "failed".to_owned()
-                        },
-                        stage: "render".to_owned(),
-                        error_code: Some("render_failed".to_owned()),
-                        message: Some("page rendering failed".to_owned()),
-                        audit: None,
-                        warnings: Vec::new(),
-                    });
-                    if cancelled {
+            // Degeneration retry state machine (plan §3.5): attempt 0 uses the
+            // original render; attempts 1/2 rescale the model input by
+            // 0.94/1.06 to break the determinism of a repetition loop. A
+            // degenerated attempt rotates to the next one; a clean attempt (or
+            // the third degenerated one) is committed. Pure max_tokens pages
+            // never retry (D-5).
+            type AttemptOutcome =
+                Result<(RenderedPage, PageArtifactResult, u32), (RenderAudit, io::Error)>;
+            let mut attempts = 0_u32;
+            let mut attempt: Option<AttemptOutcome> = None;
+            let mut render_failure = false;
+            loop {
+                attempts += 1;
+                let image = if attempts == 1 {
+                    self.renderer.render(page)
+                } else {
+                    let (numerator, denominator) = if attempts == 2 { (47, 50) } else { (53, 50) };
+                    self.renderer.render_perturbed(page, numerator, denominator)
+                };
+                let image = match image {
+                    Ok(image) => image,
+                    Err(_) => {
+                        render_failure = true;
                         break;
                     }
-                    continue;
+                };
+                let mut page_heartbeat = |event: GenerationProgress| heartbeat(page, event);
+                match self.recognizer.recognize_artifact_cancelled(
+                    &mut model,
+                    page,
+                    &image,
+                    cancellation,
+                    &mut page_heartbeat,
+                ) {
+                    Ok(artifact) => {
+                        if artifact.degenerated && attempts < 3 {
+                            continue;
+                        }
+                        attempt = Some(Ok((image, artifact, attempts)));
+                        break;
+                    }
+                    Err(error) => {
+                        attempt = Some(Err((image.audit, error)));
+                        break;
+                    }
                 }
-            };
-            let mut page_heartbeat = |event: GenerationProgress| heartbeat(page, event);
-            match self.recognizer.recognize_artifact_cancelled(
-                &mut model,
-                page,
-                &image,
-                cancellation,
-                &mut page_heartbeat,
-            ) {
-                Ok(artifact) => {
+            }
+            if render_failure {
+                // A page interrupted by cancellation stays resumable: it is
+                // reported as "cancelled", not "failed", so the CLI's
+                // resume logic does not treat it as a terminal page.
+                let cancelled = cancellation.is_cancelled();
+                if !cancelled {
+                    failed += 1;
+                }
+                diagnostics.push(PageDiagnostic {
+                    page,
+                    status: if cancelled {
+                        "cancelled".to_owned()
+                    } else {
+                        "failed".to_owned()
+                    },
+                    stage: "render".to_owned(),
+                    error_code: Some("render_failed".to_owned()),
+                    message: Some("page rendering failed".to_owned()),
+                    audit: None,
+                    warnings: Vec::new(),
+                });
+                if cancelled {
+                    break;
+                }
+                continue;
+            }
+            match attempt {
+                Some(Ok((image, artifact, attempts))) => {
                     let mut artifact_warnings = artifact.warnings;
                     if image.audit.scaled
                         && !artifact_warnings
@@ -673,14 +732,33 @@ where
                     if artifact.truncated {
                         truncated += 1;
                     }
+                    if artifact.degenerated {
+                        degenerated += 1;
+                    }
                     warnings.extend(artifact_warnings.iter().cloned());
                     write_render_audit(root, page, image.audit)?;
+                    // Raw-output sidecar (plan §3.3): preserved whenever the
+                    // page degenerated or lost text to repetition cleaning.
+                    let raw_pointer = if artifact.degenerated
+                        || artifact_warnings
+                            .iter()
+                            .any(|warning| warning == "repetition_removed")
+                    {
+                        let name = format!("page-{page:04}.raw");
+                        atomic_write(root.join(&name), artifact.raw_output.as_bytes())?;
+                        Some(name)
+                    } else {
+                        None
+                    };
                     let checkpoint = PageCheckpoint {
                         page_number: page,
                         compatibility: compatibility.clone(),
                         complete: true,
                         output_sha256: String::new(),
                         truncated: artifact.truncated,
+                        degenerated: artifact.degenerated,
+                        attempts,
+                        raw: raw_pointer,
                         warnings: artifact_warnings,
                         audit: Some(image.audit),
                     };
@@ -695,7 +773,7 @@ where
                     )?;
                     completed += 1;
                 }
-                Err(error) => {
+                Some(Err((audit, error))) => {
                     // Same resumability rule as render failures: a recognition
                     // interrupted by Ctrl+C is "cancelled", not a quality
                     // failure, and stops the loop instead of scanning on.
@@ -718,28 +796,21 @@ where
                         } else {
                             format!("page recognition failed: {error}")
                         }),
-                        audit: Some(image.audit),
+                        audit: Some(audit),
                         warnings: Vec::new(),
                     });
                     if cancelled {
                         break;
                     }
                 }
+                None => unreachable!("render failure handled before attempt match"),
             }
         }
         if failed == 0
             && !cancellation.is_cancelled()
             && completed == u32::try_from(page_numbers.len()).unwrap_or(u32::MAX)
         {
-            let pages = page_numbers
-                .iter()
-                .map(|&page| {
-                    Ok(PageMarkdown {
-                        page_number: page,
-                        content: fs::read_to_string(root.join(format!("page-{page:04}.md")))?,
-                    })
-                })
-                .collect::<io::Result<Vec<_>>>()?;
+            let pages = collect_page_markdowns(root, page_numbers)?;
             finalize_document(root, pages)?;
             if !keep_pages {
                 cleanup_full_page_images(root, page_numbers)?;
@@ -750,6 +821,7 @@ where
             completed_pages: completed,
             failed_pages: failed,
             truncated_pages: truncated,
+            degenerated_pages: degenerated,
             warnings: warnings.into_iter().collect(),
             diagnostics,
             cancelled: cancellation.is_cancelled(),
@@ -897,6 +969,7 @@ impl ScanController {
                 .iter()
                 .filter(|page| page.status == PageStatus::Truncated)
                 .count() as u32,
+            degenerated_pages: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: self.cancellation.is_cancelled(),
@@ -961,7 +1034,7 @@ impl JobSummary {
     pub fn status(&self) -> JobStatus {
         if self.cancelled {
             JobStatus::Cancelled
-        } else if self.failed_pages > 0 || self.truncated_pages > 0 {
+        } else if self.failed_pages > 0 || self.truncated_pages > 0 || self.degenerated_pages > 0 {
             JobStatus::Partial
         } else if self.completed_pages == self.selected_pages {
             JobStatus::Completed
@@ -1061,6 +1134,9 @@ pub fn pending_ocr_checkpoint(
         complete: false,
         output_sha256: String::new(),
         truncated: false,
+        degenerated: false,
+        attempts: 1,
+        raw: None,
         warnings: vec![reason.into()],
         audit: None,
     }
@@ -1148,8 +1224,37 @@ pub struct PageCheckpoint {
     pub complete: bool,
     pub output_sha256: String,
     pub truncated: bool,
+    /// Repetition-degeneration flag (plan §3.3): a degenerated page is
+    /// reprocessed on resume even when otherwise reusable.
+    pub degenerated: bool,
+    /// Attempts spent by the most recent processing run (1..=3); reset on
+    /// every Reprocess.
+    pub attempts: u32,
+    /// Raw-output sidecar pointer (`page-NNNN.raw`), per requirement §7.4.
+    pub raw: Option<String>,
     pub warnings: Vec<String>,
     pub audit: Option<RenderAudit>,
+}
+
+/// Why a committed page is marked incomplete in the merged document
+/// (plan §3.4); the wording differs between the two causes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageIncomplete {
+    Truncated,
+    Degenerated,
+}
+
+impl PageIncomplete {
+    #[must_use]
+    pub fn marker_line(self, page_number: u32) -> String {
+        let reason = match self {
+            Self::Truncated => "输出被截断",
+            Self::Degenerated => "输出被复读退化截断",
+        };
+        format!(
+            "> ⚠️ ocrx：第 {page_number} 页识别不完整（{reason}），本页内容可能缺失或错误，请重扫后核对本页。"
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1239,6 +1344,20 @@ pub fn write_routing_result(
 pub struct PageMarkdown {
     pub page_number: u32,
     pub content: String,
+    /// Marker source carried from the checkpoint, never re-derived from the
+    /// .md text (plan §3.4); `None` for complete pages.
+    pub incomplete: Option<PageIncomplete>,
+}
+
+impl PageMarkdown {
+    #[must_use]
+    pub fn complete(page_number: u32, content: String) -> Self {
+        Self {
+            page_number,
+            content,
+            incomplete: None,
+        }
+    }
 }
 
 pub fn merge_markdown(mut pages: Vec<PageMarkdown>) -> io::Result<String> {
@@ -1269,11 +1388,14 @@ pub fn merge_markdown(mut pages: Vec<PageMarkdown>) -> io::Result<String> {
         if !merged.is_empty() {
             merged.push('\n');
         }
-        merged.push_str(&format!(
-            "<!-- page: {} -->\n{}",
-            page.page_number,
-            normalize_lf(&page.content)
-        ));
+        merged.push_str(&format!("<!-- page: {} -->\n", page.page_number));
+        if let Some(incomplete) = page.incomplete {
+            // Frozen visible marker for degenerated/truncated pages
+            // (plan §3.4); an empty line separates it from the page body.
+            merged.push_str(&incomplete.marker_line(page.page_number));
+            merged.push_str("\n\n");
+        }
+        merged.push_str(&normalize_lf(&page.content));
     }
     Ok(merged)
 }
@@ -1296,10 +1418,24 @@ pub fn collect_page_markdowns(
     page_numbers
         .iter()
         .map(|page| {
-            let path = output_root.as_ref().join(format!("page-{page:04}.md"));
+            let root = output_root.as_ref();
+            let content = fs::read_to_string(root.join(format!("page-{page:04}.md")))?;
+            let checkpoint_path = root.join(format!("page-{page:04}.checkpoint"));
+            let incomplete = read_checkpoint(&checkpoint_path)
+                .ok()
+                .and_then(|checkpoint| {
+                    if checkpoint.degenerated {
+                        Some(PageIncomplete::Degenerated)
+                    } else if checkpoint.truncated {
+                        Some(PageIncomplete::Truncated)
+                    } else {
+                        None
+                    }
+                });
             Ok(PageMarkdown {
                 page_number: *page,
-                content: fs::read_to_string(path)?,
+                content,
+                incomplete,
             })
         })
         .collect()
@@ -1340,7 +1476,10 @@ impl PageCheckpoint {
         root: &Path,
         page: u32,
     ) -> CheckpointDisposition {
-        if self.is_reusable_at(expected, root, page) {
+        // Plan §3.5 (v2): only a degenerated page is reprocessed on resume —
+        // a pure max_tokens page would deterministically truncate again under
+        // identical parameters.
+        if !self.degenerated && self.is_reusable_at(expected, root, page) {
             CheckpointDisposition::Reuse
         } else if self.is_pending_ocr(expected) {
             CheckpointDisposition::PendingOcr
@@ -1384,7 +1523,7 @@ impl PageCheckpoint {
     fn diagnostic(&self) -> PageDiagnostic {
         PageDiagnostic {
             page: self.page_number,
-            status: if self.truncated {
+            status: if self.truncated || self.degenerated {
                 "partial"
             } else {
                 "completed"
@@ -1435,8 +1574,10 @@ fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
 }
 
 pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> io::Result<()> {
+    // Additive v5 fields (plan §3.3): older parsers collect unknown lines
+    // without reading them, so this stays bidirectionally compatible.
     let content = format!(
-        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\nwarnings={}\naudit={}\n",
+        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\ndegenerated={}\nattempts={}\nraw={}\nwarnings={}\naudit={}\n",
         checkpoint.page_number,
         encode_field(&checkpoint.compatibility.input_sha256),
         encode_field(&checkpoint.compatibility.model),
@@ -1445,6 +1586,9 @@ pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> 
         checkpoint.complete,
         checkpoint.output_sha256,
         checkpoint.truncated,
+        checkpoint.degenerated,
+        checkpoint.attempts,
+        checkpoint.raw.as_deref().unwrap_or("none"),
         encode_field(&checkpoint.warnings.join("\n")),
         checkpoint.audit.map_or_else(
             || "none".to_owned(),
@@ -1504,6 +1648,31 @@ pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
         "none" => None,
         encoded => Some(parse_render_audit(&decode_field(encoded)?)?),
     };
+    // Additive fields default to their pre-v2 values when absent so old v5
+    // checkpoints (and files written by this version, read back piecemeal)
+    // keep loading.
+    let degenerated = match values.get("degenerated") {
+        Some(value) => value.parse().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid checkpoint degenerated flag",
+            )
+        })?,
+        None => false,
+    };
+    let attempts = match values.get("attempts") {
+        Some(value) => value.parse().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid checkpoint attempts count",
+            )
+        })?,
+        None => 1,
+    };
+    let raw = match values.get("raw") {
+        Some(&"none") | None => None,
+        Some(name) => Some((*name).to_owned()),
+    };
     Ok(PageCheckpoint {
         page_number,
         compatibility: CompatibilityKey {
@@ -1515,6 +1684,9 @@ pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
         complete,
         output_sha256: get("output")?.to_owned(),
         truncated,
+        degenerated,
+        attempts,
+        raw,
         warnings: if warning_text.is_empty() {
             Vec::new()
         } else {
@@ -1928,6 +2100,7 @@ pub fn commit_native_page_and_collect(
     Ok(PageMarkdown {
         page_number,
         content: normalize_lf(markdown),
+        incomplete: None,
     })
 }
 
@@ -1944,10 +2117,10 @@ mod tests {
     use super::{
         CancellationToken, CheckpointDisposition, CheckpointResumeAction, CheckpointState,
         CompatibilityKey, ErrorReport, Heartbeat, JobStatus, JobSummary, ModelLoader, OcrQueuePage,
-        PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic, PageLifecycle,
-        PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent, ProgressMode,
-        ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat, Reporter,
-        ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
+        PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic, PageIncomplete,
+        PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent,
+        ProgressMode, ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat,
+        Reporter, ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
         ScanController, ScanService, atomic_write, classify_recognition_error, format_report,
         merge_job_summaries, recover_pending_ocr_queue,
     };
@@ -2013,6 +2186,8 @@ mod tests {
             Ok(PageArtifactResult {
                 png: vec![page as u8],
                 markdown: format!("page {page}"),
+                degenerated: false,
+                raw_output: String::new(),
                 page_json: format!(
                     r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]}}"#
                 ),
@@ -2067,6 +2242,373 @@ mod tests {
             (page.audit.original_width, page.audit.model_height),
             (40, 10)
         );
+    }
+
+    // ---- D3: degeneration retry, markers, sidecar (plan §3.3-§3.5, §5.2) ----
+
+    struct ScriptedRenderer {
+        calls: std::collections::VecDeque<(u32, u32, u32)>,
+    }
+    impl PageRenderer for ScriptedRenderer {
+        fn preflight(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+            self.calls.push_back((page, 1, 1));
+            RenderedPage::new(1, 1, vec![1, 2, 3])
+        }
+        fn render_perturbed(
+            &mut self,
+            page: u32,
+            numerator: u32,
+            denominator: u32,
+        ) -> std::io::Result<RenderedPage> {
+            self.calls.push_back((page, numerator, denominator));
+            RenderedPage::new(1, 1, vec![4, 5, 6])
+        }
+    }
+
+    fn normal_artifact(page: u32) -> PageArtifactResult {
+        PageArtifactResult {
+            png: vec![page as u8],
+            markdown: format!("clean page {page}"),
+            page_json: format!(
+                r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]"}}"#
+            ),
+            truncated: false,
+            degenerated: false,
+            warnings: Vec::new(),
+            raw_output: String::new(),
+        }
+    }
+
+    fn degenerate_artifact(page: u32) -> PageArtifactResult {
+        PageArtifactResult {
+            png: vec![page as u8],
+            markdown: format!("cropped page {page}"),
+            page_json: format!(
+                r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"max_tokens","warnings":["truncated","repetition_removed","degenerated"]}}"#
+            ),
+            truncated: true,
+            degenerated: true,
+            warnings: vec![
+                "truncated".to_owned(),
+                "repetition_removed".to_owned(),
+                "degenerated".to_owned(),
+            ],
+            raw_output: format!("loop loop loop page {page}"),
+        }
+    }
+
+    struct ScriptedRecognizer {
+        script: std::collections::VecDeque<PageArtifactResult>,
+        calls: u32,
+        on_call: Option<Box<dyn FnMut(u32)>>,
+        fail_when_cancelled: Option<CancellationToken>,
+    }
+    impl PageArtifactRecognizer<u32> for ScriptedRecognizer {
+        fn recognize_artifact(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+        ) -> std::io::Result<PageArtifactResult> {
+            self.calls += 1;
+            if let Some(callback) = self.on_call.as_mut() {
+                callback(page);
+            }
+            if let Some(token) = &self.fail_when_cancelled
+                && token.is_cancelled()
+            {
+                // Mirror the real runtime: an in-flight Ctrl+C fails the page.
+                return Err(std::io::Error::other("cancelled"));
+            }
+            Ok(self
+                .script
+                .pop_front()
+                .unwrap_or_else(|| normal_artifact(page)))
+        }
+    }
+
+    fn degeneration_compatibility() -> CompatibilityKey {
+        CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "balanced".to_owned(),
+            parameters: "tokens=4096".to_owned(),
+        }
+    }
+
+    fn run_scan_with(
+        root: &std::path::Path,
+        pages: &[u32],
+        renderer: ScriptedRenderer,
+        recognizer: ScriptedRecognizer,
+        resume: bool,
+    ) -> std::io::Result<JobSummary> {
+        let mut service = ScanService::new(renderer, FakeLoader { loads: 0 }, recognizer);
+        service.run_with_checkpoints(pages, root, &degeneration_compatibility(), resume)
+    }
+
+    #[test]
+    fn checkpoint_new_fields_round_trip_and_old_v5_text_stays_readable() {
+        let directory = test_dir("checkpoint-degeneration");
+        let _ = fs::remove_dir_all(&directory);
+        let path = directory.join("page-0104.checkpoint");
+        let checkpoint = PageCheckpoint {
+            page_number: 104,
+            compatibility: degeneration_compatibility(),
+            complete: true,
+            output_sha256: "abc".to_owned(),
+            truncated: true,
+            degenerated: true,
+            attempts: 3,
+            raw: Some("page-0104.raw".to_owned()),
+            warnings: vec!["truncated".to_owned(), "degenerated".to_owned()],
+            audit: None,
+        };
+        super::write_checkpoint(&path, &checkpoint).unwrap();
+        let loaded = super::read_checkpoint(&path).unwrap();
+        assert_eq!(loaded, checkpoint);
+        // Old v5 text (no additive fields) still loads with default values.
+        let legacy = directory.join("page-0002.checkpoint");
+        fs::write(
+            &legacy,
+            "ocrx-checkpoint-v5\npage=2\ninput=696e707574\nmodel=6d6f64656c\nprofile=70726f66696c65\nparameters=70\ncomplete=true\noutput=6f7574707574\ntruncated=false\nwarnings=\naudit=none\n",
+        )
+        .unwrap();
+        let old = super::read_checkpoint(&legacy).unwrap();
+        assert!(!old.degenerated);
+        assert_eq!(old.attempts, 1);
+        assert_eq!(old.raw, None);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn merge_markdown_inserts_frozen_incomplete_markers() {
+        let marker_for = |incomplete| {
+            super::merge_markdown(vec![PageMarkdown {
+                page_number: 104,
+                content: "body".to_owned(),
+                incomplete: Some(incomplete),
+            }])
+            .unwrap()
+        };
+        let degenerated = marker_for(PageIncomplete::Degenerated);
+        assert_eq!(
+            degenerated,
+            "<!-- page: 104 -->\n> ⚠️ ocrx：第 104 页识别不完整（输出被复读退化截断），本页内容可能缺失或错误，请重扫后核对本页。\n\nbody"
+        );
+        let truncated = marker_for(PageIncomplete::Truncated);
+        assert!(truncated.contains("（输出被截断）"));
+        assert!(!truncated.contains("复读"));
+        let complete = super::merge_markdown(vec![PageMarkdown {
+            page_number: 104,
+            content: "body".to_owned(),
+            incomplete: None,
+        }])
+        .unwrap();
+        assert!(!complete.contains('⚠'));
+    }
+
+    #[test]
+    fn scenario_a_first_attempt_loops_second_succeeds() {
+        let root = test_dir("scenario-a");
+        let _ = fs::remove_dir_all(&root);
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: [degenerate_artifact(1), normal_artifact(1)]
+                .into_iter()
+                .collect(),
+            calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let summary = run_scan_with(&root, &[1], renderer, recognizer, false).unwrap();
+        assert_eq!(summary.completed_pages, 1);
+        assert_eq!(summary.degenerated_pages, 0);
+        let checkpoint = super::read_checkpoint(root.join("page-0001.checkpoint")).unwrap();
+        assert_eq!(checkpoint.attempts, 2);
+        assert!(!checkpoint.degenerated);
+        assert_eq!(checkpoint.raw, None);
+        assert_eq!(
+            fs::read_to_string(root.join("page-0001.md")).unwrap(),
+            "clean page 1"
+        );
+        let document = fs::read_to_string(root.join("document.md")).unwrap();
+        assert!(!document.contains('⚠'));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scenario_b_all_attempts_degenerate_commits_marked_partial_with_raw() {
+        let root = test_dir("scenario-b");
+        let _ = fs::remove_dir_all(&root);
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: [
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+            ]
+            .into_iter()
+            .collect(),
+            calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let summary = run_scan_with(&root, &[104], renderer, recognizer, false).unwrap();
+        assert_eq!(summary.degenerated_pages, 1);
+        let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
+        assert_eq!(checkpoint.attempts, 3);
+        assert!(checkpoint.degenerated);
+        assert_eq!(checkpoint.raw.as_deref(), Some("page-0104.raw"));
+        assert_eq!(
+            fs::read_to_string(root.join("page-0104.raw")).unwrap(),
+            "loop loop loop page 104"
+        );
+        assert_eq!(
+            checkpoint.resume_action(&degeneration_compatibility(), &root, 104),
+            CheckpointResumeAction::Reprocess
+        );
+        let document = fs::read_to_string(root.join("document.md")).unwrap();
+        assert!(document.contains("输出被复读退化截断"));
+        assert!(document.contains("cropped page 104"));
+        assert!(!document.contains("loop loop"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scenario_c_pure_truncation_never_retries_and_resumes_as_committed() {
+        let root = test_dir("scenario-c");
+        let _ = fs::remove_dir_all(&root);
+        let truncated_only = PageArtifactResult {
+            truncated: true,
+            degenerated: false,
+            ..normal_artifact(5)
+        };
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: [truncated_only].into_iter().collect(),
+            calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let summary = run_scan_with(&root, &[5], renderer, recognizer, false).unwrap();
+        assert_eq!(summary.truncated_pages, 1);
+        assert_eq!(summary.degenerated_pages, 0);
+        let checkpoint = super::read_checkpoint(root.join("page-0005.checkpoint")).unwrap();
+        assert_eq!(checkpoint.attempts, 1);
+        assert_eq!(checkpoint.raw, None);
+        assert_eq!(
+            checkpoint.resume_action(&degeneration_compatibility(), &root, 5),
+            CheckpointResumeAction::SkipCommitted
+        );
+        let document = fs::read_to_string(root.join("document.md")).unwrap();
+        assert!(document.contains("（输出被截断）"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scenario_d_resume_retries_degenerated_pages_with_fresh_attempt_budget() {
+        let root = test_dir("scenario-d");
+        let _ = fs::remove_dir_all(&root);
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: [
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+            ]
+            .into_iter()
+            .collect(),
+            calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let summary = run_scan_with(&root, &[104], renderer, recognizer, false).unwrap();
+        assert_eq!(summary.degenerated_pages, 1);
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: [
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+                normal_artifact(104),
+            ]
+            .into_iter()
+            .collect(),
+            calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let summary = run_scan_with(&root, &[104], renderer, recognizer, true).unwrap();
+        assert_eq!(summary.degenerated_pages, 0);
+        let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
+        assert_eq!(checkpoint.attempts, 3);
+        assert!(!checkpoint.degenerated);
+        let document = fs::read_to_string(root.join("document.md")).unwrap();
+        assert!(!document.contains('⚠'));
+        assert!(document.contains("clean page 104"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scenario_e_cancellation_during_attempt_reports_cancelled() {
+        let root = test_dir("scenario-e");
+        let _ = fs::remove_dir_all(&root);
+        let token = CancellationToken::new();
+        let cancel_trigger = token.clone();
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: std::collections::VecDeque::new(),
+            calls: 0,
+            on_call: Some(Box::new(move |_| cancel_trigger.request_cancel())),
+            fail_when_cancelled: Some(token.clone()),
+        };
+        let mut service = ScanService::new(renderer, FakeLoader { loads: 0 }, recognizer);
+        let summary = service
+            .run_with_checkpoints_cancelled(
+                &[1],
+                &root,
+                &degeneration_compatibility(),
+                false,
+                false,
+                &token,
+            )
+            .unwrap();
+        assert!(summary.cancelled);
+        assert_eq!(summary.completed_pages, 0);
+        assert!(!root.join("page-0001.checkpoint").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn perturbed_retries_use_frozen_scale_ratios() {
+        let root = test_dir("scenario-ratios");
+        let _ = fs::remove_dir_all(&root);
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: std::collections::VecDeque::new(), // always degenerate
+            calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let _ = run_scan_with(&root, &[1], renderer, recognizer, false).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -2527,6 +3069,9 @@ mod tests {
             truncated: true,
             warnings: vec!["truncated".to_owned(), "repetition_removed".to_owned()],
             audit: None,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
         };
         assert!(checkpoint.is_reusable(&expected));
         assert!(
@@ -2576,6 +3121,9 @@ mod tests {
             truncated: false,
             warnings: Vec::new(),
             audit: None,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
         };
         assert!(checkpoint.is_reusable(&changed_ocr));
     }
@@ -2596,6 +3144,9 @@ mod tests {
             truncated: false,
             warnings: Vec::new(),
             audit: None,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
         };
         let changed = CompatibilityKey {
             profile: "quality".to_owned(),
@@ -2644,6 +3195,9 @@ mod tests {
             truncated: false,
             warnings: vec!["native_validation_failed".to_owned()],
             audit: None,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
         };
         assert!(checkpoint.is_pending_ocr(&expected));
         assert!(!checkpoint.is_reusable(&expected));
@@ -2721,6 +3275,9 @@ mod tests {
             truncated: false,
             warnings: Vec::new(),
             audit: None,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
         };
         assert_eq!(
             incomplete.disposition(&incomplete.compatibility, &root, 4),
@@ -2960,6 +3517,9 @@ mod tests {
             complete: true,
             output_sha256: "output".to_owned(),
             truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
             warnings: Vec::new(),
             audit: None,
         };
@@ -2976,10 +3536,12 @@ mod tests {
         let merged = super::merge_markdown(vec![
             PageMarkdown {
                 page_number: 2,
+                incomplete: None,
                 content: "second\r\npage".to_owned(),
             },
             PageMarkdown {
                 page_number: 1,
+                incomplete: None,
                 content: "first\rpage".to_owned(),
             },
         ])
@@ -2996,6 +3558,7 @@ mod tests {
         assert!(
             super::merge_markdown(vec![PageMarkdown {
                 page_number: 0,
+                incomplete: None,
                 content: "x".to_owned()
             }])
             .is_err()
@@ -3004,10 +3567,12 @@ mod tests {
             super::merge_markdown(vec![
                 PageMarkdown {
                     page_number: 1,
+                    incomplete: None,
                     content: "a".to_owned()
                 },
                 PageMarkdown {
                     page_number: 1,
+                    incomplete: None,
                     content: "b".to_owned()
                 },
             ])
@@ -3024,10 +3589,12 @@ mod tests {
             vec![
                 PageMarkdown {
                     page_number: 2,
+                    incomplete: None,
                     content: "ocr".to_owned(),
                 },
                 PageMarkdown {
                     page_number: 1,
+                    incomplete: None,
                     content: "native".to_owned(),
                 },
             ],
@@ -3092,6 +3659,9 @@ mod tests {
             complete: false,
             output_sha256: "output".to_owned(),
             truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
             warnings: Vec::new(),
             audit: None,
         };
@@ -3123,6 +3693,9 @@ mod tests {
             complete: false,
             output_sha256: String::new(),
             truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
             warnings: Vec::new(),
             audit: None,
         };
@@ -3160,6 +3733,9 @@ mod tests {
             complete: false,
             output_sha256: String::new(),
             truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
             warnings: Vec::new(),
             audit: None,
         };
@@ -3175,6 +3751,7 @@ mod tests {
             page,
             PageMarkdown {
                 page_number: 2,
+                incomplete: None,
                 content: "native\npage".to_owned()
             }
         );
@@ -3210,6 +3787,7 @@ mod tests {
     fn job_summary_maps_page_outcomes_to_stable_status() {
         assert_eq!(
             JobSummary {
+                degenerated_pages: 0,
                 selected_pages: 2,
                 completed_pages: 2,
                 failed_pages: 0,
@@ -3223,6 +3801,7 @@ mod tests {
         );
         assert_eq!(
             JobSummary {
+                degenerated_pages: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 1,
@@ -3236,6 +3815,7 @@ mod tests {
         );
         assert_eq!(
             JobSummary {
+                degenerated_pages: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 0,
@@ -3249,6 +3829,7 @@ mod tests {
         );
         assert_eq!(
             JobSummary {
+                degenerated_pages: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 0,
@@ -3265,6 +3846,7 @@ mod tests {
     #[test]
     fn merge_job_summaries_combines_native_and_ocr_phases() {
         let native = JobSummary {
+            degenerated_pages: 0,
             selected_pages: 3,
             completed_pages: 2,
             failed_pages: 0,
@@ -3282,6 +3864,7 @@ mod tests {
             cancelled: false,
         };
         let ocr = JobSummary {
+            degenerated_pages: 0,
             selected_pages: 1,
             completed_pages: 1,
             failed_pages: 0,
