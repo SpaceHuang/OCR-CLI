@@ -282,6 +282,11 @@ impl Runtime for LlamaMtmdRuntime {
         let mut generated_tokens = 0_u64;
         let mut first_token_ms = 0_u64;
         let mut repetition_detector = RepetitionLoopDetector::new();
+        // Batch reuse (plan P1 T2.2): the single-token batch is allocated once
+        // per page; each step clears (n_tokens reset) and re-adds, removing the
+        // per-token allocation+binding overhead. Kept only if the R0.5
+        // differential re-measurement shows >=2%; otherwise revert.
+        let mut batch = LlamaBatch::new(1, 1);
         for (generated, _) in (0..request.max_output_tokens).enumerate() {
             if first_token_ms == 0 {
                 first_token_ms = started.elapsed().as_millis() as u64;
@@ -353,7 +358,7 @@ impl Runtime for LlamaMtmdRuntime {
                         .token_to_piece_bytes(token, 64, false, None)
                         .map_err(|error| error.to_string())?,
                 ));
-                let mut batch = LlamaBatch::new(1, 1);
+                batch.clear();
                 let token_position = position
                     + i32::try_from(generated)
                         .map_err(|_| "token position exceeds range".to_owned())?;
