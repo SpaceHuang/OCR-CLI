@@ -23,8 +23,10 @@ use std::cell::RefCell;
 use std::io::{Cursor, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod pdfium_owner;
 mod platform_paths;
 use platform_paths::home_dir;
 
@@ -436,22 +438,6 @@ fn make_ocr_compatibility(
         ),
         ..native_compatibility.clone()
     }
-}
-
-fn analyze_selected_pages(
-    renderer: &PdfiumRenderer,
-    input: &Path,
-    pages: &[usize],
-    tier: QualityTier,
-) -> Result<Vec<PageClassification>, String> {
-    pages
-        .iter()
-        .map(|page| {
-            renderer
-                .analyze_page(input, page.saturating_sub(1), tier)
-                .map_err(|error| format!("{error:?}"))
-        })
-        .collect()
 }
 
 fn initial_ocr_queue(pages: &[usize], classifications: &[PageClassification]) -> Vec<OcrQueuePage> {
@@ -1478,59 +1464,165 @@ fn main() {
     }
 }
 
-struct PdfScanRenderer {
-    renderer: PdfiumRenderer,
-    input: PathBuf,
-    options: RenderOptions,
+/// Renders one 0-based half-open worker segment, honouring cancellation
+/// (plan §6.3). [`PdfWorkerScheduler`] is the production implementation; tests
+/// inject fakes that write segment files directly.
+trait SegmentRenderer: Send + Sync + 'static {
+    fn run_segment(
+        &self,
+        input: &Path,
+        output: &Path,
+        start: usize,
+        end: usize,
+        cancellation: &CancellationToken,
+    ) -> Result<(), String>;
 }
 
-struct WorkerScanRenderer {
-    scheduler: PdfWorkerScheduler,
+impl SegmentRenderer for PdfWorkerScheduler {
+    fn run_segment(
+        &self,
+        input: &Path,
+        output: &Path,
+        start: usize,
+        end: usize,
+        cancellation: &CancellationToken,
+    ) -> Result<(), String> {
+        self.run_with_cancel(input, output, start, end, || cancellation.is_cancelled())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// One in-flight background segment render (prefetch depth = 1 segment, so at
+/// most one worker process is in flight at any time, plan §6.3).
+struct SegmentPrefetch {
+    start: usize,
+    end: usize,
+    join: std::thread::JoinHandle<Result<(), String>>,
+}
+
+/// Renders OCR pages through worker processes with one-segment prefetch.
+///
+/// P3 (plan §6.3): after serving a page from segment [S, E), the next segment
+/// renders on a background thread (shared scheduler); page files of fully
+/// consumed segments are deleted individually so the prefetched segment's
+/// committed files survive in the shared root directory. The
+/// degeneration-retry perturbation is implemented here (v3.10 BLK-1: the
+/// default trait fallback silently ignored the ratio in worker mode).
+struct WorkerScanRenderer<S: SegmentRenderer> {
+    scheduler: Arc<S>,
     input: PathBuf,
     output: PathBuf,
     page_count: Option<usize>,
+    segment_pages: usize,
     rendered_end: usize,
+    /// The segment the last served page came from; its files are removed when
+    /// the scan advances past it (narrowed cleanup, plan §6.3).
+    active_segment: (usize, usize),
+    has_active_segment: bool,
+    prefetch: Option<SegmentPrefetch>,
+    cancellation: CancellationToken,
 }
 
-impl PageRenderer for WorkerScanRenderer {
-    fn preflight(&mut self) -> std::io::Result<()> {
-        if self.page_count.is_none() {
-            let mut direct = PdfiumRenderer::new(self.scheduler.library_dir.clone());
-            if let Some(password) = &self.scheduler.password {
-                direct = direct.with_password(password);
-            }
-            let count = direct
-                .page_count(&self.input)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            self.page_count = Some(count);
+impl<S: SegmentRenderer> WorkerScanRenderer<S> {
+    /// Deletes the page files of one consumed segment (best effort).
+    fn cleanup_segment_files(&self, start: usize, end: usize) {
+        for page in start..end {
+            let Ok(page_number) = u32::try_from(page + 1) else {
+                continue;
+            };
+            let _ = std::fs::remove_file(self.output.join(format!("page-{page_number:04}.png")));
+            let _ = std::fs::remove_file(self.output.join(format!("page-{page_number:04}.audit")));
         }
-        std::fs::create_dir_all(&self.output)?;
+    }
+
+    fn cleanup_active_segment(&self) {
+        if self.has_active_segment {
+            self.cleanup_segment_files(self.active_segment.0, self.active_segment.1);
+        }
+    }
+
+    /// Launches the next segment on a background thread (depth = 1).
+    fn maybe_launch_prefetch(&mut self, after_end: usize) {
+        let Some(count) = self.page_count else {
+            return;
+        };
+        if self.prefetch.is_some() || after_end >= count {
+            return;
+        }
+        let end = (after_end + self.segment_pages).min(count);
+        let scheduler = Arc::clone(&self.scheduler);
+        let input = self.input.clone();
+        let output = self.output.clone();
+        let cancellation = self.cancellation.clone();
+        let join = std::thread::Builder::new()
+            .name("worker-prefetch".to_owned())
+            .spawn(move || scheduler.run_segment(&input, &output, after_end, end, &cancellation));
+        if let Ok(join) = join {
+            self.prefetch = Some(SegmentPrefetch {
+                start: after_end,
+                end,
+                join,
+            });
+        }
+    }
+
+    /// Advances bookkeeping once segment [start, end) is available on disk.
+    fn finish_segment_advance(&mut self, start: usize, end: usize) {
+        self.cleanup_active_segment();
+        self.rendered_end = end;
+        self.active_segment = (start, end);
+        self.has_active_segment = true;
+        self.maybe_launch_prefetch(end);
+    }
+
+    /// Consumes a prefetch covering the next needed segment. A stale prefetch
+    /// (never produced by the sequential page order) is cancelled and cleaned
+    /// best effort. `Ok(true)` = consumed, segment files are on disk.
+    fn consume_or_drop_prefetch(&mut self, start: usize) -> std::io::Result<bool> {
+        let Some(prefetch) = self.prefetch.take() else {
+            return Ok(false);
+        };
+        if prefetch.start != start {
+            self.cancellation.request_cancel();
+            let _ = prefetch.join.join();
+            self.cleanup_segment_files(prefetch.start, prefetch.end);
+            return Ok(false);
+        }
+        let result = prefetch.join.join().map_err(|error| {
+            std::io::Error::other(format!("worker prefetch panicked: {error:?}"))
+        })?;
+        result.map_err(std::io::Error::other)?;
+        Ok(true)
+    }
+
+    /// Ensures segment files cover the 0-based `page_index`, advancing segment
+    /// by segment with prefetch consumption and narrowed cleanup.
+    fn ensure_coverage(&mut self, page_index: usize) -> std::io::Result<()> {
+        let count = self.page_count.unwrap_or_default();
+        while self.rendered_end < page_index {
+            let start = self.rendered_end;
+            let end = (start + self.segment_pages).min(count);
+            eprintln!(
+                "[probe] ensure page_index={page_index} start={start} end={end} has_pf={} rendered_end={}",
+                self.prefetch.is_some(),
+                self.rendered_end
+            );
+            if self.consume_or_drop_prefetch(start)? {
+                self.finish_segment_advance(start, end);
+                continue;
+            }
+            self.cleanup_active_segment();
+            self.scheduler
+                .run_segment(&self.input, &self.output, start, end, &self.cancellation)
+                .map_err(std::io::Error::other)?;
+            self.finish_segment_advance(start, end);
+        }
         Ok(())
     }
 
-    fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
-        let count = self.page_count.unwrap_or_default();
-        let page_index = usize::try_from(page).map_err(std::io::Error::other)?;
-        if page == 0 || page_index > count {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "worker page is out of range",
-            ));
-        }
-        // Worker pages are 0-based half-open segments; ensure the page is covered.
-        while self.rendered_end < page_index {
-            let start = self.rendered_end;
-            let end = (start + self.scheduler.segment_pages).min(count);
-            // Drop previous segment files to avoid linear growth.
-            if start > 0 {
-                let _ = std::fs::remove_dir_all(&self.output);
-                std::fs::create_dir_all(&self.output)?;
-            }
-            self.scheduler
-                .run(&self.input, &self.output, start, end)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            self.rendered_end = end;
-        }
+    /// Reads one committed worker page (PNG + audit) without model scaling.
+    fn read_worker_page(&self, page: u32) -> std::io::Result<(image::RgbImage, u32, u32)> {
         let path = self.output.join(format!("page-{page:04}.png"));
         let image = image::open(path)
             .map_err(std::io::Error::other)?
@@ -1551,11 +1643,45 @@ impl PageRenderer for WorkerScanRenderer {
                 "worker audit dimensions do not match PNG",
             ));
         }
+        Ok((image, original_width, original_height))
+    }
+
+    /// Applies the optional perturbation ratio and the pixel budget to a raw
+    /// worker page, recording the audit exactly like the in-process path.
+    fn compose_worker_page(
+        &self,
+        image: image::RgbImage,
+        original_width: u32,
+        original_height: u32,
+        scale: Option<(u32, u32)>,
+    ) -> std::io::Result<RenderedPage> {
         const PIXEL_BUDGET: u64 = 2880 * 2880;
         let rendered_width = image.width();
         let rendered_height = image.height();
+        let image = match scale {
+            None => image,
+            Some((numerator, denominator)) => {
+                let scaled_width = u32::try_from(
+                    (u64::from(rendered_width) * u64::from(numerator)) / u64::from(denominator),
+                )
+                .map_err(|_| std::io::Error::other("scaled width out of range"))?
+                .max(1);
+                let scaled_height = u32::try_from(
+                    (u64::from(rendered_height) * u64::from(numerator)) / u64::from(denominator),
+                )
+                .map_err(|_| std::io::Error::other("scaled height out of range"))?
+                .max(1);
+                image::imageops::resize(
+                    &image,
+                    scaled_width,
+                    scaled_height,
+                    image::imageops::FilterType::Triangle,
+                )
+            }
+        };
         let (model_width, model_height, scaled) =
-            fit_pixel_budget(rendered_width, rendered_height, PIXEL_BUDGET);
+            fit_pixel_budget(image.width(), image.height(), PIXEL_BUDGET);
+        let scaled_input_width = image.width();
         let rgb = if scaled {
             image::imageops::resize(
                 &image,
@@ -1567,7 +1693,7 @@ impl PageRenderer for WorkerScanRenderer {
             image
         };
         let (scale_ratio_numerator, scale_ratio_denominator) =
-            linear_scale_ratio(model_width, rendered_width);
+            linear_scale_ratio(model_width, scaled_input_width);
         RenderedPage::new(rgb.width(), rgb.height(), rgb.into_raw()).map(|page| {
             page.with_audit(RenderAudit {
                 original_width,
@@ -1581,6 +1707,73 @@ impl PageRenderer for WorkerScanRenderer {
                 scale_ratio_denominator,
             })
         })
+    }
+}
+
+impl<S: SegmentRenderer> Drop for WorkerScanRenderer<S> {
+    fn drop(&mut self) {
+        // Cancel + drain the in-flight prefetch, then clean up its page files
+        // best effort (plan §6.3: no orphan worker, no unconsumed residue).
+        self.cancellation.request_cancel();
+        if let Some(prefetch) = self.prefetch.take() {
+            let _ = prefetch.join.join();
+            self.cleanup_segment_files(prefetch.start, prefetch.end);
+        }
+    }
+}
+
+impl<S: SegmentRenderer> PageRenderer for WorkerScanRenderer<S> {
+    fn preflight(&mut self) -> std::io::Result<()> {
+        // Page count is resolved before the renderer exists; the owner thread
+        // owns every in-process PDFium call (plan §6.1), so the old
+        // direct-count fallback here would violate the invariant.
+        if self.page_count.is_none() {
+            return Err(std::io::Error::other(
+                "worker renderer requires a resolved page count",
+            ));
+        }
+        std::fs::create_dir_all(&self.output)?;
+        Ok(())
+    }
+
+    fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+        let count = self.page_count.unwrap_or_default();
+        let page_index = usize::try_from(page).map_err(std::io::Error::other)?;
+        if page == 0 || page_index > count {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "worker page is out of range",
+            ));
+        }
+        self.ensure_coverage(page_index)?;
+        let (image, original_width, original_height) = self.read_worker_page(page)?;
+        self.compose_worker_page(image, original_width, original_height, None)
+    }
+
+    fn render_perturbed(
+        &mut self,
+        page: u32,
+        numerator: u32,
+        denominator: u32,
+    ) -> std::io::Result<RenderedPage> {
+        // Degeneration retry (plan §3.5/§6.3): resample the already-committed
+        // page by the ratio; the RenderAudit records the perturbation.
+        let count = self.page_count.unwrap_or_default();
+        let page_index = usize::try_from(page).map_err(std::io::Error::other)?;
+        if page == 0 || page_index > count {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "worker page is out of range",
+            ));
+        }
+        self.ensure_coverage(page_index)?;
+        let (image, original_width, original_height) = self.read_worker_page(page)?;
+        self.compose_worker_page(
+            image,
+            original_width,
+            original_height,
+            Some((numerator, denominator)),
+        )
     }
 }
 
@@ -1652,106 +1845,6 @@ fn inject_inference_failure(page: u32) -> std::io::Result<()> {
         page,
         "injected inference failure",
     )
-}
-
-impl PageRenderer for PdfScanRenderer {
-    fn preflight(&mut self) -> std::io::Result<()> {
-        self.renderer
-            .page_count(&self.input)
-            .map(|_| ())
-            .map_err(|e| std::io::Error::other(e.to_string()))
-    }
-    fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
-        self.render_with_scale(page, 1, 1)
-    }
-    fn render_perturbed(
-        &mut self,
-        page: u32,
-        numerator: u32,
-        denominator: u32,
-    ) -> std::io::Result<RenderedPage> {
-        self.render_with_scale(page, numerator, denominator)
-    }
-}
-
-impl PdfScanRenderer {
-    /// Renders one page, optionally rescaling the model input by
-    /// `numerator`/`denominator` (degeneration retry perturbation, plan §3.5):
-    /// the resample changes pixels and therefore logits while aspect ratio and
-    /// the pixel budget constraint are preserved; the audit records it.
-    fn render_with_scale(
-        &mut self,
-        page: u32,
-        scale_numerator: u32,
-        scale_denominator: u32,
-    ) -> std::io::Result<RenderedPage> {
-        inject_render_failure(page)?;
-        const PIXEL_BUDGET: u64 = 2880 * 2880;
-        let (image, original_width, original_height) = self
-            .renderer
-            .render_page_rgb8_with_audit(
-                &self.input,
-                usize::try_from(
-                    page.checked_sub(1)
-                        .ok_or_else(|| std::io::Error::other("page number must be positive"))?,
-                )
-                .map_err(std::io::Error::other)?,
-                self.options,
-            )
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let rendered_width = image.width();
-        let rendered_height = image.height();
-        let image = if scale_numerator == scale_denominator {
-            image
-        } else {
-            let scaled_width = u32::try_from(
-                (u64::from(rendered_width) * u64::from(scale_numerator))
-                    / u64::from(scale_denominator),
-            )
-            .map_err(|_| std::io::Error::other("scaled width out of range"))?
-            .max(1);
-            let scaled_height = u32::try_from(
-                (u64::from(rendered_height) * u64::from(scale_numerator))
-                    / u64::from(scale_denominator),
-            )
-            .map_err(|_| std::io::Error::other("scaled height out of range"))?
-            .max(1);
-            image::imageops::resize(
-                &image,
-                scaled_width,
-                scaled_height,
-                image::imageops::FilterType::Triangle,
-            )
-        };
-        let (model_width, model_height, scaled) =
-            fit_pixel_budget(image.width(), image.height(), PIXEL_BUDGET);
-        let scaled_input_width = image.width();
-        let rgb = if scaled {
-            image::imageops::resize(
-                &image,
-                model_width,
-                model_height,
-                image::imageops::FilterType::Triangle,
-            )
-        } else {
-            image
-        };
-        let (scale_ratio_numerator, scale_ratio_denominator) =
-            linear_scale_ratio(model_width, scaled_input_width);
-        RenderedPage::new(rgb.width(), rgb.height(), rgb.into_raw()).map(|page| {
-            page.with_audit(RenderAudit {
-                original_width,
-                original_height,
-                rendered_width,
-                rendered_height,
-                model_width,
-                model_height,
-                scaled,
-                scale_ratio_numerator,
-                scale_ratio_denominator,
-            })
-        })
-    }
 }
 
 struct PreloadedLoader {
@@ -1970,14 +2063,19 @@ fn run_scan(options: ScanOptions) -> ! {
     // Validate the input before resolving or downloading model assets. Invalid,
     // encrypted, and corrupt PDFs are input errors even on a machine with no
     // installed OCR model.
-    let page_count_renderer = {
-        let mut renderer = PdfiumRenderer::new(library.clone());
-        if let Some(password) = &options.password {
-            renderer = renderer.with_password(password);
-        }
-        renderer
-    };
-    let page_count = match page_count_renderer.page_count(&input) {
+    // P3 (plan §6.1): from here on every in-process PDFium call (page count,
+    // analysis, render, scale) runs on the dedicated PdfiumOwner thread; the
+    // main thread requests through channels and never touches pdfium types.
+    // The render DPI is resolved up front because the owner holds it for the
+    // whole scan.
+    let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
+    let pdfium_owner_handle = Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
+        library.clone(),
+        input.clone(),
+        RenderOptions { dpi },
+        options.password.clone(),
+    )));
+    let page_count = match pdfium_owner_handle.borrow_mut().page_count() {
         Ok(count) => count,
         Err(error) => {
             let error_kind = match classify_input_error(&input, &error.to_string()) {
@@ -2053,7 +2151,10 @@ fn run_scan(options: ScanOptions) -> ! {
         &ProgressEvent::for_stage(ProgressStage::Analyzing, None, 0, pages.len() as u32),
         progress_mode,
     );
-    let classifications = match analyze_selected_pages(&pdf, &input, &pages, required_tier) {
+    let classifications = match pdfium_owner_handle
+        .borrow_mut()
+        .analyze(&pages, required_tier)
+    {
         Ok(classifications) => classifications,
         Err(error) => {
             reporter.error(
@@ -2191,13 +2292,12 @@ fn run_scan(options: ScanOptions) -> ! {
         &ProgressEvent::for_stage(ProgressStage::Extracting, None, 0, pages.len() as u32),
         progress_mode,
     );
-    let dpi = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
     let renderer: Box<dyn PageRenderer> = if let Some(worker) = std::env::var_os("OCRX_PDF_WORKER")
     {
         let worker_output =
             std::env::temp_dir().join(format!("ocrx-worker-render-{}", std::process::id()));
         Box::new(WorkerScanRenderer {
-            scheduler: PdfWorkerScheduler {
+            scheduler: Arc::new(PdfWorkerScheduler {
                 worker_executable: PathBuf::from(worker),
                 library_dir: library.clone(),
                 segment_pages: 20,
@@ -2205,24 +2305,23 @@ fn run_scan(options: ScanOptions) -> ! {
                 dpi,
                 env: Vec::new(),
                 password: options.password.clone(),
-            },
+            }),
             input: input.clone(),
             output: worker_output,
             page_count: Some(page_count),
+            segment_pages: 20,
             rendered_end: 0,
+            active_segment: (0, 0),
+            has_active_segment: false,
+            prefetch: None,
+            cancellation: cancellation.clone(),
         })
     } else {
-        Box::new(PdfScanRenderer {
-            renderer: {
-                let mut renderer = PdfiumRenderer::new(library);
-                if let Some(password) = &options.password {
-                    renderer = renderer.with_password(password);
-                }
-                renderer
-            },
-            input: input.clone(),
-            options: RenderOptions { dpi },
-        })
+        // P3 (plan §6.2): the in-process render pipeline runs on the owner
+        // thread with a K=2 prefetch window; the wrapper only forwards.
+        Box::new(pdfium_owner::OwnerPageRenderer::new(Rc::clone(
+            &pdfium_owner_handle,
+        )))
     };
     let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let recognizer = OvisRecognizer {
@@ -2794,6 +2893,25 @@ fn run_scan(options: ScanOptions) -> ! {
             cancelled: false,
         })
     };
+    // P3 (plan §6.2, BLK-2): a poisoned owner aborts the scan fail-loud with
+    // a structured error — completed pages keep their checkpoints for
+    // --resume; the main thread never takes over PDFium rendering.
+    if let Some(cause) = pdfium_owner_handle.borrow().poisoned() {
+        reporter.error(
+            &ErrorReport {
+                code: 3,
+                kind: "pdf".to_owned(),
+                message: "scan aborted: pdfium owner failed".to_owned(),
+                cause: Some(cause),
+                suggestion: Some(
+                    "re-run with --resume to continue from committed checkpoints".to_owned(),
+                ),
+            },
+            report_format,
+        );
+        print_reporter(reporter);
+        std::process::exit(3);
+    }
     let vram_peak_bytes = stop_vram_sampler(vram_sampler);
     // M-10: the effective backend label — a GPU→CPU fallback means the scan
     // really ran on CPU even though `--device` requested a GPU backend.
@@ -3536,15 +3654,20 @@ fn doctor_json_report_with_paths(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use ocrx_output::PageRenderer;
 
     use super::{
-        CliCommand, ConfigSource, NativeFirstPhaseResult, NativeOnlyDecision,
+        CancellationToken, CliCommand, ConfigSource, NativeFirstPhaseResult, NativeOnlyDecision,
         NativeValidationRoute, ResolvedConfig, ResourceSnapshot, RoutingCounts, ScanExecutionPlan,
-        ScanOptions, ScanResultFields, build_final_ocr_queue, current_platform, doctor_json_report,
-        dynamic_fallback_requires_model_assets, final_routing_diagnostics, format_routing_summary,
-        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
+        ScanOptions, ScanResultFields, SegmentRenderer, WorkerScanRenderer, build_final_ocr_queue,
+        current_platform, doctor_json_report, dynamic_fallback_requires_model_assets,
+        final_routing_diagnostics, format_routing_summary, initial_ocr_queue,
+        initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
         native_candidate_pages, native_only_decision, ocr_queue_after_native_phase, parse_command,
         parse_injected_failure_page, parse_page_selection, parse_scan_args,
         pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required, resolve_config,
@@ -5009,5 +5132,226 @@ mod tests {
             Path::new("/work")
         };
         assert!(super::validate_scan_output_policy(input, ancestor, &[cache], cwd).is_err());
+    }
+    // --- P3 §6.3: worker prefetch, narrowed cleanup, perturbation. -----------
+
+    /// Fake segment renderer: writes a tiny PNG + audit per page, records
+    /// segment calls, can fail chosen segment starts and delay.
+    struct FakeSegments {
+        calls: std::sync::Mutex<Vec<(usize, usize)>>,
+        /// Segment starts that fail on their FIRST render only (the
+        /// foreground retry recovers, mirroring a transient worker fault).
+        fail_starts: std::sync::Mutex<Vec<usize>>,
+        delay: Duration,
+    }
+
+    impl FakeSegments {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                calls: std::sync::Mutex::new(Vec::new()),
+                fail_starts: std::sync::Mutex::new(Vec::new()),
+                delay: Duration::ZERO,
+            })
+        }
+
+        fn with_fail_start(mut self: Arc<Self>, start: usize) -> Arc<Self> {
+            Arc::get_mut(&mut self)
+                .unwrap()
+                .fail_starts
+                .lock()
+                .unwrap()
+                .push(start);
+            self
+        }
+
+        fn calls(&self) -> Vec<(usize, usize)> {
+            self.calls.lock().unwrap().clone()
+        }
+
+        fn wait_for_call(&self, start: usize, end: usize) {
+            for _ in 0..200 {
+                if self.calls().contains(&(start, end)) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            panic!("segment ({start},{end}) was never rendered");
+        }
+    }
+
+    impl SegmentRenderer for FakeSegments {
+        fn run_segment(
+            &self,
+            _input: &Path,
+            output: &Path,
+            start: usize,
+            end: usize,
+            _cancellation: &CancellationToken,
+        ) -> Result<(), String> {
+            std::thread::sleep(self.delay);
+            self.calls.lock().unwrap().push((start, end));
+            // Bind first so the guard temporary drops before the re-lock.
+            let fail_position = self
+                .fail_starts
+                .lock()
+                .unwrap()
+                .iter()
+                .position(|&s| s == start);
+            if let Some(position) = fail_position {
+                self.fail_starts.lock().unwrap().remove(position);
+                return Err(format!("injected segment failure at {start}"));
+            }
+            std::fs::create_dir_all(output).map_err(|e| e.to_string())?;
+            for page in start..end {
+                let page_number = u32::try_from(page + 1).unwrap();
+                let png = output.join(format!("page-{page_number:04}.png"));
+                image::RgbImage::from_fn(8, 6, |x, y| {
+                    image::Rgb([page_number as u8, x as u8, y as u8])
+                })
+                .save(&png)
+                .map_err(|e| e.to_string())?;
+                std::fs::write(
+                    output.join(format!("page-{page_number:04}.audit")),
+                    "original=100x200;rendered=8x6",
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+    }
+
+    fn worker_renderer(
+        fake: Arc<FakeSegments>,
+        page_count: usize,
+        output: &Path,
+    ) -> WorkerScanRenderer<FakeSegments> {
+        WorkerScanRenderer {
+            scheduler: fake,
+            input: PathBuf::from("input.pdf"),
+            output: output.to_path_buf(),
+            page_count: Some(page_count),
+            segment_pages: 2,
+            rendered_end: 0,
+            active_segment: (0, 0),
+            has_active_segment: false,
+            prefetch: None,
+            cancellation: CancellationToken::new(),
+        }
+    }
+
+    fn unique_worker_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ocrx-worker-p3-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn worker_prefetch_renders_next_segment_in_background_once() {
+        let fake = FakeSegments::new();
+        let output = unique_worker_dir("prefetch");
+        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
+        renderer.render(1).unwrap();
+        // Segment (0,2) ran synchronously; the background prefetch (2,4) is
+        // in flight or done. Serving page 3 must consume it, not re-run it;
+        // consuming immediately launches the next prefetch (4,6).
+        renderer.render(3).unwrap();
+        fake.wait_for_call(2, 4);
+        fake.wait_for_call(4, 6);
+        assert_eq!(fake.calls(), vec![(0, 2), (2, 4), (4, 6)]);
+        // Page 4 is inside the consumed (2,4) segment: served from disk with
+        // no further segment render.
+        renderer.render(4).unwrap();
+        assert_eq!(fake.calls(), vec![(0, 2), (2, 4), (4, 6)]);
+        let _ = std::fs::remove_dir_all(&output);
+    }
+
+    #[test]
+    fn worker_cleanup_removes_only_consumed_segment_page_files() {
+        let fake = FakeSegments::new();
+        let output = unique_worker_dir("cleanup");
+        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
+        renderer.render(1).unwrap();
+        assert!(output.join("page-0001.png").is_file());
+        renderer.render(3).unwrap();
+        // Segment (0,2) fully consumed: its page files are gone; the active
+        // segment (2,4) survives in the shared root (plan §6.3 narrowed
+        // cleanup — the old code removed the whole directory).
+        assert!(!output.join("page-0001.png").exists());
+        assert!(!output.join("page-0002.audit").exists());
+        assert!(output.join("page-0003.png").is_file());
+        assert!(output.join("page-0004.audit").is_file());
+        renderer.render(5).unwrap();
+        assert!(!output.join("page-0003.png").exists());
+        assert!(output.join("page-0005.png").is_file());
+        let _ = std::fs::remove_dir_all(&output);
+    }
+
+    #[test]
+    fn worker_render_perturbed_resamples_and_records_the_ratio() {
+        let fake = FakeSegments::new();
+        let output = unique_worker_dir("perturb");
+        let mut renderer = worker_renderer(Arc::clone(&fake), 4, &output);
+        let attempt0 = renderer.render(1).unwrap();
+        let attempt1 = renderer.render_perturbed(1, 47, 50).unwrap();
+        let attempt2 = renderer.render_perturbed(1, 53, 50).unwrap();
+        // 8x6 PNG: 47/50 -> 7x5; 53/50 floors to 8x6: all three model inputs
+        // differ in pixels (attempt inputs must actually rotate, BLK-1).
+        assert_eq!((attempt0.width, attempt0.height), (8, 6));
+        assert_eq!((attempt1.width, attempt1.height), (7, 5));
+        assert_ne!(attempt0.rgb8, attempt1.rgb8);
+        assert_ne!(attempt1.rgb8, attempt2.rgb8);
+        // The audit records the pre-perturbation render and the final model
+        // input faithfully (v3.10 BLK-1: the fallback silently ignored this).
+        assert_eq!(attempt1.audit.rendered_width, 8);
+        assert_eq!(attempt1.audit.model_width, 7);
+        assert_eq!(attempt1.audit.original_width, 100);
+        assert_eq!(attempt2.audit.model_width, 8);
+        assert_eq!(attempt2.audit.scale_ratio_numerator, 1);
+        let _ = std::fs::remove_dir_all(&output);
+    }
+
+    #[test]
+    fn worker_prefetch_failure_fails_the_prefetched_page_not_an_earlier_one() {
+        let fake = FakeSegments::new().with_fail_start(2);
+        let output = unique_worker_dir("fail");
+        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
+        // Page 1 (segment 0) succeeds; the background prefetch of segment 2
+        // fails. The failure must surface at page 3, not page 1.
+        renderer.render(1).unwrap();
+        fake.wait_for_call(2, 4);
+        let error = renderer.render(3).unwrap_err();
+        assert!(error.to_string().contains("injected segment failure at 2"));
+        // Later pages recover: the failed segment re-runs in the foreground
+        // when the scan needs it (failure-continues stays per page).
+        renderer.render(5).unwrap();
+        assert!(output.join("page-0005.png").is_file());
+        let _ = std::fs::remove_dir_all(&output);
+    }
+
+    #[test]
+    fn worker_drop_cancels_and_cleans_unconsumed_prefetch_pages() {
+        let fake = FakeSegments::new();
+        let output = unique_worker_dir("drop");
+        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
+        renderer.render(1).unwrap();
+        // Wait for the prefetch segment files to appear, then drop: the
+        // unconsumed segment (2,4) page files must be cleaned best effort.
+        fake.wait_for_call(2, 4);
+        drop(renderer);
+        assert!(!output.join("page-0003.png").exists());
+        assert!(!output.join("page-0004.audit").exists());
+        let _ = std::fs::remove_dir_all(&output);
+    }
+
+    #[test]
+    fn worker_out_of_range_page_is_rejected_before_any_segment_run() {
+        let fake = FakeSegments::new();
+        let output = unique_worker_dir("range");
+        let mut renderer = worker_renderer(Arc::clone(&fake), 4, &output);
+        assert!(renderer.render(0).is_err());
+        assert!(renderer.render(5).is_err());
+        assert!(fake.calls().is_empty());
+        let _ = std::fs::remove_dir_all(&output);
     }
 }
