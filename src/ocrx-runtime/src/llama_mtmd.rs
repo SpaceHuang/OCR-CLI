@@ -105,6 +105,18 @@ pub struct LlamaMtmdRuntime {
     telemetry: RuntimeTelemetry,
 }
 
+/// Context params for the per-page decode context (plan P1 T2.4): flash
+/// attention AUTO lets llama.cpp decide per backend capability, avoiding
+/// hard-init failures on backends with partial FA support; measured benefit
+/// and byte-identity are gated by the golden-set run (T2.4 acceptance).
+fn decode_context_params(context_size: u32, use_gpu: bool) -> LlamaContextParams {
+    LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(context_size))
+        .with_op_offload(use_gpu)
+        .with_offload_kqv(use_gpu)
+        .with_flash_attention_policy(llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_AUTO)
+}
+
 impl LlamaMtmdRuntime {
     /// Loads a text model and its multimodal projector.
     ///
@@ -247,13 +259,12 @@ impl Runtime for LlamaMtmdRuntime {
             generated_tokens: 0,
             elapsed_seconds: started.elapsed().as_secs(),
         });
-        let params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(self.context_size))
-            .with_op_offload(self.use_gpu)
-            .with_offload_kqv(self.use_gpu);
         let mut context = self
             .model
-            .new_context(&self.backend, params)
+            .new_context(
+                &self.backend,
+                decode_context_params(self.context_size, self.use_gpu),
+            )
             .map_err(|error| error.to_string())?;
         let position = chunks
             .eval_chunks(&self.mtmd, &context, 0, 0, 512, true)
@@ -396,6 +407,30 @@ impl Runtime for LlamaMtmdRuntime {
 #[cfg(test)]
 mod tests {
     use super::RepetitionLoopDetector;
+
+    /// Plan P1 T2.4 decision lock: the decode context asks for flash
+    /// attention AUTO (llama.cpp decides per backend capability). Note the
+    /// pinned llama.cpp default is already AUTO — the explicit setting pins
+    /// the intent against binding-default drift; measured as a no-op on
+    /// 0.1.153 (perf-baseline-2026-11-01 report, P1 section).
+    #[test]
+    fn decode_context_params_requests_flash_attention_auto() {
+        let params = super::decode_context_params(20_480, true);
+        assert_eq!(
+            params.flash_attention_policy(),
+            llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_AUTO
+        );
+        assert_eq!(params.n_ctx(), std::num::NonZeroU32::new(20_480));
+        assert!(params.op_offload());
+        // The GPU flag only decides offload; a CPU runtime still builds the
+        // same params shape with offload disabled.
+        let cpu_params = super::decode_context_params(20_480, false);
+        assert!(!cpu_params.op_offload());
+        assert_eq!(
+            cpu_params.flash_attention_policy(),
+            llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_AUTO
+        );
+    }
 
     /// Feeds `tokens` one by one and reports whether the detector fired.
     fn fires(tokens: &[i32]) -> bool {
