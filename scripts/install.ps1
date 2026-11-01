@@ -192,9 +192,12 @@ try {
     Fail "bin swap failed: $_" 4
   }
   if ($HadExisting) {
-    $Cleanup = Remove-Item -Recurse -Force (Join-Path $Prefix $OldName) -ErrorAction SilentlyContinue -PassThru
-    if (-not $Cleanup) {
-      Write-Host "warning: could not remove $(Join-Path $Prefix $OldName); remove it manually"
+    # Remove-Item has no -PassThru on Windows PowerShell 5.1; detect success
+    # by checking whether the old directory survived the removal.
+    $OldPath = Join-Path $Prefix $OldName
+    Remove-Item -Recurse -Force $OldPath -ErrorAction SilentlyContinue
+    if (Test-Path $OldPath) {
+      Write-Host "warning: could not remove $OldPath; remove it manually"
     }
   }
 
