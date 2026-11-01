@@ -49,11 +49,7 @@ fn skip_reason() -> Option<&'static str> {
 fn resolve_model_paths() -> Result<(PathBuf, PathBuf), String> {
     let cache = std::env::var_os("OCRX_MODEL_CACHE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var_os("LOCALAPPDATA")
-                .map(|local| PathBuf::from(local).join("ocrx").join("models"))
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
+        .unwrap_or_else(ocrx_models::default_cache_root);
     let _manifest =
         ocrx_models::community_manifest("reference").map_err(|error| format!("{error:?}"))?;
     ocrx_models::cache_paths(&cache, &ocrx_models::COMMUNITY_REVISION, "reference")
@@ -64,8 +60,22 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+fn pdfium_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("OCRX_PDFIUM_LIB_DIR") {
+        return PathBuf::from(dir);
+    }
+    let vendored = repo_root().join("vendor/pdfium/bin");
+    if vendored.join("pdfium.dll").is_file() || vendored.join("libpdfium.dylib").is_file() {
+        return vendored;
+    }
+    // Worktrees without the gitignored vendored dll fall back to the main
+    // checkout next to them.
+    repo_root()
+        .join("../OCR-CLI/vendor/pdfium/bin")
+}
+
 fn render_pages() -> Vec<(u32, u32, Vec<u8>)> {
-    let pdfium_dir = repo_root().join("vendor/pdfium/bin");
+    let pdfium_dir = pdfium_dir();
     let source = repo_root().join("assets/regression/ovisocr2-draft-v1/inputs/source.pdf");
     let renderer = ocrx_pdf::PdfiumRenderer::new(pdfium_dir);
     (0..PAGE_COUNT)
@@ -114,6 +124,13 @@ fn argmax_token(logits: &[f32]) -> i32 {
         .max_by(|(_, left), (_, right)| left.total_cmp(right))
         .map(|(id, _)| id)
         .expect("logits row is non-empty") as i32
+}
+
+/// Seeds a sequence from the single initialized logits row that
+/// `eval_chunks(..., logits_last = true)` leaves in the context buffer. Must
+/// run immediately after that sequence's encode (the next eval overwrites).
+fn seed_from_last_eval(context: &LlamaContext<'_>) -> i32 {
+    argmax_token(context.get_logits())
 }
 
 /// Greedy-decodes all live sequences from one shared batch until EOS or the
@@ -246,6 +263,10 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
                 &backend,
                 LlamaContextParams::default()
                     .with_n_ctx(NonZeroU32::new(20_480))
+                    // Spike B finding: the default n_seq_max is 1 and
+                    // llama_decode rejects seq_id >= n_seq_max — the windowed
+                    // context must declare the slot count (plan P4.3).
+                    .with_n_seq_max(4)
                     .with_op_offload(false)
                     .with_offload_kqv(false),
             )
@@ -258,7 +279,7 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
         let mut context = make_context();
         let position =
             encode_sequence(&mtmd, &mut context, *width, *height, rgb, 0).expect("encode");
-        let seed = argmax_token(context.get_logits_ith(position - 1));
+        let seed = seed_from_last_eval(&context);
         let mut last = vec![LlamaToken::new(seed)];
         let mut positions = vec![position];
         let streams = decode_shared(&model, &mut context, &mut last, &mut positions);
@@ -284,16 +305,15 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
             }
             let first_page = window_index * batch_depth;
             let mut positions = Vec::new();
+            let mut seeds = Vec::new();
             for (slot, (width, height, rgb)) in window.iter().enumerate() {
                 positions.push(
                     encode_sequence(&mtmd, &mut context, *width, *height, rgb, slot as i32)
                         .expect("batched encode"),
                 );
+                // Sample before the next page's eval overwrites the buffer.
+                seeds.push(seed_from_last_eval(&context));
             }
-            let seeds: Vec<i32> = positions
-                .iter()
-                .map(|&position| argmax_token(context.get_logits_ith(position - 1)))
-                .collect();
             let mut last: Vec<LlamaToken> =
                 seeds.iter().map(|&id| LlamaToken::new(id)).collect();
             let streams = decode_shared(&model, &mut context, &mut last, &mut positions);
