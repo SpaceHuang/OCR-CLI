@@ -1,0 +1,59 @@
+[
+  {
+    "label": "r05-cap32",
+    "run_index": 1,
+    "exit_code": 2,
+    "wall_ms": 126,
+    "command": [
+      "D:\\ocrx-tgt-p0\\release\\ocrx.exe",
+      "scan",
+      "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "--output-dir",
+      "docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap32-01",
+      "--model-profile",
+      "reference",
+      "--max-output-tokens",
+      "32"
+    ],
+    "result_error": "result.json missing",
+    "stderr_tail": "error: max output tokens must be at least 128\n"
+  },
+  {
+    "label": "r05-cap32",
+    "run_index": 2,
+    "exit_code": 2,
+    "wall_ms": 28,
+    "command": [
+      "D:\\ocrx-tgt-p0\\release\\ocrx.exe",
+      "scan",
+      "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "--output-dir",
+      "docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap32-02",
+      "--model-profile",
+      "reference",
+      "--max-output-tokens",
+      "32"
+    ],
+    "result_error": "result.json missing",
+    "stderr_tail": "error: max output tokens must be at least 128\n"
+  },
+  {
+    "label": "r05-cap32",
+    "run_index": 3,
+    "exit_code": 2,
+    "wall_ms": 36,
+    "command": [
+      "D:\\ocrx-tgt-p0\\release\\ocrx.exe",
+      "scan",
+      "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "--output-dir",
+      "docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap32-03",
+      "--model-profile",
+      "reference",
+      "--max-output-tokens",
+      "32"
+    ],
+    "result_error": "result.json missing",
+    "stderr_tail": "error: max output tokens must be at least 128\n"
+  }
+]

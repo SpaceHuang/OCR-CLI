@@ -1,0 +1,248 @@
+[
+  {
+    "label": "r05-cap2048",
+    "run_index": 1,
+    "exit_code": 0,
+    "wall_ms": 65,
+    "command": [
+      "D:\\ocrx-tgt-p0\\release\\ocrx.exe",
+      "scan",
+      "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "--output-dir",
+      "docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-01",
+      "--model-profile",
+      "reference",
+      "--max-output-tokens",
+      "2048"
+    ],
+    "result": {
+      "schema_version": 3,
+      "job_id": "scan",
+      "status": "success",
+      "input": "\\\\?\\D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "markdown_path": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-01\\document.md",
+      "output_dir": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-01",
+      "required_quality_tier": "l2",
+      "document_type": "text",
+      "ocr_model_loaded": false,
+      "model": null,
+      "backend": "auto",
+      "pages": {
+        "total": 1,
+        "completed": 1,
+        "failed": 0,
+        "truncated": 0,
+        "degenerated": 0
+      },
+      "routing_counts": {
+        "native_text": 1,
+        "ocr": 0,
+        "empty": 0,
+        "fallback": 0
+      },
+      "images": {
+        "directory": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-01\\images",
+        "count": 0
+      },
+      "elapsed_ms": 24,
+      "warnings": [],
+      "diagnostics": [],
+      "pdf_routing": [
+        {
+          "page": 1,
+          "classification": {
+            "page_type": "text",
+            "confidence": "high",
+            "recommended_method": "native_text",
+            "reason": "native_text_reliable"
+          },
+          "processing": {
+            "planned_method": "native_text",
+            "actual_method": "native_text",
+            "fallback_reason": null
+          }
+        }
+      ],
+      "routing_metadata": [
+        {
+          "page": 1,
+          "classification": {
+            "page_type": "text",
+            "confidence": "high",
+            "recommended_method": "native_text",
+            "reason": "native_text_reliable"
+          },
+          "processing": {
+            "planned_method": "native_text",
+            "actual_method": "native_text",
+            "fallback_reason": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "label": "r05-cap2048",
+    "run_index": 2,
+    "exit_code": 0,
+    "wall_ms": 65,
+    "command": [
+      "D:\\ocrx-tgt-p0\\release\\ocrx.exe",
+      "scan",
+      "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "--output-dir",
+      "docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-02",
+      "--model-profile",
+      "reference",
+      "--max-output-tokens",
+      "2048"
+    ],
+    "result": {
+      "schema_version": 3,
+      "job_id": "scan",
+      "status": "success",
+      "input": "\\\\?\\D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "markdown_path": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-02\\document.md",
+      "output_dir": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-02",
+      "required_quality_tier": "l2",
+      "document_type": "text",
+      "ocr_model_loaded": false,
+      "model": null,
+      "backend": "auto",
+      "pages": {
+        "total": 1,
+        "completed": 1,
+        "failed": 0,
+        "truncated": 0,
+        "degenerated": 0
+      },
+      "routing_counts": {
+        "native_text": 1,
+        "ocr": 0,
+        "empty": 0,
+        "fallback": 0
+      },
+      "images": {
+        "directory": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-02\\images",
+        "count": 0
+      },
+      "elapsed_ms": 23,
+      "warnings": [],
+      "diagnostics": [],
+      "pdf_routing": [
+        {
+          "page": 1,
+          "classification": {
+            "page_type": "text",
+            "confidence": "high",
+            "recommended_method": "native_text",
+            "reason": "native_text_reliable"
+          },
+          "processing": {
+            "planned_method": "native_text",
+            "actual_method": "native_text",
+            "fallback_reason": null
+          }
+        }
+      ],
+      "routing_metadata": [
+        {
+          "page": 1,
+          "classification": {
+            "page_type": "text",
+            "confidence": "high",
+            "recommended_method": "native_text",
+            "reason": "native_text_reliable"
+          },
+          "processing": {
+            "planned_method": "native_text",
+            "actual_method": "native_text",
+            "fallback_reason": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "label": "r05-cap2048",
+    "run_index": 3,
+    "exit_code": 0,
+    "wall_ms": 64,
+    "command": [
+      "D:\\ocrx-tgt-p0\\release\\ocrx.exe",
+      "scan",
+      "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "--output-dir",
+      "docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-03",
+      "--model-profile",
+      "reference",
+      "--max-output-tokens",
+      "2048"
+    ],
+    "result": {
+      "schema_version": 3,
+      "job_id": "scan",
+      "status": "success",
+      "input": "\\\\?\\D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\benchmarks\\fixtures\\pdf\\dense-text-for-max-tokens.pdf",
+      "markdown_path": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-03\\document.md",
+      "output_dir": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-03",
+      "required_quality_tier": "l2",
+      "document_type": "text",
+      "ocr_model_loaded": false,
+      "model": null,
+      "backend": "auto",
+      "pages": {
+        "total": 1,
+        "completed": 1,
+        "failed": 0,
+        "truncated": 0,
+        "degenerated": 0
+      },
+      "routing_counts": {
+        "native_text": 1,
+        "ocr": 0,
+        "empty": 0,
+        "fallback": 0
+      },
+      "images": {
+        "directory": "D:\\Develop\\OCR-CLI\\.worktrees\\scan-throughput\\docs\\test\\reports\\perf-baseline-2026-11-01-data\\r05-cap2048-03\\images",
+        "count": 0
+      },
+      "elapsed_ms": 23,
+      "warnings": [],
+      "diagnostics": [],
+      "pdf_routing": [
+        {
+          "page": 1,
+          "classification": {
+            "page_type": "text",
+            "confidence": "high",
+            "recommended_method": "native_text",
+            "reason": "native_text_reliable"
+          },
+          "processing": {
+            "planned_method": "native_text",
+            "actual_method": "native_text",
+            "fallback_reason": null
+          }
+        }
+      ],
+      "routing_metadata": [
+        {
+          "page": 1,
+          "classification": {
+            "page_type": "text",
+            "confidence": "high",
+            "recommended_method": "native_text",
+            "reason": "native_text_reliable"
+          },
+          "processing": {
+            "planned_method": "native_text",
+            "actual_method": "native_text",
+            "fallback_reason": null
+          }
+        }
+      ]
+    }
+  }
+]
