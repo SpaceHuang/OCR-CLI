@@ -2115,12 +2115,9 @@ fn run_scan(options: ScanOptions) -> ! {
             protected_cache_roots[0].as_path(),
             protected_cache_roots[1].as_path(),
         ];
-        if let Err(error) = validate_scan_output_policy(
-            &canonical_input,
-            &output,
-            &protected,
-            &working_directory,
-        ) {
+        if let Err(error) =
+            validate_scan_output_policy(&canonical_input, &output, &protected, &working_directory)
+        {
             reporter.error(
                 &ErrorReport {
                     code: 9,

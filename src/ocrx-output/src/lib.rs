@@ -3017,12 +3017,13 @@ mod tests {
                 std::path::PathBuf::from("C:\\work\\project"),
             )
         } else {
-            (std::path::Path::new("/"), std::path::PathBuf::from("/work/project"))
+            (
+                std::path::Path::new("/"),
+                std::path::PathBuf::from("/work/project"),
+            )
         };
         assert!(super::validate_output_not_containing(&cwd.join("paper-ocr"), &cwd).is_ok());
-        assert!(
-            super::validate_output_not_containing(&cwd.join("out").join("x"), &cwd).is_ok()
-        );
+        assert!(super::validate_output_not_containing(&cwd.join("out").join("x"), &cwd).is_ok());
         assert!(super::validate_output_not_containing(root, &cwd).is_err());
         assert!(super::validate_output_not_containing(&cwd, &cwd).is_err());
     }
@@ -3046,8 +3047,11 @@ mod tests {
             "case-variant ancestor of the working directory must be rejected"
         );
         assert!(
-            super::validate_output_not_containing(&base.join("project").join("out"), &working_directory)
-                .is_ok(),
+            super::validate_output_not_containing(
+                &base.join("project").join("out"),
+                &working_directory
+            )
+            .is_ok(),
             "case-variant subdirectory of the working directory is the normal layout"
         );
         let _ = std::fs::remove_dir_all(&base);
@@ -3634,8 +3638,9 @@ mod tests {
         let working_directory = std::path::Path::new("/work/elsewhere");
         super::remove_for_overwrite(input, &directory, &[protected], working_directory).unwrap();
         assert!(!directory.exists());
-        assert!(super::remove_for_overwrite(input, "/work", &[protected], working_directory)
-            .is_err());
+        assert!(
+            super::remove_for_overwrite(input, "/work", &[protected], working_directory).is_err()
+        );
         // The working-directory guard travels with the deletion API itself,
         // not only with the CLI wrapper.
         assert!(
