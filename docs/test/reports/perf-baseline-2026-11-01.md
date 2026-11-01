@@ -127,3 +127,19 @@ fixture：`figure-8-page-same.pdf`（figure-1-page 复制 ×8，同内容页）�
 **P1 阶段门禁对照值（冻结）**：金集 `document.md` sha256 `222681b986798edfb4e0a0f9…`（`r01-golden-reference-01/` 为逐字节参照）；墙钟 54.9–55.8 s；解码 tok/s ≈283。
 
 **原始数据**：`docs/test/reports/perf-baseline-2026-11-01-data/`（含各扫描完整 result.json/gpu-resource.json 与 harness JSON 记录）。
+
+---
+
+## 10. P1 阶段对照（2026-11-02 补记：T2.1/T2.2/T2.4 实测结论）
+
+按 §3 收益判定规则执行，P1 运行时层**零改动合入**——两项候选改动均实测 <2% 按规则回滚：
+
+| 项 | 实施 | 金集门禁 | 实测收益 | 判定 |
+|---|---|---|---|---|
+| T2.1 解码段归因 | 无生产代码改动（决策冻结） | — | R0.5：包装层附加 ≈+0.17 ms/token（≈5% 边际），但 argmax/batch 分配占比不可拆分；greedy sampler 已被 §1.3.3 否决 | ✅ 完成（数据落 §5） |
+| T2.2 batch 复用 | `LlamaBatch` 提出循环 + `clear()`（提交 `6eaf712`） | P1 构建 vs P0 基准：非计时产物**逐字节一致**；金集 tok/s 283.4/281.9 vs 基线 283.6 | R0.5 差分复测：3.244 vs 3.269 ms/token → **0.8% < 2%**（处于测量噪声带内） | **回滚**（`e5c8a5f`），保留每 token 小分配 |
+| T2.4 flash attention AUTO | `with_flash_attention_policy(AUTO)`（提交 `15778bf`） | 同上逐字节一致 | **钉定版本（llama.cpp 9e3b928 / sys 0.1.153）的 `llama_context_default_params` 默认即 `LLAMA_FLASH_ATTN_TYPE_AUTO`**——显式设置在 0.1.153 上是无行为增量的意图锁定，无可归因收益 | **回滚**（`28d11a3`），按"保持默认并记录"；方案的 FA 缺省假设过时这一事实在此登记 |
+
+- P1 对照数据：`p1-golden-reference*.json`、`p1-r05-cap128.json`、`p1-r05-cap2048.json`（同一 `perf-baseline-2026-11-01-data/` 目录）。
+- **P1 阶段结论**：与方案 §4 前置语一致——单流架构内解码段每 token 开销由后端实现主导，Rust 包装层可榨取空间 <2%；P1 的现实收益预期归零，数量级杠杆在 P4（合批，R0.6 实测上界 4.8×），解码段的次级杠杆在 P2（CUDA）。
+- 后续阶段（P2–P4）的对照基准仍是 §2 的 P0 基线（代码与基准构建等价）。
