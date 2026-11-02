@@ -488,6 +488,9 @@ struct WindowSlot {
     last: LlamaToken,
     position: i32,
     output: String,
+    /// This page's own output budget (review round 3): the shared loop runs
+    /// for the window's MAXIMUM budget, so each slot enforces its own limit.
+    budget: u32,
     generated: u64,
     first_token_ms: u64,
     last_emitted_second: Option<u64>,
@@ -568,6 +571,7 @@ fn generate_window_pages<'a>(
                 last: LlamaToken::new(0),
                 position: 0,
                 output: String::new(),
+                budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
                 last_emitted_second: None,
@@ -583,6 +587,7 @@ fn generate_window_pages<'a>(
                 last: LlamaToken::new(0),
                 position: 0,
                 output: String::new(),
+                budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
                 last_emitted_second: None,
@@ -601,6 +606,7 @@ fn generate_window_pages<'a>(
                         last: LlamaToken::new(0),
                         position: 0,
                         output: String::new(),
+                        budget: request.max_output_tokens,
                         generated: 0,
                         first_token_ms: 0,
                         last_emitted_second: None,
@@ -626,6 +632,7 @@ fn generate_window_pages<'a>(
                     last: LlamaToken::new(0),
                     position: 0,
                     output: String::new(),
+                    budget: request.max_output_tokens,
                     generated: 0,
                     first_token_ms: 0,
                     last_emitted_second: None,
@@ -643,6 +650,7 @@ fn generate_window_pages<'a>(
                 last: LlamaToken::new(0),
                 position: 0,
                 output: String::new(),
+                budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
                 last_emitted_second: None,
@@ -660,6 +668,7 @@ fn generate_window_pages<'a>(
                     last: LlamaToken::new(0),
                     position: 0,
                     output: String::new(),
+                    budget: request.max_output_tokens,
                     generated: 0,
                     first_token_ms: 0,
                     last_emitted_second: None,
@@ -686,6 +695,7 @@ fn generate_window_pages<'a>(
                 last: LlamaToken::new(0),
                 position: 0,
                 output: String::new(),
+                budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
                 last_emitted_second: None,
@@ -713,6 +723,7 @@ fn generate_window_pages<'a>(
             last: seed_token,
             position,
             output: String::new(),
+            budget: request.max_output_tokens,
             generated: 0,
             first_token_ms,
             last_emitted_second: None,
@@ -775,6 +786,20 @@ fn generate_window_pages<'a>(
         let mut batch_add_failure: Option<String> = None;
         for (slot_index, slot) in slots.iter_mut().enumerate() {
             if slot.finished || batch_add_failure.is_some() {
+                continue;
+            }
+            // Per-slot budget (review round 3): the loop runs for the
+            // window's MAXIMUM budget; a slot that exhausted its own limit
+            // finishes here with `max_tokens` and stops joining the batch —
+            // an equal-budget window is unaffected (budget == step count),
+            // a mixed-budget window caps each page at its own request.
+            if slot.generated >= u64::from(slot.budget) {
+                slot.finished = true;
+                let output = std::mem::take(&mut slot.output);
+                slot.response = Some(Ok(InferenceResponse {
+                    raw_output: output,
+                    finish_reason: "max_tokens".to_owned(),
+                }));
                 continue;
             }
             let index = batch.n_tokens();
@@ -1506,6 +1531,41 @@ mod tests {
             "capped window output diverged (budget off-by-one)"
         );
         assert_eq!(window_capped.finish_reason, single_capped.finish_reason);
+
+        // Mixed budgets in one window (review round 3): the shared loop runs
+        // for the window's MAXIMUM budget, so the cap=1 slot must stop at its
+        // own limit while the cap=8 slot runs to its own — the per-slot
+        // budget check must keep both byte-identical to their single-stream
+        // decodes.
+        let mixed_image = vec![200_u8; 64 * 64 * 3];
+        let single_one = runtime
+            .generate(InferenceRequest::new(1, 64, 64, mixed_image.clone(), 1).unwrap())
+            .expect("cap=1 single-stream generation");
+        let single_eight = runtime
+            .generate(InferenceRequest::new(2, 64, 64, mixed_image.clone(), 8).unwrap())
+            .expect("cap=8 single-stream generation");
+        let mixed = runtime
+            .generate_window(
+                vec![
+                    InferenceRequest::new(1, 64, 64, mixed_image.clone(), 1).unwrap(),
+                    InferenceRequest::new(2, 64, 64, mixed_image, 8).unwrap(),
+                ],
+                &CancellationToken::new(),
+                &mut |_, _| {},
+            )
+            .into_iter()
+            .map(|result| result.expect("mixed-budget window page succeeds"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            mixed[0].raw_output, single_one.raw_output,
+            "cap=1 slot exceeded its own budget in a mixed window"
+        );
+        assert_eq!(
+            mixed[1].raw_output, single_eight.raw_output,
+            "cap=8 slot diverged in a mixed window"
+        );
+        assert_eq!(mixed[0].finish_reason, single_one.finish_reason);
+        assert_eq!(mixed[1].finish_reason, single_eight.finish_reason);
     }
 
     #[test]
