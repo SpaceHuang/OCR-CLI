@@ -124,6 +124,8 @@ impl InferenceRequest {
     }
 }
 
+pub use ocrx_core::{BATCH_ERROR_PREFIX, WINDOW_DEPTH};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceResponse {
     pub raw_output: String,
@@ -164,6 +166,39 @@ pub trait Runtime {
     ) -> Result<InferenceResponse, String> {
         let _ = (cancellation, progress);
         self.generate(request)
+    }
+
+    /// Decodes a window of pages concurrently (multi-page continuous
+    /// batching, plan P4.3). Results are page-ordered like `requests`; each
+    /// entry is that page's response or its per-page error. A batch-level
+    /// failure (decode/OOM/context overflow) fills every entry with an error
+    /// starting with [`BATCH_ERROR_PREFIX`] so the scan side can fall back to
+    /// depth-1 resubmission.
+    ///
+    /// The default implementation runs the pages sequentially through
+    /// [`Runtime::generate_with_progress`] — numerically identical to
+    /// single-stream decoding — which keeps fakes and simple runtimes
+    /// unchanged. Real runtimes override it with a true batched decode.
+    ///
+    /// Determinism contract (plan §7.3②): identical (inputs, batch
+    /// composition, depth) reproduces byte-identical outputs; different
+    /// compositions may diverge (§2.3 第二档).
+    fn generate_window(
+        &mut self,
+        requests: Vec<InferenceRequest>,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> Vec<Result<InferenceResponse, String>> {
+        let mut results = Vec::with_capacity(requests.len());
+        for request in requests {
+            let page = request.page;
+            results.push(
+                self.generate_with_progress(request, cancellation, &mut |event| {
+                    progress(page, event)
+                }),
+            );
+        }
+        results
     }
 }
 

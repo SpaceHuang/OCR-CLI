@@ -1,0 +1,1 @@
+{"schema_version":1,"backend":"cuda","vram_peak_bytes":7030702080,"unified_memory_peak_bytes":null,"load_time_ms":1093,"first_token_ms":81,"output_tokens":13343,"output_tokens_per_sec":305.598,"peak_memory_bytes":null}

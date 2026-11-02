@@ -20,8 +20,8 @@
 //! The JSON record goes to `OCRX_SPIKE_OUT` (a file path) or a temp file
 //! whose path is printed.
 
-use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
+use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::{
@@ -52,7 +52,7 @@ fn resolve_model_paths() -> Result<(PathBuf, PathBuf), String> {
         .unwrap_or_else(ocrx_models::default_cache_root);
     let _manifest =
         ocrx_models::community_manifest("reference").map_err(|error| format!("{error:?}"))?;
-    ocrx_models::cache_paths(&cache, &ocrx_models::COMMUNITY_REVISION, "reference")
+    ocrx_models::cache_paths(cache, ocrx_models::COMMUNITY_REVISION, "reference")
         .map_err(|error| format!("{error:?}"))
 }
 
@@ -70,8 +70,7 @@ fn pdfium_dir() -> PathBuf {
     }
     // Worktrees without the gitignored vendored dll fall back to the main
     // checkout next to them.
-    repo_root()
-        .join("../OCR-CLI/vendor/pdfium/bin")
+    repo_root().join("../OCR-CLI/vendor/pdfium/bin")
 }
 
 fn render_pages() -> Vec<(u32, u32, Vec<u8>)> {
@@ -155,7 +154,7 @@ fn decode_shared(
             if finished[sequence] {
                 continue;
             }
-            let index = batch.n_tokens() as i32;
+            let index = batch.n_tokens();
             batch
                 .add(*token, positions[sequence], &[sequence as i32], true)
                 .expect("batch has room for every live sequence");
@@ -182,12 +181,12 @@ fn decode_shared(
 fn to_text(model: &LlamaModel, tokens: &[i32]) -> String {
     tokens
         .iter()
-        .map(|&id| {
-            match model.token_to_piece_bytes(LlamaToken::new(id), 64, false, None) {
+        .map(
+            |&id| match model.token_to_piece_bytes(LlamaToken::new(id), 64, false, None) {
                 Ok(piece) => String::from_utf8_lossy(&piece).into_owned(),
                 Err(_) => String::new(),
-            }
-        })
+            },
+        )
         .collect()
 }
 
@@ -220,9 +219,7 @@ fn first_divergence(baseline: &[i32], batched: &[i32]) -> Option<usize> {
         .iter()
         .zip(batched)
         .position(|(a, b)| a != b)
-        .or_else(|| {
-            (baseline.len() != batched.len()).then_some(baseline.len().min(batched.len()))
-        })
+        .or_else(|| (baseline.len() != batched.len()).then_some(baseline.len().min(batched.len())))
 }
 
 #[test]
@@ -285,19 +282,28 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
         let streams = decode_shared(&model, &mut context, &mut last, &mut positions);
         let mut full = vec![seed];
         full.extend_from_slice(&streams[0]);
-        eprintln!("[spike] baseline page {} = {} tokens", index + 1, full.len());
+        eprintln!(
+            "[spike] baseline page {} = {} tokens",
+            index + 1,
+            full.len()
+        );
         baselines.push(full);
     }
 
     // Spike A batched runs + Spike B combination behavior.
     let mut report = String::from("{\n  \"token_cap\": 96,\n  \"pages\": 6,\n  \"elapsed_s\": ");
-    report.push_str(&format!("{:.1},\n  \"runs\": [", started.elapsed().as_secs_f64()));
+    report.push_str(&format!(
+        "{:.1},\n  \"runs\": [",
+        started.elapsed().as_secs_f64()
+    ));
     let mut feasibility = Vec::new();
     for (run_index, &batch_depth) in BATCH_DEPTHS.iter().enumerate() {
         if run_index > 0 {
             report.push(',');
         }
-        report.push_str(&format!("\n    {{\"batch_depth\": {batch_depth}, \"pages\": ["));
+        report.push_str(&format!(
+            "\n    {{\"batch_depth\": {batch_depth}, \"pages\": ["
+        ));
         let mut context = make_context();
         for (window_index, window) in pages.chunks(batch_depth).enumerate() {
             if window_index > 0 {
@@ -314,8 +320,7 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
                 // Sample before the next page's eval overwrites the buffer.
                 seeds.push(seed_from_last_eval(&context));
             }
-            let mut last: Vec<LlamaToken> =
-                seeds.iter().map(|&id| LlamaToken::new(id)).collect();
+            let mut last: Vec<LlamaToken> = seeds.iter().map(|&id| LlamaToken::new(id)).collect();
             let streams = decode_shared(&model, &mut context, &mut last, &mut positions);
             for (slot, stream) in streams.iter().enumerate() {
                 let page_index = first_page + slot;

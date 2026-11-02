@@ -122,14 +122,24 @@ enum WorkerRequest {
         request: InferenceRequest,
         cancellation: CancellationToken,
     },
+    /// Multi-page continuous batching (plan P4.3): decode the window's pages
+    /// concurrently on one shared batch.
+    GenerateWindow {
+        requests: Vec<InferenceRequest>,
+        cancellation: CancellationToken,
+    },
     Telemetry,
 }
 
 enum WorkerMessage {
     /// One-shot load handshake: success carries the frozen runtime info.
     Loaded(Result<RuntimeInfo, String>),
-    Progress(GenerationProgress),
+    Progress {
+        page: u32,
+        progress: GenerationProgress,
+    },
     Generated(Result<InferenceResponse, String>),
+    WindowGenerated(Vec<Result<InferenceResponse, String>>),
     Telemetry(RuntimeTelemetry),
 }
 
@@ -219,14 +229,62 @@ impl LlamaMtmdRuntime {
         }
         loop {
             match self.messages.recv() {
-                Ok(WorkerMessage::Progress(event)) => progress(event),
+                Ok(WorkerMessage::Progress {
+                    progress: event, ..
+                }) => progress(event),
                 Ok(WorkerMessage::Generated(result)) => return result,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
-                Ok(WorkerMessage::Loaded(_)) => {}
+                Ok(WorkerMessage::Loaded(_) | WorkerMessage::WindowGenerated(_)) => {}
                 Err(_) => {
                     // Worker panic or premature exit: fail loud (plan §4).
                     self.poison = Some("inference worker terminated".to_owned());
                     return Err(self.poison_message());
+                }
+            }
+        }
+    }
+
+    /// Multi-page continuous batching (plan P4.3). See
+    /// [`super::Runtime::generate_window`] for the contract.
+    fn generate_window_via(
+        &mut self,
+        requests: Vec<InferenceRequest>,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> Vec<Result<InferenceResponse, String>> {
+        let failed = |message: &str, count: usize| {
+            std::iter::repeat_with(|| Err(message.to_owned()))
+                .take(count)
+                .collect::<Vec<_>>()
+        };
+        let expected = requests.len();
+        if let Some(poison) = &self.poison {
+            return failed(poison, expected);
+        }
+        let Some(requests_tx) = &self.requests else {
+            return failed(&self.poison_message(), expected);
+        };
+        let send = requests_tx.send(WorkerRequest::GenerateWindow {
+            requests,
+            cancellation: cancellation.clone(),
+        });
+        if send.is_err() {
+            self.poison = Some("inference worker terminated".to_owned());
+            return failed(&self.poison_message(), expected);
+        }
+        loop {
+            match self.messages.recv() {
+                Ok(WorkerMessage::Progress {
+                    page,
+                    progress: event,
+                }) => progress(page, event),
+                Ok(WorkerMessage::WindowGenerated(results)) => return results,
+                Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
+                Ok(WorkerMessage::Loaded(_)) | Ok(WorkerMessage::Generated(_)) => {}
+                Err(_) => {
+                    // Worker panic or premature exit: fail loud (plan §4).
+                    self.poison = Some("inference worker terminated".to_owned());
+                    return failed(&self.poison_message(), expected);
                 }
             }
         }
@@ -332,9 +390,39 @@ fn run_inference_worker(
     // The decode context borrows `model`; both are locals of this thread, so
     // the lifetime is self-contained (plan §4 ownership model).
     let mut context: Option<LlamaContext<'_>> = None;
+    // Windowed context (plan P4.3): one context with n_seq_max slots sized
+    // for a full WINDOW_DEPTH window's worst-case budget, reused across
+    // windows with a full KV clear per window (deterministic fresh state).
+    let mut window_context: Option<(u32, LlamaContext<'_>)> = None;
     for request in requests {
         match request {
             WorkerRequest::Telemetry => {
+                if messages.send(WorkerMessage::Telemetry(telemetry)).is_err() {
+                    return;
+                }
+            }
+            WorkerRequest::GenerateWindow {
+                requests,
+                cancellation,
+            } => {
+                let results = generate_window_pages(
+                    &model,
+                    &mtmd,
+                    &backend,
+                    &mut window_context,
+                    load.image_tokens,
+                    load.use_gpu,
+                    &requests,
+                    &cancellation,
+                    &mut telemetry,
+                    &messages,
+                );
+                if messages
+                    .send(WorkerMessage::WindowGenerated(results))
+                    .is_err()
+                {
+                    return;
+                }
                 if messages.send(WorkerMessage::Telemetry(telemetry)).is_err() {
                     return;
                 }
@@ -383,6 +471,396 @@ fn run_inference_worker(
             }
         }
     }
+}
+
+/// Context budget for one windowed page: image tokens (upper bound) +
+/// prompt headroom + the page's output budget (plan P4.2 §①).
+fn page_context_budget(image_tokens: u32, request: &InferenceRequest) -> u32 {
+    image_tokens
+        .saturating_add(64)
+        .saturating_add(request.max_output_tokens)
+}
+
+/// Per-slot mutable state of one in-flight windowed page.
+struct WindowSlot {
+    request_page: u32,
+    /// Next input token for the decode loop.
+    last: LlamaToken,
+    position: i32,
+    output: String,
+    generated: u64,
+    first_token_ms: u64,
+    last_emitted_second: Option<u64>,
+    detector: RepetitionLoopDetector,
+    finished: bool,
+    /// Terminal response once the slot reaches a final state.
+    response: Option<Result<InferenceResponse, String>>,
+}
+
+/// Decodes a window of pages concurrently on one shared batch (plan P4.3).
+///
+/// Semantics (plan §7.3, P4.2 doc): a fresh KV state per window (full clear —
+/// determinism per composition), per-sequence encode via
+/// `eval_chunks(seq_id)`, shared per-token decode with per-sequence
+/// repetition detectors, EOS/termination reasons, per-second heartbeats, and
+/// cancellation; per-sequence `kv_cache_seq_rm` recycling at window end. A
+/// batch-level decode failure marks every page with
+/// [`super::BATCH_ERROR_PREFIX`]; a per-page encode failure fails only that
+/// page.
+#[allow(clippy::too_many_arguments)] // mirrors the page loop's parameter set
+#[allow(clippy::type_complexity)] // the slot vector is the window's shape
+fn generate_window_pages<'a>(
+    model: &'a LlamaModel,
+    mtmd: &MtmdContext,
+    backend: &'a LlamaBackend,
+    window_context: &mut Option<(u32, LlamaContext<'a>)>,
+    image_tokens: u32,
+    use_gpu: bool,
+    requests: &[InferenceRequest],
+    cancellation: &CancellationToken,
+    telemetry: &mut RuntimeTelemetry,
+    messages: &Sender<WorkerMessage>,
+) -> Vec<Result<InferenceResponse, String>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    // Size the window context for the worst case of a full WINDOW_DEPTH
+    // window (tail windows reuse it with fewer live slots).
+    let depth = requests.len().max(super::WINDOW_DEPTH);
+    let per_page = page_context_budget(image_tokens, &requests[0]);
+    let n_ctx = u32::try_from(u64::from(per_page) * depth as u64).unwrap_or(u32::MAX);
+    let needs_rebuild = window_context
+        .as_ref()
+        .is_none_or(|(capacity, _)| *capacity < n_ctx);
+    if needs_rebuild {
+        let params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(n_ctx))
+            .with_n_seq_max(depth as u32)
+            .with_op_offload(use_gpu)
+            .with_offload_kqv(use_gpu);
+        match model.new_context(backend, params) {
+            Ok(created) => *window_context = Some((n_ctx, created)),
+            Err(error) => {
+                let message = format!("{}window context: {error}", super::BATCH_ERROR_PREFIX);
+                return std::iter::repeat_with(|| Err(message.clone()))
+                    .take(requests.len())
+                    .collect();
+            }
+        }
+    }
+    let started = Instant::now();
+    let Some((_, context)) = window_context.as_mut() else {
+        unreachable!("window context built above");
+    };
+    // Fresh KV state per window: identical (inputs, composition) reproduce
+    // identically regardless of history (plan §7.3②).
+    context.clear_kv_cache();
+    let eos = model.token_eos();
+    let mut slots: Vec<WindowSlot> = Vec::with_capacity(requests.len());
+    for (slot, request) in requests.iter().enumerate() {
+        let invalid = request.width == 0
+            || request.height == 0
+            || request.image_rgb8.len() != request.width as usize * request.height as usize * 3
+            || request.max_output_tokens == 0;
+        if invalid {
+            slots.push(WindowSlot {
+                request_page: request.page,
+                last: LlamaToken::new(0),
+                position: 0,
+                output: String::new(),
+                generated: 0,
+                first_token_ms: 0,
+                last_emitted_second: None,
+                detector: RepetitionLoopDetector::new(),
+                finished: true,
+                response: Some(Err("invalid inference request".to_owned())),
+            });
+            continue;
+        }
+        if cancellation.is_cancelled() {
+            slots.push(WindowSlot {
+                request_page: request.page,
+                last: LlamaToken::new(0),
+                position: 0,
+                output: String::new(),
+                generated: 0,
+                first_token_ms: 0,
+                last_emitted_second: None,
+                detector: RepetitionLoopDetector::new(),
+                finished: true,
+                response: Some(Err("cancelled".to_owned())),
+            });
+            continue;
+        }
+        let bitmap =
+            match MtmdBitmap::from_image_data(request.width, request.height, &request.image_rgb8) {
+                Ok(bitmap) => bitmap,
+                Err(error) => {
+                    slots.push(WindowSlot {
+                        request_page: request.page,
+                        last: LlamaToken::new(0),
+                        position: 0,
+                        output: String::new(),
+                        generated: 0,
+                        first_token_ms: 0,
+                        last_emitted_second: None,
+                        detector: RepetitionLoopDetector::new(),
+                        finished: true,
+                        response: Some(Err(error.to_string())),
+                    });
+                    continue;
+                }
+            };
+        let chunks = match mtmd.tokenize(
+            MtmdInputText {
+                text: format!("{}{}", mtmd_default_marker(), PROMPT),
+                add_special: true,
+                parse_special: true,
+            },
+            &[&bitmap],
+        ) {
+            Ok(chunks) => chunks,
+            Err(error) => {
+                slots.push(WindowSlot {
+                    request_page: request.page,
+                    last: LlamaToken::new(0),
+                    position: 0,
+                    output: String::new(),
+                    generated: 0,
+                    first_token_ms: 0,
+                    last_emitted_second: None,
+                    detector: RepetitionLoopDetector::new(),
+                    finished: true,
+                    response: Some(Err(error.to_string())),
+                });
+                continue;
+            }
+        };
+        // Per-sequence encode (M9 checkpoints surround the blocking eval).
+        if cancellation.is_cancelled() {
+            slots.push(WindowSlot {
+                request_page: request.page,
+                last: LlamaToken::new(0),
+                position: 0,
+                output: String::new(),
+                generated: 0,
+                first_token_ms: 0,
+                last_emitted_second: None,
+                detector: RepetitionLoopDetector::new(),
+                finished: true,
+                response: Some(Err("cancelled".to_owned())),
+            });
+            continue;
+        }
+        let position = match chunks.eval_chunks(mtmd, context, 0, slot as i32, 512, true) {
+            Ok(position) => position,
+            Err(error) => {
+                slots.push(WindowSlot {
+                    request_page: request.page,
+                    last: LlamaToken::new(0),
+                    position: 0,
+                    output: String::new(),
+                    generated: 0,
+                    first_token_ms: 0,
+                    last_emitted_second: None,
+                    detector: RepetitionLoopDetector::new(),
+                    finished: true,
+                    response: Some(Err(error.to_string())),
+                });
+                continue;
+            }
+        };
+        // eval_chunks(logits_last=true) leaves exactly one initialized logits
+        // row: sample this slot's seed before the next page's eval overwrites
+        // the buffer (Spike B behavior).
+        let seed_row = context.get_logits();
+        let seed = seed_row
+            .iter()
+            .enumerate()
+            .max_by(|(_, left), (_, right)| left.total_cmp(right))
+            .map(|(id, _)| id)
+            .unwrap_or(usize::MAX);
+        if seed == usize::MAX {
+            slots.push(WindowSlot {
+                request_page: request.page,
+                last: LlamaToken::new(0),
+                position: 0,
+                output: String::new(),
+                generated: 0,
+                first_token_ms: 0,
+                last_emitted_second: None,
+                detector: RepetitionLoopDetector::new(),
+                finished: true,
+                response: Some(Err("empty logits".to_owned())),
+            });
+            continue;
+        }
+        let _ = messages.send(WorkerMessage::Progress {
+            page: request.page,
+            progress: GenerationProgress {
+                generated_tokens: 0,
+                elapsed_seconds: started.elapsed().as_secs(),
+            },
+        });
+        slots.push(WindowSlot {
+            request_page: request.page,
+            last: LlamaToken::new(seed as i32),
+            position,
+            output: String::new(),
+            generated: 0,
+            first_token_ms: 0,
+            last_emitted_second: None,
+            detector: RepetitionLoopDetector::new(),
+            finished: false,
+            response: None,
+        });
+    }
+
+    // Shared decode loop: one batch per step carries every live sequence.
+    let max_output = requests
+        .iter()
+        .map(|request| request.max_output_tokens)
+        .max()
+        .unwrap_or(0);
+    for _step in 0..max_output {
+        if slots.iter().all(|slot| slot.finished) {
+            break;
+        }
+        if cancellation.is_cancelled() {
+            for slot in &mut slots {
+                if !slot.finished {
+                    slot.finished = true;
+                    slot.response = Some(Ok(InferenceResponse {
+                        raw_output: slot.output.clone(),
+                        finish_reason: "cancelled".to_owned(),
+                    }));
+                }
+            }
+            break;
+        }
+        let mut batch = LlamaBatch::new(slots.len(), slots.len() as i32);
+        let mut logits_index = Vec::new();
+        let mut batch_add_failure: Option<String> = None;
+        for (slot_index, slot) in slots.iter_mut().enumerate() {
+            if slot.finished || batch_add_failure.is_some() {
+                continue;
+            }
+            let index = batch.n_tokens();
+            if let Err(error) = batch.add(slot.last, slot.position, &[slot_index as i32], true) {
+                // A batch-level add failure poisons the whole window.
+                batch_add_failure =
+                    Some(format!("{}batch add: {error}", super::BATCH_ERROR_PREFIX));
+                continue;
+            }
+            logits_index.push((slot_index, index));
+            slot.position += 1;
+        }
+        if let Some(message) = batch_add_failure {
+            for slot in &mut slots {
+                slot.finished = true;
+                if slot.response.is_none() {
+                    slot.response = Some(Err(message.clone()));
+                }
+            }
+            break;
+        }
+        let decode = context.decode(&mut batch);
+        if let Err(error) = decode {
+            let message = format!("{}batch decode: {error}", super::BATCH_ERROR_PREFIX);
+            for slot in &mut slots {
+                slot.finished = true;
+                if slot.response.is_none() {
+                    slot.response = Some(Err(message.clone()));
+                }
+            }
+            break;
+        }
+        for (slot_index, index) in logits_index {
+            let slot = &mut slots[slot_index];
+            if slot.first_token_ms == 0 {
+                slot.first_token_ms = started.elapsed().as_millis() as u64;
+            }
+            let elapsed_seconds = started.elapsed().as_secs();
+            if slot.last_emitted_second != Some(elapsed_seconds) {
+                slot.last_emitted_second = Some(elapsed_seconds);
+                let _ = messages.send(WorkerMessage::Progress {
+                    page: slot.request_page,
+                    progress: GenerationProgress {
+                        generated_tokens: slot.generated as u32,
+                        elapsed_seconds,
+                    },
+                });
+            }
+            let logits = context.get_logits_ith(index);
+            let best = logits
+                .iter()
+                .enumerate()
+                .max_by(|(_, left), (_, right)| left.total_cmp(right))
+                .map(|(id, _)| id)
+                .map(|id| id as i32);
+            let Some(best) = best else {
+                slot.finished = true;
+                slot.response = Some(Err("empty logits".to_owned()));
+                continue;
+            };
+            let token = LlamaToken::new(best);
+            if token == eos {
+                slot.finished = true;
+                let output = std::mem::take(&mut slot.output);
+                slot.response = Some(Ok(InferenceResponse {
+                    raw_output: output,
+                    finish_reason: "eos".to_owned(),
+                }));
+                continue;
+            }
+            match model.token_to_piece_bytes(token, 64, false, None) {
+                Ok(piece) => slot.output.push_str(&String::from_utf8_lossy(&piece)),
+                Err(error) => {
+                    slot.finished = true;
+                    slot.response = Some(Err(error.to_string()));
+                    continue;
+                }
+            }
+            slot.generated += 1;
+            if slot.detector.push(best) {
+                slot.finished = true;
+                let output = std::mem::take(&mut slot.output);
+                slot.response = Some(Ok(InferenceResponse {
+                    raw_output: output,
+                    finish_reason: "repetition_loop".to_owned(),
+                }));
+            }
+        }
+    }
+    // Slot recycling (Spike B-verified): per-sequence KV removal, then the
+    // slot teardown.
+    for slot_index in 0..slots.len() {
+        let _ = context.kv_cache_seq_rm(slot_index as i32, Some(0), None);
+    }
+    let mut results = Vec::with_capacity(slots.len());
+    let mut window_tokens = 0_u64;
+    for slot in slots {
+        window_tokens += slot.generated;
+        telemetry.first_token_ms = if telemetry.first_token_ms == 0 {
+            slot.first_token_ms
+        } else if slot.first_token_ms == 0 {
+            telemetry.first_token_ms
+        } else {
+            telemetry.first_token_ms.min(slot.first_token_ms)
+        };
+        results.push(slot.response.unwrap_or_else(|| {
+            Ok(InferenceResponse {
+                raw_output: slot.output,
+                finish_reason: "max_tokens".to_owned(),
+            })
+        }));
+    }
+    // Aggregate telemetry (plan §7.3④): window wall time attributed once.
+    telemetry.generated_tokens = telemetry.generated_tokens.saturating_add(window_tokens);
+    telemetry.generation_time_ms = telemetry
+        .generation_time_ms
+        .saturating_add(started.elapsed().as_millis() as u64);
+    results
 }
 
 /// One page generation: the former per-call body, unchanged in behavior
@@ -447,10 +925,13 @@ fn generate_one_page(
     if cancellation.is_cancelled() {
         return Err("cancelled".to_owned());
     }
-    let _ = messages.send(WorkerMessage::Progress(GenerationProgress {
-        generated_tokens: 0,
-        elapsed_seconds: started.elapsed().as_secs(),
-    }));
+    let _ = messages.send(WorkerMessage::Progress {
+        page: request.page,
+        progress: GenerationProgress {
+            generated_tokens: 0,
+            elapsed_seconds: started.elapsed().as_secs(),
+        },
+    });
     let position = chunks
         .eval_chunks(mtmd, context, 0, 0, 512, true)
         .map_err(|error| error.to_string())?;
@@ -485,10 +966,13 @@ fn generate_one_page(
         let elapsed_seconds = started.elapsed().as_secs();
         if last_emitted_second != Some(elapsed_seconds) {
             last_emitted_second = Some(elapsed_seconds);
-            let _ = messages.send(WorkerMessage::Progress(GenerationProgress {
-                generated_tokens: generated as u32,
-                elapsed_seconds,
-            }));
+            let _ = messages.send(WorkerMessage::Progress {
+                page: request.page,
+                progress: GenerationProgress {
+                    generated_tokens: generated as u32,
+                    elapsed_seconds,
+                },
+            });
         }
         // Fallible per-token steps: every error path records the telemetry
         // gathered so far before failing the page, so mid-generation
@@ -606,8 +1090,12 @@ impl Runtime for LlamaMtmdRuntime {
         loop {
             match self.messages.recv() {
                 Ok(WorkerMessage::Telemetry(telemetry)) => return telemetry,
-                Ok(WorkerMessage::Progress(_)) | Ok(WorkerMessage::Loaded(_)) => {}
-                Ok(WorkerMessage::Generated(_)) => {}
+                Ok(
+                    WorkerMessage::Progress { .. }
+                    | WorkerMessage::Loaded(_)
+                    | WorkerMessage::Generated(_)
+                    | WorkerMessage::WindowGenerated(_),
+                ) => {}
                 Err(_) => return self.telemetry,
             }
         }
@@ -624,6 +1112,15 @@ impl Runtime for LlamaMtmdRuntime {
         progress: &mut dyn FnMut(GenerationProgress),
     ) -> Result<InferenceResponse, String> {
         self.generate_via(request, cancellation, progress)
+    }
+
+    fn generate_window(
+        &mut self,
+        requests: Vec<InferenceRequest>,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> Vec<Result<InferenceResponse, String>> {
+        self.generate_window_via(requests, cancellation, progress)
     }
 }
 
@@ -755,10 +1252,13 @@ mod tests {
                     continue;
                 };
                 assert!(!cancellation.is_cancelled());
-                let _ = messages.send(WorkerMessage::Progress(GenerationProgress {
-                    generated_tokens: 1,
-                    elapsed_seconds: 0,
-                }));
+                let _ = messages.send(WorkerMessage::Progress {
+                    page: 1,
+                    progress: GenerationProgress {
+                        generated_tokens: 1,
+                        elapsed_seconds: 0,
+                    },
+                });
                 let _ = messages.send(WorkerMessage::Generated(Ok(InferenceResponse {
                     raw_output: "page 1".to_owned(),
                     finish_reason: "eos".to_owned(),
@@ -785,11 +1285,9 @@ mod tests {
     #[test]
     fn worker_disconnect_fails_loud_and_poisons_the_handle() {
         let mut runtime = handle_with_worker(|requests, _messages| {
-            // Drop everything on the first request: the handle must observe
+            // Drain one request then drop everything: the handle must observe
             // the disconnect instead of hanging (panic-equivalent, plan §4).
-            for _ in requests {
-                return;
-            }
+            requests.iter().next();
         });
         assert!(
             runtime
@@ -843,9 +1341,56 @@ mod tests {
         assert!(runtime.telemetry().generated_tokens > 0);
         // A second page exercises context reuse with clear_kv_cache.
         let request = InferenceRequest::new(2, 64, 64, vec![200; 64 * 64 * 3], 32).unwrap();
-        let response = runtime.generate(request).expect("second page reuses context");
+        let response = runtime
+            .generate(request)
+            .expect("second page reuses context");
         assert!(!response.raw_output.is_empty());
         drop(runtime); // worker drains and exits; a hang here fails the test
+    }
+
+    #[test]
+    fn window_protocol_forwards_results_and_per_page_progress() {
+        let mut runtime = handle_with_worker(|requests, messages| {
+            for request in requests {
+                let WorkerRequest::GenerateWindow {
+                    requests: pages, ..
+                } = request
+                else {
+                    continue;
+                };
+                let request = &pages[0];
+                let _ = messages.send(WorkerMessage::Progress {
+                    page: request.page,
+                    progress: GenerationProgress {
+                        generated_tokens: 1,
+                        elapsed_seconds: 0,
+                    },
+                });
+                let _ = messages.send(WorkerMessage::WindowGenerated(
+                    pages
+                        .iter()
+                        .map(|entry| {
+                            Ok(InferenceResponse {
+                                raw_output: format!("page {}", entry.page),
+                                finish_reason: "eos".to_owned(),
+                            })
+                        })
+                        .collect(),
+                ));
+                break;
+            }
+        });
+        let pages = vec![
+            test_request(),
+            InferenceRequest::new(2, 2, 2, vec![1; 12], 16).unwrap(),
+        ];
+        let mut progress = Vec::new();
+        let results = runtime.generate_window(pages, &CancellationToken::new(), &mut |page, _| {
+            progress.push(page)
+        });
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].as_ref().unwrap().raw_output, "page 1");
+        assert_eq!(progress, vec![1]);
     }
 
     #[test]

@@ -43,6 +43,24 @@ impl CancellationToken {
     }
 }
 
+/// Frozen decode-window depth for multi-page continuous batching (plan
+/// P4.4 freeze, 2026-11-02: **N = 1 = equivalent single-stream**). The
+/// integrated end-to-end measurement showed NO batching gain on either
+/// release backend on the reference machine — batched N=4 steps cost ≈4× a
+/// single step (hybrid-attention arch: 18/24 layers carry per-sequence SSM
+/// states that do not parallelize), so N=4 regressed wall clock ~5–11%
+/// (Vulkan 61.6 s vs 55.5 s; CUDA 56.7 s vs 52.4 s) despite the isolated
+/// R0.6 bench curve (4.76× at B=8). Per the plan's gain rule (<2% and more
+/// complexity → keep simple) and §7.4's rollback path, the frozen default
+/// stays at depth 1: the window protocol, windowed orchestration, atomic
+/// commits, and gates remain in place (unit-tested) and a future backend
+/// investigation can re-freeze the depth without new knobs.
+pub const WINDOW_DEPTH: usize = 1;
+
+/// Prefix marking a batch-level window failure; the scan side falls back to
+/// depth-1 (single-stream) resubmission when it sees it (plan §7.3③).
+pub const BATCH_ERROR_PREFIX: &str = "batch inference failed";
+
 /// Progress emitted by a runtime while it generates one page.
 ///
 /// `elapsed_seconds` is the monotonic time since generation started. A runtime

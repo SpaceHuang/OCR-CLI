@@ -1649,7 +1649,6 @@ impl<S: SegmentRenderer> WorkerScanRenderer<S> {
     /// Applies the optional perturbation ratio and the pixel budget to a raw
     /// worker page, recording the audit exactly like the in-process path.
     fn compose_worker_page(
-        &self,
         image: image::RgbImage,
         original_width: u32,
         original_height: u32,
@@ -1747,7 +1746,7 @@ impl<S: SegmentRenderer> PageRenderer for WorkerScanRenderer<S> {
         }
         self.ensure_coverage(page_index)?;
         let (image, original_width, original_height) = self.read_worker_page(page)?;
-        self.compose_worker_page(image, original_width, original_height, None)
+        Self::compose_worker_page(image, original_width, original_height, None)
     }
 
     fn render_perturbed(
@@ -1768,7 +1767,7 @@ impl<S: SegmentRenderer> PageRenderer for WorkerScanRenderer<S> {
         }
         self.ensure_coverage(page_index)?;
         let (image, original_width, original_height) = self.read_worker_page(page)?;
-        self.compose_worker_page(
+        Self::compose_worker_page(
             image,
             original_width,
             original_height,
@@ -2000,6 +1999,69 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             warnings: artifact.warnings,
             raw_output: artifact.raw_output,
         })
+    }
+
+    fn recognize_window_cancelled(
+        &mut self,
+        model: &mut LlamaMtmdRuntime,
+        pages: &[(u32, RenderedPage)],
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> Vec<std::io::Result<PageArtifactResult>> {
+        let entries: Vec<(u32, u32, u32, Vec<u8>, u32)> = pages
+            .iter()
+            .map(|(page, image)| {
+                (
+                    *page,
+                    image.width,
+                    image.height,
+                    image.rgb8.clone(),
+                    self.max_tokens,
+                )
+            })
+            .collect();
+        let mut results = Vec::with_capacity(pages.len());
+        let outputs = ocrx_ovisocr2::write_window_artifacts_with_status_cancelled(
+            model,
+            &entries,
+            &self.output,
+            cancellation,
+            progress,
+        );
+        // Telemetry is cumulative across windows for this loaded model, so
+        // the scan-wide value is the runtime's current total.
+        *self.telemetry.borrow_mut() = model.telemetry();
+        for ((_page, image), output) in pages.iter().zip(outputs) {
+            let output = match output {
+                Ok(output) => output,
+                Err(error) => {
+                    results.push(Err(std::io::Error::other(error.to_string())));
+                    continue;
+                }
+            };
+            let mut png = Cursor::new(Vec::new());
+            let encoded = image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
+                .ok_or_else(|| std::io::Error::other("invalid RGB8"))
+                .and_then(|pixmap| {
+                    pixmap
+                        .write_to(&mut png, ImageFormat::Png)
+                        .map_err(std::io::Error::other)
+                });
+            if let Err(error) = encoded {
+                results.push(Err(error));
+                continue;
+            }
+            results.push(Ok(PageArtifactResult {
+                png: png.into_inner(),
+                markdown: output.markdown,
+                page_json: output.page_json,
+                truncated: output.truncated,
+                degenerated: output.degenerated,
+                warnings: output.warnings,
+                raw_output: output.raw_output,
+            }));
+        }
+        results
     }
 }
 
@@ -2363,7 +2425,7 @@ fn run_scan(options: ScanOptions) -> ! {
         // share one key). Checkpoints written before this field exist no
         // longer match and are reprocessed instead of resumed.
         parameters: format!(
-            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};route=native",
+            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};batch={};route=native",
             ocrx_output::pdf_compatibility_parameters(
                 &options.pdf_mode,
                 &options.quality_tier,
@@ -2374,7 +2436,8 @@ fn run_scan(options: ScanOptions) -> ! {
             options.max_output_tokens.unwrap_or(16_384),
             options.max_image_tokens.unwrap_or(1024),
             options.context_size.unwrap_or(20_480),
-            options.device
+            options.device,
+            ocrx_runtime::WINDOW_DEPTH
         ),
     };
     let mut initial_queue = if options.resume {
