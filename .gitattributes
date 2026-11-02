@@ -19,3 +19,7 @@ benchmarks/fixtures/** -text
 /LICENSE text eol=lf
 /assets/licenses/** text eol=lf
 src/ocrx-ovisocr2/tests/fixtures/** -text
+# P0 throughput baseline raw data is a byte-identity reference for the
+# golden-set gate (plan §2.3 第一档): text normalization on checkout would
+# corrupt the recorded bytes and break future byte-exact comparisons.
+docs/test/reports/perf-baseline-*-data/** -text

@@ -25,6 +25,10 @@ function Test-Sha256([string]$Path, [string]$Expected) {
 }
 
 function Detect-GpuBackend {
+  # Test-only seam for the chain smoke matrix (mirrors the OCRX_E2E_INJECT_*
+  # precedent): drives detection without touching System32; production runs
+  # never set it.
+  if ($env:OCRX_TEST_GPU_OVERRIDE -in @('cuda', 'vulkan', 'cpu')) { return $env:OCRX_TEST_GPU_OVERRIDE }
   $sys = Join-Path $env:WINDIR 'System32'
   if (Test-Path (Join-Path $sys 'nvcuda.dll')) { return 'cuda' }
   if (Test-Path (Join-Path $sys 'vulkan-1.dll')) { return 'vulkan' }
@@ -153,27 +157,38 @@ try {
   if ($ArchiveBinDir) {
     # Copy the whole bin/ set (binary, pdfium.dll, VC++ runtime DLLs).
     Get-ChildItem -File -Path $ArchiveBinDir | Copy-Item -Destination $StagingBin -Force
-    # GPU variant (W4.2, 2026-10-30 gate report): when the archive ships
-    # ocrx-vulkan.exe and this machine reports a Vulkan driver, promote it to
-    # the default `ocrx.exe` (the CPU build stays as ocrx-cpu.exe). A missing
-    # driver or a failed launch keeps the CPU binary authoritative.
-    $VulkanVariant = Join-Path $StagingBin 'ocrx-vulkan.exe'
-    if (($Gpu -eq 'vulkan' -or $Gpu -eq 'cuda') -and (Test-Path $VulkanVariant -PathType Leaf)) {
+    # GPU variant promotion (W4.2; P2 T1.3 generalizes it to a priority
+    # chain): the detected backend decides the candidate order — a cuda
+    # machine tries ocrx-cuda.exe first, then ocrx-vulkan.exe; a vulkan
+    # machine tries ocrx-vulkan.exe. Every level is launch-verified
+    # (`version` exit 0); a failed level degrades to the next with an
+    # explicit log. The CPU build stays authoritative when nothing launches
+    # (it is kept as ocrx-cpu.exe only when a promotion happened).
+    $VariantOrder = @()
+    if ($Gpu -eq 'cuda') { $VariantOrder = @('ocrx-cuda.exe', 'ocrx-vulkan.exe') }
+    elseif ($Gpu -eq 'vulkan') { $VariantOrder = @('ocrx-vulkan.exe') }
+    $PromotedVariant = $null
+    foreach ($VariantName in $VariantOrder) {
+      $VariantPath = Join-Path $StagingBin $VariantName
+      if (-not (Test-Path $VariantPath -PathType Leaf)) { continue }
       Copy-Item (Join-Path $StagingBin 'ocrx.exe') (Join-Path $StagingBin 'ocrx-cpu.exe') -Force
       try {
-        & $VulkanVariant version | Out-Null
+        & $VariantPath version | Out-Null
         if ($LASTEXITCODE -eq 0) {
           Remove-Item (Join-Path $StagingBin 'ocrx.exe') -Force
-          Move-Item $VulkanVariant (Join-Path $StagingBin 'ocrx.exe') -Force
-          Write-Host 'selected GPU (Vulkan) build as default ocrx.exe; CPU build kept as ocrx-cpu.exe'
-        } else {
-          Remove-Item $VulkanVariant -Force
-          Write-Host 'vulkan variant failed to launch; keeping CPU-only build'
+          Move-Item $VariantPath (Join-Path $StagingBin 'ocrx.exe') -Force
+          $PromotedVariant = $VariantName
+          break
         }
+        Remove-Item $VariantPath -Force
+        Write-Host "$VariantName failed to launch (version exit $LASTEXITCODE); trying next variant"
       } catch {
-        Remove-Item $VulkanVariant -Force -ErrorAction SilentlyContinue
-        Write-Host 'vulkan variant could not start on this driver; keeping CPU-only build'
+        Remove-Item $VariantPath -Force -ErrorAction SilentlyContinue
+        Write-Host "$VariantName could not start on this machine; trying next variant"
       }
+    }
+    if ($PromotedVariant) {
+      Write-Host "selected GPU ($PromotedVariant) build as default ocrx.exe; CPU build kept as ocrx-cpu.exe"
     }
   } else {
     Copy-Item $InstallBinary (Join-Path $StagingBin 'ocrx.exe') -Force

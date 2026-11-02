@@ -1,0 +1,1 @@
+{"schema":"ocrx-routing-checkpoint-v1","routing":{"page":1,"classification":{"page_type":"image","confidence":"high","recommended_method":"ocr","reason":"image_coverage_high"},"processing":{"planned_method":"ocr","actual_method":"ocr","fallback_reason":null}}}

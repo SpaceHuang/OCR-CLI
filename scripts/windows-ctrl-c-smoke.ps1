@@ -28,7 +28,9 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $Binary) { $Binary = Join-Path $repoRoot "target\debug\ocrx.exe" }
 if (-not $PdfiumDir) { $PdfiumDir = Join-Path $repoRoot "vendor\pdfium\bin" }
 if (-not $ModelCache) { $ModelCache = $env:LOCALAPPDATA }
-if (-not $Fixture) { $Fixture = Join-Path $repoRoot "benchmarks\fixtures\pdf\varied-page-sizes.pdf" }
+# P4.4: the cancel anchor needs TWO full windows (plan §7.4 mechanism A):
+# the signal lands while window 2 is in flight, after window 1 committed.
+if (-not $Fixture) { $Fixture = Join-Path $repoRoot "benchmarks\fixtures\pdf\complex-20-pages.pdf" }
 
 if (-not (Test-Path -LiteralPath $Binary)) { throw "missing binary: $Binary" }
 if (-not (Test-Path -LiteralPath (Join-Path $PdfiumDir "pdfium.dll"))) {
@@ -108,7 +110,7 @@ $scanArgs = @(
     "--output-dir"
     "`"$outputDir`""
     "--pages"
-    "1,2"
+    "1-8"
     # The fixture pages carry a reliable text layer, so default content-aware
     # routing finishes them natively without ever reaching the OCR generation
     # loop the Ctrl+C contract covers. Force the OCR queue.
@@ -165,17 +167,20 @@ try {
     $logStream.Dispose()
 
     $childPid = $pi.dwProcessId
-    $firstCheckpoint = Join-Path $outputDir "page-0001.checkpoint"
-    $secondCheckpoint = Join-Path $outputDir "page-0002.checkpoint"
+    # Windowed commits are atomic (plan §7.4 mechanism A): window 1 is pages
+    # 1-4, committed together; the signal lands while window 2 (pages 5-8) is
+    # in flight with zero checkpoints of its own.
+    $firstCheckpoint = Join-Path $outputDir "page-0004.checkpoint"
+    $secondCheckpoint = Join-Path $outputDir "page-0005.checkpoint"
     $deadline = (Get-Date).AddMinutes(12)
     while (-not (Test-Path -LiteralPath $firstCheckpoint)) {
         if ((Get-Date) -gt $deadline) {
-            throw "page 1 did not commit before deadline; output was not produced"
+            throw "page 4 did not commit before deadline; output was not produced"
         }
         Start-Sleep -Milliseconds 250
     }
     if (Test-Path -LiteralPath $secondCheckpoint) {
-        throw "page 2 already committed before the cancel could be exercised; the workload is too small to smoke-test cancellation"
+        throw "page 5 already committed before the cancel could be exercised; the workload is too small to smoke-test cancellation"
     }
 
     # CTRL_BREAK_EVENT (1) targets the new process group reliably on Windows.
@@ -202,6 +207,14 @@ try {
     if (-not (Test-Path -LiteralPath $firstCheckpoint)) {
         throw "completed page checkpoint was not retained after cancellation"
     }
+    # Mechanism A evidence: the cancelled in-flight window (pages 5-8) must
+    # have produced zero checkpoints.
+    foreach ($inFlight in 5..8) {
+        $inFlightPath = Join-Path $outputDir ("page-{0:D4}.checkpoint" -f $inFlight)
+        if (Test-Path -LiteralPath $inFlightPath) {
+            throw "cancelled window page $inFlight left a checkpoint; window-atomic commit (mechanism A) is broken"
+        }
+    }
     if (Get-ChildItem -LiteralPath $outputDir -Recurse -Filter "*.part*" -ErrorAction SilentlyContinue) {
         throw "temporary .part files were left behind after cancellation"
     }
@@ -212,7 +225,7 @@ try {
     # around this native invocation (the exit code is the contract here).
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $Binary scan $Fixture --output-dir $outputDir --pages 1,2 --pdf-mode ocr --model-profile compact `
+    & $Binary scan $Fixture --output-dir $outputDir --pages 1-8 --pdf-mode ocr --model-profile compact `
         --device cpu --offline --non-interactive --report json --resume `
         --max-image-tokens 128 --max-output-tokens 128 2>&1 | Out-Null
     $ErrorActionPreference = $previousPreference
@@ -220,8 +233,8 @@ try {
     if ($resumeCode -notin @(0, 10)) {
         throw "resume scan failed with exit code $resumeCode"
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $outputDir "page-0002.checkpoint"))) {
-        throw "resume scan did not produce page 2 checkpoint"
+    if (-not (Test-Path -LiteralPath (Join-Path $outputDir "page-0005.checkpoint"))) {
+        throw "resume scan did not produce the cancelled window's page 5 checkpoint"
     }
 
     Write-Host "ctrl-c smoke ok: cancelled=130, checkpoint retained, resume completed (code $resumeCode)"

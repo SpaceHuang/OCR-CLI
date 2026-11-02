@@ -69,6 +69,57 @@ pub fn write_page_artifacts_with_status(
     )
 }
 
+/// P4.4 window recognition (plan §7.3): decodes a window of pages through
+/// [`Runtime::generate_window`] and adapts every response with the same
+/// pipeline as the single-page path (tail crop, adapter, bbox crops). The
+/// returned vector is page-ordered; batch-level failures surface as the
+/// runtime's `BATCH_ERROR_PREFIX` errors so the scan side can fall back to
+/// depth-1.
+#[allow(clippy::too_many_arguments)]
+pub fn write_window_artifacts_with_status_cancelled(
+    runtime: &mut impl Runtime,
+    entries: &[(u32, u32, u32, Vec<u8>, u32)],
+    output_root: impl AsRef<Path>,
+    cancellation: &CancellationToken,
+    progress: &mut dyn FnMut(u32, GenerationProgress),
+) -> Vec<Result<PageArtifactOutput, Box<dyn std::error::Error>>> {
+    let mut requests = Vec::with_capacity(entries.len());
+    for &(page, width, height, ref rgb8, max_output_tokens) in entries {
+        match try_request(max_output_tokens) {
+            Ok(request) => match InferenceRequest::new(
+                page,
+                width,
+                height,
+                rgb8.clone(),
+                request.max_output_tokens,
+            ) {
+                Ok(request) => requests.push(request),
+                Err(error) => return vec![Err(error.into())],
+            },
+            Err(error) => return vec![Err(std::io::Error::other(error).into())],
+        }
+    }
+    let responses = runtime.generate_window(requests, cancellation, progress);
+    responses
+        .into_iter()
+        .zip(entries.iter())
+        .map(|(response, &(page, width, height, ref rgb8, _))| {
+            let response = response.map_err(std::io::Error::other)?;
+            if cancellation.is_cancelled() {
+                return Err(std::io::Error::other("cancelled").into());
+            }
+            adapt_and_write(
+                page,
+                width,
+                height,
+                rgb8.clone(),
+                response,
+                output_root.as_ref(),
+            )
+        })
+        .collect()
+}
+
 /// Cancellation-aware variant of [`write_page_artifacts_with_status`].
 ///
 /// The runtime polls `cancellation` between generated tokens and forwards
@@ -97,6 +148,20 @@ pub fn write_page_artifacts_with_status_cancelled(
     if cancellation.is_cancelled() {
         return Err(std::io::Error::other("cancelled").into());
     }
+    adapt_and_write(page, width, height, rgb8, response, output_root)
+}
+
+/// Shared response pipeline for the single-page and windowed paths: tail
+/// crop, adapter, bbox crops, markdown assembly, artifact output. The
+/// artifacts can never diverge between the two paths (plan §3.2.2/§7.3).
+fn adapt_and_write(
+    page: u32,
+    width: u32,
+    height: u32,
+    rgb8: Vec<u8>,
+    response: InferenceResponse,
+    output_root: impl AsRef<Path>,
+) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     let truncated = response.finish_reason == "max_tokens";
     // Single-source degeneration pipeline (plan §3.2.2): the tail crop runs
     // once here, before bbox stripping, and the cropped text drives every

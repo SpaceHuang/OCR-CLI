@@ -67,6 +67,41 @@ if [[ -n "$PS" ]]; then
       || { echo "PowerShell syntax error in $script" >&2; exit 1; }
   done
 fi
+# --- P2 T1.2: cuda packaging branch (plan §5; v3.10 MAJOR-1 build-env steps). ---
+# The cuda branch must mirror the vulkan gate shape (env check → build →
+# ocrx-cuda.exe) and embed the T1.1-verified build environment as executable
+# steps: Ninja generator, MSVC x64 init (vcvars64) or fail-loud, short
+# CARGO_TARGET_DIR, and cache-clean-before-retry. The unknown-enum hard
+# rejection stays.
+PKG="$ROOT_DIR/scripts/package-windows-x64.ps1"
+grep -q "unsupported GpuPackages entry" "$PKG"
+grep -q "'cuda'" "$PKG" || { echo "package: no cuda GpuPackages branch" >&2; exit 1; }
+grep -q 'CUDA_PATH' "$PKG" || { echo "package: cuda branch must gate on CUDA_PATH" >&2; exit 1; }
+grep -q 'ocrx-cuda.exe' "$PKG" || { echo "package: cuda artifact must be bin/ocrx-cuda.exe" >&2; exit 1; }
+grep -q 'CMAKE_GENERATOR' "$PKG" || { echo "package: cuda branch must pin CMAKE_GENERATOR=Ninja (T1.1: VS generator fails with 'No CUDA toolset found')" >&2; exit 1; }
+grep -q 'Ninja' "$PKG" || { echo "package: cuda branch must reference the Ninja generator" >&2; exit 1; }
+grep -q 'vcvars64.bat' "$PKG" || { echo "package: cuda branch must initialize or demand the MSVC x64 env (vcvars64.bat)" >&2; exit 1; }
+grep -q 'CARGO_TARGET_DIR' "$PKG" || { echo "package: cuda branch must set/validate a short CARGO_TARGET_DIR (250-char nested-path limit)" >&2; exit 1; }
+grep -qEi 'clean|Remove-Item' "$PKG" || { echo "package: cuda branch must clean the dirty CMake cache before retry" >&2; exit 1; }
+# --- P2 T1.3: installer GPU variant priority chain (plan §5 T1.3). ---
+# Detection stays nvcuda → vulkan-1 → cpu; the promotion becomes a chain
+# cuda → vulkan → cpu with per-level launch verification and explicit
+# degrade logs.
+INST="$ROOT_DIR/scripts/install.ps1"
+grep -q 'ocrx-cuda.exe' "$INST" || { echo "install: no cuda chain candidate" >&2; exit 1; }
+grep -q 'ocrx-vulkan.exe' "$INST" || { echo "install: no vulkan chain candidate" >&2; exit 1; }
+grep -q 'nvcuda.dll' "$INST" || { echo "install: nvcuda detection missing" >&2; exit 1; }
+grep -q 'vulkan-1.dll' "$INST" || { echo "install: vulkan detection missing" >&2; exit 1; }
+grep -q "@('ocrx-cuda.exe', 'ocrx-vulkan.exe')" "$INST" \
+  || { echo "install: cuda must precede vulkan in the promotion chain" >&2; exit 1; }
+grep -qEi 'failed to launch|could not start|failed launch' "$INST" \
+  || { echo "install: chain levels must log explicit degrade reasons" >&2; exit 1; }
+# Functional smoke of the installer chain when a PowerShell is available:
+# {cuda+vulkan+cpu, vulkan+cpu, cpu-only} × {nvcuda, vulkan-only, none}.
+if [[ -n "$PS" ]]; then
+  "$PS" -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$ROOT_DIR/scripts/test-install-chain.ps1" 2>/dev/null || echo "$ROOT_DIR/scripts/test-install-chain.ps1")" \
+    || { echo "install chain smoke matrix failed" >&2; exit 1; }
+fi
 # validate-skill.py needs a real Python; on Windows `python3` may be a Store stub.
 PY=""
 for candidate in python3 python; do

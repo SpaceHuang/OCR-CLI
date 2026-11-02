@@ -10,3 +10,4 @@ workspace = true
 
 [dependencies]
 ocrx-core = { path = "../ocrx-core" }
+ocrx-runtime = { path = "../ocrx-runtime" }

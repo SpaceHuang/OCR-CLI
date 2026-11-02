@@ -513,6 +513,42 @@ pub trait PageRecognizer<M> {
     ) -> io::Result<PageStatus>;
 }
 
+/// Terminal state of one window page awaiting the atomic commit phase
+/// (plan §7.3, mechanism A).
+enum TerminalPage {
+    Committed {
+        page: u32,
+        image: RenderedPage,
+        artifact: PageArtifactResult,
+        attempts: u32,
+    },
+    RenderFailed {
+        page: u32,
+        cancelled: bool,
+    },
+    RecognizeFailed {
+        page: u32,
+        audit: Option<RenderAudit>,
+        error: io::Error,
+    },
+}
+
+impl TerminalPage {
+    fn page(&self) -> u32 {
+        match self {
+            Self::Committed { page, .. }
+            | Self::RenderFailed { page, .. }
+            | Self::RecognizeFailed { page, .. } => *page,
+        }
+    }
+}
+
+/// Outcome of the serial attempt machine.
+enum SerialOutcome {
+    RenderFailed { cancelled: bool },
+    Terminal(Result<(RenderedPage, PageArtifactResult, u32), (RenderAudit, io::Error)>),
+}
+
 pub trait PageArtifactRecognizer<M> {
     fn recognize_artifact(
         &mut self,
@@ -537,6 +573,31 @@ pub trait PageArtifactRecognizer<M> {
     ) -> io::Result<PageArtifactResult> {
         let _ = (cancellation, progress);
         self.recognize_artifact(model, page, image)
+    }
+
+    /// P4.4 window recognition (plan §7.3): decodes the window's pages
+    /// concurrently. The default runs them sequentially through
+    /// [`Self::recognize_artifact_cancelled`] — numerically identical to
+    /// single-stream — so fakes stay unchanged; real recognizers override it
+    /// with a true batched decode. A batch-level failure fills every entry
+    /// with an error whose message starts with
+    /// `ocrx_runtime::BATCH_ERROR_PREFIX` (the scan side falls back to
+    /// depth-1 resubmission); per-page failures fail only their entry.
+    fn recognize_window_cancelled(
+        &mut self,
+        model: &mut M,
+        pages: &[(u32, RenderedPage)],
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> Vec<Result<PageArtifactResult, io::Error>> {
+        pages
+            .iter()
+            .map(|(page, image)| {
+                self.recognize_artifact_cancelled(model, *page, image, cancellation, &mut |event| {
+                    progress(*page, event)
+                })
+            })
+            .collect()
     }
 }
 
@@ -605,6 +666,56 @@ where
     /// # Errors
     ///
     /// Same failure surface as [`run_with_checkpoints_cancelled`].
+    /// Single-stream attempt machine (serial semantics, plan §3.5/§7.3):
+    /// `start_attempt` 1 = full serial path (original render first); 2 = a
+    /// batched attempt-1 degeneration retry (perturbed renders from here).
+    /// Stops after attempt 3; a render failure is terminal for the page.
+    fn serial_attempt_outcome(
+        &mut self,
+        model: &mut M,
+        page: u32,
+        start_attempt: u32,
+        cancellation: &CancellationToken,
+        heartbeat: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> SerialOutcome {
+        let mut attempts = start_attempt.saturating_sub(1);
+        loop {
+            attempts += 1;
+            let image = if attempts == 1 {
+                self.renderer.render(page)
+            } else {
+                let (numerator, denominator) = if attempts == 2 { (47, 50) } else { (53, 50) };
+                self.renderer.render_perturbed(page, numerator, denominator)
+            };
+            let image = match image {
+                Ok(image) => image,
+                Err(_) => {
+                    return SerialOutcome::RenderFailed {
+                        cancelled: cancellation.is_cancelled(),
+                    };
+                }
+            };
+            let mut page_heartbeat = |event: GenerationProgress| heartbeat(page, event);
+            match self.recognizer.recognize_artifact_cancelled(
+                model,
+                page,
+                &image,
+                cancellation,
+                &mut page_heartbeat,
+            ) {
+                Ok(artifact) => {
+                    if artifact.degenerated && attempts < 3 {
+                        continue;
+                    }
+                    return SerialOutcome::Terminal(Ok((image, artifact, attempts)));
+                }
+                Err(error) => {
+                    return SerialOutcome::Terminal(Err((image.audit, error)));
+                }
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)] // mirrors the cancelled variant + one callback
     pub fn run_with_checkpoints_heartbeat(
         &mut self,
@@ -626,186 +737,363 @@ where
         let mut degenerated = 0_u32;
         let mut warnings = std::collections::BTreeSet::new();
         let mut diagnostics = Vec::new();
-        for &page in page_numbers {
+        // P4.4 (plan §7.3): pages are processed in windows of up to
+        // WINDOW_DEPTH. Attempt 1 of every window page runs as one batched
+        // decode; degeneration retries and batch-failure fallbacks stay
+        // single-stream (depth 1 = 等价单流). Commits are window-atomic
+        // (mechanism A): nothing in the window is committed until every page
+        // reached a terminal state, and a cancelled window commits nothing so
+        // resume rescans it whole — the batch composition for a page stays
+        // identical across the interruption.
+        let mut terminal: Vec<TerminalPage> = Vec::new();
+        let mut cursor = 0usize;
+        while cursor < page_numbers.len() {
             if cancellation.is_cancelled() {
                 break;
             }
-            let checkpoint_path = root.join(format!("page-{page:04}.checkpoint"));
-            if resume {
-                if let Ok(checkpoint) = read_checkpoint(&checkpoint_path) {
-                    if checkpoint.resume_action(compatibility, root, page)
-                        == CheckpointResumeAction::SkipCommitted
+            // Start (or extend) a window: leading resume-skipped pages are
+            // drained one by one; live pages join the window until it is full
+            // or the job ends.
+            let mut window: Vec<u32> = Vec::with_capacity(ocrx_runtime::WINDOW_DEPTH);
+            while cursor < page_numbers.len() && window.len() < ocrx_runtime::WINDOW_DEPTH {
+                let page = page_numbers[cursor];
+                cursor += 1;
+                let checkpoint_path = root.join(format!("page-{page:04}.checkpoint"));
+                let mut skipped = false;
+                if resume {
+                    if let Ok(checkpoint) = read_checkpoint(&checkpoint_path) {
+                        if checkpoint.resume_action(compatibility, root, page)
+                            == CheckpointResumeAction::SkipCommitted
+                        {
+                            if checkpoint.truncated {
+                                truncated += 1;
+                            }
+                            warnings.extend(checkpoint.warnings.iter().cloned());
+                            diagnostics.push(checkpoint.diagnostic());
+                            completed += 1;
+                            skipped = true;
+                        }
+                    }
+                }
+                if !skipped {
+                    window.push(page);
+                }
+            }
+            if window.is_empty() {
+                break;
+            }
+
+            // Frozen depth 1 (plan P4.4): a single-page window runs the true
+            // serial path — numerically identical to the pre-batching loop,
+            // with no window context allocated. Depth > 1 takes the batched
+            // protocol below.
+            if window.len() == 1 {
+                let page = window[0];
+                terminal.push(
+                    match self.serial_attempt_outcome(&mut model, page, 1, cancellation, heartbeat)
                     {
-                        if checkpoint.truncated {
-                            truncated += 1;
+                        SerialOutcome::RenderFailed { cancelled } => {
+                            TerminalPage::RenderFailed { page, cancelled }
                         }
-                        warnings.extend(checkpoint.warnings.iter().cloned());
-                        diagnostics.push(checkpoint.diagnostic());
-                        completed += 1;
-                        continue;
-                    }
-                }
-            }
-            // Degeneration retry state machine (plan §3.5): attempt 0 uses the
-            // original render; attempts 1/2 rescale the model input by
-            // 0.94/1.06 to break the determinism of a repetition loop. A
-            // degenerated attempt rotates to the next one; a clean attempt (or
-            // the third degenerated one) is committed. Pure max_tokens pages
-            // never retry (D-5).
-            type AttemptOutcome =
-                Result<(RenderedPage, PageArtifactResult, u32), (RenderAudit, io::Error)>;
-            let mut attempts = 0_u32;
-            let mut attempt: Option<AttemptOutcome> = None;
-            let mut render_failure = false;
-            loop {
-                attempts += 1;
-                let image = if attempts == 1 {
-                    self.renderer.render(page)
-                } else {
-                    let (numerator, denominator) = if attempts == 2 { (47, 50) } else { (53, 50) };
-                    self.renderer.render_perturbed(page, numerator, denominator)
-                };
-                let image = match image {
-                    Ok(image) => image,
-                    Err(_) => {
-                        render_failure = true;
-                        break;
-                    }
-                };
-                let mut page_heartbeat = |event: GenerationProgress| heartbeat(page, event);
-                match self.recognizer.recognize_artifact_cancelled(
-                    &mut model,
-                    page,
-                    &image,
-                    cancellation,
-                    &mut page_heartbeat,
-                ) {
-                    Ok(artifact) => {
-                        if artifact.degenerated && attempts < 3 {
-                            continue;
-                        }
-                        attempt = Some(Ok((image, artifact, attempts)));
-                        break;
-                    }
-                    Err(error) => {
-                        attempt = Some(Err((image.audit, error)));
-                        break;
-                    }
-                }
-            }
-            if render_failure {
-                // A page interrupted by cancellation stays resumable: it is
-                // reported as "cancelled", not "failed", so the CLI's
-                // resume logic does not treat it as a terminal page.
-                let cancelled = cancellation.is_cancelled();
-                if !cancelled {
-                    failed += 1;
-                }
-                diagnostics.push(PageDiagnostic {
-                    page,
-                    status: if cancelled {
-                        "cancelled".to_owned()
-                    } else {
-                        "failed".to_owned()
+                        SerialOutcome::Terminal(outcome) => match outcome {
+                            Ok((image, artifact, attempts)) => TerminalPage::Committed {
+                                page,
+                                image,
+                                artifact,
+                                attempts,
+                            },
+                            Err((audit, error)) => TerminalPage::RecognizeFailed {
+                                page,
+                                audit: Some(audit),
+                                error,
+                            },
+                        },
                     },
-                    stage: "render".to_owned(),
-                    error_code: Some("render_failed".to_owned()),
-                    message: Some("page rendering failed".to_owned()),
-                    audit: None,
-                    warnings: Vec::new(),
-                });
-                if cancelled {
+                );
+                if cancellation.is_cancelled() {
+                    // A cancelled single-page window commits nothing and the
+                    // loop stops — identical to the serial break semantics.
+                    terminal.clear();
                     break;
                 }
+                commit_terminal_pages(
+                    &terminal,
+                    root,
+                    compatibility,
+                    cancellation,
+                    &mut completed,
+                    &mut failed,
+                    &mut truncated,
+                    &mut degenerated,
+                    &mut warnings,
+                    &mut diagnostics,
+                )?;
+                terminal.clear();
                 continue;
             }
-            match attempt {
-                Some(Ok((image, artifact, attempts))) => {
-                    let mut artifact_warnings = artifact.warnings;
-                    if image.audit.scaled
-                        && !artifact_warnings
-                            .iter()
-                            .any(|warning| warning == "render_scaled")
-                    {
-                        artifact_warnings.push("render_scaled".to_owned());
-                    }
-                    if artifact.truncated {
-                        truncated += 1;
-                    }
-                    if artifact.degenerated {
-                        degenerated += 1;
-                    }
-                    warnings.extend(artifact_warnings.iter().cloned());
-                    write_render_audit(root, page, image.audit)?;
-                    // Raw-output sidecar (plan §3.3): preserved whenever the
-                    // page degenerated or lost text to repetition cleaning.
-                    let raw_pointer = if artifact.degenerated
-                        || artifact_warnings
-                            .iter()
-                            .any(|warning| warning == "repetition_removed")
-                    {
-                        let name = format!("page-{page:04}.raw");
-                        atomic_write(root.join(&name), artifact.raw_output.as_bytes())?;
-                        Some(name)
-                    } else {
-                        None
-                    };
-                    let checkpoint = PageCheckpoint {
-                        page_number: page,
-                        compatibility: compatibility.clone(),
-                        complete: true,
-                        output_sha256: String::new(),
-                        truncated: artifact.truncated,
-                        degenerated: artifact.degenerated,
-                        attempts,
-                        raw: raw_pointer,
-                        warnings: artifact_warnings,
-                        audit: Some(image.audit),
-                    };
-                    diagnostics.push(checkpoint.diagnostic());
-                    commit_page(
-                        root,
-                        page,
-                        &artifact.png,
-                        &artifact.markdown,
-                        &artifact.page_json,
-                        &checkpoint,
-                    )?;
-                    completed += 1;
-                }
-                Some(Err((audit, error))) => {
-                    // Same resumability rule as render failures: a recognition
-                    // interrupted by Ctrl+C is "cancelled", not a quality
-                    // failure, and stops the loop instead of scanning on.
-                    let cancelled = cancellation.is_cancelled();
-                    if !cancelled {
-                        failed += 1;
-                    }
-                    let (error_code, fallback_message) = classify_recognition_error(&error);
-                    diagnostics.push(PageDiagnostic {
-                        page,
-                        status: if cancelled {
-                            "cancelled".to_owned()
-                        } else {
-                            "failed".to_owned()
-                        },
-                        stage: "recognize".to_owned(),
-                        error_code: Some(error_code.to_owned()),
-                        message: Some(if error_code == "device_unavailable" {
-                            fallback_message.to_owned()
-                        } else {
-                            format!("page recognition failed: {error}")
-                        }),
-                        audit: Some(audit),
-                        warnings: Vec::new(),
-                    });
-                    if cancelled {
-                        break;
+
+            // Attempt-1 renders, in page order (a render failure is terminal
+            // for that page, exactly like the serial loop).
+            let mut images: Vec<(u32, RenderedPage)> = Vec::with_capacity(window.len());
+            let mut render_failed: std::collections::BTreeMap<u32, bool> =
+                std::collections::BTreeMap::new();
+            for &page in &window {
+                match self.renderer.render(page) {
+                    Ok(image) => images.push((page, image)),
+                    Err(_) => {
+                        render_failed.insert(page, cancellation.is_cancelled());
                     }
                 }
-                None => unreachable!("render failure handled before attempt match"),
             }
+
+            // Batched attempt-1 recognition over the successfully rendered
+            // pages; results are keyed by page for the resolution pass.
+            let mut batch_results: std::collections::BTreeMap<
+                u32,
+                Result<PageArtifactResult, io::Error>,
+            > = std::collections::BTreeMap::new();
+            if !images.is_empty() {
+                let results = self.recognizer.recognize_window_cancelled(
+                    &mut model,
+                    &images,
+                    cancellation,
+                    heartbeat,
+                );
+                for ((page, _), result) in images.iter().zip(results) {
+                    batch_results.insert(*page, result);
+                }
+            }
+
+            // Resolve the window into terminal pages. Batch-level failures
+            // (BATCH_ERROR_PREFIX) re-run the whole window single-stream
+            // (depth-1 fallback); degenerated pages continue their retry
+            // state machine single-stream; everything else is terminal as-is.
+            for &page in &window {
+                if let Some(cancelled) = render_failed.get(&page) {
+                    terminal.push(TerminalPage::RenderFailed {
+                        page,
+                        cancelled: *cancelled,
+                    });
+                    continue;
+                }
+                let Some(result) = batch_results.remove(&page) else {
+                    continue;
+                };
+                let artifact = match result {
+                    Ok(artifact) => artifact,
+                    Err(error) => {
+                        if error
+                            .to_string()
+                            .starts_with(ocrx_runtime::BATCH_ERROR_PREFIX)
+                        {
+                            // Depth-1 fallback for the whole window: every
+                            // still-pending page reruns the serial path from
+                            // attempt 1 (render + single-stream recognize).
+                            for pending in window.iter().copied() {
+                                if render_failed.contains_key(&pending)
+                                    || terminal.iter().any(|entry| entry.page() == pending)
+                                {
+                                    continue;
+                                }
+                                batch_results.remove(&pending);
+                                terminal.push(
+                                    match self.serial_attempt_outcome(
+                                        &mut model,
+                                        pending,
+                                        1,
+                                        cancellation,
+                                        heartbeat,
+                                    ) {
+                                        SerialOutcome::RenderFailed { cancelled } => {
+                                            TerminalPage::RenderFailed {
+                                                page: pending,
+                                                cancelled,
+                                            }
+                                        }
+                                        SerialOutcome::Terminal(outcome) => match outcome {
+                                            Ok((image, artifact, attempts)) => {
+                                                TerminalPage::Committed {
+                                                    page: pending,
+                                                    image,
+                                                    artifact,
+                                                    attempts,
+                                                }
+                                            }
+                                            Err((audit, error)) => TerminalPage::RecognizeFailed {
+                                                page: pending,
+                                                audit: Some(audit),
+                                                error,
+                                            },
+                                        },
+                                    },
+                                );
+                            }
+                            break;
+                        }
+                        terminal.push(TerminalPage::RecognizeFailed {
+                            page,
+                            audit: None,
+                            error,
+                        });
+                        continue;
+                    }
+                };
+                if artifact.degenerated {
+                    // Retry budget mirrors the serial machine: the batched
+                    // call was attempt 1, so up to two perturbed retries
+                    // remain (attempts 2/3).
+                    match self.serial_attempt_outcome(&mut model, page, 2, cancellation, heartbeat)
+                    {
+                        SerialOutcome::RenderFailed { cancelled } => {
+                            terminal.push(TerminalPage::RenderFailed { page, cancelled });
+                        }
+                        SerialOutcome::Terminal(outcome) => match outcome {
+                            Ok((image, retried, attempts)) => {
+                                terminal.push(TerminalPage::Committed {
+                                    page,
+                                    image,
+                                    artifact: retried,
+                                    attempts,
+                                });
+                            }
+                            Err((audit, error)) => terminal.push(TerminalPage::RecognizeFailed {
+                                page,
+                                audit: Some(audit),
+                                error,
+                            }),
+                        },
+                    }
+                } else if let Some((_, image)) = images.iter().find(|(entry, _)| *entry == page) {
+                    let image = image.clone();
+                    terminal.push(TerminalPage::Committed {
+                        page,
+                        image,
+                        artifact,
+                        attempts: 1,
+                    });
+                }
+            }
+
+            // Window-atomic commit (mechanism A): a cancellation after the
+            // window started commits nothing; every window page reruns on
+            // resume with the same batch composition.
+            if cancellation.is_cancelled() {
+                break;
+            }
+            for entry in &terminal {
+                match entry {
+                    TerminalPage::Committed {
+                        page,
+                        image,
+                        artifact,
+                        attempts,
+                    } => {
+                        let page = *page;
+                        let attempts = *attempts;
+                        let mut artifact_warnings = artifact.warnings.clone();
+                        if image.audit.scaled
+                            && !artifact_warnings
+                                .iter()
+                                .any(|warning| warning == "render_scaled")
+                        {
+                            artifact_warnings.push("render_scaled".to_owned());
+                        }
+                        if artifact.truncated {
+                            truncated += 1;
+                        }
+                        if artifact.degenerated {
+                            degenerated += 1;
+                        }
+                        warnings.extend(artifact_warnings.iter().cloned());
+                        write_render_audit(root, page, image.audit)?;
+                        // Raw-output sidecar (plan §3.3): preserved whenever
+                        // the page degenerated or lost text to repetition
+                        // cleaning.
+                        let raw_pointer = if artifact.degenerated
+                            || artifact_warnings
+                                .iter()
+                                .any(|warning| warning == "repetition_removed")
+                        {
+                            let name = format!("page-{page:04}.raw");
+                            atomic_write(root.join(&name), artifact.raw_output.as_bytes())?;
+                            Some(name)
+                        } else {
+                            None
+                        };
+                        let checkpoint = PageCheckpoint {
+                            page_number: page,
+                            compatibility: compatibility.clone(),
+                            complete: true,
+                            output_sha256: String::new(),
+                            truncated: artifact.truncated,
+                            degenerated: artifact.degenerated,
+                            attempts,
+                            raw: raw_pointer,
+                            warnings: artifact_warnings,
+                            audit: Some(image.audit),
+                        };
+                        diagnostics.push(checkpoint.diagnostic());
+                        commit_page(
+                            root,
+                            page,
+                            &artifact.png,
+                            &artifact.markdown,
+                            &artifact.page_json,
+                            &checkpoint,
+                        )?;
+                        completed += 1;
+                    }
+                    TerminalPage::RenderFailed { page, cancelled } => {
+                        let page = *page;
+                        let cancelled = *cancelled;
+                        if !cancelled {
+                            failed += 1;
+                        }
+                        diagnostics.push(PageDiagnostic {
+                            page,
+                            status: if cancelled {
+                                "cancelled".to_owned()
+                            } else {
+                                "failed".to_owned()
+                            },
+                            stage: "render".to_owned(),
+                            error_code: Some("render_failed".to_owned()),
+                            message: Some("page rendering failed".to_owned()),
+                            audit: None,
+                            warnings: Vec::new(),
+                        });
+                    }
+                    TerminalPage::RecognizeFailed { page, audit, error } => {
+                        let page = *page;
+                        let audit = *audit;
+                        let cancelled = cancellation.is_cancelled();
+                        if !cancelled {
+                            failed += 1;
+                        }
+                        let (error_code, fallback_message) = classify_recognition_error(error);
+                        diagnostics.push(PageDiagnostic {
+                            page,
+                            status: if cancelled {
+                                "cancelled".to_owned()
+                            } else {
+                                "failed".to_owned()
+                            },
+                            stage: "recognize".to_owned(),
+                            error_code: Some(error_code.to_owned()),
+                            message: Some(if error_code == "device_unavailable" {
+                                fallback_message.to_owned()
+                            } else {
+                                format!("page recognition failed: {error}")
+                            }),
+                            audit,
+                            warnings: Vec::new(),
+                        });
+                    }
+                }
+            }
+            terminal.clear();
         }
+
         if failed == 0
             && !cancellation.is_cancelled()
             && completed == u32::try_from(page_numbers.len()).unwrap_or(u32::MAX)
@@ -1255,6 +1543,136 @@ impl PageIncomplete {
             "> ⚠️ ocrx：第 {page_number} 页识别不完整（{reason}），本页内容可能缺失或错误，请重扫后核对本页。"
         )
     }
+}
+
+/// Window-atomic commit phase (plan §7.3, mechanism A): runs after every
+/// window page reached a terminal state, in page order. A cancelled scan
+/// never reaches this (the caller breaks first), so a cancelled window leaves
+/// zero checkpoints and resume rescans it whole.
+#[allow(clippy::too_many_arguments)] // mirrors the loop's accumulators
+fn commit_terminal_pages(
+    terminal: &[TerminalPage],
+    root: &Path,
+    compatibility: &CompatibilityKey,
+    cancellation: &CancellationToken,
+    completed: &mut u32,
+    failed: &mut u32,
+    truncated: &mut u32,
+    degenerated: &mut u32,
+    warnings: &mut std::collections::BTreeSet<String>,
+    diagnostics: &mut Vec<PageDiagnostic>,
+) -> io::Result<()> {
+    for entry in terminal {
+        match entry {
+            TerminalPage::Committed {
+                page,
+                image,
+                artifact,
+                attempts,
+            } => {
+                let page = *page;
+                let attempts = *attempts;
+                let mut artifact_warnings = artifact.warnings.clone();
+                if image.audit.scaled
+                    && !artifact_warnings
+                        .iter()
+                        .any(|warning| warning == "render_scaled")
+                {
+                    artifact_warnings.push("render_scaled".to_owned());
+                }
+                if artifact.truncated {
+                    *truncated += 1;
+                }
+                if artifact.degenerated {
+                    *degenerated += 1;
+                }
+                warnings.extend(artifact_warnings.iter().cloned());
+                write_render_audit(root, page, image.audit)?;
+                // Raw-output sidecar (plan §3.3): preserved whenever the page
+                // degenerated or lost text to repetition cleaning.
+                let raw_pointer = if artifact.degenerated
+                    || artifact_warnings
+                        .iter()
+                        .any(|warning| warning == "repetition_removed")
+                {
+                    let name = format!("page-{page:04}.raw");
+                    atomic_write(root.join(&name), artifact.raw_output.as_bytes())?;
+                    Some(name)
+                } else {
+                    None
+                };
+                let checkpoint = PageCheckpoint {
+                    page_number: page,
+                    compatibility: compatibility.clone(),
+                    complete: true,
+                    output_sha256: String::new(),
+                    truncated: artifact.truncated,
+                    degenerated: artifact.degenerated,
+                    attempts,
+                    raw: raw_pointer,
+                    warnings: artifact_warnings,
+                    audit: Some(image.audit),
+                };
+                diagnostics.push(checkpoint.diagnostic());
+                commit_page(
+                    root,
+                    page,
+                    &artifact.png,
+                    &artifact.markdown,
+                    &artifact.page_json,
+                    &checkpoint,
+                )?;
+                *completed += 1;
+            }
+            TerminalPage::RenderFailed { page, cancelled } => {
+                let page = *page;
+                let cancelled = *cancelled;
+                if !cancelled {
+                    *failed += 1;
+                }
+                diagnostics.push(PageDiagnostic {
+                    page,
+                    status: if cancelled {
+                        "cancelled".to_owned()
+                    } else {
+                        "failed".to_owned()
+                    },
+                    stage: "render".to_owned(),
+                    error_code: Some("render_failed".to_owned()),
+                    message: Some("page rendering failed".to_owned()),
+                    audit: None,
+                    warnings: Vec::new(),
+                });
+            }
+            TerminalPage::RecognizeFailed { page, audit, error } => {
+                let page = *page;
+                let audit = *audit;
+                let cancelled = cancellation.is_cancelled();
+                if !cancelled {
+                    *failed += 1;
+                }
+                let (error_code, fallback_message) = classify_recognition_error(error);
+                diagnostics.push(PageDiagnostic {
+                    page,
+                    status: if cancelled {
+                        "cancelled".to_owned()
+                    } else {
+                        "failed".to_owned()
+                    },
+                    stage: "recognize".to_owned(),
+                    error_code: Some(error_code.to_owned()),
+                    message: Some(if error_code == "device_unavailable" {
+                        fallback_message.to_owned()
+                    } else {
+                        format!("page recognition failed: {error}")
+                    }),
+                    audit,
+                    warnings: Vec::new(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2116,13 +2534,14 @@ fn temporary_path(path: &Path) -> PathBuf {
 mod tests {
     use super::{
         CancellationToken, CheckpointDisposition, CheckpointResumeAction, CheckpointState,
-        CompatibilityKey, ErrorReport, Heartbeat, JobStatus, JobSummary, ModelLoader, OcrQueuePage,
-        PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic, PageIncomplete,
-        PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent,
-        ProgressMode, ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat,
-        Reporter, ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
-        ScanController, ScanService, atomic_write, classify_recognition_error, format_report,
-        merge_job_summaries, recover_pending_ocr_queue,
+        CompatibilityKey, ErrorReport, GenerationProgress, Heartbeat, JobStatus, JobSummary,
+        ModelLoader, OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint,
+        PageDiagnostic, PageIncomplete, PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer,
+        PageStatus, ProgressEvent, ProgressMode, ProgressSnapshot, ProgressStage, RenderAudit,
+        RenderedPage, ReportFormat, Reporter, ResultReport, ResultStatus,
+        RoutingCheckpointMetadata, RoutingCheckpointResult, ScanController, ScanService,
+        atomic_write, classify_recognition_error, format_report, merge_job_summaries,
+        recover_pending_ocr_queue,
     };
     use std::fs;
 
@@ -2195,6 +2614,83 @@ mod tests {
                 warnings: Vec::new(),
             })
         }
+    }
+
+    /// Fake whose WINDOW recognition always fails at the batch level; the
+    /// single-page path succeeds — the scan must fall back to depth-1 and
+    /// still commit every page (plan §7.3③/§7.4 批级故障降级).
+    struct BatchFailingArtifacts {
+        serial_calls: Vec<u32>,
+    }
+    impl PageArtifactRecognizer<u32> for BatchFailingArtifacts {
+        fn recognize_artifact(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+        ) -> std::io::Result<PageArtifactResult> {
+            self.serial_calls.push(page);
+            Ok(PageArtifactResult {
+                png: vec![page as u8],
+                markdown: format!("page {page}"),
+                degenerated: false,
+                raw_output: String::new(),
+                page_json: format!(
+                    r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]}}"#
+                ),
+                truncated: false,
+                warnings: Vec::new(),
+            })
+        }
+
+        fn recognize_window_cancelled(
+            &mut self,
+            _model: &mut u32,
+            pages: &[(u32, RenderedPage)],
+            _cancellation: &CancellationToken,
+            _progress: &mut dyn FnMut(u32, GenerationProgress),
+        ) -> Vec<std::io::Result<PageArtifactResult>> {
+            pages
+                .iter()
+                .map(|(_, _)| {
+                    Err(std::io::Error::other(format!(
+                        "{}injected batch failure",
+                        ocrx_runtime::BATCH_ERROR_PREFIX
+                    )))
+                })
+                .collect()
+        }
+    }
+
+    #[test]
+    fn batch_level_failure_falls_back_to_single_stream_and_commits_all_pages() {
+        let root = test_dir("batch-fallback");
+        let _ = fs::remove_dir_all(&root);
+        let recognizer = BatchFailingArtifacts {
+            serial_calls: Vec::new(),
+        };
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            recognizer,
+        );
+        let summary = service
+            .run_with_checkpoints(&[1, 2, 3], &root, &degeneration_compatibility(), false)
+            .unwrap();
+        // Every page committed through the depth-1 fallback.
+        assert_eq!(summary.completed_pages, 3);
+        assert_eq!(summary.failed_pages, 0);
+        assert_eq!(
+            service.recognizer.serial_calls,
+            vec![1, 2, 3],
+            "fallback must rerun every window page single-stream"
+        );
+        assert!(root.join("page-0001.checkpoint").is_file());
+        assert!(root.join("page-0003.checkpoint").is_file());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -3017,12 +3513,13 @@ mod tests {
                 std::path::PathBuf::from("C:\\work\\project"),
             )
         } else {
-            (std::path::Path::new("/"), std::path::PathBuf::from("/work/project"))
+            (
+                std::path::Path::new("/"),
+                std::path::PathBuf::from("/work/project"),
+            )
         };
         assert!(super::validate_output_not_containing(&cwd.join("paper-ocr"), &cwd).is_ok());
-        assert!(
-            super::validate_output_not_containing(&cwd.join("out").join("x"), &cwd).is_ok()
-        );
+        assert!(super::validate_output_not_containing(&cwd.join("out").join("x"), &cwd).is_ok());
         assert!(super::validate_output_not_containing(root, &cwd).is_err());
         assert!(super::validate_output_not_containing(&cwd, &cwd).is_err());
     }
@@ -3046,8 +3543,11 @@ mod tests {
             "case-variant ancestor of the working directory must be rejected"
         );
         assert!(
-            super::validate_output_not_containing(&base.join("project").join("out"), &working_directory)
-                .is_ok(),
+            super::validate_output_not_containing(
+                &base.join("project").join("out"),
+                &working_directory
+            )
+            .is_ok(),
             "case-variant subdirectory of the working directory is the normal layout"
         );
         let _ = std::fs::remove_dir_all(&base);
@@ -3634,8 +4134,9 @@ mod tests {
         let working_directory = std::path::Path::new("/work/elsewhere");
         super::remove_for_overwrite(input, &directory, &[protected], working_directory).unwrap();
         assert!(!directory.exists());
-        assert!(super::remove_for_overwrite(input, "/work", &[protected], working_directory)
-            .is_err());
+        assert!(
+            super::remove_for_overwrite(input, "/work", &[protected], working_directory).is_err()
+        );
         // The working-directory guard travels with the deletion API itself,
         // not only with the CLI wrapper.
         assert!(

@@ -1,0 +1,21 @@
+{
+  "token_cap": 96,
+  "pages": 6,
+  "elapsed_s": 19.6,
+  "runs": [
+    {"batch_depth": 2, "pages": [
+      {"page": 1, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 2, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 3, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 4, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 5, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 6, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97}]},
+    {"batch_depth": 4, "pages": [
+      {"page": 1, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 2, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 3, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 4, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 5, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97},
+      {"page": 6, "first_divergence_token": null, "similarity": 1.0000, "baseline_tokens": 97, "batched_tokens": 97}]}
+  ]
+}

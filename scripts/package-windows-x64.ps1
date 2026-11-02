@@ -108,11 +108,71 @@ try {
   if (-not (Test-Path $BuiltBinary)) { Fail 'release binary missing' 4 }
   Copy-Item $BuiltBinary (Join-Path $Stage 'bin\ocrx.exe') -Force
   foreach ($GpuProfile in $GpuPackages) {
-    if ($GpuProfile -ne 'vulkan') { Fail "unsupported GpuPackages entry: $GpuProfile" 4 }
-    if (-not $env:VULKAN_SDK) { Fail 'GpuPackages vulkan requires VULKAN_SDK (with Bin/glslc.exe on PATH)' 4 }
-    & cargo build --release --locked -p ocrx --features vulkan
-    if ($LASTEXITCODE -ne 0) { Fail 'vulkan cargo build failed' 4 }
-    Copy-Item $BuiltBinary (Join-Path $Stage 'bin\ocrx-vulkan.exe') -Force
+    switch ($GpuProfile) {
+      'vulkan' {
+        if (-not $env:VULKAN_SDK) { Fail 'GpuPackages vulkan requires VULKAN_SDK (with Bin/glslc.exe on PATH)' 4 }
+        & cargo build --release --locked -p ocrx --features vulkan
+        if ($LASTEXITCODE -ne 0) { Fail 'vulkan cargo build failed' 4 }
+        Copy-Item $BuiltBinary (Join-Path $Stage 'bin\ocrx-vulkan.exe') -Force
+      }
+      'cuda' {
+        # P2 T1.2 (plan §5): CUDA packaging branch. T1.1 (W4.3 evidence, 2026-
+        # 10-31) proved the VS CMake generator fails with 'No CUDA toolset
+        # found' (missing VS integration components) and only
+        # CMAKE_GENERATOR=Ninja plus a vcvars64-initialized MSVC x64
+        # environment builds; this branch therefore enforces that environment
+        # itself (v3.10 MAJOR-1) instead of assuming the caller's shell.
+        if (-not $env:CUDA_PATH) { Fail 'GpuPackages cuda requires CUDA_PATH (CUDA toolkit >= 12.x)' 4 }
+        # Short CARGO_TARGET_DIR: llama-cpp-sys-2's nested CUDA build paths
+        # overflow the 250-char Windows limit with long defaults.
+        if (-not $env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR = Join-Path $env:TEMP 'ocrx-cuda-tgt' }
+        if ($env:CARGO_TARGET_DIR.Length -gt 80) { Fail "CARGO_TARGET_DIR too long for CUDA nested paths (250-char limit): $($env:CARGO_TARGET_DIR)" 4 }
+        # Ninja generator: a conflicting value fails loud; otherwise pin it.
+        if ($env:CMAKE_GENERATOR -and ($env:CMAKE_GENERATOR -ne 'Ninja')) {
+          Fail "cuda build requires CMAKE_GENERATOR=Ninja (got $($env:CMAKE_GENERATOR); the VS generator fails with 'No CUDA toolset found')" 4
+        }
+        $env:CMAKE_GENERATOR = 'Ninja'
+        # MSVC x64 environment: use the caller's when initialized (cl.exe on
+        # PATH); otherwise locate vcvars64.bat and drive the build through it.
+        $VcvarsBat = $null
+        if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+          $Vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $VsRoot = $null
+          if (Test-Path $Vswhere) { $VsRoot = & $Vswhere -latest -products * -property installationPath }
+          if ($VsRoot) {
+            $Candidate = Join-Path $VsRoot 'VC\Auxiliary\Build\vcvars64.bat'
+            if (Test-Path $Candidate) { $VcvarsBat = $Candidate }
+          }
+          if (-not $VcvarsBat) {
+            Fail 'cuda build needs an MSVC x64 environment: run from a VS x64 developer prompt (vcvars64.bat) or put cl.exe on PATH' 4
+          }
+        }
+        $InvokeCudaBuild = {
+          param([string]$Vcvars)
+          if ($Vcvars) {
+            cmd /c "call `"$Vcvars`" >nul 2>&1 && cargo build --release --locked -p ocrx --features cuda"
+          } else {
+            & cargo build --release --locked -p ocrx --features cuda
+          }
+          return $LASTEXITCODE
+        }
+        $BuildExit = & $InvokeCudaBuild $VcvarsBat
+        if ($BuildExit -ne 0) {
+          # Dirty-cache retry: a failed attempt (e.g. a leftover VS-generator
+          # CMake cache) makes every retry fail immediately; clean the sys
+          # crate's build dirs and retry once before giving up.
+          Write-Host 'cuda build failed; cleaning llama-cpp-sys-2 build cache and retrying once'
+          Get-ChildItem -Path (Join-Path $env:CARGO_TARGET_DIR 'release\build') -Filter 'llama-cpp-sys-2-*' -Directory -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          $BuildExit = & $InvokeCudaBuild $VcvarsBat
+          if ($BuildExit -ne 0) { Fail 'cuda cargo build failed (after cache clean + retry)' 4 }
+        }
+        $CudaBinary = Join-Path $env:CARGO_TARGET_DIR 'release\ocrx.exe'
+        if (-not (Test-Path $CudaBinary)) { Fail 'cuda release binary missing' 4 }
+        Copy-Item $CudaBinary (Join-Path $Stage 'bin\ocrx-cuda.exe') -Force
+      }
+      default { Fail "unsupported GpuPackages entry: $GpuProfile" 4 }
+    }
   }
 } finally {
   Pop-Location

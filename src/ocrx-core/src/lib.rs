@@ -43,6 +43,26 @@ impl CancellationToken {
     }
 }
 
+/// Frozen decode-window depth for multi-page continuous batching (plan
+/// P4.4 freeze, 2026-11-02, post-review: **N = 4**).
+///
+/// History: the first freeze landed at N = 1 because the integrated N=4
+/// measurement regressed ~5–11% on both backends — but that measurement ran
+/// a broken window decode (review finding 1: the loop re-fed the seed token
+/// every step), so both its outputs and its timings were invalid. After the
+/// fix (verified against the real model: window output == single-stream
+/// output byte-for-byte), the corrected N=4 gates are: golden 40.9–41.5 s vs
+/// 55.5 s single-stream (1.36× end-to-end), decode aggregate 417–430 tok/s
+/// vs 283 (1.52×; the R0.6 isolated bench promised 3.21× — the hybrid
+/// attention arch's 18/24 per-sequence SSM layers cap the realizable gain),
+/// self-consistency byte-identical, page similarity 1.0000, zero failed /
+/// truncated / degenerated pages.
+pub const WINDOW_DEPTH: usize = 4;
+
+/// Prefix marking a batch-level window failure; the scan side falls back to
+/// depth-1 (single-stream) resubmission when it sees it (plan §7.3③).
+pub const BATCH_ERROR_PREFIX: &str = "batch inference failed";
+
 /// Progress emitted by a runtime while it generates one page.
 ///
 /// `elapsed_seconds` is the monotonic time since generation started. A runtime

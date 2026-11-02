@@ -772,6 +772,7 @@ name = "ocrx-output"
 version = "0.1.0"
 dependencies = [
  "ocrx-core",
+ "ocrx-runtime",
 ]
 
 [[package]]
@@ -801,6 +802,8 @@ dependencies = [
  "llama-cpp-2",
  "llama-cpp-sys-2",
  "ocrx-core",
+ "ocrx-models",
+ "ocrx-pdf",
 ]
 
 [[package]]
