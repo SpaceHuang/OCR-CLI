@@ -266,6 +266,7 @@ impl PdfiumOwnerHandle {
                     next_prefetch: 1,
                 };
                 for request in requests_rx {
+                    let mut pending_prefetch: Option<u32> = None;
                     let response = match request {
                         PdfRequest::PageCount => {
                             PdfResponse::PageCount(state.executor.page_count())
@@ -278,12 +279,13 @@ impl PdfiumOwnerHandle {
                         }
                         PdfRequest::Render { page } => {
                             let rendered = state.render_page(page);
-                            // Answer first (review finding 3), prefetch
-                            // after: the owner thread keeps rendering N+1/N+2
-                            // while the main thread runs this page's
-                            // recognition. Failures are values — the window
-                            // still tops up past them.
-                            state.top_up_prefetch(page);
+                            // Answer first (review round 2): the prefetch is
+                            // marked here but only runs after the response
+                            // reaches the main thread — the owner thread then
+                            // renders N+1/N+2 while the main thread runs this
+                            // page's recognition. Failures are values — the
+                            // window still tops up past them.
+                            pending_prefetch = Some(page);
                             PdfResponse::Render(rendered)
                         }
                         PdfRequest::RenderPerturbed {
@@ -299,6 +301,9 @@ impl PdfiumOwnerHandle {
                     };
                     if responses_tx.send(response).is_err() {
                         break; // handle dropped: exit (plan §6.2 Drop contract)
+                    }
+                    if let Some(page) = pending_prefetch.take() {
+                        state.top_up_prefetch(page);
                     }
                 }
             })

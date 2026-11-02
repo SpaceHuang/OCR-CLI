@@ -750,7 +750,11 @@ fn generate_window_pages<'a>(
         .map(|request| request.max_output_tokens)
         .max()
         .unwrap_or(0);
-    for _step in 0..max_output {
+    // The seed occupies one token of every slot's output budget (review
+    // round 2: the loop previously ran max_output full steps on top of the
+    // seed, producing max_output + 1 tokens), so it generates the remaining
+    // budget here.
+    for _step in 0..max_output.saturating_sub(1) {
         if slots.iter().all(|slot| slot.finished) {
             break;
         }
@@ -1479,6 +1483,29 @@ mod tests {
             "window page 1 diverged from single-stream output"
         );
         assert_eq!(window[0].raw_output, window[1].raw_output);
+
+        // max_tokens boundary (review round 2): the seed occupies one token
+        // of the budget, so a cap of 8 must yield EXACTLY 8 tokens' worth of
+        // output in both paths — the pre-fix window emitted 9 (seed + 8).
+        let capped_image = vec![200_u8; 64 * 64 * 3];
+        let single_capped = runtime
+            .generate(InferenceRequest::new(1, 64, 64, capped_image.clone(), 8).unwrap())
+            .expect("capped single-stream generation");
+        let window_capped = runtime
+            .generate_window(
+                vec![InferenceRequest::new(1, 64, 64, capped_image, 8).unwrap()],
+                &CancellationToken::new(),
+                &mut |_, _| {},
+            )
+            .into_iter()
+            .next()
+            .unwrap()
+            .expect("capped window generation");
+        assert_eq!(
+            window_capped.raw_output, single_capped.raw_output,
+            "capped window output diverged (budget off-by-one)"
+        );
+        assert_eq!(window_capped.finish_reason, single_capped.finish_reason);
     }
 
     #[test]
