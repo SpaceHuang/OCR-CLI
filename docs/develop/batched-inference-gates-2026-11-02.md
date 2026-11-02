@@ -1,58 +1,68 @@
-# P4.4 多页合批编排与门禁报告（2026-11-02）
+# P4.4 多页合批编排与门禁报告（2026-11-02，评审修复后修订版 v2）
 
 **方案：** `docs/develop/scan-throughput-optimization-development-plan.md` §7.3 P4.4 / §7.4
 **设计：** `docs/develop/batched-inference-2026-11-02.md`（P4.2 冻结约束）
-**分支：** `feature/scan-throughput-optimization`（P4.1/P4.1.5/P4.2 之后）
+**修订说明：** v1 报告的 N=4 门禁数据测在一条坏管线上（评审发现 1：窗口解码每步重喂种子 token，输出与计时全部失真），N=1 冻结结论因此作废。本 v2 以修复后构建重测全部门禁，冻结终版 **N = 4**。
 
-## 1. 实施内容
+## 0. 评审修复（2026-11-02，`scan-throughput-code-review-2026-11-02.md` 三项阻断）
 
-| 层 | 内容 |
-|---|---|
-| ocrx-runtime（P4.3） | actor 消息协议新增 `GenerateWindow`/`WindowGenerated`；worker 多槽位解码：逐序列 `eval_chunks(seq_id)`（种子在逐页 encode 后立即采样）、共享 `LlamaBatch` 逐步解码 + `get_logits_ith`、逐序列 `RepetitionLoopDetector`（K=256，复读方案 D2 随迁实例化）、逐序列 EOS/终止原因/心跳（`Progress` 消息带页号）、取消即全窗 "cancelled"、批级错误统一 `BATCH_ERROR_PREFIX` 前缀、窗口上下文按预算建宽且显式 `with_n_seq_max`（Spike B 约束）、逐序列 `kv_cache_seq_rm` 回收。`Runtime` trait 新增可选 `generate_window`（默认 = 逐页串行，FakeRuntime 零改动） |
-| ocrx-ovisocr2 | `write_window_artifacts_with_status_cancelled`：窗口识别 + 与单页完全相同的适配管道（提取 `adapt_and_write` 共享体，产物不分叉） |
-| ocrx-output（P4.4） | `PageArtifactRecognizer::recognize_window_cancelled`（默认串行）；`ScanService` 页循环重构为窗口流水线：窗口组装（含 resume 逐页跳过排水）→ attempt-1 批量渲染+识别 → 终态归并（批级错误→整窗深度 1 回退重跑；退化页→单流 attempts 2/3 扰动重试状态机）→ **机制 A 窗口原子提交**（提取 `commit_terminal_pages`，取消即零提交）；批深入 checkpoint 兼容键（`;batch=N`，跨批深不互恢复） |
-| 脚本 | `windows-ctrl-c-smoke.ps1` 适配窗口原子契约（见 §3） |
+| 阻断 | 修复 | 验证 |
+|---|---|---|
+| 1. 窗口解码状态错误（采样后未回写 `slot.last`，每步重喂种子） | 采样分支回写 `slot.last = token`；种子对齐单流语义（推入 output、计数、环检测预热、seed==EOS 分支） | 新增 env-gated 真实模型回归测试 `real_model_window_decode_matches_single_stream_prefix`：窗口输出 == 单流输出逐字节一致（坏循环下必失败）✅ |
+| 2. 原生文本提取在主线程（绕过 PdfiumOwner） | `PdfRequest::ExtractNative` 通道请求；`run_native_first_phase` 两个闭包改走 owner；run_scan 删除主线程 `pdf` 直连变量 | 主线程全扫描期零 pdfium 类型（构造性保证恢复完整）✅ |
+| 3. 预取阻塞当前页应答 | 预取从 `render_page` 内移至**响应发送之后**（`top_up_prefetch`）：页 N 即刻应答，N+1/N+2 的渲染与主线程的识别等待重叠 | 单测改轮询式断言 ✅；重叠结构与 §6.2 一致（渲染 ∥ 前页解码） |
 
-## 2. 正确性门禁（N=4 批深实测，Vulkan，金集 30 页两遍）
+## 1. 实施内容（不变，见 v1；补充 Findings 1–3 修复）
+
+## 2. 正确性门禁（**修复后**构建，N=4 批深，Vulkan，金集 30 页两遍）
 
 | 门禁 | 结果 |
 |---|---|
-| 完成/失败 | 30/30、0 失败/截断/退化（两遍一致，token 数 13343 一致） |
-| **自一致性**（同输入同批深两遍逐字节互比） | ✅ **IDENTICAL**（除 result.json/gpu-resource.json 计时字段外全部产物逐字节一致） |
-| **结构化相似度 vs 单流基线**（§2.3 第二档，阈值 ≥0.999） | ✅ `document.md` 1.0000；逐页 min 1.0000 / mean 1.0000（n=30） |
-| 批级故障→深度 1 回退 | ✅ 单测 `batch_level_failure_falls_back_to_single_stream_and_commits_all_pages`（fake 批级失败 → 串行重跑 3 页全部提交） |
-| 窗口协议 | ✅ 协议单测（progress 页号转发/结果序/poison）+ 串行/重试状态机既有 66 项 ocrx-output 测试全绿 |
+| 完成/失败 | 30/30、0 失败/截断/退化（两遍一致） |
+| 生成 token | **12 839 = 单流完全一致**（v1 失真值 13 343 作废） |
+| **自一致性**（两遍逐字节互比） | ✅ IDENTICAL |
+| **结构化相似度 vs 单流**（阈值 ≥0.999） | ✅ document.md 1.0000；逐页 min/mean 1.0000（n=30） |
+| 真实模型窗口一致性 | ✅ gated 测试：窗口页输出 == 单流输出（逐字节） |
+| 批级故障→深度 1 回退 | ✅ 单测保留通过 |
+| v1 报告数据效力 | **作废**（坏管线；本 v2 为有效记录） |
 
-## 3. 取消与 resume（机制 A）
+## 3. 取消与 resume（机制 A，N=4 窗口契约）
 
-`windows-ctrl-c-smoke.ps1` 适配窗口原子粒度：fixture 换 `complex-20-pages.pdf`、选择 1-8 页（两个满窗）；锚定**窗口 1（页 1-4）原子提交后**发真实 CTRL_BREAK；断言 130、页 4 checkpoint 保留、**页 5-8 零 checkpoint（机制 A 证据）**、无 `.part`、`--resume` 完成全部 8 页且页 5 checkpoint 出现（整窗重扫验证）。执行结果：✅（`ctrl-c smoke ok`）。
+冒烟脚本适配后（窗口 1 = 页 1-4 原子提交；信号落在窗口 2 在飞期）：130 ✅、页 4 checkpoint 保留 ✅、**页 5-8 零 checkpoint（机制 A 证据）** ✅、无 `.part` ✅、resume 完成页 5-8 ✅。
 
-## 4. 批深-吞吐集成曲线与默认值冻结（决定性数据）
+## 4. 批深-吞吐集成曲线（修复后，决定性数据）
 
-同一构建、金集 30 页、reference、本机 4090 D（两遍中位）：
-
-| 后端 / 模式 | 墙钟 | 聚合解码 tok/s | 生成 token |
+| 模式 | 墙钟 | 聚合解码 tok/s | token |
 |---|---:|---:|---:|
 | Vulkan 单流（P0 基线） | 54.9–55.8 s | 283 | 12 839 |
-| Vulkan 批深 4 | 61.6 / 65.6 s | 279 | 13 343 |
+| **Vulkan 批深 4（修复后）** | **40.9 / 41.5 s** | **417 / 430** | 12 839 |
+| Vulkan 批深 4（v1 坏管线，作废） | 61.6 / 65.6 s | 279 | 13 343 |
 | CUDA 单流（T1.4） | 52.4 s | 305 | 12 840 |
-| CUDA 批深 4 | 56.7 / 58.3 s | 306 | 13 343 |
+| CUDA 批深 4（修复后） | 见 §7 补录 | — | 12 839 |
 
-**结论：集成批深 4 无收益且回退 5–11%**——批内步耗时 ≈ 单步 ×4（两后端一致）。结构性解释：qwen35 混合注意力（24 层中 18 层为逐序列 SSM/线性状态）不随 batch 并行，理论收益上限 ≈24/18≈1.33×；隔离 bench（R0.6，4.76×@B=8）未在集成管线兑现。跨后端批跑 token 数完全一致（13343）且文本产物与单流相似度 1.0——合批**正确性**成立，**收益**不成立。
+**端到端 1.36×、解码聚合 1.52×**（R0.6 隔离预测 3.21×；混合架构 18/24 层逐序列 SSM 状态封顶实际收益——1.52× 与 24/18≈1.33× 的 attention 份额上限量级吻合）。
 
-**冻结（P4.4 决定性数据）：`WINDOW_DEPTH = 1`（等价单流）**——按 §3 规则与 §7.4 回滚路径执行；窗口协议/编排/原子提交/回退/门禁全部保留（单测覆盖，常量 >1 即整体激活），N=4 批跑的门禁数据（自一致性/相似度/取消原子性）同时证明该路径在启用时的正确性。最终 N=1 金集复验见 §5。
+## 5. 冻结（终版）
 
-## 5. N=1 最终门禁
+**`WINDOW_DEPTH = 4`**（`ocrx-core`）。冻结历史：N=4 →（坏管线数据）N=1 →（评审修复 + 修正数据）**N=4 终版**。教训入档：性能冻结必须采集于正确性验证通过的构建。
 
-- 金集（reference，1 遍）：exit 0、30/30、产物与 P0 逐字节参照**逐字节一致**（第一档复验）；`p44-final-golden`。
-- Ctrl+C 冒烟：✅（§3 同一脚本，N=1 下锚点语义退化为串行取消，契约断言不变）。
-- `cargo fmt`/`clippy --workspace --all-targets` 零警告、`cargo test --workspace` 356 通过 0 失败。
+## 6. 显存预算断言（6 GB 准则，N=4 实际分配）
 
-## 6. 资源与显存
+llama.cpp 加载日志（Vulkan，N=4 窗口上下文 ≈70k token）：权重 1436 MiB（GPU）+ 485 MiB（CPU 映射）；KV 828 MiB；计算缓冲 530.55 + 161.31 + 24.93 MiB。**GPU 侧合计 ≈2.79 GB ≤ 6 GB** ✅（8 GB 标准设备 − 2 GB 系统预留口径），余量充足（N=8 的 KV ≈1.7 GB 亦在界内，留作后续决策）。
 
-- 100 页资源回归（`ocrx-pdf` 既有测试）在窗口重构下无变化（渲染路径未动）；窗口内存叠加（N 页 RGB ×2880²≈25 MB/页）随批深线性、当前 N=1 不新增常驻。
-- 6 GB 预算断言在 N=1 下即 P4.1 形态（单流上下文 20480 + 权重 1.7 GB，实测 VRAM 峰值 ≈5.1–5.5 GB 已在 T1.4/P0 记录）；N=4 批跑实测亦正常完成（窗口上下文 ≈70k token KV，未触发 OOM）。
+## 7. CUDA 批深曲线补录（修复后实测）
 
-## 7. 数据
+| 模式 | 墙钟 | 聚合解码 tok/s | token | 自一致性 |
+|---|---:|---:|---:|---|
+| CUDA 单流（T1.4） | 52.4 s | 305 | 12 840 | — |
+| **CUDA 批深 4（修复后）** | **46.4 / 48.3 s = 1.13×** | **376 / 383 = 1.26×** | 12 840 | ✅ 两遍逐字节一致 |
 
-`docs/test/reports/perf-baseline-2026-11-01-data/p44-golden-batched*.json`、`p44-cuda-batched*.json`、`p44-final-golden*.json`；批深设计决定详见 P4.2 文档 §④。
+分后端结论：Vulkan N=4 = 1.36×、CUDA N=4 = 1.13×（均为端到端）——与 §7.2"两后端收益构成不同，须分别实测"的预设一致；默认 N=4 对两后端均为正收益。数据：`p44-cuda-batched-v2*.json`。
+
+## 8. 最终门禁
+
+`cargo fmt` / `clippy --workspace --all-targets` 零警告；`cargo test --workspace` 全绿（含新增 gated 窗口回归测试）；100 页资源回归路径未动；窗口内存叠加 N=4 × ≈25 MB/页 ≈ 100 MB，有界。
+
+## 9. 数据
+
+`perf-baseline-2026-11-01-data/p44-golden-batched-v2*.json`（修复后有效数据）；`p44-golden-batched*.json`（v1 坏管线数据，保留作审计对照）。

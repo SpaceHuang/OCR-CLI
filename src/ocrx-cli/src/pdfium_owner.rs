@@ -51,6 +51,8 @@ trait PdfiumExecutor: Send + 'static {
     /// perturbation ratio (when any) is applied by [`compose_rendered_page`]
     /// on the owner thread (identical bytes to the serial resample path).
     fn render_raw(&mut self, page: u32) -> Result<RenderInput, String>;
+    /// Extracts the native text layer of one page (1-based index).
+    fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String>;
 }
 
 impl PdfiumExecutor for Box<dyn PdfiumExecutor> {
@@ -69,10 +71,18 @@ impl PdfiumExecutor for Box<dyn PdfiumExecutor> {
     fn render_raw(&mut self, page: u32) -> Result<RenderInput, String> {
         (**self).render_raw(page)
     }
+
+    fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String> {
+        (**self).extract_native(page_index)
+    }
 }
 
 enum PdfRequest {
     PageCount,
+    ExtractNative {
+        /// 0-based page index.
+        page_index: usize,
+    },
     Analyze {
         pages: Vec<usize>,
         tier: QualityTier,
@@ -89,6 +99,7 @@ enum PdfRequest {
 
 enum PdfResponse {
     PageCount(Result<usize, String>),
+    NativeExtracted(Result<ocrx_pdf::NativePage, String>),
     Analyze(Result<Vec<PageClassification>, String>),
     Render(Result<RenderedPage, String>),
 }
@@ -102,14 +113,22 @@ struct OwnerState<E: PdfiumExecutor> {
 }
 
 impl<E: PdfiumExecutor> OwnerState<E> {
-    /// Answers `page` (from cache or direct) and tops the prefetch window up
-    /// to `page + PREFETCH_DEPTH` inclusive (plan §6.2). Prefetch failures
-    /// are cached as values so one bad page never poisons the window.
+    /// Answers `page` (from cache or direct). Prefetch is a separate step —
+    /// review finding 3: topping the window up before answering delayed the
+    /// current page's response behind N+1/N+2's renders.
     fn render_page(&mut self, page: u32) -> Result<RenderedPage, String> {
-        let answer = match self.cache.remove(&page) {
+        match self.cache.remove(&page) {
             Some(cached) => cached,
             None => self.render_direct(page, 1, 1),
-        };
+        }
+    }
+
+    /// Tops the prefetch window up to `page + PREFETCH_DEPTH` inclusive
+    /// (plan §6.2), called after the current response was already sent: the
+    /// owner thread keeps rendering N+1/N+2 while the main thread runs the
+    /// page's recognition/inference. Prefetch failures are cached as values
+    /// so one bad page never poisons the window.
+    fn top_up_prefetch(&mut self, page: u32) {
         self.next_prefetch = self.next_prefetch.max(page.saturating_add(1));
         let top_exclusive = page.saturating_add(PREFETCH_DEPTH).saturating_add(1);
         while self.next_prefetch < top_exclusive {
@@ -118,7 +137,6 @@ impl<E: PdfiumExecutor> OwnerState<E> {
             let rendered = self.render_direct(prefetch_page, 1, 1);
             self.cache.insert(prefetch_page, rendered);
         }
-        answer
     }
 
     fn render_direct(
@@ -252,10 +270,22 @@ impl PdfiumOwnerHandle {
                         PdfRequest::PageCount => {
                             PdfResponse::PageCount(state.executor.page_count())
                         }
+                        PdfRequest::ExtractNative { page_index } => {
+                            PdfResponse::NativeExtracted(state.executor.extract_native(page_index))
+                        }
                         PdfRequest::Analyze { pages, tier } => {
                             PdfResponse::Analyze(state.executor.analyze(&pages, tier))
                         }
-                        PdfRequest::Render { page } => PdfResponse::Render(state.render_page(page)),
+                        PdfRequest::Render { page } => {
+                            let rendered = state.render_page(page);
+                            // Answer first (review finding 3), prefetch
+                            // after: the owner thread keeps rendering N+1/N+2
+                            // while the main thread runs this page's
+                            // recognition. Failures are values — the window
+                            // still tops up past them.
+                            state.top_up_prefetch(page);
+                            PdfResponse::Render(rendered)
+                        }
                         PdfRequest::RenderPerturbed {
                             page,
                             numerator,
@@ -342,6 +372,21 @@ impl PdfiumOwnerHandle {
         }
     }
 
+    /// Native text extraction through the owner (review finding 2): the
+    /// main thread never touches the process-global pdfium binding.
+    pub(crate) fn extract_native(&mut self, page: u32) -> std::io::Result<ocrx_pdf::NativePage> {
+        let page_index = usize::try_from(
+            page.checked_sub(1)
+                .ok_or_else(|| std::io::Error::other("page number must be positive"))?,
+        )
+        .map_err(std::io::Error::other)?;
+        match self.request(PdfRequest::ExtractNative { page_index }) {
+            Ok(PdfResponse::NativeExtracted(value)) => value.map_err(std::io::Error::other),
+            Ok(_) => unreachable!("extract request answers a native page"),
+            Err(error) => Err(std::io::Error::other(error)),
+        }
+    }
+
     fn render_via(&mut self, request: PdfRequest) -> std::io::Result<RenderedPage> {
         match self.request(request) {
             Ok(PdfResponse::Render(value)) => value.map_err(std::io::Error::other),
@@ -384,6 +429,12 @@ impl PdfiumExecutor for RealPdfiumExecutor {
                     .map_err(|error| format!("{error:?}"))
             })
             .collect()
+    }
+
+    fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String> {
+        self.renderer
+            .extract_native_page(&self.input, page_index)
+            .map_err(|error| error.to_string())
     }
 
     fn render_raw(&mut self, page: u32) -> Result<RenderInput, String> {
@@ -516,6 +567,11 @@ mod tests {
                 .collect())
         }
 
+        fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Err(format!("native extraction not faked (page {page_index})"))
+        }
+
         fn render_raw(&mut self, page: u32) -> Result<RenderInput, String> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             if self.panic_on_render {
@@ -551,24 +607,36 @@ mod tests {
 
     #[test]
     fn render_prefetches_two_pages_ahead_and_serves_from_cache() {
-        let (executor, calls) = FakeExecutor::new();
-        let (mut handle, _calls) = executor.spawn();
+        let (executor, _calls) = FakeExecutor::new();
+        let (mut handle, calls) = executor.spawn();
+        let wait_calls = |calls: &Arc<AtomicUsize>, target: usize| {
+            for _ in 0..200 {
+                if calls.load(Ordering::SeqCst) >= target {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            panic!("prefetch never reached {target} calls");
+        };
         let first = handle.render_via(PdfRequest::Render { page: 1 }).unwrap();
         assert_eq!(page_marker(&first), 1);
-        // Render(1) + prefetch for pages 2 and 3 (page 2 fails as a value).
-        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        // The response is sent BEFORE the prefetch (review finding 3); the
+        // window then tops up asynchronously with pages 2 and 3 (page 2
+        // fails as a cached value).
+        wait_calls(&calls, 3);
         // Page 2 answered from the cached failure without a new call; the
-        // window then tops up with page 4.
+        // window tops up with page 4.
         assert!(handle.render_via(PdfRequest::Render { page: 2 }).is_err());
-        assert_eq!(calls.load(Ordering::SeqCst), 4);
+        wait_calls(&calls, 4);
         // Page 3 served from cache; window tops up with page 5.
         let third = handle.render_via(PdfRequest::Render { page: 3 }).unwrap();
         assert_eq!(page_marker(&third), 3);
-        assert_eq!(calls.load(Ordering::SeqCst), 5);
-        // Page 4 was prefetched during Render(2): answered without a call.
+        wait_calls(&calls, 5);
+        // Page 4 was prefetched during Render(2)'s top-up: answered without a
+        // new call beyond the window's own top-up to page 6.
         let fourth = handle.render_via(PdfRequest::Render { page: 4 }).unwrap();
         assert_eq!(page_marker(&fourth), 4);
-        assert_eq!(calls.load(Ordering::SeqCst), 6); // only page 6 prefetched
+        wait_calls(&calls, 6); // only page 6 prefetched
     }
 
     #[test]

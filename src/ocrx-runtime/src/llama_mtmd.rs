@@ -549,13 +549,13 @@ fn generate_window_pages<'a>(
         }
     }
     let started = Instant::now();
+    let eos = model.token_eos();
     let Some((_, context)) = window_context.as_mut() else {
         unreachable!("window context built above");
     };
     // Fresh KV state per window: identical (inputs, composition) reproduce
     // identically regardless of history (plan §7.3②).
     context.clear_kv_cache();
-    let eos = model.token_eos();
     let mut slots: Vec<WindowSlot> = Vec::with_capacity(requests.len());
     for (slot, request) in requests.iter().enumerate() {
         let invalid = request.width == 0
@@ -702,18 +702,46 @@ fn generate_window_pages<'a>(
                 elapsed_seconds: started.elapsed().as_secs(),
             },
         });
-        slots.push(WindowSlot {
+        // The seed is the page's first generated token: mirror the
+        // single-page path exactly (review finding 1) — emit its piece into
+        // the output, count it, run the detector, and honor seed == EOS —
+        // before the shared decode loop starts.
+        let first_token_ms = started.elapsed().as_millis() as u64;
+        let seed_token = LlamaToken::new(seed as i32);
+        let mut seed_slot = WindowSlot {
             request_page: request.page,
-            last: LlamaToken::new(seed as i32),
+            last: seed_token,
             position,
             output: String::new(),
             generated: 0,
-            first_token_ms: 0,
+            first_token_ms,
             last_emitted_second: None,
             detector: RepetitionLoopDetector::new(),
             finished: false,
             response: None,
-        });
+        };
+        if seed_token == eos {
+            seed_slot.finished = true;
+            seed_slot.response = Some(Ok(InferenceResponse {
+                raw_output: String::new(),
+                finish_reason: "eos".to_owned(),
+            }));
+        } else {
+            match model.token_to_piece_bytes(seed_token, 64, false, None) {
+                Ok(piece) => seed_slot.output.push_str(&String::from_utf8_lossy(&piece)),
+                Err(error) => {
+                    seed_slot.finished = true;
+                    seed_slot.response = Some(Err(error.to_string()));
+                }
+            }
+            if !seed_slot.finished {
+                seed_slot.generated = 1;
+                // A single token cannot satisfy the detector's minimum tail;
+                // the push keeps the ring warm like the serial path.
+                let _ = seed_slot.detector.push(seed as i32);
+            }
+        }
+        slots.push(seed_slot);
     }
 
     // Shared decode loop: one batch per step carries every live sequence.
@@ -821,6 +849,10 @@ fn generate_window_pages<'a>(
                     continue;
                 }
             }
+            // Decode-state advance (review finding 1): the sampled token is
+            // the next input for this slot — without this every step re-fed
+            // the seed and the window output was wrong.
+            slot.last = token;
             slot.generated += 1;
             if slot.detector.push(best) {
                 slot.finished = true;
@@ -1391,6 +1423,62 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].as_ref().unwrap().raw_output, "page 1");
         assert_eq!(progress, vec![1]);
+    }
+
+    #[test]
+    #[ignore = "env-gated: OCRX_E2E_MODEL=1 with the reference profile installed"]
+    fn real_model_window_decode_matches_single_stream_prefix() {
+        // Review finding 1 regression test: the windowed decode must feed
+        // each slot's LAST SAMPLED token back as input (not the seed), and
+        // its output must match the single-stream decode of the same input.
+        // The broken loop re-fed the seed every step, so the window output
+        // diverged from the single-stream output immediately.
+        if std::env::var_os("OCRX_E2E_MODEL").is_none() {
+            eprintln!("skipped: set OCRX_E2E_MODEL=1");
+            return;
+        }
+        let cache = std::env::var_os("OCRX_MODEL_CACHE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::var_os("LOCALAPPDATA")
+                    .map(std::path::PathBuf::from)
+                    .expect("LOCALAPPDATA")
+                    .join("ocrx")
+                    .join("models")
+            });
+        let revision_dir = cache.join("ovisocr2").join(ocrx_models::COMMUNITY_REVISION);
+        let mut runtime = LlamaMtmdRuntime::load(
+            revision_dir.join("reference").join("model.gguf"),
+            revision_dir.join("mmproj.gguf"),
+            false,
+            1024,
+            20_480,
+        )
+        .expect("reference profile loads on the actor");
+        let image = vec![200_u8; 64 * 64 * 3];
+        let single = runtime
+            .generate(InferenceRequest::new(1, 64, 64, image.clone(), 64).unwrap())
+            .expect("single-stream generation");
+        let window = runtime
+            .generate_window(
+                vec![
+                    InferenceRequest::new(1, 64, 64, image.clone(), 64).unwrap(),
+                    InferenceRequest::new(2, 64, 64, image, 64).unwrap(),
+                ],
+                &CancellationToken::new(),
+                &mut |_, _| {},
+            )
+            .into_iter()
+            .map(|result| result.expect("window page succeeds"))
+            .collect::<Vec<_>>();
+        // Same input decoded alone and inside a window: the outputs must be
+        // identical (greedy decode, deterministic; Spike A measured zero
+        // divergence on real pages).
+        assert_eq!(
+            window[0].raw_output, single.raw_output,
+            "window page 1 diverged from single-stream output"
+        );
+        assert_eq!(window[0].raw_output, window[1].raw_output);
     }
 
     #[test]

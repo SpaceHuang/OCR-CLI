@@ -15,8 +15,8 @@ use ocrx_output::{
     merge_ocr_queue, read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
 };
 use ocrx_pdf::{
-    PdfErrorKind, PdfWorkerScheduler, PdfiumRenderer, RenderOptions, classify_pdf_error,
-    fit_pixel_budget, plan_page_checked,
+    PdfErrorKind, PdfWorkerScheduler, RenderOptions, classify_pdf_error, fit_pixel_budget,
+    plan_page_checked,
 };
 use ocrx_runtime::{Backend, LlamaMtmdRuntime, Runtime, RuntimeInfo, RuntimeTelemetry};
 use std::cell::RefCell;
@@ -2205,10 +2205,9 @@ fn run_scan(options: ScanOptions) -> ! {
     } else {
         QualityTier::L2
     };
-    let mut pdf = PdfiumRenderer::new(library.clone());
-    if let Some(password) = &options.password {
-        pdf = pdf.with_password(password);
-    }
+    // P3 (plan §6.1, review finding 2): native text extraction also runs on
+    // the owner thread — the main thread holds no pdfium type for the whole
+    // scan.
     reporter.progress(
         &ProgressEvent::for_stage(ProgressStage::Analyzing, None, 0, pages.len() as u32),
         progress_mode,
@@ -2524,16 +2523,18 @@ fn run_scan(options: ScanOptions) -> ! {
         &options.pdf_mode,
         &native_candidates,
         |page| {
-            let native = pdf
-                .extract_native_page(&input, page.saturating_sub(1) as usize)
+            let native = pdfium_owner_handle
+                .borrow_mut()
+                .extract_native(page)
                 .map_err(|error| error.to_string())?;
             ocrx_pdf::validate_native_candidate(page, &native, required_tier)
                 .map(|_| ())
                 .map_err(|reason| reason.as_str().to_owned())
         },
         |page| {
-            let native = pdf
-                .extract_native_page(&input, page.saturating_sub(1) as usize)
+            let native = pdfium_owner_handle
+                .borrow_mut()
+                .extract_native(page)
                 .map_err(|error| error.to_string())?;
             let classification = pages
                 .iter()
