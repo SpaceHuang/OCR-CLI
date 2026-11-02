@@ -481,6 +481,23 @@ fn page_context_budget(image_tokens: u32, request: &InferenceRequest) -> u32 {
         .saturating_add(request.max_output_tokens)
 }
 
+/// Unified-KV capacity a window context must provide (review round 4): the
+/// per-sequence KV of a mixed-budget window sums across slots, so the
+/// capacity is derived from the LARGEST page budget times the slot count —
+/// never below the sum of the individual budgets and never dependent on the
+/// first request's budget. Equal-budget windows get budget x depth exactly;
+/// mixed-budget windows over-provision the low-budget slots, which keeps
+/// every page inside its own context for the whole window.
+fn window_context_capacity(image_tokens: u32, requests: &[InferenceRequest]) -> u32 {
+    let depth = requests.len().max(super::WINDOW_DEPTH) as u64;
+    let max_budget = requests
+        .iter()
+        .map(|request| u64::from(page_context_budget(image_tokens, request)))
+        .max()
+        .unwrap_or(0);
+    u32::try_from(max_budget * depth).unwrap_or(u32::MAX)
+}
+
 /// Per-slot mutable state of one in-flight windowed page.
 struct WindowSlot {
     request_page: u32,
@@ -530,8 +547,7 @@ fn generate_window_pages<'a>(
     // Size the window context for the worst case of a full WINDOW_DEPTH
     // window (tail windows reuse it with fewer live slots).
     let depth = requests.len().max(super::WINDOW_DEPTH);
-    let per_page = page_context_budget(image_tokens, &requests[0]);
-    let n_ctx = u32::try_from(u64::from(per_page) * depth as u64).unwrap_or(u32::MAX);
+    let n_ctx = window_context_capacity(image_tokens, requests);
     let needs_rebuild = window_context
         .as_ref()
         .is_none_or(|(capacity, _)| *capacity < n_ctx);
@@ -1288,6 +1304,41 @@ mod tests {
             telemetry: RuntimeTelemetry::default(),
             poison: None,
         }
+    }
+
+    #[test]
+    fn window_context_capacity_covers_mixed_budgets() {
+        // Review round 4: the capacity must never derive from the FIRST
+        // request's budget — a low-budget head page batched with high-budget
+        // tail pages previously under-provisioned the unified KV and overflowed
+        // the tail pages mid-window (batch failure -> depth-1 fallback).
+        let low = InferenceRequest::new(1, 1, 1, vec![1; 3], 1).unwrap();
+        let high = InferenceRequest::new(2, 1, 1, vec![1; 3], 8192).unwrap();
+        let image_tokens = 1024_u32;
+        let low_budget = image_tokens + 64 + 1;
+        let high_budget = image_tokens + 64 + 8192;
+        let capacity = super::window_context_capacity(image_tokens, &[low.clone(), high.clone()]);
+        // max budget x slots: >= the sum of both slots' budgets.
+        assert!(
+            capacity >= low_budget + high_budget,
+            "capacity {capacity} under-provisions the mixed window"
+        );
+        assert_eq!(capacity, high_budget * 4);
+        // The pre-fix formula (first request's budget x depth) under-
+        // provisioned exactly this case; lock the regression in.
+        let legacy = low_budget * 4;
+        assert!(
+            capacity > legacy,
+            "capacity {capacity} must exceed the legacy first-request formula ({legacy})"
+        );
+        // Every window reserves full WINDOW_DEPTH slots so the context is
+        // reused across compositions without reallocation: a two-page window
+        // provisions exactly like a four-page one.
+        let equal = super::window_context_capacity(image_tokens, &[high.clone(), high.clone()]);
+        assert_eq!(equal, high_budget * 4);
+        let tail = super::window_context_capacity(image_tokens, &[high]);
+        assert_eq!(tail, high_budget * 4);
+        let _ = low;
     }
 
     #[test]

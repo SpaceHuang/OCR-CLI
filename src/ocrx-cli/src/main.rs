@@ -1603,11 +1603,6 @@ impl<S: SegmentRenderer> WorkerScanRenderer<S> {
         while self.rendered_end < page_index {
             let start = self.rendered_end;
             let end = (start + self.segment_pages).min(count);
-            eprintln!(
-                "[probe] ensure page_index={page_index} start={start} end={end} has_pf={} rendered_end={}",
-                self.prefetch.is_some(),
-                self.rendered_end
-            );
             if self.consume_or_drop_prefetch(start)? {
                 self.finish_segment_advance(start, end);
                 continue;
