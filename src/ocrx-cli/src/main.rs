@@ -1938,6 +1938,9 @@ struct OvisRecognizer {
     output: PathBuf,
     max_tokens: u32,
     telemetry: Rc<RefCell<RuntimeTelemetry>>,
+    /// Last cumulative step-profile snapshot (T0.1/A1 debug channel); only
+    /// populated meaningfully when `OCRX_STEP_PROFILE` opts in.
+    step_profile: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     fn recognize_artifact(
@@ -1980,6 +1983,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         // so the scan-wide value is the runtime's current total — merging it
         // into the previous total would double-count every completed page.
         *self.telemetry.borrow_mut() = model.telemetry();
+        *self.step_profile.borrow_mut() = Some(model.step_profile());
         let mut png = Cursor::new(Vec::new());
         image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
             .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
@@ -2026,6 +2030,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         // Telemetry is cumulative across windows for this loaded model, so
         // the scan-wide value is the runtime's current total.
         *self.telemetry.borrow_mut() = model.telemetry();
+        *self.step_profile.borrow_mut() = Some(model.step_profile());
         for ((_page, image), output) in pages.iter().zip(outputs) {
             let output = match output {
                 Ok(output) => output,
@@ -2380,10 +2385,12 @@ fn run_scan(options: ScanOptions) -> ! {
         )))
     };
     let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
+    let step_profile = Rc::new(RefCell::new(None));
     let recognizer = OvisRecognizer {
         output: output.clone(),
         max_tokens: options.max_output_tokens.unwrap_or(16_384),
         telemetry: Rc::clone(&telemetry),
+        step_profile: Rc::clone(&step_profile),
     };
     // Keep compatibility metadata stable without touching model resources.
     // Actual profile/device resolution is deferred until the final OCR queue
@@ -2952,6 +2959,18 @@ fn run_scan(options: ScanOptions) -> ! {
             cancelled: false,
         })
     };
+    // T0.1/A1: the opt-in step-profile debug channel — at most one JSON file
+    // per scan, and only when OCRX_STEP_PROFILE set it up. Default scans (and
+    // the byte-compare artifact set of every gate) never see this file.
+    if ocrx_runtime::StepProfile::env_enabled()
+        && let Some(profile) = step_profile.borrow().as_ref()
+        && let Err(error) = ocrx_output::atomic_write(
+            output.join("step-profile.json"),
+            profile.to_json().as_bytes(),
+        )
+    {
+        eprintln!("warning: step-profile.json write failed: {error}");
+    }
     // P3 (plan §6.2, BLK-2): a poisoned owner aborts the scan fail-loud with
     // a structured error — completed pages keep their checkpoints for
     // --resume; the main thread never takes over PDFium rendering.

@@ -208,6 +208,9 @@ mod llama_mtmd;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub use llama_mtmd::LlamaMtmdRuntime;
 
+mod step_profile;
+pub use step_profile::{STEP_PROFILE_ENV, StepProfile};
+
 #[derive(Debug, Default)]
 pub struct FakeRuntime;
 

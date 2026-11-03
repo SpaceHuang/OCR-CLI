@@ -4,6 +4,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+use super::step_profile::{Segment, StepProfile, StepProfiler};
 use super::{
     Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, Runtime,
     RuntimeInfo, RuntimeTelemetry,
@@ -128,6 +129,8 @@ enum WorkerRequest {
         requests: Vec<InferenceRequest>,
         cancellation: CancellationToken,
     },
+    /// Step-profile snapshot request (phase-2 T0.1/A1 debug channel).
+    StepProfile,
     Telemetry,
 }
 
@@ -140,6 +143,8 @@ enum WorkerMessage {
     },
     Generated(Result<InferenceResponse, String>),
     WindowGenerated(Vec<Result<InferenceResponse, String>>),
+    /// Cumulative step-profile snapshot (debug channel, `OCRX_STEP_PROFILE`).
+    StepProfile(StepProfile),
     Telemetry(RuntimeTelemetry),
 }
 
@@ -234,7 +239,11 @@ impl LlamaMtmdRuntime {
                 }) => progress(event),
                 Ok(WorkerMessage::Generated(result)) => return result,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
-                Ok(WorkerMessage::Loaded(_) | WorkerMessage::WindowGenerated(_)) => {}
+                Ok(
+                    WorkerMessage::Loaded(_)
+                    | WorkerMessage::WindowGenerated(_)
+                    | WorkerMessage::StepProfile(_),
+                ) => {}
                 Err(_) => {
                     // Worker panic or premature exit: fail loud (plan §4).
                     self.poison = Some("inference worker terminated".to_owned());
@@ -280,12 +289,40 @@ impl LlamaMtmdRuntime {
                 }) => progress(page, event),
                 Ok(WorkerMessage::WindowGenerated(results)) => return results,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
-                Ok(WorkerMessage::Loaded(_)) | Ok(WorkerMessage::Generated(_)) => {}
+                Ok(
+                    WorkerMessage::Loaded(_)
+                    | WorkerMessage::Generated(_)
+                    | WorkerMessage::StepProfile(_),
+                ) => {}
                 Err(_) => {
                     // Worker panic or premature exit: fail loud (plan §4).
                     self.poison = Some("inference worker terminated".to_owned());
                     return failed(&self.poison_message(), expected);
                 }
+            }
+        }
+    }
+
+    /// Snapshot of the cumulative per-step profiling (debug channel, plan
+    /// T0.1/A1). All-zero unless `OCRX_STEP_PROFILE` opted in before the
+    /// windows ran. A poisoned or dead worker returns the default value —
+    /// the profile is diagnostics, never an error channel.
+    #[must_use]
+    pub fn step_profile(&self) -> StepProfile {
+        if self.poison.is_some() {
+            return StepProfile::default();
+        }
+        let Some(requests) = &self.requests else {
+            return StepProfile::default();
+        };
+        if requests.send(WorkerRequest::StepProfile).is_err() {
+            return StepProfile::default();
+        }
+        loop {
+            match self.messages.recv() {
+                Ok(WorkerMessage::StepProfile(profile)) => return profile,
+                Ok(_) => {}
+                Err(_) => return StepProfile::default(),
             }
         }
     }
@@ -394,6 +431,9 @@ fn run_inference_worker(
     // for a full WINDOW_DEPTH window's worst-case budget, reused across
     // windows with a full KV clear per window (deterministic fresh state).
     let mut window_context: Option<(u32, LlamaContext<'_>)> = None;
+    // T0.1/A1: cumulative per-step profiling across every window (zero-cost
+    // unless OCRX_STEP_PROFILE opts in).
+    let mut step_profile = StepProfile::default();
     for request in requests {
         match request {
             WorkerRequest::Telemetry => {
@@ -401,11 +441,19 @@ fn run_inference_worker(
                     return;
                 }
             }
+            WorkerRequest::StepProfile => {
+                if messages
+                    .send(WorkerMessage::StepProfile(step_profile))
+                    .is_err()
+                {
+                    return;
+                }
+            }
             WorkerRequest::GenerateWindow {
                 requests,
                 cancellation,
             } => {
-                let results = generate_window_pages(
+                let (results, window_profile) = generate_window_pages(
                     &model,
                     &mtmd,
                     &backend,
@@ -417,6 +465,7 @@ fn run_inference_worker(
                     &mut telemetry,
                     &messages,
                 );
+                step_profile.accumulate(&window_profile);
                 if messages
                     .send(WorkerMessage::WindowGenerated(results))
                     .is_err()
@@ -540,9 +589,9 @@ fn generate_window_pages<'a>(
     cancellation: &CancellationToken,
     telemetry: &mut RuntimeTelemetry,
     messages: &Sender<WorkerMessage>,
-) -> Vec<Result<InferenceResponse, String>> {
+) -> (Vec<Result<InferenceResponse, String>>, StepProfile) {
     if requests.is_empty() {
-        return Vec::new();
+        return (Vec::new(), StepProfile::default());
     }
     // Size the window context for the worst case of a full WINDOW_DEPTH
     // window (tail windows reuse it with fewer live slots).
@@ -561,13 +610,16 @@ fn generate_window_pages<'a>(
             Ok(created) => *window_context = Some((n_ctx, created)),
             Err(error) => {
                 let message = format!("{}window context: {error}", super::BATCH_ERROR_PREFIX);
-                return std::iter::repeat_with(|| Err(message.clone()))
+                let results = std::iter::repeat_with(|| Err(message.clone()))
                     .take(requests.len())
-                    .collect();
+                    .collect::<Vec<_>>();
+                return (results, StepProfile::default());
             }
         }
     }
     let started = Instant::now();
+    let mut profiler = StepProfiler::new();
+    profiler.open_window();
     let eos = model.token_eos();
     let Some((_, context)) = window_context.as_mut() else {
         unreachable!("window context built above");
@@ -613,6 +665,7 @@ fn generate_window_pages<'a>(
             });
             continue;
         }
+        profiler.begin(Segment::SlotSetup);
         let bitmap =
             match MtmdBitmap::from_image_data(request.width, request.height, &request.image_rgb8) {
                 Ok(bitmap) => bitmap,
@@ -641,7 +694,10 @@ fn generate_window_pages<'a>(
             },
             &[&bitmap],
         ) {
-            Ok(chunks) => chunks,
+            Ok(chunks) => {
+                profiler.end(Segment::SlotSetup);
+                chunks
+            }
             Err(error) => {
                 slots.push(WindowSlot {
                     request_page: request.page,
@@ -676,8 +732,12 @@ fn generate_window_pages<'a>(
             });
             continue;
         }
+        profiler.begin(Segment::Encode);
         let position = match chunks.eval_chunks(mtmd, context, 0, slot as i32, 512, true) {
-            Ok(position) => position,
+            Ok(position) => {
+                profiler.end(Segment::Encode);
+                position
+            }
             Err(error) => {
                 slots.push(WindowSlot {
                     request_page: request.page,
@@ -797,6 +857,7 @@ fn generate_window_pages<'a>(
             }
             break;
         }
+        profiler.begin(Segment::BatchBuild);
         let mut batch = LlamaBatch::new(slots.len(), slots.len() as i32);
         let mut logits_index = Vec::new();
         let mut batch_add_failure: Option<String> = None;
@@ -837,7 +898,10 @@ fn generate_window_pages<'a>(
             }
             break;
         }
+        profiler.end(Segment::BatchBuild);
+        profiler.begin(Segment::DecodeWait);
         let decode = context.decode(&mut batch);
+        profiler.end(Segment::DecodeWait);
         if let Err(error) = decode {
             let message = format!("{}batch decode: {error}", super::BATCH_ERROR_PREFIX);
             for slot in &mut slots {
@@ -848,6 +912,7 @@ fn generate_window_pages<'a>(
             }
             break;
         }
+        profiler.count_step();
         for (slot_index, index) in logits_index {
             let slot = &mut slots[slot_index];
             if slot.first_token_ms == 0 {
@@ -864,13 +929,17 @@ fn generate_window_pages<'a>(
                     },
                 });
             }
+            profiler.begin(Segment::LogitsFfi);
             let logits = context.get_logits_ith(index);
+            profiler.end(Segment::LogitsFfi);
+            profiler.begin(Segment::Argmax);
             let best = logits
                 .iter()
                 .enumerate()
                 .max_by(|(_, left), (_, right)| left.total_cmp(right))
                 .map(|(id, _)| id)
                 .map(|id| id as i32);
+            profiler.end(Segment::Argmax);
             let Some(best) = best else {
                 slot.finished = true;
                 slot.response = Some(Err("empty logits".to_owned()));
@@ -886,7 +955,10 @@ fn generate_window_pages<'a>(
                 }));
                 continue;
             }
-            match model.token_to_piece_bytes(token, 64, false, None) {
+            profiler.begin(Segment::Detokenize);
+            let piece_result = model.token_to_piece_bytes(token, 64, false, None);
+            profiler.end(Segment::Detokenize);
+            match piece_result {
                 Ok(piece) => slot.output.push_str(&String::from_utf8_lossy(&piece)),
                 Err(error) => {
                     slot.finished = true;
@@ -899,7 +971,11 @@ fn generate_window_pages<'a>(
             // the seed and the window output was wrong.
             slot.last = token;
             slot.generated += 1;
-            if slot.detector.push(best) {
+            profiler.count_token();
+            profiler.begin(Segment::Ring);
+            let loop_detected = slot.detector.push(best);
+            profiler.end(Segment::Ring);
+            if loop_detected {
                 slot.finished = true;
                 let output = std::mem::take(&mut slot.output);
                 slot.response = Some(Ok(InferenceResponse {
@@ -909,6 +985,7 @@ fn generate_window_pages<'a>(
             }
         }
     }
+    profiler.close_window(started.elapsed());
     // Slot recycling (Spike B-verified): per-sequence KV removal, then the
     // slot teardown.
     for slot_index in 0..slots.len() {
@@ -937,7 +1014,8 @@ fn generate_window_pages<'a>(
     telemetry.generation_time_ms = telemetry
         .generation_time_ms
         .saturating_add(started.elapsed().as_millis() as u64);
-    results
+    let profile = profiler.snapshot();
+    (results, profile)
 }
 
 /// One page generation: the former per-call body, unchanged in behavior
@@ -1171,7 +1249,8 @@ impl Runtime for LlamaMtmdRuntime {
                     WorkerMessage::Progress { .. }
                     | WorkerMessage::Loaded(_)
                     | WorkerMessage::Generated(_)
-                    | WorkerMessage::WindowGenerated(_),
+                    | WorkerMessage::WindowGenerated(_)
+                    | WorkerMessage::StepProfile(_),
                 ) => {}
                 Err(_) => return self.telemetry,
             }
@@ -1632,5 +1711,85 @@ mod tests {
             }
         });
         assert_eq!(runtime.telemetry().generated_tokens, 42);
+    }
+
+    #[test]
+    fn step_profile_roundtrip_works_while_the_worker_is_alive() {
+        // T0.1/A1 debug channel: the snapshot request rides the same actor
+        // protocol, returns the worker's cumulative value, and is independent
+        // of the telemetry channel.
+        let runtime = handle_with_worker(|requests, messages| {
+            for request in requests {
+                match request {
+                    WorkerRequest::StepProfile => {
+                        let _ =
+                            messages.send(WorkerMessage::StepProfile(super::super::StepProfile {
+                                windows: 3,
+                                steps: 99,
+                                tokens: 1_000,
+                                ..super::super::StepProfile::default()
+                            }));
+                    }
+                    WorkerRequest::Telemetry => {
+                        let _ =
+                            messages.send(WorkerMessage::Telemetry(RuntimeTelemetry::default()));
+                    }
+                    _ => {}
+                }
+            }
+        });
+        let profile = runtime.step_profile();
+        assert_eq!(profile.windows, 3);
+        assert_eq!(profile.steps, 99);
+        assert_eq!(profile.tokens, 1_000);
+        // The telemetry channel still answers after step-profile traffic.
+        assert_eq!(runtime.telemetry().generated_tokens, 0);
+    }
+
+    #[test]
+    fn step_profile_survives_a_window_and_stale_message_drain() {
+        // A window reply plus a telemetry reply are queued before the profile
+        // request; the profile roundtrip must drain them without hanging or
+        // returning garbage (mirrors the telemetry contract after a window).
+        let mut runtime = handle_with_worker(|requests, messages| {
+            for request in requests {
+                match request {
+                    WorkerRequest::GenerateWindow {
+                        requests: pages, ..
+                    } => {
+                        let _ = messages.send(WorkerMessage::WindowGenerated(
+                            pages
+                                .iter()
+                                .map(|_| {
+                                    Ok(InferenceResponse {
+                                        raw_output: String::new(),
+                                        finish_reason: "eos".to_owned(),
+                                    })
+                                })
+                                .collect::<Vec<_>>(),
+                        ));
+                        let _ = messages.send(WorkerMessage::Telemetry(RuntimeTelemetry {
+                            generated_tokens: 7,
+                            ..RuntimeTelemetry::default()
+                        }));
+                    }
+                    WorkerRequest::StepProfile => {
+                        let _ =
+                            messages.send(WorkerMessage::StepProfile(super::super::StepProfile {
+                                steps: 5,
+                                ..super::super::StepProfile::default()
+                            }));
+                    }
+                    _ => {}
+                }
+            }
+        });
+        let pages = vec![
+            test_request(),
+            InferenceRequest::new(2, 2, 2, vec![1; 12], 16).unwrap(),
+        ];
+        let _ = runtime.generate_window(pages, &CancellationToken::new(), &mut |_, _| {});
+        let profile = runtime.step_profile();
+        assert_eq!(profile.steps, 5);
     }
 }
