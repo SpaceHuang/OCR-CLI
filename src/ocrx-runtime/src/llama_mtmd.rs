@@ -1491,6 +1491,7 @@ mod tests {
         // request's budget — a low-budget head page batched with high-budget
         // tail pages previously under-provisioned the unified KV and overflowed
         // the tail pages mid-window (batch failure -> depth-1 fallback).
+        let depth = ocrx_core::WINDOW_DEPTH as u32;
         let low = InferenceRequest::new(1, 1, 1, vec![1; 3], 1).unwrap();
         let high = InferenceRequest::new(2, 1, 1, vec![1; 3], 8192).unwrap();
         let image_tokens = 1024_u32;
@@ -1502,21 +1503,29 @@ mod tests {
             capacity >= low_budget + high_budget,
             "capacity {capacity} under-provisions the mixed window"
         );
-        assert_eq!(capacity, high_budget * 4);
+        assert_eq!(capacity, high_budget * depth);
         // The pre-fix formula (first request's budget x depth) under-
         // provisioned exactly this case; lock the regression in.
-        let legacy = low_budget * 4;
+        let legacy = low_budget * depth;
         assert!(
             capacity > legacy,
             "capacity {capacity} must exceed the legacy first-request formula ({legacy})"
         );
         // Every window reserves full WINDOW_DEPTH slots so the context is
-        // reused across compositions without reallocation: a two-page window
-        // provisions exactly like a four-page one.
+        // reused across compositions without reallocation: a smaller window
+        // provisions exactly like a full one.
         let equal = super::window_context_capacity(image_tokens, &[high.clone(), high.clone()]);
-        assert_eq!(equal, high_budget * 4);
+        assert_eq!(equal, high_budget * depth);
         let tail = super::window_context_capacity(image_tokens, &[high]);
-        assert_eq!(tail, high_budget * 4);
+        assert_eq!(tail, high_budget * depth);
+        // Stage C (depth 8) budget bound: the reference profile's worst-case
+        // window context stays inside the model's 262,144 training window.
+        let reference_budget = 1024_u32 + 64 + 16_384;
+        assert!(
+            u64::from(reference_budget * depth) <= 262_144,
+            "depth {depth} window context {} exceeds the training window",
+            reference_budget * depth,
+        );
         let _ = low;
     }
 

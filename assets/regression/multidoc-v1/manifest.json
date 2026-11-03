@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/build-multidoc-fixtures.py",
+  "scenarios": [
+    {
+      "scenario": "md-small-20",
+      "documents": [
+        {
+          "file": "doc-00-2p.pdf",
+          "pages": 2,
+          "sha256": "be489215ec536dd5921e4a96d0538a52d9d9889023847f8381ad62cc4eb808f7"
+        },
+        {
+          "file": "doc-01-2p.pdf",
+          "pages": 2,
+          "sha256": "3c8989d3862b61f9ed28f9b01b784d1659bc9d3a00a4f501337addd5f3f23b31"
+        },
+        {
+          "file": "doc-02-2p.pdf",
+          "pages": 2,
+          "sha256": "3e8d7229327d19e1cfd26d2e5fda6574019e5a4b2b3caaee386decafa79a4901"
+        },
+        {
+          "file": "doc-03-2p.pdf",
+          "pages": 2,
+          "sha256": "6aa8bb72f1ec46b2a2a9b5089fc3dfa2567bb13c435e489640665cc8dbecc776"
+        },
+        {
+          "file": "doc-04-2p.pdf",
+          "pages": 2,
+          "sha256": "a695e1f4f17af6dcdb87c202e13014ba4c9d1dc24c2689ac48774a25fbe0a214"
+        },
+        {
+          "file": "doc-05-2p.pdf",
+          "pages": 2,
+          "sha256": "b7cdc4af8e7de07ae7331400b400c8b0110d14240ef1eb8e5ef853ed74e18752"
+        },
+        {
+          "file": "doc-06-2p.pdf",
+          "pages": 2,
+          "sha256": "14935f15b9462dec7731a761ae4ad983377c86e47671a719339dd956e7583a03"
+        },
+        {
+          "file": "doc-07-2p.pdf",
+          "pages": 2,
+          "sha256": "985cf79bc2958af7499982c66e1b2da75a1bbf071b041e1e5f75c7ba0cf2c28f"
+        },
+        {
+          "file": "doc-08-2p.pdf",
+          "pages": 2,
+          "sha256": "df8692705f126a0078ff714b69a31e17581060ae4d418a1f44d16c884711ca6c"
+        },
+        {
+          "file": "doc-09-2p.pdf",
+          "pages": 2,
+          "sha256": "7ba466a2cbee367cc8a02eeecefe8f1d39a86db82645177771d7a4952b058b57"
+        },
+        {
+          "file": "doc-10-2p.pdf",
+          "pages": 2,
+          "sha256": "cfd139529dd680594c91a2dbd22ff286a56940af1ba9005f7c91a38660ca1f14"
+        },
+        {
+          "file": "doc-11-2p.pdf",
+          "pages": 2,
+          "sha256": "8c7cc23535a90de36c73e1c625dc1f094118092e2a05e33b4a7e200e634d1d2b"
+        },
+        {
+          "file": "doc-12-2p.pdf",
+          "pages": 2,
+          "sha256": "965e851ce6107c86b6197f153af4ffc96d2602160cb1794c24443c90ec7a8548"
+        },
+        {
+          "file": "doc-13-2p.pdf",
+          "pages": 2,
+          "sha256": "1c0b06e9400edc8378c34eab42ff6f4353a89638305fe16cfc0d351cc35e25c9"
+        },
+        {
+          "file": "doc-14-2p.pdf",
+          "pages": 2,
+          "sha256": "2d4e2132634f3ab1cef2e564a89d8ded979633ea9b7ee5ed93a26dbade1af6ab"
+        },
+        {
+          "file": "doc-15-2p.pdf",
+          "pages": 2,
+          "sha256": "35178da2ce97bb4afbd8849656e5e2a077632b541942cac6e8fc6e3af74c7ab3"
+        },
+        {
+          "file": "doc-16-2p.pdf",
+          "pages": 2,
+          "sha256": "8a76bd5998d0dd76cc527e928e5da7ec730fe2c4badb67449c099c004caaecc8"
+        },
+        {
+          "file": "doc-17-2p.pdf",
+          "pages": 2,
+          "sha256": "3a93e015d798b67cb792eb303aff75aa45b40a59e3783b7e527e332a32abea25"
+        },
+        {
+          "file": "doc-18-2p.pdf",
+          "pages": 2,
+          "sha256": "c53992706759ab782b98d703a5186e8c3084782741b7c5117139d9fd23aadb77"
+        },
+        {
+          "file": "doc-19-2p.pdf",
+          "pages": 2,
+          "sha256": "ee62261d23bd1e63aa703e1931815180860dfe9f816dd837cb4d1af72f278020"
+        }
+      ]
+    },
+    {
+      "scenario": "md-mixed",
+      "documents": [
+        {
+          "file": "doc-00-1p.pdf",
+          "pages": 1,
+          "sha256": "9d64668ba4f409c3d157822c67fc9a9051f6fdfe6ab4ec4e0ac8f183e0bd6e78"
+        },
+        {
+          "file": "doc-01-1p.pdf",
+          "pages": 1,
+          "sha256": "fa04348645cd11beeccf28a7822de8915a35995a2a95c140afde330e385cdaaf"
+        },
+        {
+          "file": "doc-02-2p.pdf",
+          "pages": 2,
+          "sha256": "389428c4439177891d94628a16a9da882d35749f64fb0a19cf89863d55caebcc"
+        },
+        {
+          "file": "doc-03-2p.pdf",
+          "pages": 2,
+          "sha256": "61f2d0e6f8b58d8a4738a40d8f0da0428c6ab3def84d9a4be292ff143d316876"
+        },
+        {
+          "file": "doc-04-4p.pdf",
+          "pages": 4,
+          "sha256": "21044bd13318bcd50b3927a1b32b7d6295f7998da91025d390b97b3bf22e1ac9"
+        },
+        {
+          "file": "doc-05-4p.pdf",
+          "pages": 4,
+          "sha256": "4112072366442969cf706f1105dc9f9d87d41f81508adbe697749654efca8f10"
+        },
+        {
+          "file": "doc-06-8p.pdf",
+          "pages": 8,
+          "sha256": "8fd907c642d20f173d8c58c54ad2e1ef40d933dbe2f926a0c0506441760efa15"
+        },
+        {
+          "file": "doc-07-8p.pdf",
+          "pages": 8,
+          "sha256": "bda4fb9dbbc8c3ee226781abde24ee9f91d3ad7636c9032eca8382802deeb1db"
+        }
+      ]
+    }
+  ]
+}

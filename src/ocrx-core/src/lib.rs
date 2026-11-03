@@ -43,8 +43,8 @@ impl CancellationToken {
     }
 }
 
-/// Frozen decode-window depth for multi-page continuous batching (plan
-/// P4.4 freeze, 2026-11-02, post-review: **N = 4**).
+/// Frozen decode-window depth for multi-page continuous batching (phase-2
+/// stage C unfreeze, 2026-11-04: **N = 8**).
 ///
 /// History: the first freeze landed at N = 1 because the integrated N=4
 /// measurement regressed ~5–11% on both backends — but that measurement ran
@@ -57,7 +57,24 @@ impl CancellationToken {
 /// attention arch's 18/24 per-sequence SSM layers cap the realizable gain),
 /// self-consistency byte-identical, page similarity 1.0000, zero failed /
 /// truncated / degenerated pages.
-pub const WINDOW_DEPTH: usize = 4;
+///
+/// 2026-11-02 post-review freeze re-confirmed N = 4 (phase-1 P4.4).
+///
+/// 2026-11-04 unfreeze to N = 8 (phase-2 plan §4 stage C): the isolated
+/// batched-bench curve gives B=8 = 1527.6 tok/s (4.76× single-stream, +48%
+/// over B=4); window `n_ctx` = max page budget × 8 ≈ 139,776 ≤ the model's
+/// 262,144 training window; KV ≈ 1.7 GB at the 12 KB/token measure keeps the
+/// load inside the 6 GB VRAM assertion. Gates (all measured on the phase-2
+/// branch, Vulkan): structural similarity vs the N=4 frozen reference
+/// ≥ 0.999 + manual sampling, self-consistency byte-identical across
+/// passes, ≥ 5% wall improvement over the post-A baseline (38.2 s), 100-page
+/// resource regression clean, Ctrl+C smoke contract updated (window 1 =
+/// pages 1–8, mechanism-A evidence pages 9–12). The compatibility key
+/// carries `;batch=8` (was `;batch=4`), so pre-unfreeze checkpoints no
+/// longer match and `--resume` rescans the whole document from scratch —
+/// an expected, documented behavior change. Phase-1 freeze discipline
+/// stands: performance numbers must come from a correctness-gated build.
+pub const WINDOW_DEPTH: usize = 8;
 
 /// Prefix marking a batch-level window failure; the scan side falls back to
 /// depth-1 (single-stream) resubmission when it sees it (plan §7.3③).

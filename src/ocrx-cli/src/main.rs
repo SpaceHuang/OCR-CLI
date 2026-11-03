@@ -2509,6 +2509,28 @@ fn run_scan(options: ScanOptions) -> ! {
         }
     }
     initial_queue.retain(|page| !resume_skip_pages.contains(&page.page));
+    // Stage C (batch depth 8): the compatibility key carries `;batch=`, so
+    // checkpoints written by an older binary (different depth, parameters,
+    // or platform) never match and the whole document is reprocessed. That
+    // is an expected, documented behavior change — but a silent full rescan
+    // looks like data loss, so say why when it happens.
+    if options.resume
+        && resume_skip_pages.is_empty()
+        && output
+            .read_dir()
+            .map(|entries| {
+                entries.filter_map(Result::ok).any(|entry| {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    name.starts_with("page-") && name.ends_with(".checkpoint")
+                })
+            })
+            .unwrap_or(false)
+    {
+        eprintln!(
+            "note: --resume found checkpoints but none match the current compatibility key (options, platform, or batch depth changed); every selected page is reprocessed from the start"
+        );
+    }
     let native_candidates = if options.pdf_mode == "ocr" {
         Vec::new()
     } else {
