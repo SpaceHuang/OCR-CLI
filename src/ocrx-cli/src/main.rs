@@ -55,7 +55,10 @@ enum CliCommand {
 #[derive(Debug, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
 struct ScanOptions {
-    input: String,
+    /// Positional inputs (X1.1): one PDF per document scan; a multi-input
+    /// invocation is the X1 orchestrated mode. Raw spellings — directory
+    /// expansion and dedup happen in `resolve_scan_inputs` at scan start.
+    inputs: Vec<String>,
     output_dir: Option<String>,
     pages: Option<Vec<usize>>,
     model: String,
@@ -128,7 +131,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         return Err("scan requires an input PDF".to_owned());
     };
     let mut options = ScanOptions {
-        input: (*input).to_owned(),
+        inputs: vec![(*input).to_owned()],
         output_dir: None,
         pages: None,
         model: ModelId::AS_STR.to_owned(),
@@ -252,6 +255,9 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             }
             "--resume" => options.resume = true,
             "--overwrite" => options.overwrite = true,
+            // X1.1: an additional positional is another input, not an
+            // unknown flag — options and inputs may interleave.
+            flag if !flag.starts_with('-') => options.inputs.push((*flag).to_owned()),
             flag => return Err(format!("unsupported scan option: {flag}")),
         }
         index += 1;
@@ -259,8 +265,13 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
     if options.resume && options.overwrite {
         return Err("--resume and --overwrite are mutually exclusive".to_owned());
     }
-    let output_dir = resolve_output_dir(&options.input, options.output_dir.as_deref())?;
-    validate_output_policy(Path::new(&options.input), &output_dir, &[])?;
+    if options.inputs.len() > 1 && options.output_dir.is_none() {
+        // X1.3: multiple documents fan out under an explicit output root;
+        // there is no silent per-cwd default for the orchestrated mode.
+        return Err("scanning multiple inputs requires --output-dir <output-root>".to_owned());
+    }
+    let output_dir = resolve_output_dir(&options.inputs[0], options.output_dir.as_deref())?;
+    validate_output_policy(Path::new(&options.inputs[0]), &output_dir, &[])?;
     validate_numeric_options(
         options.dpi,
         options.max_image_tokens,
@@ -268,6 +279,50 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         options.context_size,
     )?;
     Ok(options)
+}
+
+/// Resolves the X1.1 multi-input set: directories expand to their `*.pdf`
+/// entries (sorted by path, non-recursive), files pass through, anything
+/// missing is a usage error (exit 2 via the caller), and duplicates collapse
+/// by canonical path. The single-input path never calls this — its
+/// nonexistent-input behavior (page-count failure, exit 3) is unchanged.
+fn resolve_scan_inputs(raw: &[String]) -> Result<Vec<PathBuf>, String> {
+    let mut resolved: Vec<PathBuf> = Vec::new();
+    for entry in raw {
+        let path = PathBuf::from(entry);
+        if path.is_dir() {
+            let mut pdfs: Vec<PathBuf> = std::fs::read_dir(&path)
+                .map_err(|error| format!("cannot read input directory {entry}: {error}"))?
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|candidate| {
+                    candidate.is_file()
+                        && candidate
+                            .extension()
+                            .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+                })
+                .collect();
+            pdfs.sort();
+            if pdfs.is_empty() {
+                return Err(format!("input directory contains no PDFs: {entry}"));
+            }
+            resolved.extend(pdfs);
+        } else if path.is_file() {
+            resolved.push(path);
+        } else {
+            return Err(format!("input not found: {entry}"));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut unique = Vec::with_capacity(resolved.len());
+    for path in resolved {
+        let canonical = std::fs::canonicalize(&path)
+            .map_err(|error| format!("cannot resolve input {}: {error}", path.display()))?;
+        if seen.insert(canonical) {
+            unique.push(path);
+        }
+    }
+    Ok(unique)
 }
 
 /// Returns whether the planned pages require the OCR resource lifecycle.
@@ -2079,9 +2134,9 @@ fn run_scan(options: ScanOptions) -> ! {
     };
     let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
     let mut reporter = Reporter::default();
-    let input = PathBuf::from(&options.input);
+    let input = PathBuf::from(&options.inputs[0]);
     let canonical_input = std::fs::canonicalize(&input).unwrap_or_else(|_| input.clone());
-    let output = match resolve_output_dir(&options.input, options.output_dir.as_deref()) {
+    let output = match resolve_output_dir(&options.inputs[0], options.output_dir.as_deref()) {
         Ok(path) => path,
         Err(error) => {
             reporter.error(
@@ -3771,7 +3826,7 @@ mod tests {
         native_candidate_pages, native_only_decision, ocr_queue_after_native_phase, parse_command,
         parse_injected_failure_page, parse_page_selection, parse_scan_args,
         pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required, resolve_config,
-        restrict_ocr_queue_to_pages, route_native_validation, routing_counts,
+        resolve_scan_inputs, restrict_ocr_queue_to_pages, route_native_validation, routing_counts,
         routing_counts_for_mode, routing_diagnostic_json, routing_diagnostic_with_processing,
         run_native_first_phase, service_pages_from_ocr_queue, should_initialize_ocr_runtime,
         try_routing_diagnostic_with_processing, validate_text_mode_classifications,
@@ -3783,11 +3838,97 @@ mod tests {
     use ocrx_output::{OcrQueuePage, PageDiagnostic, RenderAudit, ResultReport, ResultStatus};
 
     #[test]
+    fn scan_parser_single_input_keeps_default_output_semantics() {
+        let options = parse_scan_args(&["input.pdf"]).unwrap();
+        assert_eq!(options.inputs, vec!["input.pdf".to_owned()]);
+        assert!(options.output_dir.is_none());
+    }
+
+    // --- X1.1: multi-input scan surface ------------------------------------
+
+    #[test]
+    fn scan_parser_accepts_multiple_positional_inputs_with_output_root() {
+        let options = parse_scan_args(&["a.pdf", "b.pdf", "-o", "root", "--resume"]).unwrap();
+        assert_eq!(options.inputs, vec!["a.pdf".to_owned(), "b.pdf".to_owned()]);
+        assert_eq!(options.output_dir.as_deref(), Some("root"));
+        assert!(options.resume);
+    }
+
+    #[test]
+    fn scan_parser_collects_inputs_between_options() {
+        let options = parse_scan_args(&[
+            "a.pdf",
+            "--resume",
+            "b.pdf",
+            "-o",
+            "r",
+            "--pdf-mode",
+            "ocr",
+            "c.pdf",
+        ])
+        .unwrap();
+        assert_eq!(
+            options.inputs,
+            vec!["a.pdf".to_owned(), "b.pdf".to_owned(), "c.pdf".to_owned()]
+        );
+    }
+
+    #[test]
+    fn scan_parser_requires_output_root_for_multiple_inputs() {
+        let error = parse_scan_args(&["a.pdf", "b.pdf"]).unwrap_err();
+        assert!(
+            error.contains("--output-dir"),
+            "error must point at the missing output root: {error}"
+        );
+        // A single input keeps the implicit default; only the multi-input
+        // mode demands the root.
+        assert!(parse_scan_args(&["a.pdf"]).is_ok());
+    }
+
+    #[test]
+    fn resolve_scan_inputs_expands_directories_dedupes_and_sorts() {
+        let root = std::env::temp_dir().join(format!("ocrx-x11-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("docs");
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["b.pdf", "a.pdf", "notes.txt"] {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        let direct = dir.join("z.pdf");
+        std::fs::write(&direct, b"x").unwrap();
+        let resolved = resolve_scan_inputs(&[
+            dir.to_string_lossy().to_string(),
+            direct.to_string_lossy().to_string(), // duplicates an expansion entry
+            dir.join("a.pdf").to_string_lossy().to_string(), // explicit duplicate
+        ])
+        .unwrap();
+        let names: Vec<String> = resolved
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        // Sorted by path, *.txt ignored, deduped against the expansion.
+        assert_eq!(names, vec!["a.pdf", "b.pdf", "z.pdf"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_scan_inputs_rejects_missing_paths_and_pdfless_directories() {
+        let root = std::env::temp_dir().join(format!("ocrx-x11-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let error = resolve_scan_inputs(&["definitely-missing.pdf".to_owned()]).unwrap_err();
+        assert!(error.contains("input not found"), "{error}");
+        let error = resolve_scan_inputs(&[root.to_string_lossy().to_string()]).unwrap_err();
+        assert!(error.contains("no PDFs"), "{error}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn scan_parser_builds_typed_options_and_rejects_other_models() {
         assert_eq!(
             parse_scan_args(&["input.pdf", "-o", "out", "--pages", "3,1-2", "--resume"]),
             Ok(ScanOptions {
-                input: "input.pdf".to_owned(),
+                inputs: vec!["input.pdf".to_owned()],
                 output_dir: Some("out".to_owned()),
                 pages: Some(vec![1, 2, 3]),
                 model: "ovisocr2".to_owned(),
@@ -5093,7 +5234,7 @@ mod tests {
         assert_eq!(
             parse_command(&["scan", "input.pdf"]),
             Ok(CliCommand::Scan(ScanOptions {
-                input: "input.pdf".to_owned(),
+                inputs: vec!["input.pdf".to_owned()],
                 output_dir: None,
                 pages: None,
                 model: "ovisocr2".to_owned(),
