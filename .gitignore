@@ -21,3 +21,7 @@ __pycache__/
 /assets/regression/*/inputs/*.pdf
 /.worktree/
 .venv-w04/
+
+# phase-2 multi-document fixtures: rebuild via scripts/build-multidoc-fixtures.py
+/assets/regression/multidoc-v1/*.pdf
+/assets/regression/multidoc-v1/*/*.pdf

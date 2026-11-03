@@ -99,6 +99,36 @@ impl RepetitionLoopDetector {
     }
 }
 
+/// Greedy argmax over a full logits row, byte-equivalent to
+/// `iter().enumerate().max_by(|(_, l), (_, r)| l.total_cmp(r))` — including
+/// tie resolution (the LAST maximum wins) and the `f32::total_cmp` total
+/// order (NaN payloads, ±0, ±inf) — expressed over the total-order integer
+/// key so LLVM can vectorize the reduction (phase-2 A2b: the Rust-side
+/// argmax measured 3.45 s of the 30.4 s window total on the gold set,
+/// T0.1 `argmax` bucket).
+///
+/// Returns `None` for an empty slice, like `max_by`.
+fn argmax_total_cmp(logits: &[f32]) -> Option<usize> {
+    // `f32::total_cmp` maps a float to this totally-ordered i32 key:
+    // bits ^ (((bits >> 31) as u32) >> 1) — flip the sign bit of positives,
+    // the whole word of negatives. Comparing keys == comparing total_cmp.
+    let key = |value: f32| -> i32 {
+        let bits = value.to_bits() as i32;
+        bits ^ ((((bits >> 31) as u32) >> 1) as i32)
+    };
+    let mut best_index: Option<usize> = None;
+    let mut best_key = i32::MIN;
+    for (index, &value) in logits.iter().enumerate() {
+        let candidate = key(value);
+        // `>=` keeps the LAST maximum, exactly like `max_by`.
+        if candidate >= best_key {
+            best_key = candidate;
+            best_index = Some(index);
+        }
+    }
+    best_index
+}
+
 /// Main-thread handle for the dedicated inference thread (plan §4 T2.3/P4.1).
 ///
 /// `LlamaContext<'a>` borrows its `LlamaModel`, so "a runtime that owns both"
@@ -759,12 +789,7 @@ fn generate_window_pages<'a>(
         // row: sample this slot's seed before the next page's eval overwrites
         // the buffer (Spike B behavior).
         let seed_row = context.get_logits();
-        let seed = seed_row
-            .iter()
-            .enumerate()
-            .max_by(|(_, left), (_, right)| left.total_cmp(right))
-            .map(|(id, _)| id)
-            .unwrap_or(usize::MAX);
+        let seed = argmax_total_cmp(seed_row).unwrap_or(usize::MAX);
         if seed == usize::MAX {
             slots.push(WindowSlot {
                 request_page: request.page,
@@ -933,12 +958,7 @@ fn generate_window_pages<'a>(
             let logits = context.get_logits_ith(index);
             profiler.end(Segment::LogitsFfi);
             profiler.begin(Segment::Argmax);
-            let best = logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, left), (_, right)| left.total_cmp(right))
-                .map(|(id, _)| id)
-                .map(|id| id as i32);
+            let best = argmax_total_cmp(logits).map(|id| id as i32);
             profiler.end(Segment::Argmax);
             let Some(best) = best else {
                 slot.finished = true;
@@ -1134,11 +1154,7 @@ fn generate_one_page(
         // failures still contribute token/timing counts (MINOR 10).
         let next_token = (|| -> Result<LlamaToken, String> {
             let logits = context.get_logits();
-            let (index, _) = logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, left), (_, right)| left.total_cmp(right))
-                .ok_or_else(|| "empty logits".to_owned())?;
+            let index = argmax_total_cmp(logits).ok_or_else(|| "empty logits".to_owned())?;
             let token = LlamaToken::new(
                 i32::try_from(index).map_err(|_| "logits index exceeds token range".to_owned())?,
             );
@@ -1282,7 +1298,7 @@ impl Runtime for LlamaMtmdRuntime {
 
 #[cfg(test)]
 mod tests {
-    use super::RepetitionLoopDetector;
+    use super::{RepetitionLoopDetector, argmax_total_cmp};
 
     /// Feeds `tokens` one by one and reports whether the detector fired.
     fn fires(tokens: &[i32]) -> bool {
@@ -1294,6 +1310,90 @@ mod tests {
     fn p1_loop_triggers_at_sixteen_repeats_not_fifteen() {
         assert!(!fires(&[7; 15]));
         assert!(fires(&[7; 16]));
+    }
+
+    // --- A2b: argmax_total_cmp equivalence property (greedy sampling). -----
+
+    /// Reference implementation: the exact expression the decode loop used
+    /// before A2b (`max_by` over `total_cmp`).
+    fn argmax_reference(logits: &[f32]) -> Option<usize> {
+        logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, left), (_, right)| left.total_cmp(right))
+            .map(|(id, _)| id)
+    }
+
+    /// Deterministic bit-pattern sweep: every float bit pattern class that
+    /// `f32::total_cmp` orders specially (±0, ±inf, NaN payloads, subnormals,
+    /// sign variations) must resolve identically, ties included.
+    #[test]
+    fn argmax_matches_max_by_total_cmp_on_special_values() {
+        let specials = [
+            0.0_f32,
+            -0.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            -f32::NAN,
+            f32::MIN_POSITIVE,
+            -f32::MIN_POSITIVE,
+            f32::MAX,
+            f32::MIN,
+            1.0,
+            -1.0,
+        ];
+        // All pairs of specials, both orders, plus duplicated tails for ties.
+        for &left in &specials {
+            for &right in &specials {
+                let row = [left, right];
+                assert_eq!(
+                    argmax_total_cmp(&row),
+                    argmax_reference(&row),
+                    "special pair [{left:?}, {right:?}] diverged"
+                );
+                let tied = [left, left, left];
+                assert_eq!(
+                    argmax_total_cmp(&tied),
+                    argmax_reference(&tied),
+                    "all-tied row [{left:?} x3] diverged"
+                );
+            }
+        }
+        // Last-max-wins tie order across a mixed row.
+        let tied_mixed = [-1.0, 0.0, -0.0, 1.0, 1.0];
+        assert_eq!(argmax_total_cmp(&tied_mixed), Some(4));
+        assert_eq!(argmax_reference(&tied_mixed), Some(4));
+        assert_eq!(argmax_total_cmp(&[]), None);
+    }
+
+    /// Wide randomized property: 5,000 pseudo-random rows (bit-level f32
+    /// noise, so NaNs and ±0 appear at realistic adversarial rates) must
+    /// agree with the reference on every index.
+    #[test]
+    fn argmax_matches_max_by_total_cmp_on_random_rows() {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next_bits = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) as u32
+        };
+        for _ in 0..5_000 {
+            let len = (next_bits() % 64) as usize + 1;
+            let row: Vec<f32> = (0..len)
+                .map(|_| match next_bits() % 8 {
+                    0 => f32::from_bits(next_bits()), // arbitrary bits: NaNs land here
+                    1 => f32::from_bits(next_bits() & 0x8000_0000), // ±0
+                    _ => f32::from_bits(next_bits()) - 1.5,
+                })
+                .collect();
+            assert_eq!(
+                argmax_total_cmp(&row),
+                argmax_reference(&row),
+                "row diverged: {row:?}"
+            );
+        }
     }
 
     #[test]
