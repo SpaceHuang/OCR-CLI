@@ -23,3 +23,6 @@ src/ocrx-ovisocr2/tests/fixtures/** -text
 # golden-set gate (plan §2.3 第一档): text normalization on checkout would
 # corrupt the recorded bytes and break future byte-exact comparisons.
 docs/test/reports/perf-baseline-*-data/** -text
+
+# phase-2 measurement data: raw bytes, no EOL normalization
+docs/test/reports/phase2-t0-*-data/** -text

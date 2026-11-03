@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "tool": "scripts/measure-multidoc-baseline.py",
+  "mode": "individual-invocations",
+  "binary": "D:\\ocrx-tgt-p2-vulkan\\release\\ocrx.exe",
+  "scenario": "md-small-20",
+  "profile": "reference",
+  "extra_args": [],
+  "document_count": 20,
+  "runs": [
+    {
+      "run": 0,
+      "loop_wall_s": 155.841,
+      "documents": [
+        {
+          "file": "doc-00-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.893
+        },
+        {
+          "file": "doc-01-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.852
+        },
+        {
+          "file": "doc-02-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.878
+        },
+        {
+          "file": "doc-03-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.835
+        },
+        {
+          "file": "doc-04-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.894
+        },
+        {
+          "file": "doc-05-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.811
+        },
+        {
+          "file": "doc-06-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.733
+        },
+        {
+          "file": "doc-07-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.738
+        },
+        {
+          "file": "doc-08-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.844
+        },
+        {
+          "file": "doc-09-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.758
+        },
+        {
+          "file": "doc-10-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.85
+        },
+        {
+          "file": "doc-11-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.744
+        },
+        {
+          "file": "doc-12-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.748
+        },
+        {
+          "file": "doc-13-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.716
+        },
+        {
+          "file": "doc-14-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.764
+        },
+        {
+          "file": "doc-15-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.793
+        },
+        {
+          "file": "doc-16-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.805
+        },
+        {
+          "file": "doc-17-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.773
+        },
+        {
+          "file": "doc-18-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.72
+        },
+        {
+          "file": "doc-19-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.695
+        }
+      ]
+    },
+    {
+      "run": 1,
+      "loop_wall_s": 154.269,
+      "documents": [
+        {
+          "file": "doc-00-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.573
+        },
+        {
+          "file": "doc-01-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.571
+        },
+        {
+          "file": "doc-02-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.618
+        },
+        {
+          "file": "doc-03-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.58
+        },
+        {
+          "file": "doc-04-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.828
+        },
+        {
+          "file": "doc-05-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.899
+        },
+        {
+          "file": "doc-06-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.725
+        },
+        {
+          "file": "doc-07-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.596
+        },
+        {
+          "file": "doc-08-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.937
+        },
+        {
+          "file": "doc-09-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.685
+        },
+        {
+          "file": "doc-10-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.61
+        },
+        {
+          "file": "doc-11-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.603
+        },
+        {
+          "file": "doc-12-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.62
+        },
+        {
+          "file": "doc-13-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.607
+        },
+        {
+          "file": "doc-14-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.632
+        },
+        {
+          "file": "doc-15-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.562
+        },
+        {
+          "file": "doc-16-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.683
+        },
+        {
+          "file": "doc-17-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.655
+        },
+        {
+          "file": "doc-18-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 8.538
+        },
+        {
+          "file": "doc-19-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.746
+        }
+      ]
+    }
+  ]
+}

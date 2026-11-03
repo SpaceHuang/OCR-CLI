@@ -1,0 +1,1 @@
+{"schema_version":1,"windows":7,"steps":5219,"tokens":12812,"us":{"window_total":30499862,"encode":1805063,"slot_setup":758080,"batch_build":1461,"decode_wait":13329260,"logits_ffi":10622135,"argmax":3448506,"detokenize":12375,"ring":100,"residual":522882}}
