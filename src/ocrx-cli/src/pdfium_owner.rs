@@ -11,7 +11,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -53,6 +53,13 @@ trait PdfiumExecutor: Send + 'static {
     fn render_raw(&mut self, page: u32) -> Result<RenderInput, String>;
     /// Extracts the native text layer of one page (1-based index).
     fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String>;
+    /// Switches the active input document (X1 cross-document protocol,
+    /// BLK-2 freeze §3-2). Always called at a window-scheduling boundary
+    /// with no render in flight; the owner clears its prefetch state before
+    /// forwarding. The returned error is a document-level VALUE (unreadable
+    /// PDF and friends — the caller skips the document); owner
+    /// timeout/disconnect stays the fail-loud poison path, never this.
+    fn switch_document(&mut self, input: &str) -> Result<(), String>;
 }
 
 impl PdfiumExecutor for Box<dyn PdfiumExecutor> {
@@ -75,6 +82,10 @@ impl PdfiumExecutor for Box<dyn PdfiumExecutor> {
     fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String> {
         (**self).extract_native(page_index)
     }
+
+    fn switch_document(&mut self, input: &str) -> Result<(), String> {
+        (**self).switch_document(input)
+    }
 }
 
 enum PdfRequest {
@@ -95,6 +106,13 @@ enum PdfRequest {
         numerator: u32,
         denominator: u32,
     },
+    /// X1 (BLK-2 §3-2): switch the active document. Sent only at window
+    /// scheduling boundaries between documents; the owner clears the
+    /// prefetch cache and resets `next_prefetch` before forwarding, so the
+    /// next document can never hit the previous document's cached pages.
+    SwitchDocument {
+        input: PathBuf,
+    },
 }
 
 enum PdfResponse {
@@ -102,6 +120,9 @@ enum PdfResponse {
     NativeExtracted(Result<ocrx_pdf::NativePage, String>),
     Analyze(Result<Vec<PageClassification>, String>),
     Render(Result<RenderedPage, String>),
+    /// Document-level switch outcome as a value (§3-4); a `Err` here means
+    /// "skip this document", while owner poison travels through the handle.
+    Switched(Result<(), String>),
 }
 
 struct OwnerState<E: PdfiumExecutor> {
@@ -298,6 +319,19 @@ impl PdfiumOwnerHandle {
                             // resamples the raw render like the serial path.
                             state.render_direct(page, numerator, denominator),
                         ),
+                        PdfRequest::SwitchDocument { input } => {
+                            // BLK-2 §3-3: switching is only legal at a
+                            // scheduling boundary (the orchestrator
+                            // serializes), so the prefetch window of the
+                            // previous document is discarded wholesale — the
+                            // next document starts with `next_prefetch = 1`
+                            // and an empty cache.
+                            state.cache.clear();
+                            state.next_prefetch = 1;
+                            PdfResponse::Switched(
+                                state.executor.switch_document(&input.to_string_lossy()),
+                            )
+                        }
                     };
                     if responses_tx.send(response).is_err() {
                         break; // handle dropped: exit (plan §6.2 Drop contract)
@@ -352,6 +386,20 @@ impl PdfiumOwnerHandle {
     /// The structured failure when the owner is poisoned, if it is.
     pub(crate) fn poisoned(&self) -> Option<String> {
         self.poison.clone()
+    }
+
+    /// Switches the active document (X1, BLK-2 §3-2/3-4). `Ok(())` means the
+    /// owner now serves `input`; an `Err` VALUE means the document is
+    /// unusable (skip it, keep going). A poisoned owner fails loud through
+    /// the same `Err` — callers disambiguate with [`Self::poisoned`].
+    pub(crate) fn switch_document(&mut self, input: &Path) -> Result<(), String> {
+        match self.request(PdfRequest::SwitchDocument {
+            input: input.to_path_buf(),
+        }) {
+            Ok(PdfResponse::Switched(result)) => result,
+            Ok(_) => unreachable!("switch request answers a switch"),
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn page_count(&mut self) -> std::io::Result<usize> {
@@ -419,6 +467,14 @@ impl PdfiumExecutor for RealPdfiumExecutor {
         self.renderer
             .page_count(&self.input)
             .map_err(|error| error.to_string())
+    }
+
+    fn switch_document(&mut self, input: &str) -> Result<(), String> {
+        // The swap itself is infallible; an unusable document surfaces as an
+        // Err VALUE from the page_count/analyze/render calls that follow
+        // (BLK-2 §3-4), which the orchestrator maps to a per-document skip.
+        self.input = PathBuf::from(input);
+        Ok(())
     }
 
     fn analyze(
@@ -516,10 +572,19 @@ mod tests {
 
     /// Deterministic fake: 6 pages, page 2 render fails as a value, optional
     /// render delay and panic injection, call counter for prefetch analysis.
+    /// X1: document-aware — renders are tagged with the active document's
+    /// prefix so cross-document cache bleed is observable, and switches can
+    /// fail per document as values.
     struct FakeExecutor {
         calls: Arc<AtomicUsize>,
         panic_on_render: bool,
         render_delay: Duration,
+        /// Marker byte prefix of the active document (doc a -> 1, b -> 2...).
+        doc_prefix: u8,
+        /// Input substrings whose `switch_document` fails as a value.
+        switch_fails_for: Vec<String>,
+        /// Owner thread id observed at every switch (X1.4 same-owner assert).
+        switch_threads: Arc<std::sync::Mutex<Vec<std::thread::ThreadId>>>,
     }
 
     impl FakeExecutor {
@@ -530,6 +595,9 @@ mod tests {
                     calls: Arc::clone(&calls),
                     panic_on_render: false,
                     render_delay: Duration::ZERO,
+                    doc_prefix: 1,
+                    switch_fails_for: Vec::new(),
+                    switch_threads: Arc::new(std::sync::Mutex::new(Vec::new())),
                 },
                 calls,
             )
@@ -588,12 +656,39 @@ mod tests {
             if page == 2 {
                 return Err("render failed for page 2".to_owned());
             }
+            // Tag the marker byte with the active document so a cache bleed
+            // across a SwitchDocument is observable in the returned pixels.
+            let tagged = u32::from(self.doc_prefix.min(25)) * 10 + page.min(9);
             Ok(RenderInput {
-                image: fake_image(page),
+                image: fake_image(tagged),
                 original_width: 100,
                 original_height: 200,
             })
         }
+
+        fn switch_document(&mut self, input: &str) -> Result<(), String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.switch_threads
+                .lock()
+                .unwrap()
+                .push(std::thread::current().id());
+            if self.switch_fails_for.iter().any(|bad| input.contains(bad)) {
+                return Err(format!("document-level failure for {input}"));
+            }
+            // "doc-a" style names map to consecutive prefixes; unknown names
+            // keep the previous prefix (still a fresh, observable document).
+            if let Some(position) = input.rfind("doc-") {
+                let letter = input.as_bytes().get(position + 4).copied();
+                if letter.is_some_and(|byte| byte.is_ascii_lowercase()) {
+                    self.doc_prefix = byte_to_prefix(letter.unwrap());
+                }
+            }
+            Ok(())
+        }
+    }
+
+    fn byte_to_prefix(byte: u8) -> u8 {
+        byte - b'a' + 1
     }
 
     fn page_marker(rendered: &RenderedPage) -> u32 {
@@ -624,7 +719,7 @@ mod tests {
             panic!("prefetch never reached {target} calls");
         };
         let first = handle.render_via(PdfRequest::Render { page: 1 }).unwrap();
-        assert_eq!(page_marker(&first), 1);
+        assert_eq!(page_marker(&first), 11); // doc prefix 1, page 1
         // The response is sent BEFORE the prefetch (review finding 3); the
         // window then tops up asynchronously with pages 2 and 3 (page 2
         // fails as a cached value).
@@ -635,12 +730,12 @@ mod tests {
         wait_calls(&calls, 4);
         // Page 3 served from cache; window tops up with page 5.
         let third = handle.render_via(PdfRequest::Render { page: 3 }).unwrap();
-        assert_eq!(page_marker(&third), 3);
+        assert_eq!(page_marker(&third), 13);
         wait_calls(&calls, 5);
         // Page 4 was prefetched during Render(2)'s top-up: answered without a
         // new call beyond the window's own top-up to page 6.
         let fourth = handle.render_via(PdfRequest::Render { page: 4 }).unwrap();
-        assert_eq!(page_marker(&fourth), 4);
+        assert_eq!(page_marker(&fourth), 14);
         wait_calls(&calls, 6); // only page 6 prefetched
     }
 
@@ -721,7 +816,7 @@ mod tests {
         let mut renderer = OwnerPageRenderer::new(Rc::clone(&handle));
         assert!(renderer.preflight().is_ok());
         let page = renderer.render(1).unwrap();
-        assert_eq!(page_marker(&page), 1);
+        assert_eq!(page_marker(&page), 11); // doc prefix 1, page 1
         let page = renderer.render_perturbed(1, 47, 50).unwrap();
         assert_eq!(page.width, 3);
         assert!(calls.load(Ordering::SeqCst) >= 2);
@@ -769,5 +864,97 @@ mod tests {
         assert_eq!(page.width, 3);
         assert_eq!(page.audit.rendered_width, 3);
         assert_eq!(page.rgb8[0], 0);
+    }
+
+    // --- X1 cross-document protocol (BLK-2 §3-2/3-3/3-4) --------------------
+
+    fn switch_to(handle: &mut PdfiumOwnerHandle, doc: &str) -> Result<(), String> {
+        handle.switch_document(std::path::Path::new(doc))
+    }
+
+    #[test]
+    fn switch_document_clears_prefetch_and_serves_the_new_document() {
+        // X1.4②: after the switch, page 1 of document B must be a FRESH
+        // render tagged B — never a cache hit of document A's page 1 — and
+        // B's prefetch window restarts from page 2.
+        let (executor, calls) = FakeExecutor::new();
+        let (mut handle, _calls) = executor.spawn();
+        let wait_calls = |calls: &Arc<AtomicUsize>, target: usize| {
+            for _ in 0..200 {
+                if calls.load(Ordering::SeqCst) >= target {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            panic!("prefetch never reached {target} calls");
+        };
+        // Document A: page 1 answered, prefetch window runs to A pages 2-3.
+        let a_page1 = handle.render_via(PdfRequest::Render { page: 1 }).unwrap();
+        assert_eq!(page_marker(&a_page1), 11);
+        wait_calls(&calls, 3);
+        // Switch to document B: prefetch state of A must be gone.
+        switch_to(&mut handle, "doc-b.pdf").unwrap();
+        let b_page1 = handle.render_via(PdfRequest::Render { page: 1 }).unwrap();
+        assert_eq!(
+            page_marker(&b_page1),
+            21,
+            "document B page 1 must be a fresh B-tagged render, not A's cache"
+        );
+        // B's own prefetch window tops up (B page 2 fails as a cached value).
+        wait_calls(&calls, 5);
+        assert!(handle.render_via(PdfRequest::Render { page: 2 }).is_err());
+        // Back to A: page 1 renders fresh again (A's old cache was dropped).
+        switch_to(&mut handle, "doc-a.pdf").unwrap();
+        let a_page1_again = handle.render_via(PdfRequest::Render { page: 1 }).unwrap();
+        assert_eq!(page_marker(&a_page1_again), 11);
+        assert!(handle.poisoned().is_none());
+    }
+
+    #[test]
+    fn switch_document_error_is_a_value_and_the_channel_stays_open() {
+        // X1.4③: an unusable document is an Err VALUE on the switch itself;
+        // the owner stays healthy and later documents keep working.
+        let (mut executor, _calls) = FakeExecutor::new();
+        executor.switch_fails_for.push("doc-bad".to_owned());
+        let (handle, _calls) = executor.spawn();
+        let mut handle = handle;
+        switch_to(&mut handle, "doc-a.pdf").unwrap();
+        let error = switch_to(&mut handle, "doc-bad.pdf").unwrap_err();
+        assert!(error.contains("document-level failure"), "{error}");
+        assert!(
+            handle.poisoned().is_none(),
+            "a document value must not poison"
+        );
+        // The channel still serves renders and later switches.
+        let page = handle.render_via(PdfRequest::Render { page: 1 }).unwrap();
+        assert_eq!(page_marker(&page), 11);
+        switch_to(&mut handle, "doc-a.pdf").unwrap();
+        assert!(handle.poisoned().is_none());
+    }
+
+    #[test]
+    fn every_switch_runs_on_the_same_single_owner_thread() {
+        // X1.4①: all document switches across the invocation are served by
+        // exactly one owner thread — no per-document spawn may ever happen.
+        let (executor, _calls) = FakeExecutor::new();
+        let threads = Arc::clone(&executor.switch_threads);
+        let (handle, _calls) = executor.spawn();
+        let mut handle = handle;
+        for doc in [
+            "doc-a.pdf",
+            "doc-b.pdf",
+            "doc-a.pdf",
+            "doc-c.pdf",
+            "doc-b.pdf",
+        ] {
+            switch_to(&mut handle, doc).unwrap();
+        }
+        let threads = threads.lock().unwrap();
+        assert_eq!(threads.len(), 5);
+        let first = threads[0];
+        assert!(
+            threads.iter().all(|&id| id == first),
+            "switches observed on multiple owner threads: {threads:?}"
+        );
     }
 }

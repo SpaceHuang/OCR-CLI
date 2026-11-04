@@ -1,7 +1,7 @@
 # 扫描吞吐优化二期执行计划（杠杆 A~D + 跨文档并发）
 
 **日期**：2026-11-03
-**状态**：v1.2。2026-11-03 重审 **UNBLOCK / PASS**（`docs/review/scan-throughput-phase2-development-plan.md`），可按 §3 执行序开工；约束重申：X1.0 半页设计（含 PDFium 协议）须在 X1.1/X1.2 实施前独立评审通过（已内置为前置门禁）。评审通过后在新建 worktree 以 TDD 推进（沿用一期模式），建议分支 `feature/scan-throughput-phase2`。
+**状态**：已执行（2026-11-04，分支 `feature/scan-throughput-phase2`，未合入 main 待评审）——执行总报告与 DoD 核对见 `docs/test/reports/phase2-summary-2026-11-04.md`；单文档终线实测 34.02 s（vs P0 1.63×，26 s 目标未达，逐项判定见总报告 §2）；X1 合入，md-small-20 实测 1.35×（1.5× 门禁未达，归因见 X1 报告 §2④）；决策点 X2/B2/D 全部关闭。原状态：v1.2。2026-11-03 重审 **UNBLOCK / PASS**（`docs/review/scan-throughput-phase2-development-plan.md`），可按 §3 执行序开工；约束重申：X1.0 半页设计（含 PDFium 协议）须在 X1.1/X1.2 实施前独立评审通过（已内置为前置门禁）。评审通过后在新建 worktree 以 TDD 推进（沿用一期模式），建议分支 `feature/scan-throughput-phase2`。
 **一期方案**：`docs/develop/scan-throughput-optimization-development-plan.md`（P0–P4 已全部完成，四轮评审 PASS，合并 main @ `a02d459`）
 **输入数据**：
 - P0 基准报告：`docs/test/reports/perf-baseline-2026-11-01.md`（含 P1 补记）

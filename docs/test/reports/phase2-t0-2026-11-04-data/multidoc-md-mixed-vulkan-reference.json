@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "tool": "scripts/measure-multidoc-baseline.py",
+  "mode": "individual-invocations",
+  "binary": "D:\\ocrx-tgt-p2-vulkan\\release\\ocrx.exe",
+  "scenario": "md-mixed",
+  "profile": "reference",
+  "extra_args": [],
+  "document_count": 8,
+  "runs": [
+    {
+      "run": 0,
+      "loop_wall_s": 66.004,
+      "documents": [
+        {
+          "file": "doc-00-1p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.316
+        },
+        {
+          "file": "doc-01-1p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.307
+        },
+        {
+          "file": "doc-02-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.729
+        },
+        {
+          "file": "doc-03-2p.pdf",
+          "exit_code": 0,
+          "wall_s": 7.714
+        },
+        {
+          "file": "doc-04-4p.pdf",
+          "exit_code": 0,
+          "wall_s": 8.262
+        },
+        {
+          "file": "doc-05-4p.pdf",
+          "exit_code": 0,
+          "wall_s": 8.336
+        },
+        {
+          "file": "doc-06-8p.pdf",
+          "exit_code": 0,
+          "wall_s": 9.726
+        },
+        {
+          "file": "doc-07-8p.pdf",
+          "exit_code": 0,
+          "wall_s": 9.614
+        }
+      ]
+    }
+  ]
+}

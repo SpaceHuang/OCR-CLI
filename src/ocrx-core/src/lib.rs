@@ -13,9 +13,35 @@ use std::sync::atomic::{AtomicU8, Ordering};
 /// the CLI to stop taking new pages and return exit code 130). A second request
 /// escalates to force-exit, mirroring the frozen Ctrl+C contract where the
 /// first interrupt is graceful and the second is immediate.
+///
+/// A [`CancellationToken::child`] scopes a subsystem's own lifecycle (e.g. a
+/// renderer dropping its prefetch): the child reports cancelled/forced as soon
+/// as any ancestor is, while cancelling the child never touches the ancestor —
+/// that is what keeps one document's teardown from cancelling a whole
+/// orchestrated invocation.
 #[derive(Debug, Clone, Default)]
 pub struct CancellationToken {
-    requests: Arc<AtomicU8>,
+    inner: Arc<Inner>,
+}
+
+#[derive(Debug, Default)]
+struct Inner {
+    requests: AtomicU8,
+    parent: Option<Arc<Inner>>,
+}
+
+/// Walks the ancestor chain (self included) for the strongest observed state.
+fn chain_state(inner: &Inner) -> (bool, bool) {
+    let mut current = Some(inner);
+    let mut cancelled = false;
+    let mut forced = false;
+    while let Some(node) = current {
+        let value = node.requests.load(Ordering::SeqCst);
+        cancelled |= value >= 1;
+        forced |= value >= 2;
+        current = node.parent.as_deref();
+    }
+    (cancelled, forced)
 }
 
 impl CancellationToken {
@@ -24,8 +50,22 @@ impl CancellationToken {
         Self::default()
     }
 
+    /// A lifecycle-scoped child token: it reports cancelled/forced as soon as
+    /// it OR any ancestor is, while its own `request_cancel` stays local to
+    /// the child and never propagates upward.
+    #[must_use]
+    pub fn child(&self) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                requests: AtomicU8::new(0),
+                parent: Some(Arc::clone(&self.inner)),
+            }),
+        }
+    }
+
     pub fn request_cancel(&self) {
-        self.requests
+        self.inner
+            .requests
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
                 Some(value.saturating_add(1))
             })
@@ -34,17 +74,17 @@ impl CancellationToken {
 
     #[must_use]
     pub fn is_cancelled(&self) -> bool {
-        self.requests.load(Ordering::SeqCst) >= 1
+        self.inner.requests.load(Ordering::SeqCst) >= 1 || chain_state(&self.inner).0
     }
 
     #[must_use]
     pub fn force_exit(&self) -> bool {
-        self.requests.load(Ordering::SeqCst) >= 2
+        self.inner.requests.load(Ordering::SeqCst) >= 2 || chain_state(&self.inner).1
     }
 }
 
-/// Frozen decode-window depth for multi-page continuous batching (plan
-/// P4.4 freeze, 2026-11-02, post-review: **N = 4**).
+/// Frozen decode-window depth for multi-page continuous batching (phase-2
+/// stage C unfreeze, 2026-11-04: **N = 8**).
 ///
 /// History: the first freeze landed at N = 1 because the integrated N=4
 /// measurement regressed ~5–11% on both backends — but that measurement ran
@@ -57,7 +97,24 @@ impl CancellationToken {
 /// attention arch's 18/24 per-sequence SSM layers cap the realizable gain),
 /// self-consistency byte-identical, page similarity 1.0000, zero failed /
 /// truncated / degenerated pages.
-pub const WINDOW_DEPTH: usize = 4;
+///
+/// 2026-11-02 post-review freeze re-confirmed N = 4 (phase-1 P4.4).
+///
+/// 2026-11-04 unfreeze to N = 8 (phase-2 plan §4 stage C): the isolated
+/// batched-bench curve gives B=8 = 1527.6 tok/s (4.76× single-stream, +48%
+/// over B=4); window `n_ctx` = max page budget × 8 ≈ 139,776 ≤ the model's
+/// 262,144 training window; KV ≈ 1.7 GB at the 12 KB/token measure keeps the
+/// load inside the 6 GB VRAM assertion. Gates (all measured on the phase-2
+/// branch, Vulkan): structural similarity vs the N=4 frozen reference
+/// ≥ 0.999 + manual sampling, self-consistency byte-identical across
+/// passes, ≥ 5% wall improvement over the post-A baseline (38.2 s), 100-page
+/// resource regression clean, Ctrl+C smoke contract updated (window 1 =
+/// pages 1–8, mechanism-A evidence pages 9–12). The compatibility key
+/// carries `;batch=8` (was `;batch=4`), so pre-unfreeze checkpoints no
+/// longer match and `--resume` rescans the whole document from scratch —
+/// an expected, documented behavior change. Phase-1 freeze discipline
+/// stands: performance numbers must come from a correctness-gated build.
+pub const WINDOW_DEPTH: usize = 8;
 
 /// Prefix marking a batch-level window failure; the scan side falls back to
 /// depth-1 (single-stream) resubmission when it sees it (plan §7.3③).
@@ -1649,6 +1706,70 @@ impl AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- BLK-1: child tokens scope subsystem lifecycle teardown. -----------
+
+    #[test]
+    fn child_observes_ancestors_but_its_cancel_stays_local() {
+        let parent = CancellationToken::new();
+        let child = parent.child();
+        // Without any request, neither side is cancelled.
+        assert!(!parent.is_cancelled());
+        assert!(!child.is_cancelled());
+        // Cancelling the child (renderer teardown) must NOT touch the parent.
+        child.request_cancel();
+        assert!(child.is_cancelled());
+        assert!(!parent.is_cancelled(), "child cancel leaked to the parent");
+        assert!(!parent.force_exit());
+        // Cancelling the parent (user Ctrl+C) must cancel every descendant.
+        let other_child = parent.child();
+        parent.request_cancel();
+        assert!(other_child.is_cancelled());
+        assert!(
+            !other_child.force_exit(),
+            "single parent cancel is graceful"
+        );
+        // Escalation on the parent is observed by descendants too.
+        parent.request_cancel();
+        assert!(parent.force_exit());
+        assert!(other_child.force_exit());
+    }
+
+    #[test]
+    fn child_chain_propagates_through_nesting() {
+        let root = CancellationToken::new();
+        let mid = root.child();
+        let leaf = mid.child();
+        assert!(!leaf.is_cancelled());
+        // The leaf's own double request escalates only itself.
+        leaf.request_cancel();
+        leaf.request_cancel();
+        assert!(leaf.force_exit());
+        assert!(!mid.is_cancelled());
+        assert!(!mid.force_exit());
+        // Ancestor single cancel reaches the deepest descendant gracefully; a
+        // sibling that self-escalated keeps its own stronger state.
+        let leaf2 = mid.child();
+        root.request_cancel();
+        assert!(leaf.is_cancelled());
+        assert!(leaf2.is_cancelled());
+        assert!(!leaf2.force_exit(), "one ancestor cancel stays graceful");
+        assert!(leaf.force_exit(), "self-escalated leaf keeps its own state");
+    }
+
+    #[test]
+    fn child_keeps_observing_after_the_parent_handle_is_dropped() {
+        // The child keeps the ancestor chain alive through its own Arc, so a
+        // dropped parent handle leaves its recorded state observable.
+        let child = {
+            let parent = CancellationToken::new();
+            let child = parent.child();
+            parent.request_cancel();
+            child
+        };
+        assert!(child.is_cancelled());
+        assert!(!child.force_exit());
+    }
 
     #[test]
     fn json_validator_accepts_escaped_windows_paths_and_balanced_containers() {

@@ -749,6 +749,7 @@ dependencies = [
  "ocrx-pdf",
  "ocrx-runtime",
  "ocrx-skill",
+ "serde_json",
  "vulkano",
 ]
 

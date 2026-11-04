@@ -131,6 +131,11 @@ pub enum ProgressMode {
 pub struct Reporter {
     pub stdout: String,
     pub stderr: String,
+    /// When set, JSON error reports join the stderr diagnostics instead of
+    /// stdout. The orchestrated multi-document scan enables this: its stdout
+    /// must stay exactly one aggregate JSON object, so per-document errors
+    /// are logs (review BLK-4). Single-command behavior is unchanged.
+    pub json_errors_on_stderr: bool,
 }
 
 impl Reporter {
@@ -141,6 +146,10 @@ impl Reporter {
 
     pub fn error(&mut self, error: &ErrorReport, format: ReportFormat) {
         match format {
+            ReportFormat::Json if self.json_errors_on_stderr => {
+                self.stderr.push_str(&error.to_json());
+                self.stderr.push('\n');
+            }
             ReportFormat::Json => {
                 self.stdout.push_str(&error.to_json());
                 self.stdout.push('\n');
@@ -729,6 +738,40 @@ where
     ) -> io::Result<JobSummary> {
         self.renderer.preflight()?;
         let mut model = self.loader.load()?;
+        self.run_pages_with_model(
+            &mut model,
+            page_numbers,
+            output_root,
+            compatibility,
+            resume,
+            keep_pages,
+            cancellation,
+            heartbeat,
+        )
+    }
+
+    /// [`run_with_checkpoints_heartbeat`] over an EXTERNALLY OWNED model
+    /// (X1 cross-document orchestration): the orchestrated scan keeps one
+    /// loaded runtime alive across documents, so each document's window
+    /// loop runs against the shared actor instead of loading its own.
+    /// Semantics are identical to the loading variant, minus the preflight
+    /// and load (the orchestrator owns both).
+    ///
+    /// # Errors
+    ///
+    /// Same failure surface as [`run_with_checkpoints_heartbeat`].
+    #[allow(clippy::too_many_arguments)] // mirrors the loading variant
+    pub fn run_pages_with_model(
+        &mut self,
+        model: &mut M,
+        page_numbers: &[u32],
+        output_root: impl AsRef<Path>,
+        compatibility: &CompatibilityKey,
+        resume: bool,
+        keep_pages: bool,
+        cancellation: &CancellationToken,
+        heartbeat: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> io::Result<JobSummary> {
         let root = output_root.as_ref();
         fs::create_dir_all(root)?;
         let mut completed = 0_u32;
@@ -790,8 +833,7 @@ where
             if window.len() == 1 {
                 let page = window[0];
                 terminal.push(
-                    match self.serial_attempt_outcome(&mut model, page, 1, cancellation, heartbeat)
-                    {
+                    match self.serial_attempt_outcome(model, page, 1, cancellation, heartbeat) {
                         SerialOutcome::RenderFailed { cancelled } => {
                             TerminalPage::RenderFailed { page, cancelled }
                         }
@@ -854,7 +896,7 @@ where
             > = std::collections::BTreeMap::new();
             if !images.is_empty() {
                 let results = self.recognizer.recognize_window_cancelled(
-                    &mut model,
+                    model,
                     &images,
                     cancellation,
                     heartbeat,
@@ -898,7 +940,7 @@ where
                                 batch_results.remove(&pending);
                                 terminal.push(
                                     match self.serial_attempt_outcome(
-                                        &mut model,
+                                        model,
                                         pending,
                                         1,
                                         cancellation,
@@ -942,8 +984,7 @@ where
                     // Retry budget mirrors the serial machine: the batched
                     // call was attempt 1, so up to two perturbed retries
                     // remain (attempts 2/3).
-                    match self.serial_attempt_outcome(&mut model, page, 2, cancellation, heartbeat)
-                    {
+                    match self.serial_attempt_outcome(model, page, 2, cancellation, heartbeat) {
                         SerialOutcome::RenderFailed { cancelled } => {
                             terminal.push(TerminalPage::RenderFailed { page, cancelled });
                         }
@@ -2690,6 +2731,84 @@ mod tests {
         );
         assert!(root.join("page-0001.checkpoint").is_file());
         assert!(root.join("page-0003.checkpoint").is_file());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn run_pages_with_model_matches_the_loading_entry_point() {
+        // X1: the orchestrated entry point (externally owned model) must
+        // behave identically to the loading one — same summary, same
+        // checkpoints, same committed artifacts — for a clean window and for
+        // a render-failed page.
+        let root = test_dir("run-pages-with-model");
+        let _ = fs::remove_dir_all(&root);
+        for fail_page in [None, Some(2)] {
+            let mut summaries = Vec::new();
+            let mut targets = Vec::new();
+            for (mode, entry) in [("loading", 0u8), ("shared", 1u8)] {
+                let target = root.join(format!("fail{fail_page:?}-{mode}"));
+                let mut service = ScanService::new(
+                    FakeRenderer {
+                        calls: Vec::new(),
+                        fail_page,
+                    },
+                    FakeLoader { loads: 0 },
+                    FakeArtifacts { calls: Vec::new() },
+                );
+                let summary = if entry == 0 {
+                    service
+                        .run_with_checkpoints(
+                            &[1, 2, 3],
+                            &target,
+                            &degeneration_compatibility(),
+                            false,
+                        )
+                        .unwrap()
+                } else {
+                    let mut model = service.loader.load().unwrap();
+                    service
+                        .run_pages_with_model(
+                            &mut model,
+                            &[1, 2, 3],
+                            &target,
+                            &degeneration_compatibility(),
+                            false,
+                            false,
+                            &CancellationToken::new(),
+                            &mut |_, _| {},
+                        )
+                        .unwrap()
+                };
+                summaries.push(summary);
+                targets.push(target);
+            }
+            assert_eq!(
+                summaries[0].completed_pages, summaries[1].completed_pages,
+                "completed pages diverged between entry points"
+            );
+            assert_eq!(
+                summaries[0].failed_pages, summaries[1].failed_pages,
+                "failed pages diverged between entry points"
+            );
+            let expected_completed =
+                u32::from(fail_page.is_none()) * 3 + u32::from(fail_page.is_some()) * 2;
+            assert_eq!(summaries[0].completed_pages, expected_completed);
+            for page in [1, 2, 3] {
+                for suffix in ["checkpoint", "md"] {
+                    let name = format!("page-{page:04}.{suffix}");
+                    assert_eq!(
+                        fs::read(targets[0].join(&name)).ok(),
+                        fs::read(targets[1].join(&name)).ok(),
+                        "{name} diverged between entry points"
+                    );
+                }
+            }
+            assert_eq!(
+                fs::read(targets[0].join("document.md")).ok(),
+                fs::read(targets[1].join("document.md")).ok(),
+                "document.md diverged between entry points"
+            );
+        }
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -4,6 +4,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+use super::step_profile::{Segment, StepProfile, StepProfiler};
 use super::{
     Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, Runtime,
     RuntimeInfo, RuntimeTelemetry,
@@ -98,6 +99,36 @@ impl RepetitionLoopDetector {
     }
 }
 
+/// Greedy argmax over a full logits row, byte-equivalent to
+/// `iter().enumerate().max_by(|(_, l), (_, r)| l.total_cmp(r))` — including
+/// tie resolution (the LAST maximum wins) and the `f32::total_cmp` total
+/// order (NaN payloads, ±0, ±inf) — expressed over the total-order integer
+/// key so LLVM can vectorize the reduction (phase-2 A2b: the Rust-side
+/// argmax measured 3.45 s of the 30.4 s window total on the gold set,
+/// T0.1 `argmax` bucket).
+///
+/// Returns `None` for an empty slice, like `max_by`.
+fn argmax_total_cmp(logits: &[f32]) -> Option<usize> {
+    // `f32::total_cmp` maps a float to this totally-ordered i32 key:
+    // bits ^ (((bits >> 31) as u32) >> 1) — flip the sign bit of positives,
+    // the whole word of negatives. Comparing keys == comparing total_cmp.
+    let key = |value: f32| -> i32 {
+        let bits = value.to_bits() as i32;
+        bits ^ ((((bits >> 31) as u32) >> 1) as i32)
+    };
+    let mut best_index: Option<usize> = None;
+    let mut best_key = i32::MIN;
+    for (index, &value) in logits.iter().enumerate() {
+        let candidate = key(value);
+        // `>=` keeps the LAST maximum, exactly like `max_by`.
+        if candidate >= best_key {
+            best_key = candidate;
+            best_index = Some(index);
+        }
+    }
+    best_index
+}
+
 /// Main-thread handle for the dedicated inference thread (plan §4 T2.3/P4.1).
 ///
 /// `LlamaContext<'a>` borrows its `LlamaModel`, so "a runtime that owns both"
@@ -128,6 +159,8 @@ enum WorkerRequest {
         requests: Vec<InferenceRequest>,
         cancellation: CancellationToken,
     },
+    /// Step-profile snapshot request (phase-2 T0.1/A1 debug channel).
+    StepProfile,
     Telemetry,
 }
 
@@ -140,6 +173,8 @@ enum WorkerMessage {
     },
     Generated(Result<InferenceResponse, String>),
     WindowGenerated(Vec<Result<InferenceResponse, String>>),
+    /// Cumulative step-profile snapshot (debug channel, `OCRX_STEP_PROFILE`).
+    StepProfile(StepProfile),
     Telemetry(RuntimeTelemetry),
 }
 
@@ -234,7 +269,11 @@ impl LlamaMtmdRuntime {
                 }) => progress(event),
                 Ok(WorkerMessage::Generated(result)) => return result,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
-                Ok(WorkerMessage::Loaded(_) | WorkerMessage::WindowGenerated(_)) => {}
+                Ok(
+                    WorkerMessage::Loaded(_)
+                    | WorkerMessage::WindowGenerated(_)
+                    | WorkerMessage::StepProfile(_),
+                ) => {}
                 Err(_) => {
                     // Worker panic or premature exit: fail loud (plan §4).
                     self.poison = Some("inference worker terminated".to_owned());
@@ -280,12 +319,40 @@ impl LlamaMtmdRuntime {
                 }) => progress(page, event),
                 Ok(WorkerMessage::WindowGenerated(results)) => return results,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
-                Ok(WorkerMessage::Loaded(_)) | Ok(WorkerMessage::Generated(_)) => {}
+                Ok(
+                    WorkerMessage::Loaded(_)
+                    | WorkerMessage::Generated(_)
+                    | WorkerMessage::StepProfile(_),
+                ) => {}
                 Err(_) => {
                     // Worker panic or premature exit: fail loud (plan §4).
                     self.poison = Some("inference worker terminated".to_owned());
                     return failed(&self.poison_message(), expected);
                 }
+            }
+        }
+    }
+
+    /// Snapshot of the cumulative per-step profiling (debug channel, plan
+    /// T0.1/A1). All-zero unless `OCRX_STEP_PROFILE` opted in before the
+    /// windows ran. A poisoned or dead worker returns the default value —
+    /// the profile is diagnostics, never an error channel.
+    #[must_use]
+    pub fn step_profile(&self) -> StepProfile {
+        if self.poison.is_some() {
+            return StepProfile::default();
+        }
+        let Some(requests) = &self.requests else {
+            return StepProfile::default();
+        };
+        if requests.send(WorkerRequest::StepProfile).is_err() {
+            return StepProfile::default();
+        }
+        loop {
+            match self.messages.recv() {
+                Ok(WorkerMessage::StepProfile(profile)) => return profile,
+                Ok(_) => {}
+                Err(_) => return StepProfile::default(),
             }
         }
     }
@@ -394,6 +461,9 @@ fn run_inference_worker(
     // for a full WINDOW_DEPTH window's worst-case budget, reused across
     // windows with a full KV clear per window (deterministic fresh state).
     let mut window_context: Option<(u32, LlamaContext<'_>)> = None;
+    // T0.1/A1: cumulative per-step profiling across every window (zero-cost
+    // unless OCRX_STEP_PROFILE opts in).
+    let mut step_profile = StepProfile::default();
     for request in requests {
         match request {
             WorkerRequest::Telemetry => {
@@ -401,11 +471,19 @@ fn run_inference_worker(
                     return;
                 }
             }
+            WorkerRequest::StepProfile => {
+                if messages
+                    .send(WorkerMessage::StepProfile(step_profile))
+                    .is_err()
+                {
+                    return;
+                }
+            }
             WorkerRequest::GenerateWindow {
                 requests,
                 cancellation,
             } => {
-                let results = generate_window_pages(
+                let (results, window_profile) = generate_window_pages(
                     &model,
                     &mtmd,
                     &backend,
@@ -417,6 +495,7 @@ fn run_inference_worker(
                     &mut telemetry,
                     &messages,
                 );
+                step_profile.accumulate(&window_profile);
                 if messages
                     .send(WorkerMessage::WindowGenerated(results))
                     .is_err()
@@ -540,9 +619,9 @@ fn generate_window_pages<'a>(
     cancellation: &CancellationToken,
     telemetry: &mut RuntimeTelemetry,
     messages: &Sender<WorkerMessage>,
-) -> Vec<Result<InferenceResponse, String>> {
+) -> (Vec<Result<InferenceResponse, String>>, StepProfile) {
     if requests.is_empty() {
-        return Vec::new();
+        return (Vec::new(), StepProfile::default());
     }
     // Size the window context for the worst case of a full WINDOW_DEPTH
     // window (tail windows reuse it with fewer live slots).
@@ -561,13 +640,16 @@ fn generate_window_pages<'a>(
             Ok(created) => *window_context = Some((n_ctx, created)),
             Err(error) => {
                 let message = format!("{}window context: {error}", super::BATCH_ERROR_PREFIX);
-                return std::iter::repeat_with(|| Err(message.clone()))
+                let results = std::iter::repeat_with(|| Err(message.clone()))
                     .take(requests.len())
-                    .collect();
+                    .collect::<Vec<_>>();
+                return (results, StepProfile::default());
             }
         }
     }
     let started = Instant::now();
+    let mut profiler = StepProfiler::new();
+    profiler.open_window();
     let eos = model.token_eos();
     let Some((_, context)) = window_context.as_mut() else {
         unreachable!("window context built above");
@@ -613,6 +695,7 @@ fn generate_window_pages<'a>(
             });
             continue;
         }
+        profiler.begin(Segment::SlotSetup);
         let bitmap =
             match MtmdBitmap::from_image_data(request.width, request.height, &request.image_rgb8) {
                 Ok(bitmap) => bitmap,
@@ -641,7 +724,10 @@ fn generate_window_pages<'a>(
             },
             &[&bitmap],
         ) {
-            Ok(chunks) => chunks,
+            Ok(chunks) => {
+                profiler.end(Segment::SlotSetup);
+                chunks
+            }
             Err(error) => {
                 slots.push(WindowSlot {
                     request_page: request.page,
@@ -676,8 +762,12 @@ fn generate_window_pages<'a>(
             });
             continue;
         }
+        profiler.begin(Segment::Encode);
         let position = match chunks.eval_chunks(mtmd, context, 0, slot as i32, 512, true) {
-            Ok(position) => position,
+            Ok(position) => {
+                profiler.end(Segment::Encode);
+                position
+            }
             Err(error) => {
                 slots.push(WindowSlot {
                     request_page: request.page,
@@ -699,12 +789,7 @@ fn generate_window_pages<'a>(
         // row: sample this slot's seed before the next page's eval overwrites
         // the buffer (Spike B behavior).
         let seed_row = context.get_logits();
-        let seed = seed_row
-            .iter()
-            .enumerate()
-            .max_by(|(_, left), (_, right)| left.total_cmp(right))
-            .map(|(id, _)| id)
-            .unwrap_or(usize::MAX);
+        let seed = argmax_total_cmp(seed_row).unwrap_or(usize::MAX);
         if seed == usize::MAX {
             slots.push(WindowSlot {
                 request_page: request.page,
@@ -797,6 +882,7 @@ fn generate_window_pages<'a>(
             }
             break;
         }
+        profiler.begin(Segment::BatchBuild);
         let mut batch = LlamaBatch::new(slots.len(), slots.len() as i32);
         let mut logits_index = Vec::new();
         let mut batch_add_failure: Option<String> = None;
@@ -837,7 +923,10 @@ fn generate_window_pages<'a>(
             }
             break;
         }
+        profiler.end(Segment::BatchBuild);
+        profiler.begin(Segment::DecodeWait);
         let decode = context.decode(&mut batch);
+        profiler.end(Segment::DecodeWait);
         if let Err(error) = decode {
             let message = format!("{}batch decode: {error}", super::BATCH_ERROR_PREFIX);
             for slot in &mut slots {
@@ -848,6 +937,7 @@ fn generate_window_pages<'a>(
             }
             break;
         }
+        profiler.count_step();
         for (slot_index, index) in logits_index {
             let slot = &mut slots[slot_index];
             if slot.first_token_ms == 0 {
@@ -864,13 +954,12 @@ fn generate_window_pages<'a>(
                     },
                 });
             }
+            profiler.begin(Segment::LogitsFfi);
             let logits = context.get_logits_ith(index);
-            let best = logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, left), (_, right)| left.total_cmp(right))
-                .map(|(id, _)| id)
-                .map(|id| id as i32);
+            profiler.end(Segment::LogitsFfi);
+            profiler.begin(Segment::Argmax);
+            let best = argmax_total_cmp(logits).map(|id| id as i32);
+            profiler.end(Segment::Argmax);
             let Some(best) = best else {
                 slot.finished = true;
                 slot.response = Some(Err("empty logits".to_owned()));
@@ -886,7 +975,10 @@ fn generate_window_pages<'a>(
                 }));
                 continue;
             }
-            match model.token_to_piece_bytes(token, 64, false, None) {
+            profiler.begin(Segment::Detokenize);
+            let piece_result = model.token_to_piece_bytes(token, 64, false, None);
+            profiler.end(Segment::Detokenize);
+            match piece_result {
                 Ok(piece) => slot.output.push_str(&String::from_utf8_lossy(&piece)),
                 Err(error) => {
                     slot.finished = true;
@@ -899,7 +991,11 @@ fn generate_window_pages<'a>(
             // the seed and the window output was wrong.
             slot.last = token;
             slot.generated += 1;
-            if slot.detector.push(best) {
+            profiler.count_token();
+            profiler.begin(Segment::Ring);
+            let loop_detected = slot.detector.push(best);
+            profiler.end(Segment::Ring);
+            if loop_detected {
                 slot.finished = true;
                 let output = std::mem::take(&mut slot.output);
                 slot.response = Some(Ok(InferenceResponse {
@@ -909,6 +1005,7 @@ fn generate_window_pages<'a>(
             }
         }
     }
+    profiler.close_window(started.elapsed());
     // Slot recycling (Spike B-verified): per-sequence KV removal, then the
     // slot teardown.
     for slot_index in 0..slots.len() {
@@ -937,7 +1034,8 @@ fn generate_window_pages<'a>(
     telemetry.generation_time_ms = telemetry
         .generation_time_ms
         .saturating_add(started.elapsed().as_millis() as u64);
-    results
+    let profile = profiler.snapshot();
+    (results, profile)
 }
 
 /// One page generation: the former per-call body, unchanged in behavior
@@ -1056,11 +1154,7 @@ fn generate_one_page(
         // failures still contribute token/timing counts (MINOR 10).
         let next_token = (|| -> Result<LlamaToken, String> {
             let logits = context.get_logits();
-            let (index, _) = logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, left), (_, right)| left.total_cmp(right))
-                .ok_or_else(|| "empty logits".to_owned())?;
+            let index = argmax_total_cmp(logits).ok_or_else(|| "empty logits".to_owned())?;
             let token = LlamaToken::new(
                 i32::try_from(index).map_err(|_| "logits index exceeds token range".to_owned())?,
             );
@@ -1171,7 +1265,8 @@ impl Runtime for LlamaMtmdRuntime {
                     WorkerMessage::Progress { .. }
                     | WorkerMessage::Loaded(_)
                     | WorkerMessage::Generated(_)
-                    | WorkerMessage::WindowGenerated(_),
+                    | WorkerMessage::WindowGenerated(_)
+                    | WorkerMessage::StepProfile(_),
                 ) => {}
                 Err(_) => return self.telemetry,
             }
@@ -1203,7 +1298,7 @@ impl Runtime for LlamaMtmdRuntime {
 
 #[cfg(test)]
 mod tests {
-    use super::RepetitionLoopDetector;
+    use super::{RepetitionLoopDetector, argmax_total_cmp};
 
     /// Feeds `tokens` one by one and reports whether the detector fired.
     fn fires(tokens: &[i32]) -> bool {
@@ -1215,6 +1310,90 @@ mod tests {
     fn p1_loop_triggers_at_sixteen_repeats_not_fifteen() {
         assert!(!fires(&[7; 15]));
         assert!(fires(&[7; 16]));
+    }
+
+    // --- A2b: argmax_total_cmp equivalence property (greedy sampling). -----
+
+    /// Reference implementation: the exact expression the decode loop used
+    /// before A2b (`max_by` over `total_cmp`).
+    fn argmax_reference(logits: &[f32]) -> Option<usize> {
+        logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, left), (_, right)| left.total_cmp(right))
+            .map(|(id, _)| id)
+    }
+
+    /// Deterministic bit-pattern sweep: every float bit pattern class that
+    /// `f32::total_cmp` orders specially (±0, ±inf, NaN payloads, subnormals,
+    /// sign variations) must resolve identically, ties included.
+    #[test]
+    fn argmax_matches_max_by_total_cmp_on_special_values() {
+        let specials = [
+            0.0_f32,
+            -0.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            -f32::NAN,
+            f32::MIN_POSITIVE,
+            -f32::MIN_POSITIVE,
+            f32::MAX,
+            f32::MIN,
+            1.0,
+            -1.0,
+        ];
+        // All pairs of specials, both orders, plus duplicated tails for ties.
+        for &left in &specials {
+            for &right in &specials {
+                let row = [left, right];
+                assert_eq!(
+                    argmax_total_cmp(&row),
+                    argmax_reference(&row),
+                    "special pair [{left:?}, {right:?}] diverged"
+                );
+                let tied = [left, left, left];
+                assert_eq!(
+                    argmax_total_cmp(&tied),
+                    argmax_reference(&tied),
+                    "all-tied row [{left:?} x3] diverged"
+                );
+            }
+        }
+        // Last-max-wins tie order across a mixed row.
+        let tied_mixed = [-1.0, 0.0, -0.0, 1.0, 1.0];
+        assert_eq!(argmax_total_cmp(&tied_mixed), Some(4));
+        assert_eq!(argmax_reference(&tied_mixed), Some(4));
+        assert_eq!(argmax_total_cmp(&[]), None);
+    }
+
+    /// Wide randomized property: 5,000 pseudo-random rows (bit-level f32
+    /// noise, so NaNs and ±0 appear at realistic adversarial rates) must
+    /// agree with the reference on every index.
+    #[test]
+    fn argmax_matches_max_by_total_cmp_on_random_rows() {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next_bits = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) as u32
+        };
+        for _ in 0..5_000 {
+            let len = (next_bits() % 64) as usize + 1;
+            let row: Vec<f32> = (0..len)
+                .map(|_| match next_bits() % 8 {
+                    0 => f32::from_bits(next_bits()), // arbitrary bits: NaNs land here
+                    1 => f32::from_bits(next_bits() & 0x8000_0000), // ±0
+                    _ => f32::from_bits(next_bits()) - 1.5,
+                })
+                .collect();
+            assert_eq!(
+                argmax_total_cmp(&row),
+                argmax_reference(&row),
+                "row diverged: {row:?}"
+            );
+        }
     }
 
     #[test]
@@ -1312,6 +1491,7 @@ mod tests {
         // request's budget — a low-budget head page batched with high-budget
         // tail pages previously under-provisioned the unified KV and overflowed
         // the tail pages mid-window (batch failure -> depth-1 fallback).
+        let depth = ocrx_core::WINDOW_DEPTH as u32;
         let low = InferenceRequest::new(1, 1, 1, vec![1; 3], 1).unwrap();
         let high = InferenceRequest::new(2, 1, 1, vec![1; 3], 8192).unwrap();
         let image_tokens = 1024_u32;
@@ -1323,21 +1503,29 @@ mod tests {
             capacity >= low_budget + high_budget,
             "capacity {capacity} under-provisions the mixed window"
         );
-        assert_eq!(capacity, high_budget * 4);
+        assert_eq!(capacity, high_budget * depth);
         // The pre-fix formula (first request's budget x depth) under-
         // provisioned exactly this case; lock the regression in.
-        let legacy = low_budget * 4;
+        let legacy = low_budget * depth;
         assert!(
             capacity > legacy,
             "capacity {capacity} must exceed the legacy first-request formula ({legacy})"
         );
         // Every window reserves full WINDOW_DEPTH slots so the context is
-        // reused across compositions without reallocation: a two-page window
-        // provisions exactly like a four-page one.
+        // reused across compositions without reallocation: a smaller window
+        // provisions exactly like a full one.
         let equal = super::window_context_capacity(image_tokens, &[high.clone(), high.clone()]);
-        assert_eq!(equal, high_budget * 4);
+        assert_eq!(equal, high_budget * depth);
         let tail = super::window_context_capacity(image_tokens, &[high]);
-        assert_eq!(tail, high_budget * 4);
+        assert_eq!(tail, high_budget * depth);
+        // Stage C (depth 8) budget bound: the reference profile's worst-case
+        // window context stays inside the model's 262,144 training window.
+        let reference_budget = 1024_u32 + 64 + 16_384;
+        assert!(
+            u64::from(reference_budget * depth) <= 262_144,
+            "depth {depth} window context {} exceeds the training window",
+            reference_budget * depth,
+        );
         let _ = low;
     }
 
@@ -1632,5 +1820,85 @@ mod tests {
             }
         });
         assert_eq!(runtime.telemetry().generated_tokens, 42);
+    }
+
+    #[test]
+    fn step_profile_roundtrip_works_while_the_worker_is_alive() {
+        // T0.1/A1 debug channel: the snapshot request rides the same actor
+        // protocol, returns the worker's cumulative value, and is independent
+        // of the telemetry channel.
+        let runtime = handle_with_worker(|requests, messages| {
+            for request in requests {
+                match request {
+                    WorkerRequest::StepProfile => {
+                        let _ =
+                            messages.send(WorkerMessage::StepProfile(super::super::StepProfile {
+                                windows: 3,
+                                steps: 99,
+                                tokens: 1_000,
+                                ..super::super::StepProfile::default()
+                            }));
+                    }
+                    WorkerRequest::Telemetry => {
+                        let _ =
+                            messages.send(WorkerMessage::Telemetry(RuntimeTelemetry::default()));
+                    }
+                    _ => {}
+                }
+            }
+        });
+        let profile = runtime.step_profile();
+        assert_eq!(profile.windows, 3);
+        assert_eq!(profile.steps, 99);
+        assert_eq!(profile.tokens, 1_000);
+        // The telemetry channel still answers after step-profile traffic.
+        assert_eq!(runtime.telemetry().generated_tokens, 0);
+    }
+
+    #[test]
+    fn step_profile_survives_a_window_and_stale_message_drain() {
+        // A window reply plus a telemetry reply are queued before the profile
+        // request; the profile roundtrip must drain them without hanging or
+        // returning garbage (mirrors the telemetry contract after a window).
+        let mut runtime = handle_with_worker(|requests, messages| {
+            for request in requests {
+                match request {
+                    WorkerRequest::GenerateWindow {
+                        requests: pages, ..
+                    } => {
+                        let _ = messages.send(WorkerMessage::WindowGenerated(
+                            pages
+                                .iter()
+                                .map(|_| {
+                                    Ok(InferenceResponse {
+                                        raw_output: String::new(),
+                                        finish_reason: "eos".to_owned(),
+                                    })
+                                })
+                                .collect::<Vec<_>>(),
+                        ));
+                        let _ = messages.send(WorkerMessage::Telemetry(RuntimeTelemetry {
+                            generated_tokens: 7,
+                            ..RuntimeTelemetry::default()
+                        }));
+                    }
+                    WorkerRequest::StepProfile => {
+                        let _ =
+                            messages.send(WorkerMessage::StepProfile(super::super::StepProfile {
+                                steps: 5,
+                                ..super::super::StepProfile::default()
+                            }));
+                    }
+                    _ => {}
+                }
+            }
+        });
+        let pages = vec![
+            test_request(),
+            InferenceRequest::new(2, 2, 2, vec![1; 12], 16).unwrap(),
+        ];
+        let _ = runtime.generate_window(pages, &CancellationToken::new(), &mut |_, _| {});
+        let profile = runtime.step_profile();
+        assert_eq!(profile.steps, 5);
     }
 }

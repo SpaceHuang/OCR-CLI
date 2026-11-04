@@ -21,6 +21,24 @@ impl RuntimeTelemetry {
             self.generated_tokens as f64 / (self.generation_time_ms as f64 / 1_000.0)
         }
     }
+
+    /// Per-document delta from a baseline snapshot (X1 shared actor): the
+    /// runtime accumulates over its whole lifetime, so an orchestrated
+    /// document reports `snapshot - baseline` for the additive fields.
+    /// `first_token_ms` is a min-since-actor-load and cannot be differenced -
+    /// the snapshot passes through (a timing field, excluded from the
+    /// structured gpu-resource.json comparison).
+    #[must_use]
+    pub fn delta_from(&self, base: &Self) -> Self {
+        Self {
+            load_time_ms: self.load_time_ms.saturating_sub(base.load_time_ms),
+            first_token_ms: self.first_token_ms,
+            generated_tokens: self.generated_tokens.saturating_sub(base.generated_tokens),
+            generation_time_ms: self
+                .generation_time_ms
+                .saturating_sub(base.generation_time_ms),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,6 +225,9 @@ mod llama_mtmd;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub use llama_mtmd::LlamaMtmdRuntime;
+
+mod step_profile;
+pub use step_profile::{STEP_PROFILE_ENV, StepProfile};
 
 #[derive(Debug, Default)]
 pub struct FakeRuntime;
@@ -424,6 +445,38 @@ mod tests {
                 elapsed_seconds: 0,
             }]
         );
+    }
+
+    #[test]
+    fn telemetry_delta_from_isolates_per_document_contribution() {
+        // Rereview BLK-3: the shared actor accumulates; an orchestrated
+        // document reports snapshot - baseline. Additive fields subtract;
+        // first_token_ms is a min and passes through untouched.
+        let base = RuntimeTelemetry {
+            load_time_ms: 1_200,
+            first_token_ms: 121,
+            generated_tokens: 5_000,
+            generation_time_ms: 12_000,
+        };
+        let snapshot = RuntimeTelemetry {
+            load_time_ms: 1_200,
+            first_token_ms: 100,
+            generated_tokens: 7_283,
+            generation_time_ms: 16_500,
+        };
+        let delta = snapshot.delta_from(&base);
+        assert_eq!(delta.load_time_ms, 0);
+        assert_eq!(delta.generated_tokens, 2_283);
+        assert_eq!(delta.generation_time_ms, 4_500);
+        assert_eq!(delta.first_token_ms, 100);
+        // A zero base (PerCall / slot-filling document) is the identity.
+        assert_eq!(snapshot.delta_from(&RuntimeTelemetry::default()), snapshot);
+        // No underflow: a stale base saturates at zero.
+        let stale = snapshot.delta_from(&RuntimeTelemetry {
+            generated_tokens: 9_999,
+            ..RuntimeTelemetry::default()
+        });
+        assert_eq!(stale.generated_tokens, 0);
     }
 
     #[test]
