@@ -1,4 +1,4 @@
-# Functional smoke of install.ps1's GPU variant priority chain (plan §5 T1.3).
+﻿# Functional smoke of install.ps1's GPU variant priority chain (plan §5 T1.3).
 #
 # Builds minimal fake release archives (a staged skill root with bin/ and a
 # SHA256SUMS manifest) and runs install.ps1 in a child PowerShell for the
@@ -152,6 +152,38 @@ try {
   Write-Host "ok   broken-cuda x cuda-detect -> falls through to ocrx-vulkan.exe"
 } catch {
   Write-Host "FAIL broken-cuda degrade: $($_.Exception.Message)"
+  $Failed += 1
+}
+
+# Shared-bin regression (2026-11-05): a prefix bin that hosts foreign
+# tools (uv/hf style) must keep them across an upgrade - the wholesale
+# swap used to orphan them into bin.old-*, breaking their PATH entries.
+$SharedZip = $ArchiveFor['cpu']
+$PrefixShared = Join-Path $Work 'prefix-shared'
+$SharedBin = Join-Path $PrefixShared 'bin'
+New-Item -ItemType Directory -Force -Path $SharedBin | Out-Null
+Copy-Item "$env:WINDIR\System32\hostname.exe" (Join-Path $SharedBin 'ocrx.exe')  # previous install
+Copy-Item "$env:WINDIR\System32\hostname.exe" (Join-Path $SharedBin 'uv.exe')     # foreign tool
+Set-Content -Path (Join-Path $SharedBin 'tool-data.txt') -Value 'foreign data file'
+$ExitShared = Run-Install $SharedZip 'none' $PrefixShared
+if ($ExitShared -ne 0) { Fail "shared-bin install failed (exit $ExitShared)" }
+try {
+  if (-not (Test-Path (Join-Path $SharedBin 'uv.exe') -PathType Leaf)) {
+    Fail 'shared-bin upgrade lost the foreign tool (uv.exe)'
+  }
+  if (-not (Test-Path (Join-Path $SharedBin 'tool-data.txt') -PathType Leaf)) {
+    Fail 'shared-bin upgrade lost the foreign data file'
+  }
+  if (-not (Test-Path (Join-Path $SharedBin 'ocrx.exe') -PathType Leaf)) {
+    Fail 'shared-bin upgrade did not install ocrx.exe'
+  }
+  $StaleOld = @(Get-ChildItem -Path $PrefixShared -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue)
+  if ($StaleOld.Count -gt 0) {
+    Fail "shared-bin upgrade left bin.old-* dirs behind: $($StaleOld.Count)"
+  }
+  Write-Host 'ok   shared-bin upgrade preserves foreign files, installs ocrx, leaves no bin.old-*'
+} catch {
+  Write-Host "FAIL shared-bin: $($_.Exception.Message)"
   $Failed += 1
 }
 

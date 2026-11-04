@@ -1,4 +1,4 @@
-# Install OCR-CLI on Windows (user directory, no administrator required).
+﻿# Install OCR-CLI on Windows (user directory, no administrator required).
 # Mirrors scripts/install.sh; platform differences are only the package format
 # (zip), paths, and shell. Decision 4: pdfium.dll is bundled with the release;
 # model weights and GPU runtime are never downloaded by this installer.
@@ -198,7 +198,31 @@ try {
     Remove-Item -Recurse -Force $StagingBin -ErrorAction SilentlyContinue
     Fail 'no binary staged for install' 4
   }
+  # Shared-bin safety (2026-11-05): an install prefix's bin/ is often a
+  # SHARED directory (uv, hf, and friends live next to ocrx on the user's
+  # PATH). The wholesale swap used to orphan every non-ocrx file into
+  # bin.old-*, silently breaking those tools. Foreign files - anything the
+  # archive does not ship and the installer does not manage - are copied
+  # into the staging dir BEFORE the swap, so the atomic swap carries them
+  # and the old dir can be removed safely afterwards. A failed swap rolls
+  # the old bin back with its foreign files untouched (nothing moved out).
+  $ManagedNames = @('ocrx.exe', 'ocrx-cpu.exe', 'ocrx-vulkan.exe', 'ocrx-cuda.exe',
+                    'pdfium.dll', 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
   $HadExisting = Test-Path $BinDir
+  $RestoredForeign = 0
+  if ($HadExisting) {
+    $StagedNames = @(Get-ChildItem -File -Path $StagingBin | ForEach-Object { $_.Name })
+    $ForeignFiles = @(Get-ChildItem -File -Path $BinDir | Where-Object {
+      ($StagedNames -notcontains $_.Name) -and ($ManagedNames -notcontains $_.Name)
+    })
+    foreach ($ForeignFile in $ForeignFiles) {
+      Copy-Item $ForeignFile.FullName (Join-Path $StagingBin $ForeignFile.Name) -Force
+      $RestoredForeign += 1
+    }
+    if ($RestoredForeign -gt 0) {
+      Write-Host "shared bin: preserving $RestoredForeign non-ocrx file(s) across the upgrade"
+    }
+  }
   if ($HadExisting) { Rename-Item $BinDir -NewName $OldName }
   try {
     Rename-Item $StagingBin -NewName 'bin'
@@ -208,7 +232,9 @@ try {
   }
   if ($HadExisting) {
     # Remove-Item has no -PassThru on Windows PowerShell 5.1; detect success
-    # by checking whether the old directory survived the removal.
+    # by checking whether the old directory survived the removal. Safe now:
+    # the old dir's content either moved into the new bin (foreign files)
+    # or is stale ocrx-managed state superseded by this install.
     $OldPath = Join-Path $Prefix $OldName
     Remove-Item -Recurse -Force $OldPath -ErrorAction SilentlyContinue
     if (Test-Path $OldPath) {
