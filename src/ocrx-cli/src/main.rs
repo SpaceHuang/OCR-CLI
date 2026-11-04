@@ -2020,6 +2020,13 @@ struct OvisRecognizer {
     /// Last cumulative step-profile snapshot (T0.1/A1 debug channel); only
     /// populated meaningfully when `OCRX_STEP_PROFILE` opts in.
     step_profile: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
+    /// Rereview BLK-3: the shared actor's telemetry/step-profile accumulate
+    /// over its whole lifetime, so each orchestrated document reports
+    /// `snapshot - baseline` (captured at this document's start) instead of
+    /// the invocation-wide cumulative. Zero for the PerCall path and for the
+    /// document that fills the shared slot (fresh runtime = zero base).
+    telemetry_base: Rc<RefCell<RuntimeTelemetry>>,
+    step_profile_base: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     fn recognize_artifact(
@@ -2061,8 +2068,12 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         // Runtime telemetry is cumulative across pages for this loaded model,
         // so the scan-wide value is the runtime's current total — merging it
         // into the previous total would double-count every completed page.
-        *self.telemetry.borrow_mut() = model.telemetry();
-        *self.step_profile.borrow_mut() = Some(model.step_profile());
+        let snapshot = model.telemetry();
+        let base = *self.telemetry_base.borrow();
+        *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
+        let profile_snapshot = model.step_profile();
+        let profile_base = self.step_profile_base.borrow().unwrap_or_default();
+        *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
         let mut png = Cursor::new(Vec::new());
         image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
             .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
@@ -2108,8 +2119,12 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         );
         // Telemetry is cumulative across windows for this loaded model, so
         // the scan-wide value is the runtime's current total.
-        *self.telemetry.borrow_mut() = model.telemetry();
-        *self.step_profile.borrow_mut() = Some(model.step_profile());
+        let snapshot = model.telemetry();
+        let base = *self.telemetry_base.borrow();
+        *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
+        let profile_snapshot = model.step_profile();
+        let profile_base = self.step_profile_base.borrow().unwrap_or_default();
+        *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
         for ((_page, image), output) in pages.iter().zip(outputs) {
             let output = match output {
                 Ok(output) => output,
@@ -2200,6 +2215,23 @@ fn scan_document(
     let report_format = env.report_format;
     let progress_mode = env.progress_mode;
     let cancellation = env.cancellation;
+    // Rereview BLK-1: cancel = whole invocation. A signal that lands during
+    // the previous document's teardown must stop this document before any
+    // work (native documents have no ScanService cancellation checks).
+    if cancellation.is_cancelled() {
+        reporter.error(
+            &ErrorReport {
+                code: 130,
+                kind: "cancelled".to_owned(),
+                message: "scan cancelled by signal".to_owned(),
+                cause: None,
+                suggestion: Some("resume with --resume".to_owned()),
+            },
+            report_format,
+        );
+        emit_reporter(reporter);
+        return 130;
+    }
     let started = Instant::now();
     let canonical_input = std::fs::canonicalize(input).unwrap_or_else(|_| input.to_path_buf());
     // Fail closed: a working directory that cannot be resolved (deleted cwd)
@@ -2502,11 +2534,17 @@ fn scan_document(
     };
     let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let step_profile = Rc::new(RefCell::new(None));
+    // Rereview BLK-3: per-document baselines for the shared actor's
+    // cumulative telemetry; captured per document after model resolution.
+    let telemetry_base = Rc::new(RefCell::new(RuntimeTelemetry::default()));
+    let step_profile_base = Rc::new(RefCell::new(None));
     let recognizer = OvisRecognizer {
         output: output.to_path_buf(),
         max_tokens: options.max_output_tokens.unwrap_or(16_384),
         telemetry: Rc::clone(&telemetry),
         step_profile: Rc::clone(&step_profile),
+        telemetry_base: Rc::clone(&telemetry_base),
+        step_profile_base: Rc::clone(&step_profile_base),
     };
     // Keep compatibility metadata stable without touching model resources.
     // Actual profile/device resolution is deferred until the final OCR queue
@@ -2672,6 +2710,12 @@ fn scan_document(
                 .map_err(|reason| reason.as_str().to_owned())
         },
         |page| {
+            // Rereview BLK-1: after the signal, in-flight native work must
+            // not keep committing - skip the page (the document's 130 return
+            // below discards its summary; committed pages stay for --resume).
+            if cancellation.is_cancelled() {
+                return Ok(());
+            }
             let native = pdfium_owner_handle
                 .borrow_mut()
                 .extract_native(page)
@@ -2723,6 +2767,10 @@ fn scan_document(
     let mut empty_markdown = Vec::new();
     let mut empty_pages_committed = 0usize;
     for (page, classification) in pages.iter().zip(&classifications) {
+        // Rereview BLK-1: stop committing empty pages after the signal.
+        if cancellation.is_cancelled() {
+            break;
+        }
         if resume_skip_pages.contains(&(*page as u32)) {
             continue;
         }
@@ -2819,8 +2867,14 @@ fn scan_document(
     // that config and skip `resolve_and_prepare_model` (and with it the
     // per-document SHA-256 pass) entirely. Resolve+verify+load happen exactly
     // once per invocation; only the first OCR-needing document pays them.
+    // Rereview BLK-2: only a document that itself needs OCR reuses the
+    // shared configuration - a pure-native document keeps the single-scan
+    // metadata (`backend` = the requested device, `ocr_model_loaded` false),
+    // regardless of whether an earlier document filled the slot.
     let shared_reuse = match env.model_slot {
-        ModelSlot::Shared(Some(shared)) => Some((shared.profile.clone(), shared.device.clone())),
+        ModelSlot::Shared(Some(shared)) if execution_plan.initialize_runtime => {
+            Some((shared.profile.clone(), shared.device.clone()))
+        }
         _ => None,
     };
     if let Some((reused_profile, reused_device)) = shared_reuse {
@@ -3032,6 +3086,14 @@ fn scan_document(
             }
         }
     }
+    // Rereview BLK-3: capture this document's telemetry baselines now - the
+    // shared slot is settled (filled by this document or an earlier one), so
+    // `snapshot - baseline` isolates exactly this document's contribution.
+    // PerCall and the slot-filling document see a fresh runtime: zero base.
+    if let ModelSlot::Shared(Some(shared)) = env.model_slot {
+        *telemetry_base.borrow_mut() = shared.runtime.telemetry();
+        *step_profile_base.borrow_mut() = Some(shared.runtime.step_profile());
+    }
     let ocr_compatibility = if execution_plan.initialize_runtime {
         make_ocr_compatibility(&compatibility, &profile, &device)
     } else {
@@ -3232,6 +3294,23 @@ fn scan_document(
         return 3;
     }
     let vram_peak_bytes = stop_vram_sampler(vram_sampler);
+    // Rereview BLK-1: any cancellation reaches here - the ScanService path
+    // via `summary.cancelled`, the native path (which never enters the
+    // service) via the token itself. Return 130 before any finalize/commit.
+    if cancellation.is_cancelled() {
+        reporter.error(
+            &ErrorReport {
+                code: 130,
+                kind: "cancelled".to_owned(),
+                message: "scan cancelled by signal".to_owned(),
+                cause: None,
+                suggestion: Some("resume with --resume".to_owned()),
+            },
+            report_format,
+        );
+        emit_reporter(reporter);
+        return 130;
+    }
     // M-10: the effective backend label — a GPU→CPU fallback means the scan
     // really ran on CPU even though `--device` requested a GPU backend.
     let effective_device = if runtime_fallback_to_cpu {
@@ -3312,20 +3391,6 @@ fn scan_document(
                 for page in &ocr_service_pages {
                     terminal_pending_pages.remove(page);
                 }
-            }
-            if summary.cancelled {
-                reporter.error(
-                    &ErrorReport {
-                        code: 130,
-                        kind: "cancelled".to_owned(),
-                        message: "scan cancelled by signal".to_owned(),
-                        cause: None,
-                        suggestion: Some("resume with --resume".to_owned()),
-                    },
-                    report_format,
-                );
-                emit_reporter(reporter);
-                return 130;
             }
             {
                 let mut all_pages = native_markdown;
@@ -3833,7 +3898,18 @@ fn run_scan_multi(options: ScanOptions) -> ! {
     let mut model_slot = ModelSlot::Shared(None);
     let mut documents: Vec<ScanSummaryDocument> = Vec::new();
     let mut cancelled = false;
+    // Rereview BLK-1 test seam: deterministic cancellation injection at a
+    // document boundary (same pattern as the OCRX_E2E_INJECT_* seams).
+    let cancel_after_documents = std::env::var("OCRX_E2E_CANCEL_AFTER_DOCUMENTS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok());
     for (index, input) in inputs.iter().enumerate() {
+        // Rereview BLK-1: cancel = whole invocation - stop at the boundary,
+        // keep the already-committed documents, exit 130.
+        if cancellation.is_cancelled() {
+            cancelled = true;
+            break;
+        }
         let canonical = std::fs::canonicalize(input).unwrap_or_else(|_| input.clone());
         // BLK-4: document boundary lines are logs, not machine output - they
         // belong on stderr so a `--report json` stdout stays parseable.
@@ -3916,6 +3992,11 @@ fn run_scan_multi(options: ScanOptions) -> ! {
             exit_code: code,
             elapsed_ms: doc_elapsed_ms,
         });
+        if let Some(limit) = cancel_after_documents
+            && documents.len() >= limit
+        {
+            cancellation.request_cancel();
+        }
     }
     // X1.3: the aggregate summary rides next to the per-document dirs; a
     // write failure is a warning, never a reason to discard finished scans.

@@ -388,3 +388,183 @@ fn worker_mode_two_ocr_documents_complete_without_spontaneous_cancellation() {
     );
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+#[test]
+#[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
+fn mixed_queue_documents_keep_single_scan_metadata() {
+    // Rereview BLK-2: a pure-native document must keep the single-scan
+    // metadata (backend = requested device, ocr_model_loaded = false) even
+    // when an earlier document filled the shared model slot - under `auto`
+    // configuration, where the pollution used to surface as backend=cpu.
+    let native_doc = fixture("normal-1-page.pdf");
+    let ocr_doc = fixture("figure-1-page.pdf");
+    let scratch = scratch_dir("mixed-queue");
+    std::fs::create_dir_all(&scratch).unwrap();
+
+    // Single scans under the same auto configuration (`--pdf-mode auto` +
+    // `--device auto` override the helper's OCR/cpu base args - the review
+    // repro needs the native document to stay native).
+    let auto_args = ["--pdf-mode", "auto", "--device", "auto"];
+    let single_native = scratch.join("single-native");
+    let single_ocr = scratch.join("single-ocr");
+    assert_eq!(run_scan(&[&native_doc], &single_native, &auto_args), 0);
+    assert_eq!(run_scan(&[&ocr_doc], &single_ocr, &auto_args), 0);
+
+    // Orchestrated, both orders.
+    for order_name in ["native-first", "ocr-first"] {
+        let order: Vec<&Path> = if order_name == "native-first" {
+            vec![native_doc.as_path(), ocr_doc.as_path()]
+        } else {
+            vec![ocr_doc.as_path(), native_doc.as_path()]
+        };
+        let root = scratch.join(format!("multi-{order_name}"));
+        assert_eq!(
+            run_scan(&order, &root, &auto_args),
+            0,
+            "orchestrated run must succeed"
+        );
+        for (doc, single) in [(&native_doc, &single_native), (&ocr_doc, &single_ocr)] {
+            let orch_dir = doc_dir(&root, doc);
+            let left = comparable_result(
+                &std::fs::read_to_string(single.join("result.json")).expect("single result.json"),
+                single,
+            );
+            let right = comparable_result(
+                &std::fs::read_to_string(orch_dir.join("result.json")).expect("orch result.json"),
+                &orch_dir,
+            );
+            assert_eq!(
+                left,
+                right,
+                "result.json (structure-normalized) diverged for {} in order {}",
+                doc.display(),
+                order_name
+            );
+        }
+        // Explicit metadata assertions for the native document.
+        let native_orch = doc_dir(&root, &native_doc);
+        let native_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(native_orch.join("result.json")).expect("result.json"),
+        )
+        .expect("result.json parses");
+        let native_single_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(single_native.join("result.json")).expect("result.json"),
+        )
+        .expect("result.json parses");
+        assert_eq!(
+            native_json["backend"], native_single_json["backend"],
+            "native backend must match the single scan: {native_json}"
+        );
+        assert_eq!(
+            native_json["ocr_model_loaded"], false,
+            "native document must not report a loaded model: {native_json}"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+#[test]
+#[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets, PDFium, and a GPU-capable binary"]
+fn gpu_reports_are_per_document_in_orchestrated_runs() {
+    // Rereview BLK-3: the shared actor's cumulative telemetry must not leak
+    // into later documents' gpu-resource.json / step-profile.json. Each
+    // orchestrated document's output_tokens must equal its own single scan's.
+    let doc_a = fixture("normal-1-page.pdf");
+    let doc_b = fixture("figure-1-page.pdf");
+    let scratch = scratch_dir("gpu-per-doc");
+    std::fs::create_dir_all(&scratch).unwrap();
+
+    // A CPU-only test binary cannot produce GPU reports: probe with an
+    // explicit vulkan request and skip when the device is unavailable.
+    let probe = scratch.join("single-a");
+    let (probe_code, _stdout, _stderr) = run_scan_full(
+        &[&doc_a],
+        &probe,
+        &["--device", "vulkan"],
+        &[("OCRX_GPU_REPORT", "1")],
+    );
+    if probe_code == 6 {
+        eprintln!("skipping: no usable GPU backend in this binary (probe exit 6)");
+        let _ = std::fs::remove_dir_all(&scratch);
+        return;
+    }
+    // A debug GPU build may flag the page degenerated (deterministic exit
+    // 10); the per-document comparison only needs the GPU reports on disk.
+    assert!(
+        probe_code == 0 || probe_code == 10,
+        "gpu probe scan must complete (exit {probe_code})"
+    );
+    let probe_gpu: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(probe.join("gpu-resource.json")).expect("probe gpu-resource.json"),
+    )
+    .expect("probe gpu-resource.json parses");
+    assert_eq!(probe_gpu["backend"], "vulkan", "probe: {probe_gpu}");
+
+    // Single scan of doc B under the same configuration.
+    let single_b = scratch.join("single-b");
+    let single_b_code = run_scan_full(
+        &[&doc_b],
+        &single_b,
+        &["--device", "vulkan"],
+        &[("OCRX_GPU_REPORT", "1")],
+    )
+    .0;
+    assert!(
+        single_b_code == 0 || single_b_code == 10,
+        "single scan of doc B must complete (exit {single_b_code})"
+    );
+
+    // Orchestrated run: both documents share one actor.
+    let root = scratch.join("multi");
+    let (code, _stdout, _stderr) = run_scan_full(
+        &[&doc_a, &doc_b],
+        &root,
+        &["--device", "vulkan"],
+        &[("OCRX_GPU_REPORT", "1")],
+    );
+    assert!(
+        code == 0 || code == 10,
+        "orchestrated GPU run must complete (exit {code})"
+    );
+
+    let orch_a = doc_dir(&root, &doc_a);
+    let orch_b = doc_dir(&root, &doc_b);
+    for (doc, single, orch) in [(&doc_a, &probe, &orch_a), (&doc_b, &single_b, &orch_b)] {
+        let single_gpu: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(single.join("gpu-resource.json"))
+                .unwrap_or_else(|error| panic!("{}: {error}", single.display())),
+        )
+        .expect("gpu-resource.json parses");
+        let orch_gpu: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(orch.join("gpu-resource.json"))
+                .unwrap_or_else(|error| panic!("{}: {error}", orch.display())),
+        )
+        .expect("gpu-resource.json parses");
+        assert_eq!(
+            orch_gpu["output_tokens"],
+            single_gpu["output_tokens"],
+            "{} output_tokens must equal its own single scan (no cross-document              accumulation): single={} orchestrated={}",
+            doc.display(),
+            single_gpu,
+            orch_gpu
+        );
+        // Step-profile debug channel: per-document tokens as well.
+        if let (Ok(single_sp), Ok(orch_sp)) = (
+            std::fs::read_to_string(single.join("step-profile.json")),
+            std::fs::read_to_string(orch.join("step-profile.json")),
+        ) {
+            let single_sp: serde_json::Value =
+                serde_json::from_str(&single_sp).expect("step profile");
+            let orch_sp: serde_json::Value = serde_json::from_str(&orch_sp).expect("step profile");
+            assert_eq!(
+                orch_sp["tokens"],
+                single_sp["tokens"],
+                "{} step-profile tokens must be per-document",
+                doc.display()
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}

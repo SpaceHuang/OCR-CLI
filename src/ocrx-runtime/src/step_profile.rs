@@ -80,6 +80,28 @@ impl StepProfile {
         enabled_from(std::env::var_os(STEP_PROFILE_ENV).as_deref())
     }
 
+    /// Per-document delta from a baseline snapshot (X1 shared actor): every
+    /// field is additive, so the orchestrated document reports
+    /// `snapshot - baseline` (saturating) instead of the actor's cumulative.
+    #[must_use]
+    pub fn delta_from(&self, base: &Self) -> Self {
+        Self {
+            windows: self.windows.saturating_sub(base.windows),
+            steps: self.steps.saturating_sub(base.steps),
+            tokens: self.tokens.saturating_sub(base.tokens),
+            window_total_us: self.window_total_us.saturating_sub(base.window_total_us),
+            encode_us: self.encode_us.saturating_sub(base.encode_us),
+            slot_setup_us: self.slot_setup_us.saturating_sub(base.slot_setup_us),
+            batch_build_us: self.batch_build_us.saturating_sub(base.batch_build_us),
+            decode_wait_us: self.decode_wait_us.saturating_sub(base.decode_wait_us),
+            logits_ffi_us: self.logits_ffi_us.saturating_sub(base.logits_ffi_us),
+            argmax_us: self.argmax_us.saturating_sub(base.argmax_us),
+            detokenize_us: self.detokenize_us.saturating_sub(base.detokenize_us),
+            ring_us: self.ring_us.saturating_sub(base.ring_us),
+            residual_us: self.residual_us.saturating_sub(base.residual_us),
+        }
+    }
+
     /// Sums `other` into `self` (the worker accumulates across windows).
     pub fn accumulate(&mut self, other: &Self) {
         self.windows += other.windows;
@@ -354,6 +376,41 @@ mod tests {
         profiler.end(Segment::SlotSetup);
         profiler.close_window(Duration::from_millis(4));
         assert!(profiler.snapshot().slot_setup_us >= 500);
+    }
+
+    #[test]
+    fn step_profile_delta_from_isolates_per_document_contribution() {
+        // Rereview BLK-3: the shared actor's step profile accumulates across
+        // documents; the orchestrated document reports snapshot - baseline
+        // (saturating) in every additive field.
+        let base = StepProfile {
+            windows: 2,
+            steps: 10,
+            tokens: 100,
+            window_total_us: 1_000_000,
+            encode_us: 100_000,
+            logits_ffi_us: 200_000,
+            ..StepProfile::default()
+        };
+        let snapshot = StepProfile {
+            windows: 3,
+            steps: 15,
+            tokens: 160,
+            window_total_us: 1_600_000,
+            encode_us: 160_000,
+            logits_ffi_us: 260_000,
+            argmax_us: 50_000,
+            ..StepProfile::default()
+        };
+        let delta = snapshot.delta_from(&base);
+        assert_eq!(delta.windows, 1);
+        assert_eq!(delta.steps, 5);
+        assert_eq!(delta.tokens, 60);
+        assert_eq!(delta.window_total_us, 600_000);
+        assert_eq!(delta.encode_us, 60_000);
+        assert_eq!(delta.logits_ffi_us, 60_000);
+        assert_eq!(delta.argmax_us, 50_000);
+        assert_eq!(snapshot.delta_from(&StepProfile::default()), snapshot);
     }
 
     #[test]
