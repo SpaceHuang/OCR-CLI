@@ -1,7 +1,7 @@
 # 扫描吞吐优化三期执行计划（backend sampling 主杠杆 + 提交路径 fallback）
 
 **日期**：2026-11-05
-**状态**：v2.1 草案——按 2026-11-05 重审（BLOCK，5 项）修订：BLK-1 checkpoint 解码代次键迁移、BLK-2 S0 可实施性门禁、BLK-3 S0 正确性先行排序、BLK-4 T1 采集链完整设计、BLK-5 P2 收益模型修正。评审通过前不进入实现。
+**状态**：v2.1——2026-11-05 复审 **PASS**（无方案级阻断；记录：主仓库 `docs/review/scan-throughput-phase3-development-plan.md`），v2.0 五项阻断（BLK-1 代次键 / BLK-2 S0 可实施性门禁 / BLK-3 正确性先行 / BLK-4 T1 采集链 / BLK-5 P2 收益模型）确认全部解除，计划进入实现。执行序 `S0 →（S0.5 双条件决策门）→ BS 主线 ∥ T1`；该结论不预先放行 BS 合入——BS 仍须通过 S0.5 双条件决策门与 BS.4 第二档/resume/性能门禁。
 **输入数据**：
 - 二期总报告与实现评审响应：`docs/test/reports/phase2-summary-2026-11-04.md`、`docs/review/scan-throughput-phase2-implementation-review-response.md`
 - X1 报告两轮实测（md-small-20 26.2 s / 5.9×）：`docs/develop/cross-doc-orchestration-2026-11-04.md` §2④
