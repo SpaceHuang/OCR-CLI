@@ -24,3 +24,6 @@ vulkano = { version = "=0.35.2", optional = true }
 default = []
 vulkan = ["ocrx-runtime/vulkan", "dep:vulkano"]
 cuda = ["ocrx-runtime/cuda"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

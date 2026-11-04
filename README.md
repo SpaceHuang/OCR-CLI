@@ -76,6 +76,15 @@ cargo run -p ocrx -- scan /absolute/path/to/input.pdf \
 
 For a release binary, replace `cargo run -p ocrx --` with `ocrx`. Use absolute paths for PDF inputs and output directories in automated or Skill workflows. A cancelled scan can be resumed with `--resume`; `--resume` and `--overwrite` are mutually exclusive.
 
+Multiple inputs (or a directory of PDFs) scan as one orchestrated invocation: model verification and loading happen once, every document keeps its own output contract (per-document output directory, `document.md`, `result.json`, resume and cancel semantics), and an aggregate `scan-summary.json` lands in the output root:
+
+```bash
+# Scan several PDFs (or every *.pdf in a directory) in one invocation.
+ocrx scan doc-a.pdf doc-b.pdf ./more-pdfs/ --output-dir /absolute/output/root --non-interactive
+```
+
+With multiple resolved inputs, `--output-dir` is required and becomes the output root: each document lands in `<root>/<stem>-<hash8>/`. A document that cannot be read is reported and skipped while the rest continue (non-zero aggregate exit code). A single-input scan keeps the historical behavior (`<input-dir>/<stem>-ocr` output, page-count failure on a missing file).
+
 Useful scan options include:
 
 ```text

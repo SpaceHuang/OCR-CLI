@@ -3616,6 +3616,9 @@ struct ScanSummaryDocument {
     output_dir: PathBuf,
     status: &'static str,
     exit_code: i32,
+    /// Wall time of this document's scan, from the orchestrator's clock
+    /// (skipped documents report 0).
+    elapsed_ms: u128,
 }
 
 /// X1.4 exit aggregation: any cancellation dominates (130); otherwise any
@@ -3657,11 +3660,12 @@ fn scan_summary_json(
         .iter()
         .map(|document| {
             format!(
-                "{{\"input\":\"{}\",\"output_dir\":\"{}\",\"status\":\"{}\",\"exit_code\":{}}}",
+                "{{\"input\":\"{}\",\"output_dir\":\"{}\",\"status\":\"{}\",\"exit_code\":{},\"elapsed_ms\":{}}}",
                 json_escape_path(&document.input),
                 json_escape_path(&document.output_dir),
                 document.status,
                 document.exit_code,
+                document.elapsed_ms,
             )
         })
         .collect::<Vec<_>>()
@@ -3801,9 +3805,11 @@ fn run_scan_multi(options: ScanOptions) -> ! {
                 output_dir: doc_output,
                 status: "skipped",
                 exit_code: 3,
+                elapsed_ms: 0,
             });
             continue;
         }
+        let doc_started = Instant::now();
         let code = scan_document(
             &mut DocScanEnv {
                 options: &options,
@@ -3817,6 +3823,7 @@ fn run_scan_multi(options: ScanOptions) -> ! {
             &doc_output,
             &mut reporter,
         );
+        let doc_elapsed_ms = doc_started.elapsed().as_millis();
         if code == 130 {
             cancelled = true;
             documents.push(ScanSummaryDocument {
@@ -3824,6 +3831,7 @@ fn run_scan_multi(options: ScanOptions) -> ! {
                 output_dir: doc_output,
                 status: "cancelled",
                 exit_code: code,
+                elapsed_ms: doc_elapsed_ms,
             });
             break;
         }
@@ -3836,6 +3844,7 @@ fn run_scan_multi(options: ScanOptions) -> ! {
                 _ => "failed",
             },
             exit_code: code,
+            elapsed_ms: doc_elapsed_ms,
         });
     }
     // X1.3: the aggregate summary rides next to the per-document dirs; a
@@ -4109,7 +4118,10 @@ fn print_help(topic: Option<&str>) {
     match topic {
         None => println!("ocrx <version|scan|doctor|model|skill|help>"),
         Some("scan") => {
-            println!("ocrx scan <input.pdf> [options]");
+            println!("ocrx scan <input.pdf> [more.pdf|directory]... [options]");
+            println!("  Multiple inputs (or a directory of PDFs) run as one orchestrated");
+            println!("  invocation; --output-dir is then the output root (required), with");
+            println!("  one <stem>-<hash8> subdirectory per document plus scan-summary.json.");
             println!("  -o, --output-dir DIR");
             println!("  --pages SPEC                 page range, e.g. 1,3-5");
             println!("  --model ovisocr2");
@@ -4335,12 +4347,14 @@ mod tests {
                 output_dir: PathBuf::from(r"D:\out\a-12345678"),
                 status: "success",
                 exit_code: 0,
+                elapsed_ms: 4_250,
             },
             ScanSummaryDocument {
                 input: PathBuf::from(r"D:\docs\bad.pdf"),
                 output_dir: PathBuf::from(r"D:\out\bad-abcdef01"),
                 status: "skipped",
                 exit_code: 3,
+                elapsed_ms: 0,
             },
         ];
         let json = scan_summary_json(
@@ -4368,6 +4382,7 @@ mod tests {
             "{json}"
         );
         assert!(json.contains("\"elapsed_ms\":1234"), "{json}");
+        assert!(json.contains("\"elapsed_ms\":4250"), "{json}");
         assert_eq!(
             json.matches("\"input\"").count(),
             2,
