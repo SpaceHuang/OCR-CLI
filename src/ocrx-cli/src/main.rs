@@ -1452,7 +1452,13 @@ fn main() {
                 _ => unreachable!("model action parsed by CLI"),
             }
         }
-        CliCommand::Scan(options) => run_scan(options),
+        CliCommand::Scan(options) => {
+            if options.inputs.len() > 1 {
+                run_scan_multi(options)
+            } else {
+                run_scan(options)
+            }
+        }
         CliCommand::Skill { action } => {
             let target = std::env::var("OCRX_SKILL_TARGET").unwrap_or_else(|_| "all".to_owned());
             let scope = match ocrx_skill::SkillScope::parse(
@@ -2120,39 +2126,57 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     }
 }
 
-fn run_scan(options: ScanOptions) -> ! {
+/// Per-invocation shared state for one document scan (X1.2). `owner` is
+/// `None` on the single-input path: `scan_document` then spawns the
+/// invocation's owner at the historical spawn point, byte-identically. The
+/// orchestrated path passes the invocation-wide owner and switches it
+/// between documents. `model_slot` decides whether the runtime is loaded per
+/// scan (PerCall, historical) or once per invocation and reused across
+/// documents (Shared).
+struct DocScanEnv<'a> {
+    options: &'a ScanOptions,
+    report_format: ReportFormat,
+    progress_mode: ProgressMode,
+    cancellation: &'a CancellationToken,
+    owner: Option<&'a Rc<RefCell<pdfium_owner::PdfiumOwnerHandle>>>,
+    model_slot: &'a mut ModelSlot,
+}
+
+/// Runtime lifetime policy (X1.2): the single-input path resolves and loads
+/// per scan and drops with the scan scope; the orchestrated path fills the
+/// shared slot on the first OCR-needing document and reuses it for the rest,
+/// so model verification and load happen once per invocation.
+enum ModelSlot {
+    PerCall,
+    Shared(Option<SharedRuntime>),
+}
+
+struct SharedRuntime {
+    runtime: LlamaMtmdRuntime,
+    profile: String,
+    device: String,
+    fallback_to_cpu: bool,
+    gpu_warning: Option<String>,
+}
+
+/// Scans ONE document end-to-end, reporting through `reporter`, and returns
+/// the would-be process exit code instead of exiting: the single-input
+/// caller exits with it directly (byte-identical behavior), while the X1
+/// orchestrator aggregates the codes across documents. Every failure path
+/// that used to `std::process::exit(N)` now reports and returns `N`.
+#[allow(clippy::too_many_lines)]
+fn scan_document(
+    env: &mut DocScanEnv,
+    input: &Path,
+    output: &Path,
+    reporter: &mut Reporter,
+) -> i32 {
+    let options = env.options;
+    let report_format = env.report_format;
+    let progress_mode = env.progress_mode;
+    let cancellation = env.cancellation;
     let started = Instant::now();
-    // Install the Ctrl+C handler before any slow phase (PDF analysis, native
-    // extraction, runtime load), so "exit 130 → resume with --resume" covers
-    // the whole scan window, not only the OCR loop (MINOR 3).
-    let cancellation = CancellationToken::new();
-    install_sigint_handler(cancellation.clone());
-    let report_format = if options.report == "json" {
-        ReportFormat::Json
-    } else {
-        ReportFormat::Text
-    };
-    let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
-    let mut reporter = Reporter::default();
-    let input = PathBuf::from(&options.inputs[0]);
-    let canonical_input = std::fs::canonicalize(&input).unwrap_or_else(|_| input.clone());
-    let output = match resolve_output_dir(&options.inputs[0], options.output_dir.as_deref()) {
-        Ok(path) => path,
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 2,
-                    kind: "usage".to_owned(),
-                    message: "output directory resolution failed".to_owned(),
-                    cause: Some(error),
-                    suggestion: Some("pass an explicit --output-dir".to_owned()),
-                },
-                report_format,
-            );
-            print_reporter(reporter);
-            std::process::exit(2);
-        }
-    };
+    let canonical_input = std::fs::canonicalize(input).unwrap_or_else(|_| input.to_path_buf());
     // Fail closed: a working directory that cannot be resolved (deleted cwd)
     // must abort the scan instead of silently skipping the cwd rule below —
     // an empty fallback path would make every output pass that rule.
@@ -2170,8 +2194,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(9);
+            emit_reporter(reporter);
+            return 9;
         }
     };
     let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
@@ -2186,16 +2210,23 @@ fn run_scan(options: ScanOptions) -> ! {
     // The render DPI is resolved up front because the owner holds it for the
     // whole scan.
     let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
-    let pdfium_owner_handle = Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
-        library.clone(),
-        input.clone(),
-        RenderOptions { dpi },
-        options.password.clone(),
-    )));
+    // X1 protocol ①: one owner per invocation. The single-input path spawns
+    // it here (the historical spawn point, now scoped to the function); the
+    // orchestrated path reuses the invocation-wide owner, switched between
+    // documents through the SwitchDocument protocol at scheduling bounds.
+    let pdfium_owner_handle: Rc<RefCell<pdfium_owner::PdfiumOwnerHandle>> = match env.owner {
+        Some(owner) => Rc::clone(owner),
+        None => Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
+            library.clone(),
+            input.to_path_buf(),
+            RenderOptions { dpi },
+            options.password.clone(),
+        ))),
+    };
     let page_count = match pdfium_owner_handle.borrow_mut().page_count() {
         Ok(count) => count,
         Err(error) => {
-            let error_kind = match classify_input_error(&input, &error.to_string()) {
+            let error_kind = match classify_input_error(input, &error.to_string()) {
                 PdfErrorKind::NonPdf => "pdf_non_pdf",
                 PdfErrorKind::Corrupt => "pdf_corrupt",
                 PdfErrorKind::Encrypted => "pdf_encrypted",
@@ -2212,8 +2243,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(3);
+            emit_reporter(reporter);
+            return 3;
         }
     };
     let pages = options
@@ -2231,8 +2262,8 @@ fn run_scan(options: ScanOptions) -> ! {
             },
             report_format,
         );
-        print_reporter(reporter);
-        std::process::exit(2);
+        emit_reporter(reporter);
+        return 2;
     }
     // W1.4/W4.1: an explicit device request must fail diagnosably when the
     // backend is not compiled into this binary, even when the document needs
@@ -2251,8 +2282,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(6);
+            emit_reporter(reporter);
+            return 6;
         }
     }
     let required_tier = if options.quality_tier == "l1" {
@@ -2283,8 +2314,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(3);
+            emit_reporter(reporter);
+            return 3;
         }
     };
     if options.pdf_mode == "text"
@@ -2300,8 +2331,8 @@ fn run_scan(options: ScanOptions) -> ! {
             },
             report_format,
         );
-        print_reporter(reporter);
-        std::process::exit(3);
+        emit_reporter(reporter);
+        return 3;
     }
     let initial_queue = initial_ocr_queue_for_mode(&options.pdf_mode, &pages, &classifications);
     let cache = std::env::var_os("OCRX_MODEL_CACHE")
@@ -2333,7 +2364,7 @@ fn run_scan(options: ScanOptions) -> ! {
             protected_cache_roots[1].as_path(),
         ];
         if let Err(error) =
-            validate_scan_output_policy(&canonical_input, &output, &protected, &working_directory)
+            validate_scan_output_policy(&canonical_input, output, &protected, &working_directory)
         {
             reporter.error(
                 &ErrorReport {
@@ -2348,8 +2379,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(9);
+            emit_reporter(reporter);
+            return 9;
         }
     }
     if output.exists()
@@ -2367,8 +2398,8 @@ fn run_scan(options: ScanOptions) -> ! {
             },
             report_format,
         );
-        print_reporter(reporter);
-        std::process::exit(9);
+        emit_reporter(reporter);
+        return 9;
     }
     if options.overwrite {
         // Same protected set as the per-scan check above (model subtrees, not
@@ -2394,8 +2425,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(9);
+            emit_reporter(reporter);
+            return 9;
         }
     }
     let pages = options
@@ -2422,7 +2453,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 env: Vec::new(),
                 password: options.password.clone(),
             }),
-            input: input.clone(),
+            input: input.to_path_buf(),
             output: worker_output,
             page_count: Some(page_count),
             segment_pages: 20,
@@ -2442,7 +2473,7 @@ fn run_scan(options: ScanOptions) -> ! {
     let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let step_profile = Rc::new(RefCell::new(None));
     let recognizer = OvisRecognizer {
-        output: output.clone(),
+        output: output.to_path_buf(),
         max_tokens: options.max_output_tokens.unwrap_or(16_384),
         telemetry: Rc::clone(&telemetry),
         step_profile: Rc::clone(&step_profile),
@@ -2454,7 +2485,7 @@ fn run_scan(options: ScanOptions) -> ! {
     let mut device = options.device.clone();
     let mut model = PathBuf::new();
     let mut mmproj = PathBuf::new();
-    let input_sha256 = match file_sha256(&input) {
+    let input_sha256 = match file_sha256(input) {
         Ok(hash) => hash,
         Err(error) => {
             reporter.error(
@@ -2467,8 +2498,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(3);
+            emit_reporter(reporter);
+            return 3;
         }
     };
     let compatibility = CompatibilityKey {
@@ -2527,7 +2558,7 @@ fn run_scan(options: ScanOptions) -> ! {
             let Ok(checkpoint) = read_checkpoint(&path) else {
                 continue;
             };
-            match checkpoint.resume_action(&compatibility, &output, *page as u32) {
+            match checkpoint.resume_action(&compatibility, output, *page as u32) {
                 CheckpointResumeAction::SkipCommitted => {
                     if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
                         resume_committed_markdown.append(&mut markdown);
@@ -2550,7 +2581,7 @@ fn run_scan(options: ScanOptions) -> ! {
             // page twice and broke finalize with "duplicate page number".
             if !resume_skip_pages.contains(&(*page as u32))
                 && let Some(expected_ocr) = &resume_ocr_compatibility
-                && checkpoint.resume_action(expected_ocr, &output, *page as u32)
+                && checkpoint.resume_action(expected_ocr, output, *page as u32)
                     == CheckpointResumeAction::SkipCommitted
             {
                 if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
@@ -2655,8 +2686,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(3);
+            emit_reporter(reporter);
+            return 3;
         }
     };
     let mut empty_markdown = Vec::new();
@@ -2682,8 +2713,8 @@ fn run_scan(options: ScanOptions) -> ! {
                         },
                         report_format,
                     );
-                    print_reporter(reporter);
-                    std::process::exit(5);
+                    emit_reporter(reporter);
+                    return 5;
                 }
             };
         let checkpoint = ocrx_output::PageCheckpoint {
@@ -2720,8 +2751,8 @@ fn run_scan(options: ScanOptions) -> ! {
                     },
                     report_format,
                 );
-                print_reporter(reporter);
-                std::process::exit(5);
+                emit_reporter(reporter);
+                return 5;
             }
         }
     }
@@ -2746,8 +2777,8 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(5);
+            emit_reporter(reporter);
+            return 5;
         }
     }
     let final_ocr_queue = ocr_queue_after_native_phase(&initial_queue, &native_phase);
@@ -2763,10 +2794,51 @@ fn run_scan(options: ScanOptions) -> ! {
             &cache,
         ) {
             Ok((resolved_profile, resolved_device, resolved_model, resolved_mmproj)) => {
-                profile = resolved_profile;
-                device = resolved_device;
+                profile.clone_from(&resolved_profile);
+                device.clone_from(&resolved_device);
                 model = resolved_model;
                 mmproj = resolved_mmproj;
+                // X1.2: on the orchestrated path the runtime loads HERE, once
+                // per invocation - the first OCR-needing document fills the
+                // shared slot and every later document reuses it (BLK-1
+                // verdict follow-up: verify + load amortized to one shot).
+                if let ModelSlot::Shared(slot) = env.model_slot
+                    && slot.is_none()
+                {
+                    let (loaded_model, gpu_fallback_warning) = match load_runtime_with_fallback(
+                        &model,
+                        &mmproj,
+                        resolved_device != "cpu",
+                        options.max_image_tokens.unwrap_or(1024),
+                        options.context_size.unwrap_or(20_480),
+                    ) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            reporter.error(
+                                &ErrorReport {
+                                    code: 6,
+                                    kind: "runtime".to_owned(),
+                                    message: "runtime initialization failed".to_owned(),
+                                    cause: Some(error.to_string()),
+                                    suggestion: Some(
+                                        "verify model/runtime compatibility or use --device cpu"
+                                            .to_owned(),
+                                    ),
+                                },
+                                report_format,
+                            );
+                            emit_reporter(reporter);
+                            return 6;
+                        }
+                    };
+                    *slot = Some(SharedRuntime {
+                        runtime: loaded_model,
+                        profile: resolved_profile,
+                        device: resolved_device,
+                        fallback_to_cpu: gpu_fallback_warning.is_some(),
+                        gpu_warning: gpu_fallback_warning,
+                    });
+                }
             }
             Err(error) => {
                 let unavailable_reason = "ocr_required_but_unavailable".to_owned();
@@ -2790,8 +2862,8 @@ fn run_scan(options: ScanOptions) -> ! {
                             },
                             report_format,
                         );
-                        print_reporter(reporter);
-                        std::process::exit(5);
+                        emit_reporter(reporter);
+                        return 5;
                     }
                 }
                 let fallback_reasons = native_phase
@@ -2815,7 +2887,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 }
                 let unavailable_pages = ocr_service_pages.iter().copied().collect();
                 if let Err(write_error) = write_routing_checkpoint_sidecars_with_states(
-                    &output,
+                    output,
                     &options.pdf_mode,
                     &pages,
                     &classifications,
@@ -2833,8 +2905,8 @@ fn run_scan(options: ScanOptions) -> ! {
                         },
                         report_format,
                     );
-                    print_reporter(reporter);
-                    std::process::exit(5);
+                    emit_reporter(reporter);
+                    return 5;
                 }
                 let total_pages = pages.len() as u32;
                 let completed_pages = native_phase.committed_native_pages.len() as u32
@@ -2844,7 +2916,7 @@ fn run_scan(options: ScanOptions) -> ! {
                     status: "partial",
                     input: &canonical_input,
                     markdown_path: None,
-                    output_dir: &output,
+                    output_dir: output,
                     profile: &profile,
                     required_quality_tier: &options.quality_tier,
                     document_type: ocrx_pdf::summarize_document_type(&classifications).as_str(),
@@ -2899,8 +2971,8 @@ fn run_scan(options: ScanOptions) -> ! {
                         },
                         report_format,
                     );
-                    print_reporter(reporter);
-                    std::process::exit(5);
+                    emit_reporter(reporter);
+                    return 5;
                 }
                 reporter.error(
                     &ErrorReport {
@@ -2912,8 +2984,8 @@ fn run_scan(options: ScanOptions) -> ! {
                     },
                     report_format,
                 );
-                print_reporter(reporter);
-                std::process::exit(4);
+                emit_reporter(reporter);
+                return 4;
             }
         }
     }
@@ -2955,75 +3027,124 @@ fn run_scan(options: ScanOptions) -> ! {
     // set to "cpu" when the GPU→CPU fallback triggered inside the branch below.
     let mut runtime_fallback_to_cpu = false;
     let summary = if execution_plan.initialize_runtime {
-        // W4.1: load once with GPU→CPU fallback so a machine whose GPU is
-        // absent or unusable degrades to CPU with a recorded warning instead
-        // of aborting the whole scan with exit 6.
-        let (loaded_model, gpu_fallback_warning) = match load_runtime_with_fallback(
-            &model,
-            &mmproj,
-            device != "cpu",
-            options.max_image_tokens.unwrap_or(1024),
-            options.context_size.unwrap_or(20_480),
-        ) {
-            Ok(value) => value,
-            Err(error) => {
-                reporter.error(
-                    &ErrorReport {
-                        code: 6,
-                        kind: "runtime".to_owned(),
-                        message: "runtime initialization failed".to_owned(),
-                        cause: Some(error.to_string()),
-                        suggestion: Some(
-                            "verify model/runtime compatibility or use --device cpu".to_owned(),
-                        ),
-                    },
-                    report_format,
-                );
-                print_reporter(reporter);
-                std::process::exit(6);
-            }
-        };
-        runtime_fallback_to_cpu = gpu_fallback_warning.is_some();
-        if runtime_fallback_to_cpu {
-            // Review m4: the sampler reads SYSTEM-wide VRAM via nvidia-smi,
-            // which is meaningless for a scan that now runs on the CPU.
-            let _peak_discarded = stop_vram_sampler(vram_sampler.take());
-        }
-        let loader = PreloadedLoader {
-            model: Some(loaded_model),
-        };
-        let mut service = ScanService::new(renderer, loader, recognizer);
-        // W3.1/R-1 heartbeat wiring: forward the runtime's per-second
-        // generation progress to the reporter so multi-minute CPU pages show
-        // liveness instead of silence between page boundaries.
-        let total_pages = ocr_service_pages.len() as u32;
-        let mut heartbeat = |page: u32, event: GenerationProgress| {
-            reporter.progress(
-                &ProgressEvent::for_stage(
-                    ProgressStage::Recognizing,
-                    Some(page),
-                    event.generated_tokens,
-                    total_pages,
-                ),
-                progress_mode,
-            );
-        };
-        service
-            .run_with_checkpoints_heartbeat(
-                &ocr_service_pages,
-                &output,
-                &ocr_compatibility,
-                options.resume,
-                options.keep_pages,
-                &cancellation,
-                &mut heartbeat,
-            )
-            .map(|mut summary| {
-                if let Some(warning) = gpu_fallback_warning {
-                    summary.warnings.push(warning);
+        match env.model_slot {
+            ModelSlot::PerCall => {
+                // W4.1: load once with GPU→CPU fallback so a machine whose GPU
+                // is absent or unusable degrades to CPU with a recorded
+                // warning instead of aborting the whole scan with exit 6.
+                let (loaded_model, gpu_fallback_warning) = match load_runtime_with_fallback(
+                    &model,
+                    &mmproj,
+                    device != "cpu",
+                    options.max_image_tokens.unwrap_or(1024),
+                    options.context_size.unwrap_or(20_480),
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        reporter.error(
+                            &ErrorReport {
+                                code: 6,
+                                kind: "runtime".to_owned(),
+                                message: "runtime initialization failed".to_owned(),
+                                cause: Some(error.to_string()),
+                                suggestion: Some(
+                                    "verify model/runtime compatibility or use --device cpu"
+                                        .to_owned(),
+                                ),
+                            },
+                            report_format,
+                        );
+                        emit_reporter(reporter);
+                        return 6;
+                    }
+                };
+                runtime_fallback_to_cpu = gpu_fallback_warning.is_some();
+                if runtime_fallback_to_cpu {
+                    // Review m4: the sampler reads SYSTEM-wide VRAM via
+                    // nvidia-smi, meaningless for a scan that now runs on CPU.
+                    let _peak_discarded = stop_vram_sampler(vram_sampler.take());
                 }
-                summary
-            })
+                let loader = PreloadedLoader {
+                    model: Some(loaded_model),
+                };
+                let mut service = ScanService::new(renderer, loader, recognizer);
+                // W3.1/R-1 heartbeat wiring: forward the runtime's per-second
+                // generation progress to the reporter so multi-minute CPU
+                // pages show liveness between page boundaries.
+                let total_pages = ocr_service_pages.len() as u32;
+                let mut heartbeat = |page: u32, event: GenerationProgress| {
+                    reporter.progress(
+                        &ProgressEvent::for_stage(
+                            ProgressStage::Recognizing,
+                            Some(page),
+                            event.generated_tokens,
+                            total_pages,
+                        ),
+                        progress_mode,
+                    );
+                };
+                service
+                    .run_with_checkpoints_heartbeat(
+                        &ocr_service_pages,
+                        output,
+                        &ocr_compatibility,
+                        options.resume,
+                        options.keep_pages,
+                        cancellation,
+                        &mut heartbeat,
+                    )
+                    .map(|mut summary| {
+                        if let Some(warning) = gpu_fallback_warning {
+                            summary.warnings.push(warning);
+                        }
+                        summary
+                    })
+            }
+            ModelSlot::Shared(slot) => {
+                let shared = slot
+                    .as_mut()
+                    .expect("shared runtime slot filled during resolution");
+                profile.clone_from(&shared.profile);
+                device.clone_from(&shared.device);
+                runtime_fallback_to_cpu = shared.fallback_to_cpu;
+                if runtime_fallback_to_cpu {
+                    let _peak_discarded = stop_vram_sampler(vram_sampler.take());
+                }
+                let loader = PreloadedLoader { model: None };
+                let mut service = ScanService::new(renderer, loader, recognizer);
+                let total_pages = ocr_service_pages.len() as u32;
+                let mut heartbeat = |page: u32, event: GenerationProgress| {
+                    reporter.progress(
+                        &ProgressEvent::for_stage(
+                            ProgressStage::Recognizing,
+                            Some(page),
+                            event.generated_tokens,
+                            total_pages,
+                        ),
+                        progress_mode,
+                    );
+                };
+                // X1.2: the shared actor runs this document's windows and
+                // stays alive for the next document (run_pages_with_model).
+                service
+                    .run_pages_with_model(
+                        &mut shared.runtime,
+                        &ocr_service_pages,
+                        output,
+                        &ocr_compatibility,
+                        options.resume,
+                        options.keep_pages,
+                        cancellation,
+                        &mut heartbeat,
+                    )
+                    .map(|mut summary| {
+                        if let Some(warning) = &shared.gpu_warning {
+                            summary.warnings.push(warning.clone());
+                        }
+                        summary
+                    })
+            }
+        }
     } else {
         Ok(ocrx_output::JobSummary {
             selected_pages: 0,
@@ -3064,8 +3185,8 @@ fn run_scan(options: ScanOptions) -> ! {
             },
             report_format,
         );
-        print_reporter(reporter);
-        std::process::exit(3);
+        emit_reporter(reporter);
+        return 3;
     }
     let vram_peak_bytes = stop_vram_sampler(vram_sampler);
     // M-10: the effective backend label — a GPU→CPU fallback means the scan
@@ -3160,15 +3281,15 @@ fn run_scan(options: ScanOptions) -> ! {
                     },
                     report_format,
                 );
-                print_reporter(reporter);
-                std::process::exit(130);
+                emit_reporter(reporter);
+                return 130;
             }
             {
                 let mut all_pages = native_markdown;
                 all_pages.extend(empty_markdown);
                 if !ocr_service_pages.is_empty() {
                     match collect_verified_page_markdowns(
-                        &output,
+                        output,
                         &ocr_service_pages,
                         &ocr_compatibility,
                     ) {
@@ -3184,8 +3305,8 @@ fn run_scan(options: ScanOptions) -> ! {
                                 },
                                 report_format,
                             );
-                            print_reporter(reporter);
-                            std::process::exit(5);
+                            emit_reporter(reporter);
+                            return 5;
                         }
                     }
                 }
@@ -3203,8 +3324,8 @@ fn run_scan(options: ScanOptions) -> ! {
                                 },
                                 report_format,
                             );
-                            print_reporter(reporter);
-                            std::process::exit(5);
+                            emit_reporter(reporter);
+                            return 5;
                         }
                     }
                 } else if let Err(error) = finalize_document(&output, all_pages) {
@@ -3218,8 +3339,8 @@ fn run_scan(options: ScanOptions) -> ! {
                         },
                         report_format,
                     );
-                    print_reporter(reporter);
-                    std::process::exit(5);
+                    emit_reporter(reporter);
+                    return 5;
                 }
             }
             let native_completed_pages = native_phase.committed_native_pages.len() as u32;
@@ -3263,7 +3384,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 }
             }
             if let Err(error) = write_routing_checkpoint_sidecars_with_states(
-                &output,
+                output,
                 &options.pdf_mode,
                 &pages,
                 &classifications,
@@ -3281,8 +3402,8 @@ fn run_scan(options: ScanOptions) -> ! {
                     },
                     report_format,
                 );
-                print_reporter(reporter);
-                std::process::exit(5);
+                emit_reporter(reporter);
+                return 5;
             }
             let markdown_output = output
                 .join("document.md")
@@ -3299,7 +3420,7 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 input: &canonical_input,
                 markdown_path: markdown_output.as_deref(),
-                output_dir: &output,
+                output_dir: output,
                 profile: &profile,
                 required_quality_tier: &options.quality_tier,
                 document_type: ocrx_pdf::summarize_document_type(&classifications).as_str(),
@@ -3355,8 +3476,8 @@ fn run_scan(options: ScanOptions) -> ! {
                     },
                     report_format,
                 );
-                print_reporter(reporter);
-                std::process::exit(5);
+                emit_reporter(reporter);
+                return 5;
             }
             if report_format == ReportFormat::Json {
                 reporter.stdout.push_str(&result_json);
@@ -3387,17 +3508,15 @@ fn run_scan(options: ScanOptions) -> ! {
                 ),
                 progress_mode,
             );
-            print_reporter(reporter);
-            std::process::exit(
-                if summary.failed_pages == 0
-                    && summary.truncated_pages == 0
-                    && summary.degenerated_pages == 0
-                {
-                    0
-                } else {
-                    10
-                },
-            );
+            emit_reporter(reporter);
+            if summary.failed_pages == 0
+                && summary.truncated_pages == 0
+                && summary.degenerated_pages == 0
+            {
+                0
+            } else {
+                10
+            }
         }
         Err(error) => {
             let error_kind = match classify_pdf_error(&error.to_string()) {
@@ -3417,10 +3536,322 @@ fn run_scan(options: ScanOptions) -> ! {
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(6);
+            emit_reporter(reporter);
+            6
         }
     }
+}
+
+/// Flushes and resets a borrowed reporter (scan_document reports through
+/// `&mut Reporter`; each failure/success path prints what accumulated).
+fn emit_reporter(reporter: &mut Reporter) {
+    print_reporter(std::mem::take(reporter));
+}
+
+/// Single-input scan (historical contract): identical behavior to the
+/// pre-orchestrator `run_scan` - the output directory resolves up front, the
+/// owner spawns at the historical point, the runtime loads per invocation,
+/// and the document's exit code becomes the process exit code.
+fn run_scan(options: ScanOptions) -> ! {
+    // Install the Ctrl+C handler before any slow phase (PDF analysis, native
+    // extraction, runtime load), so "exit 130 -> resume with --resume" covers
+    // the whole scan window, not only the OCR loop (MINOR 3).
+    let cancellation = CancellationToken::new();
+    install_sigint_handler(cancellation.clone());
+    let report_format = if options.report == "json" {
+        ReportFormat::Json
+    } else {
+        ReportFormat::Text
+    };
+    let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
+    let mut reporter = Reporter::default();
+    let mut model_slot = ModelSlot::PerCall;
+    let input = PathBuf::from(&options.inputs[0]);
+    let output = match resolve_output_dir(&options.inputs[0], options.output_dir.as_deref()) {
+        Ok(path) => path,
+        Err(error) => {
+            reporter.error(
+                &ErrorReport {
+                    code: 2,
+                    kind: "usage".to_owned(),
+                    message: "output directory resolution failed".to_owned(),
+                    cause: Some(error),
+                    suggestion: Some("pass an explicit --output-dir".to_owned()),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(2);
+        }
+    };
+    let code = scan_document(
+        &mut DocScanEnv {
+            options: &options,
+            report_format,
+            progress_mode,
+            cancellation: &cancellation,
+            owner: None,
+            model_slot: &mut model_slot,
+        },
+        &input,
+        &output,
+        &mut reporter,
+    );
+    std::process::exit(code);
+}
+
+/// One orchestrated document's aggregate entry for `scan-summary.json`.
+struct ScanSummaryDocument {
+    input: PathBuf,
+    output_dir: PathBuf,
+    status: &'static str,
+    exit_code: i32,
+}
+
+/// X1.4 exit aggregation: any cancellation dominates (130); otherwise any
+/// document-level failure (usage/runtime/pdf/output codes) dominates the
+/// page-level partial code; all-success is 0 unless some document finished
+/// with page-level incompleteness (10).
+fn aggregate_scan_exit(codes: &[i32]) -> i32 {
+    if codes.contains(&130) {
+        130
+    } else if codes.iter().any(|code| *code != 0 && *code != 10) {
+        3
+    } else if codes.contains(&10) {
+        10
+    } else {
+        0
+    }
+}
+
+/// X1.3 output layout: `<output-root>/<doc-stem>-<hash8>/`, where hash8 is
+/// the first 8 hex of the canonical input path's SHA-256 - deterministic,
+/// collision-proof for equal stems from different directories.
+fn output_dir_for_doc(output_root: &Path, canonical_input: &Path) -> PathBuf {
+    let stem = canonical_input
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_else(|| "document".to_owned());
+    let digest = ocrx_core::sha256(canonical_input.to_string_lossy().as_bytes());
+    output_root.join(format!("{stem}-{}", &digest[..8]))
+}
+
+/// X1.3: the orchestrated invocation's aggregate summary file.
+fn scan_summary_json(
+    inputs: &[PathBuf],
+    output_root: &Path,
+    documents: &[ScanSummaryDocument],
+    elapsed_ms: u128,
+) -> String {
+    let documents_json = documents
+        .iter()
+        .map(|document| {
+            format!(
+                "{{\"input\":\"{}\",\"output_dir\":\"{}\",\"status\":\"{}\",\"exit_code\":{}}}",
+                json_escape_path(&document.input),
+                json_escape_path(&document.output_dir),
+                document.status,
+                document.exit_code,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let inputs_json = inputs
+        .iter()
+        .map(|input| json_quote(&input.to_string_lossy()))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"schema_version\":1,\"mode\":\"multi\",\"inputs\":[{}],\"output_root\":\"{}\",\"documents\":[{}],\"elapsed_ms\":{}}}",
+        inputs_json,
+        json_escape_path(output_root),
+        documents_json,
+        elapsed_ms,
+    )
+}
+
+/// Multi-input orchestrated scan (X1): one PDFium owner for the whole
+/// invocation, one inference actor reused across documents, document-level
+/// FIFO with windows never crossing documents, exit aggregation, and a
+/// `scan-summary.json` next to the per-document directories.
+fn run_scan_multi(options: ScanOptions) -> ! {
+    let started = Instant::now();
+    let cancellation = CancellationToken::new();
+    install_sigint_handler(cancellation.clone());
+    let report_format = if options.report == "json" {
+        ReportFormat::Json
+    } else {
+        ReportFormat::Text
+    };
+    let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
+    let mut reporter = Reporter::default();
+    let Some(output_root_raw) = options.output_dir.clone() else {
+        // parse_scan_args already enforces this for multi-input; kept as
+        // defense in depth for direct callers.
+        reporter.error(
+            &ErrorReport {
+                code: 2,
+                kind: "usage".to_owned(),
+                message: "scanning multiple inputs requires --output-dir <output-root>".to_owned(),
+                cause: None,
+                suggestion: Some("pass an explicit --output-dir".to_owned()),
+            },
+            report_format,
+        );
+        print_reporter(reporter);
+        std::process::exit(2);
+    };
+    let inputs = match resolve_scan_inputs(&options.inputs) {
+        Ok(inputs) if inputs.len() > 1 => inputs,
+        Ok(_) => {
+            reporter.error(
+                &ErrorReport {
+                    code: 2,
+                    kind: "usage".to_owned(),
+                    message: "the orchestrated scan requires more than one resolved input"
+                        .to_owned(),
+                    cause: None,
+                    suggestion: Some("scan a single input without --output-dir".to_owned()),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(2);
+        }
+        Err(error) => {
+            reporter.error(
+                &ErrorReport {
+                    code: 2,
+                    kind: "usage".to_owned(),
+                    message: "input resolution failed".to_owned(),
+                    cause: Some(error),
+                    suggestion: Some(
+                        "check the input paths (files or directories of PDFs)".to_owned(),
+                    ),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(2);
+        }
+    };
+    let output_root = PathBuf::from(&output_root_raw);
+    let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
+    let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    // X1 protocol ①: ONE owner for the whole invocation, spawned on the
+    // first input; documents switch through the protocol at scheduling
+    // boundaries. A per-document spawn is structurally impossible here.
+    let owner = Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
+        library,
+        inputs[0].clone(),
+        RenderOptions { dpi },
+        options.password.clone(),
+    )));
+    let mut model_slot = ModelSlot::Shared(None);
+    let mut documents: Vec<ScanSummaryDocument> = Vec::new();
+    let mut cancelled = false;
+    for (index, input) in inputs.iter().enumerate() {
+        let canonical = std::fs::canonicalize(input).unwrap_or_else(|_| input.clone());
+        reporter.stdout.push_str(&format!(
+            "[doc {}/{} {}]\n",
+            index + 1,
+            inputs.len(),
+            input.display()
+        ));
+        let doc_output = output_dir_for_doc(&output_root, &canonical);
+        // X1 protocol ③/④: the switch happens at the document scheduling
+        // boundary; an Err VALUE skips this document and the invocation
+        // continues; owner poison is the fail-loud invocation abort.
+        if let Err(error) = owner.borrow_mut().switch_document(&canonical) {
+            if let Some(poison) = owner.borrow().poisoned() {
+                reporter.error(
+                    &ErrorReport {
+                        code: 3,
+                        kind: "pdf".to_owned(),
+                        message: "scan aborted: pdfium owner failed".to_owned(),
+                        cause: Some(poison),
+                        suggestion: Some(
+                            "re-run with --resume to continue from committed checkpoints"
+                                .to_owned(),
+                        ),
+                    },
+                    report_format,
+                );
+                print_reporter(reporter);
+                std::process::exit(3);
+            }
+            eprintln!(
+                "warning: skipping unreadable document {}: {error}",
+                input.display()
+            );
+            documents.push(ScanSummaryDocument {
+                input: canonical,
+                output_dir: doc_output,
+                status: "skipped",
+                exit_code: 3,
+            });
+            continue;
+        }
+        let code = scan_document(
+            &mut DocScanEnv {
+                options: &options,
+                report_format,
+                progress_mode,
+                cancellation: &cancellation,
+                owner: Some(&owner),
+                model_slot: &mut model_slot,
+            },
+            &canonical,
+            &doc_output,
+            &mut reporter,
+        );
+        if code == 130 {
+            cancelled = true;
+            documents.push(ScanSummaryDocument {
+                input: canonical,
+                output_dir: doc_output,
+                status: "cancelled",
+                exit_code: code,
+            });
+            break;
+        }
+        documents.push(ScanSummaryDocument {
+            input: canonical,
+            output_dir: doc_output,
+            status: match code {
+                0 => "success",
+                10 => "partial",
+                _ => "failed",
+            },
+            exit_code: code,
+        });
+    }
+    // X1.3: the aggregate summary rides next to the per-document dirs; a
+    // write failure is a warning, never a reason to discard finished scans.
+    if let Err(error) = ocrx_output::atomic_write(
+        output_root.join("scan-summary.json"),
+        scan_summary_json(
+            &inputs,
+            &output_root,
+            &documents,
+            started.elapsed().as_millis(),
+        )
+        .as_bytes(),
+    ) {
+        eprintln!("warning: scan-summary.json write failed: {error}");
+    }
+    let codes: Vec<i32> = documents
+        .iter()
+        .map(|document| document.exit_code)
+        .collect();
+    print_reporter(reporter);
+    std::process::exit(if cancelled {
+        130
+    } else {
+        aggregate_scan_exit(&codes)
+    });
 }
 
 /// Builds the actionable exit-10 advice line (plan §3.5, G5): lists the
@@ -3819,16 +4250,17 @@ mod tests {
     use super::{
         CancellationToken, CliCommand, ConfigSource, NativeFirstPhaseResult, NativeOnlyDecision,
         NativeValidationRoute, ResolvedConfig, ResourceSnapshot, RoutingCounts, ScanExecutionPlan,
-        ScanOptions, ScanResultFields, SegmentRenderer, WorkerScanRenderer, build_final_ocr_queue,
-        current_platform, doctor_json_report, dynamic_fallback_requires_model_assets,
-        final_routing_diagnostics, format_routing_summary, initial_ocr_queue,
-        initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
-        native_candidate_pages, native_only_decision, ocr_queue_after_native_phase, parse_command,
-        parse_injected_failure_page, parse_page_selection, parse_scan_args,
-        pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required, resolve_config,
-        resolve_scan_inputs, restrict_ocr_queue_to_pages, route_native_validation, routing_counts,
-        routing_counts_for_mode, routing_diagnostic_json, routing_diagnostic_with_processing,
-        run_native_first_phase, service_pages_from_ocr_queue, should_initialize_ocr_runtime,
+        ScanOptions, ScanResultFields, ScanSummaryDocument, SegmentRenderer, WorkerScanRenderer,
+        aggregate_scan_exit, build_final_ocr_queue, current_platform, doctor_json_report,
+        dynamic_fallback_requires_model_assets, final_routing_diagnostics, format_routing_summary,
+        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
+        native_candidate_pages, native_only_decision, ocr_queue_after_native_phase,
+        output_dir_for_doc, parse_command, parse_injected_failure_page, parse_page_selection,
+        parse_scan_args, pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required,
+        resolve_config, resolve_scan_inputs, restrict_ocr_queue_to_pages, route_native_validation,
+        routing_counts, routing_counts_for_mode, routing_diagnostic_json,
+        routing_diagnostic_with_processing, run_native_first_phase, scan_summary_json,
+        service_pages_from_ocr_queue, should_initialize_ocr_runtime,
         try_routing_diagnostic_with_processing, validate_text_mode_classifications,
         with_ocr_runtime, write_routing_checkpoint_sidecars,
     };
@@ -3836,6 +4268,103 @@ mod tests {
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
     };
     use ocrx_output::{OcrQueuePage, PageDiagnostic, RenderAudit, ResultReport, ResultStatus};
+
+    // --- X1.3: orchestrated output layout and exit aggregation -------------
+
+    #[test]
+    fn output_dir_for_doc_is_deterministic_and_collision_free_for_same_stems() {
+        let root = Path::new("root");
+        let a = Path::new(r"D:\docs\guide.pdf");
+        let b = Path::new(r"D:\other\guide.pdf");
+        let dir_a = output_dir_for_doc(root, a);
+        let dir_b = output_dir_for_doc(root, b);
+        assert_eq!(
+            dir_a,
+            output_dir_for_doc(root, a),
+            "layout must be deterministic"
+        );
+        assert_ne!(
+            dir_a, dir_b,
+            "same stem from different directories must not collide"
+        );
+        let name_a = dir_a.file_name().unwrap().to_string_lossy().to_string();
+        assert!(name_a.starts_with("guide-"), "{name_a}");
+        assert_eq!(
+            name_a.len(),
+            "guide-".len() + 8,
+            "hash suffix is exactly 8 hex: {name_a}"
+        );
+        let expected_hash = ocrx_core::sha256(a.to_string_lossy().as_bytes());
+        assert!(name_a.ends_with(&expected_hash[..8]));
+    }
+
+    #[test]
+    fn aggregate_scan_exit_follows_the_severity_ladder() {
+        assert_eq!(aggregate_scan_exit(&[]), 0);
+        assert_eq!(aggregate_scan_exit(&[0, 0]), 0);
+        assert_eq!(aggregate_scan_exit(&[0, 10]), 10);
+        assert_eq!(
+            aggregate_scan_exit(&[0, 3, 10]),
+            3,
+            "document failure dominates partial"
+        );
+        assert_eq!(aggregate_scan_exit(&[9, 10, 0]), 3);
+        assert_eq!(
+            aggregate_scan_exit(&[10, 130]),
+            130,
+            "cancellation dominates everything"
+        );
+        assert_eq!(aggregate_scan_exit(&[0, 130, 5]), 130);
+    }
+
+    #[test]
+    fn scan_summary_json_carries_inputs_output_and_per_document_status() {
+        let documents = vec![
+            ScanSummaryDocument {
+                input: PathBuf::from(r"D:\docs\a.pdf"),
+                output_dir: PathBuf::from(r"D:\out\a-12345678"),
+                status: "success",
+                exit_code: 0,
+            },
+            ScanSummaryDocument {
+                input: PathBuf::from(r"D:\docs\bad.pdf"),
+                output_dir: PathBuf::from(r"D:\out\bad-abcdef01"),
+                status: "skipped",
+                exit_code: 3,
+            },
+        ];
+        let json = scan_summary_json(
+            &[
+                PathBuf::from(r"D:\docs\a.pdf"),
+                PathBuf::from(r"D:\docs\bad.pdf"),
+            ],
+            Path::new(r"D:\out"),
+            &documents,
+            1_234,
+        );
+        assert!(
+            json.starts_with("{\"schema_version\":1,\"mode\":\"multi\""),
+            "{json}"
+        );
+        // json_escape_path keeps the raw separator spelling and escapes it.
+        assert!(json.contains("\"output_root\":\"D:\\\\out\""), "{json}");
+        assert!(json.contains("\"output_dir\":\"D:\\\\out"), "{json}");
+        assert!(
+            json.contains("\"status\":\"success\"") && json.contains("\"exit_code\":0"),
+            "{json}"
+        );
+        assert!(
+            json.contains("\"status\":\"skipped\"") && json.contains("\"exit_code\":3"),
+            "{json}"
+        );
+        assert!(json.contains("\"elapsed_ms\":1234"), "{json}");
+        assert_eq!(
+            json.matches("\"input\"").count(),
+            2,
+            "one input key per document entry: {json}"
+        );
+        assert!(json.contains("\"inputs\":[\"D:"), "{json}");
+    }
 
     #[test]
     fn scan_parser_single_input_keeps_default_output_semantics() {
