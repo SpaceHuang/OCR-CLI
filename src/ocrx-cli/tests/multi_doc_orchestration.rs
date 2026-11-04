@@ -59,8 +59,15 @@ fn scratch_dir(tag: &str) -> PathBuf {
 }
 
 /// One `ocrx scan` invocation; `inputs` are the positional inputs (the
-/// orchestrator is engaged by passing more than one).
-fn run_scan(inputs: &[&Path], output: &Path, extra_args: &[&str]) -> i32 {
+/// orchestrator is engaged by passing more than one). Returns the exit code
+/// plus captured stdout/stderr for the stdout-contract and verify-count
+/// assertions.
+fn run_scan_full(
+    inputs: &[&Path],
+    output: &Path,
+    extra_args: &[&str],
+    extra_env: &[(&str, &str)],
+) -> (i32, String, String) {
     require_real_model();
     let mut command = Command::new(env!("CARGO_BIN_EXE_ocrx"));
     command
@@ -81,8 +88,19 @@ fn run_scan(inputs: &[&Path], output: &Path, extra_args: &[&str]) -> i32 {
         ])
         .args(extra_args)
         .env("OCRX_PDFIUM_LIBRARY", pdfium_dir());
+    for (key, value) in extra_env {
+        command.env(key, value);
+    }
     let child = command.output().expect("ocrx binary should run");
-    child.status.code().unwrap_or(-1)
+    let code = child.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&child.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&child.stderr).to_string();
+    (code, stdout, stderr)
+}
+
+fn run_scan(inputs: &[&Path], output: &Path, extra_args: &[&str]) -> i32 {
+    let (code, _stdout, _stderr) = run_scan_full(inputs, output, extra_args, &[]);
+    code
 }
 
 /// The orchestrated directory for `input` inside `root`:
@@ -276,5 +294,97 @@ fn unreadable_document_is_skipped_and_the_rest_continue() {
         planned_bad_dir.display()
     );
 
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+#[test]
+#[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
+fn model_is_resolved_and_verified_exactly_once_per_invocation() {
+    // Review BLK-2: the shared model slot must skip not only the load but the
+    // full asset verification for every document after the first. With the
+    // debug channel on, `resolve_and_prepare_model` emits one stderr line per
+    // verification - a two-document invocation must show exactly one.
+    let doc_a = fixture("normal-1-page.pdf");
+    let doc_b = fixture("figure-1-page.pdf");
+    let scratch = scratch_dir("verify-once");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let root = scratch.join("multi");
+    let (code, _stdout, stderr) =
+        run_scan_full(&[&doc_a, &doc_b], &root, &[], &[("OCRX_STEP_PROFILE", "1")]);
+    assert_eq!(code, 0, "orchestrated invocation must succeed");
+    let verifications = stderr
+        .lines()
+        .filter(|line| line.contains("[model] resolved and verified"))
+        .count();
+    assert_eq!(
+        verifications, 1,
+        "asset verification must run exactly once per invocation (stderr: {stderr})"
+    );
+    // Both documents still complete against the shared runtime.
+    let summary: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("scan-summary.json")).expect("scan-summary.json"),
+    )
+    .expect("scan-summary.json parses");
+    for document in summary["documents"].as_array().expect("documents") {
+        assert_eq!(document["status"], "success", "summary: {summary}");
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+#[test]
+#[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets, PDFium, and a built pdfium-worker"]
+fn worker_mode_two_ocr_documents_complete_without_spontaneous_cancellation() {
+    // Review BLK-1: with OCRX_PDF_WORKER set, every document built its own
+    // WorkerScanRenderer whose Drop cancelled the SHARED invocation token -
+    // document 2 then "cancelled" with exit 130 without any signal. The
+    // renderer now tears down through a child token; the invocation must run
+    // to completion with every document successful.
+    let doc_a = fixture("normal-1-page.pdf");
+    let doc_b = fixture("figure-1-page.pdf");
+    let worker = Path::new(env!("CARGO_BIN_EXE_ocrx"))
+        .parent()
+        .map(|dir| {
+            let name = if cfg!(target_os = "windows") {
+                "pdfium-worker.exe"
+            } else {
+                "pdfium-worker"
+            };
+            dir.join(name)
+        })
+        .expect("ocrx binary path");
+    if !worker.is_file() {
+        eprintln!(
+            "skipped: pdfium-worker not found at {} (build workspace bins first)",
+            worker.display()
+        );
+        return;
+    }
+    let scratch = scratch_dir("worker-mode");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let root = scratch.join("multi");
+    let worker_env = worker.to_str().expect("worker path");
+    let (code, _stdout, stderr) = run_scan_full(
+        &[&doc_a, &doc_b],
+        &root,
+        &[],
+        &[("OCRX_PDF_WORKER", worker_env)],
+    );
+    assert_ne!(code, 130, "spontaneous cancellation (stderr: {stderr})");
+    assert_eq!(code, 0, "worker-mode invocation must succeed");
+    let summary: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("scan-summary.json")).expect("scan-summary.json"),
+    )
+    .expect("scan-summary.json parses");
+    let statuses = summary["documents"]
+        .as_array()
+        .expect("documents array")
+        .iter()
+        .map(|document| document["status"].as_str().unwrap_or("").to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        statuses,
+        vec!["success", "success"],
+        "both documents must be processed in worker mode: {summary}"
+    );
     let _ = std::fs::remove_dir_all(&scratch);
 }

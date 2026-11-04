@@ -18,7 +18,9 @@ use ocrx_pdf::{
     PdfErrorKind, PdfWorkerScheduler, RenderOptions, classify_pdf_error, fit_pixel_budget,
     plan_page_checked,
 };
-use ocrx_runtime::{Backend, LlamaMtmdRuntime, Runtime, RuntimeInfo, RuntimeTelemetry};
+use ocrx_runtime::{
+    Backend, LlamaMtmdRuntime, Runtime, RuntimeInfo, RuntimeTelemetry, StepProfile,
+};
 use std::cell::RefCell;
 use std::io::{Cursor, IsTerminal, Read};
 use std::path::{Path, PathBuf};
@@ -465,6 +467,12 @@ fn resolve_and_prepare_model(
         if !assets_valid {
             return Err("installed model failed verification".to_owned());
         }
+    }
+    // Review BLK-2 observability: one stderr line per full asset
+    // verification, gated by the established debug channel so the gated
+    // orchestration test can assert verify-once-per-invocation.
+    if StepProfile::env_enabled() {
+        eprintln!("[model] resolved and verified profile={profile}");
     }
     Ok((profile, device, model, mmproj))
 }
@@ -2150,6 +2158,12 @@ struct DocScanEnv<'a> {
     cancellation: &'a CancellationToken,
     owner: Option<&'a Rc<RefCell<pdfium_owner::PdfiumOwnerHandle>>>,
     model_slot: &'a mut ModelSlot,
+    /// BLK-4 stdout contract: the single-input path prints its `result.json`
+    /// on stdout (the historical machine interface). The orchestrator
+    /// suppresses per-document stdout results - with `--report json` its
+    /// stdout carries exactly one aggregate JSON object, and per-document
+    /// results stay in their files.
+    stdout_results: bool,
 }
 
 /// Runtime lifetime policy (X1.2): the single-input path resolves and loads
@@ -2182,6 +2196,7 @@ fn scan_document(
     reporter: &mut Reporter,
 ) -> i32 {
     let options = env.options;
+    let stdout_results = env.stdout_results;
     let report_format = env.report_format;
     let progress_mode = env.progress_mode;
     let cancellation = env.cancellation;
@@ -2471,7 +2486,12 @@ fn scan_document(
             active_segment: (0, 0),
             has_active_segment: false,
             prefetch: None,
-            cancellation: cancellation.clone(),
+            // BLK-1: the renderer's Drop cancels its own lifecycle (prefetch
+            // drain, worker shutdown) - a child token keeps that teardown
+            // scoped so one document's renderer drop can never cancel the
+            // whole orchestrated invocation, while user Ctrl+C still reaches
+            // the renderer through the ancestor link.
+            cancellation: cancellation.child(),
         })
     } else {
         // P3 (plan §6.2): the in-process render pipeline runs on the owner
@@ -2794,7 +2814,19 @@ fn scan_document(
     let final_ocr_queue = ocr_queue_after_native_phase(&initial_queue, &native_phase);
     let ocr_service_pages = service_pages_from_ocr_queue(&final_ocr_queue);
     let execution_plan = ScanExecutionPlan::from_final_ocr_queue(ocr_service_pages.len());
-    if execution_plan.initialize_runtime {
+    // BLK-2: on the orchestrated path a filled slot means the model was
+    // already resolved AND fully verified earlier in this invocation - reuse
+    // that config and skip `resolve_and_prepare_model` (and with it the
+    // per-document SHA-256 pass) entirely. Resolve+verify+load happen exactly
+    // once per invocation; only the first OCR-needing document pays them.
+    let shared_reuse = match env.model_slot {
+        ModelSlot::Shared(Some(shared)) => Some((shared.profile.clone(), shared.device.clone())),
+        _ => None,
+    };
+    if let Some((reused_profile, reused_device)) = shared_reuse {
+        profile.clone_from(&reused_profile);
+        device.clone_from(&reused_device);
+    } else if execution_plan.initialize_runtime {
         match resolve_and_prepare_model(
             true,
             &options.profile,
@@ -2808,10 +2840,11 @@ fn scan_document(
                 device.clone_from(&resolved_device);
                 model = resolved_model;
                 mmproj = resolved_mmproj;
-                // X1.2: on the orchestrated path the runtime loads HERE, once
-                // per invocation - the first OCR-needing document fills the
-                // shared slot and every later document reuses it (BLK-1
-                // verdict follow-up: verify + load amortized to one shot).
+                // X1.2 (review BLK-2): on the orchestrated path the runtime
+                // resolves, verifies, and loads HERE - exactly once per
+                // invocation. The first OCR-needing document fills the shared
+                // slot; later documents take the shared_reuse short-circuit
+                // above and never re-enter this match.
                 if let ModelSlot::Shared(slot) = env.model_slot
                     && slot.is_none()
                 {
@@ -3490,8 +3523,12 @@ fn scan_document(
                 return 5;
             }
             if report_format == ReportFormat::Json {
-                reporter.stdout.push_str(&result_json);
-                reporter.stdout.push('\n');
+                // BLK-4: orchestrated invocations suppress per-document
+                // stdout results; the aggregate summary is the stdout item.
+                if stdout_results {
+                    reporter.stdout.push_str(&result_json);
+                    reporter.stdout.push('\n');
+                }
             } else {
                 reporter.result(&report, report_format);
                 let counts = routing_counts_for_mode(
@@ -3555,7 +3592,11 @@ fn scan_document(
 /// Flushes and resets a borrowed reporter (scan_document reports through
 /// `&mut Reporter`; each failure/success path prints what accumulated).
 fn emit_reporter(reporter: &mut Reporter) {
-    print_reporter(std::mem::take(reporter));
+    let drained = std::mem::take(reporter);
+    // `mem::take` resets to `Reporter::default()`, which would silently drop
+    // the orchestrated stdout policy mid-invocation - carry it across drains.
+    reporter.json_errors_on_stderr = drained.json_errors_on_stderr;
+    print_reporter(drained);
 }
 
 /// Single-input scan (historical contract): identical behavior to the
@@ -3602,6 +3643,7 @@ fn run_scan(options: ScanOptions) -> ! {
             cancellation: &cancellation,
             owner: None,
             model_slot: &mut model_slot,
+            stdout_results: true,
         },
         &input,
         &output,
@@ -3698,8 +3740,13 @@ fn run_scan_multi(options: ScanOptions) -> ! {
         ReportFormat::Text
     };
     let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
-    let mut reporter = Reporter::default();
-    let Some(output_root_raw) = options.output_dir.clone() else {
+    // BLK-4: per-document errors are logs here; stdout must stay exactly one
+    // aggregate JSON object under `--report json`.
+    let mut reporter = Reporter {
+        json_errors_on_stderr: true,
+        ..Reporter::default()
+    };
+    if options.output_dir.is_none() {
         // parse_scan_args already enforces this for multi-input; kept as
         // defense in depth for direct callers.
         reporter.error(
@@ -3714,7 +3761,7 @@ fn run_scan_multi(options: ScanOptions) -> ! {
         );
         print_reporter(reporter);
         std::process::exit(2);
-    };
+    }
     let inputs = match resolve_scan_inputs(&options.inputs) {
         Ok(inputs) if inputs.len() > 1 => inputs,
         Ok(_) => {
@@ -3749,7 +3796,27 @@ fn run_scan_multi(options: ScanOptions) -> ! {
             std::process::exit(2);
         }
     };
-    let output_root = PathBuf::from(&output_root_raw);
+    // BLK-3: the per-document output policy requires absolute roots (the
+    // single-input path gets that from `resolve_output_dir`); resolve the
+    // orchestrator's root through the same logic so a relative `--output-dir`
+    // behaves identically for every document and for scan-summary.json.
+    let output_root = match resolve_output_dir(&options.inputs[0], options.output_dir.as_deref()) {
+        Ok(path) => path,
+        Err(error) => {
+            reporter.error(
+                &ErrorReport {
+                    code: 2,
+                    kind: "usage".to_owned(),
+                    message: "output directory resolution failed".to_owned(),
+                    cause: Some(error),
+                    suggestion: Some("pass an explicit --output-dir".to_owned()),
+                },
+                report_format,
+            );
+            print_reporter(reporter);
+            std::process::exit(2);
+        }
+    };
     let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
     let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
         .map(PathBuf::from)
@@ -3768,7 +3835,9 @@ fn run_scan_multi(options: ScanOptions) -> ! {
     let mut cancelled = false;
     for (index, input) in inputs.iter().enumerate() {
         let canonical = std::fs::canonicalize(input).unwrap_or_else(|_| input.clone());
-        reporter.stdout.push_str(&format!(
+        // BLK-4: document boundary lines are logs, not machine output - they
+        // belong on stderr so a `--report json` stdout stays parseable.
+        reporter.stderr.push_str(&format!(
             "[doc {}/{} {}]\n",
             index + 1,
             inputs.len(),
@@ -3818,6 +3887,7 @@ fn run_scan_multi(options: ScanOptions) -> ! {
                 cancellation: &cancellation,
                 owner: Some(&owner),
                 model_slot: &mut model_slot,
+                stdout_results: false,
             },
             &canonical,
             &doc_output,
@@ -3849,15 +3919,22 @@ fn run_scan_multi(options: ScanOptions) -> ! {
     }
     // X1.3: the aggregate summary rides next to the per-document dirs; a
     // write failure is a warning, never a reason to discard finished scans.
+    let summary_json = scan_summary_json(
+        &inputs,
+        &output_root,
+        &documents,
+        started.elapsed().as_millis(),
+    );
+    // BLK-4 stdout contract: with `--report json` the orchestrated stdout is
+    // exactly one JSON object - this summary (per-document results live in
+    // their files and logs stay on stderr). Text mode keeps the human log.
+    if report_format == ReportFormat::Json {
+        reporter.stdout.push_str(&summary_json);
+        reporter.stdout.push('\n');
+    }
     if let Err(error) = ocrx_output::atomic_write(
         output_root.join("scan-summary.json"),
-        scan_summary_json(
-            &inputs,
-            &output_root,
-            &documents,
-            started.elapsed().as_millis(),
-        )
-        .as_bytes(),
+        summary_json.as_bytes(),
     ) {
         eprintln!("warning: scan-summary.json write failed: {error}");
     }

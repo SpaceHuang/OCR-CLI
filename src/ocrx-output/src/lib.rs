@@ -131,6 +131,11 @@ pub enum ProgressMode {
 pub struct Reporter {
     pub stdout: String,
     pub stderr: String,
+    /// When set, JSON error reports join the stderr diagnostics instead of
+    /// stdout. The orchestrated multi-document scan enables this: its stdout
+    /// must stay exactly one aggregate JSON object, so per-document errors
+    /// are logs (review BLK-4). Single-command behavior is unchanged.
+    pub json_errors_on_stderr: bool,
 }
 
 impl Reporter {
@@ -141,6 +146,10 @@ impl Reporter {
 
     pub fn error(&mut self, error: &ErrorReport, format: ReportFormat) {
         match format {
+            ReportFormat::Json if self.json_errors_on_stderr => {
+                self.stderr.push_str(&error.to_json());
+                self.stderr.push('\n');
+            }
             ReportFormat::Json => {
                 self.stdout.push_str(&error.to_json());
                 self.stdout.push('\n');
