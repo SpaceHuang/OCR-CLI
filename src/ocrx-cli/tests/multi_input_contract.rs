@@ -162,7 +162,10 @@ fn orchestrated_cancellation_stops_the_queue_at_the_next_boundary() {
 {stdout}"
         )
     });
-    assert!(summary["elapsed_ms"].as_u64().is_some(), "summary: {summary}");
+    assert!(
+        summary["elapsed_ms"].as_u64().is_some(),
+        "summary: {summary}"
+    );
     let documents = summary["documents"].as_array().expect("documents array");
     assert_eq!(
         documents.len(),
