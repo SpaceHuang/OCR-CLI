@@ -1453,7 +1453,17 @@ fn main() {
             }
         }
         CliCommand::Scan(options) => {
-            if options.inputs.len() > 1 {
+            // Route to the orchestrator when the invocation expands to
+            // multiple documents. A single directory input expands inside
+            // run_scan_multi; plain single-file scans skip input resolution
+            // entirely, so their historical missing-file behavior (page
+            // count failure, exit 3) is untouched.
+            let expands_multi = options.inputs.len() > 1
+                || options
+                    .inputs
+                    .first()
+                    .is_some_and(|first| Path::new(first).is_dir());
+            if expands_multi {
                 run_scan_multi(options)
             } else {
                 run_scan(options)
