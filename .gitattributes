@@ -26,3 +26,6 @@ docs/test/reports/perf-baseline-*-data/** -text
 
 # phase-2 measurement data: raw bytes, no EOL normalization
 docs/test/reports/phase2-t0-*-data/** -text
+
+# CUDA-vs-Vulkan engine bench data (raw bytes)
+docs/test/reports/llamacpp-cuda-vs-vulkan-bench-2026-11-05-data/** -text
