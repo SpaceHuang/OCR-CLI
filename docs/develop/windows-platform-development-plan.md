@@ -45,7 +45,7 @@
 | W3.3 取消/部分完成/恢复 | ✅ | 既有 / `6444518`(runtime 契约) / `e0ad31f`(状态机) / `587d88c`(真实故障注入) / `windows-ctrl-c-smoke.ps1` | 失败继续、`partial`/10、130、checkpoint/恢复在 CLI 层已有；runtime 内取消契约已由 W3.1 落地；真实 scan 路径用 `PageLifecycle` 状态机；真实 render/inference 失败注入 E2E 与真实 Ctrl+C 信号自动化均通过 | — |
 | W4.1 Vulkan 构建 | ✅ | `4017d1f`(Red) / `90e74ba`(enum) / `8622114`(fallback) | Vulkan SDK 1.4.357.0 已安装；`--features vulkan` 短 `CARGO_TARGET_DIR` 构建通过；`RealSystemProbe` 已用 `vulkano` 做安全 instance + physical-device 枚举；`run_scan` 已实现 GPU 初始化失败自动回退 CPU 并写入 warning；doctor 报告 `backend=Vulkan`、`vulkan_available=true`、`recommended_device=vulkan`；无 GPU 回退分支由注入式 `SystemProbe`/`ResourceSnapshot` 测试覆盖 | — |
 | W4.2 Vulkan E2E | ◐ | `90e74ba`(Vulkan) | 本机 RTX 2070 已登记为官方 NVIDIA GPU 基准设备；Vulkan 真实 E2E 与 CPU 对照完成（`docs/develop/windows-gpu-baseline-2026-08-18.md`），结构一致且 speedup 约 7.02x；2026-10-30 RTX 4090 D 复验：30 页 reference 全量门禁集 Vulkan 58.4s vs CPU 562.6s ≈ 9.6x，逐页文本相似度 mean 0.9999 / min 0.9974，评分与 CPU 等值（见执行报告） | 结构化质量评分已完成（同 W0.4 遗留公式粒度项）；正式发布前需在登记基准机复跑 |
-| W4.3 CUDA 构建 | ⛔ | — | — | 升级 CUDA toolkit 至 ≥12.x |
+| W4.3 CUDA 构建 | ◐ | 2026-10-31：本机已装 CUDA Toolkit 12.4（nvcc V12.4.131、`CUDA_PATH` 已设、驱动 610.88 未变），原"缺 toolkit"阻塞记录（2026-08）过时；`--features cuda` 构建通过（14m14s，`CMAKE_GENERATOR=Ninja` 绕开 VS 集成组件缺失，无 unsupported-compiler 告警）；`doctor` 报 `backend=Cuda`、`--device cuda` 可用；单页真实 E2E 冒烟 exit 0（`status=success`、`backend=cuda`）。证据：`docs/develop/scan-throughput-optimization-development-plan.md` §5.5 | 剩余 T1.2（打包脚本 cuda 分支）/T1.3（安装器优先级链）/T1.4（CUDA vs Vulkan vs CPU 三方基线 + 结构化质量对照）；Vulkan 基线复跑仍需登记基准机 |
 | W4.4 GPU 资源报告 | ◐ | `83066f6`(schema) / `2cecdfc`(采样) | 官方 GPU 基准设备已登记；自动报告已采集 `load_time_ms=1444`、`first_token_ms=49`、`output_tokens=26`、`output_tokens_per_sec=76.246`、`vram_peak_bytes=1637875712`；CPU 对照 350014ms；2026-10-30 4090 D 门禁集复验通过（见执行报告） | 正式发布前需在登记基准机复跑 |
 | W5.1 日志/隐私/doctor | ✅ | `f20ba05` | 脱敏统一收敛到 `ocrx-output::redact_sensitive`（单一来源，无平台分支调用点）；doctor 离线 | — |
 | W5.2 Skill Windows 安装 | ✅ | `83da793` | `SkillScope { User, Project }`，用户级/项目级与待决策项 5 冻结结论一致；原子写 + 卸载边界测试 | — |
@@ -103,7 +103,7 @@
 
 1. **OvisOCR2 GGUF 权重** → W0.1、W0.4、W3.1-Green、W3.2-real、W3.3-real。（本机已通过 hf-mirror.com 下载并校验 `compact` 与 `reference`；`balanced`/`quality` 尚未下载。）
 2. **Vulkan SDK ≥1.3**（本机安装即可）→ W4.1-Green，进而 W4.2/W4.4。
-3. **CUDA toolkit ≥12.x**（升级或换机）→ W4.3。
+3. **CUDA toolkit ≥12.x**（升级或换机）→ W4.3 —— **已解除（2026-10-31）**：本机实测已装 CUDA 12.4（nvcc V12.4.131、`CUDA_PATH` 已设、驱动 610.88 未变），W4.3 转入执行（见 §0.2 W4.3 行）。
 4. **16 GB CPU-only 基准设备官方测量窗口** → W0.3-Green（及 W2.2 资源采集）。
 5. **干净 Windows 10/11 环境** → W6。
 
