@@ -119,7 +119,10 @@ enum PdfResponse {
     PageCount(Result<usize, String>),
     NativeExtracted(Result<ocrx_pdf::NativePage, String>),
     Analyze(Result<Vec<PageClassification>, String>),
-    Render(Result<RenderedPage, String>),
+    /// T1: the u64 is the owner render work time in microseconds for this
+    /// page (demand render or the prefetch that produced a cache hit;
+    /// diagnostic only — the caller wait already covers it).
+    Render(Result<(RenderedPage, u64), String>),
     /// Document-level switch outcome as a value (§3-4); a `Err` here means
     /// "skip this document", while owner poison travels through the handle.
     Switched(Result<(), String>),
@@ -131,16 +134,26 @@ struct OwnerState<E: PdfiumExecutor> {
     cache: BTreeMap<u32, Result<RenderedPage, String>>,
     /// Next page the prefetch window has not covered yet.
     next_prefetch: u32,
+    /// T1: measured render work time (µs) of each prefetched page, carried
+    /// to the response when the cached entry is consumed.
+    prefetch_us: BTreeMap<u32, u64>,
 }
 
 impl<E: PdfiumExecutor> OwnerState<E> {
     /// Answers `page` (from cache or direct). Prefetch is a separate step —
     /// review finding 3: topping the window up before answering delayed the
     /// current page's response behind N+1/N+2's renders.
-    fn render_page(&mut self, page: u32) -> Result<RenderedPage, String> {
+    fn render_page(&mut self, page: u32) -> Result<(RenderedPage, u64), String> {
         match self.cache.remove(&page) {
-            Some(cached) => cached,
-            None => self.render_direct(page, 1, 1),
+            // T1: a cache hit carries the prefetch's measured work time.
+            Some(Ok(cached)) => Ok((cached, self.prefetch_us.remove(&page).unwrap_or(0))),
+            Some(Err(message)) => Err(message),
+            None => {
+                let started = std::time::Instant::now();
+                let rendered = self.render_direct(page, 1, 1)?;
+                let owner_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+                Ok((rendered, owner_us))
+            }
         }
     }
 
@@ -155,7 +168,15 @@ impl<E: PdfiumExecutor> OwnerState<E> {
         while self.next_prefetch < top_exclusive {
             let prefetch_page = self.next_prefetch;
             self.next_prefetch += 1;
+            let started = std::time::Instant::now();
             let rendered = self.render_direct(prefetch_page, 1, 1);
+            if rendered.is_ok() {
+                // T1: failed prefetches carry no usable timing.
+                self.prefetch_us.insert(
+                    prefetch_page,
+                    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                );
+            }
             self.cache.insert(prefetch_page, rendered);
         }
     }
@@ -243,6 +264,9 @@ pub(crate) struct PdfiumOwnerHandle {
     responses: std::sync::mpsc::Receiver<PdfResponse>,
     timeout: Duration,
     poison: Option<String>,
+    /// T1: owner render work time (µs) stashed by the latest `render_via`
+    /// (main-thread side; `Cell` is fine — the handle is `Rc`-held).
+    last_render_us: std::cell::Cell<u64>,
 }
 
 impl PdfiumOwnerHandle {
@@ -285,6 +309,7 @@ impl PdfiumOwnerHandle {
                     executor,
                     cache: BTreeMap::new(),
                     next_prefetch: 1,
+                    prefetch_us: BTreeMap::new(),
                 };
                 for request in requests_rx {
                     let mut pending_prefetch: Option<u32> = None;
@@ -313,12 +338,17 @@ impl PdfiumOwnerHandle {
                             page,
                             numerator,
                             denominator,
-                        } => PdfResponse::Render(
+                        } => {
                             // Perturbation renders on demand, never through the
                             // prefetch window (plan §6.2); a non-identity ratio
                             // resamples the raw render like the serial path.
-                            state.render_direct(page, numerator, denominator),
-                        ),
+                            let started = std::time::Instant::now();
+                            let rendered =
+                                state.render_direct(page, numerator, denominator);
+                            let owner_us =
+                                u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+                            PdfResponse::Render(rendered.map(|page| (page, owner_us)))
+                        }
                         PdfRequest::SwitchDocument { input } => {
                             // BLK-2 §3-3: switching is only legal at a
                             // scheduling boundary (the orchestrator
@@ -347,6 +377,7 @@ impl PdfiumOwnerHandle {
             responses: responses_rx,
             timeout,
             poison: None,
+            last_render_us: std::cell::Cell::new(0),
         }
     }
 
@@ -442,10 +473,23 @@ impl PdfiumOwnerHandle {
 
     fn render_via(&mut self, request: PdfRequest) -> std::io::Result<RenderedPage> {
         match self.request(request) {
-            Ok(PdfResponse::Render(value)) => value.map_err(std::io::Error::other),
+            Ok(PdfResponse::Render(value)) => {
+                let (page, owner_us) = value.map_err(std::io::Error::other)?;
+                self.last_render_us.set(owner_us);
+                Ok(page)
+            }
             Ok(_) => unreachable!("render request answers a page"),
             Err(error) => Err(std::io::Error::other(error)),
         }
+    }
+
+    /// T1: the owner render work time (µs) of the last completed render
+    /// response; `take` semantics so one page's value never leaks to the
+    /// next. 0 after a failed render.
+    pub(crate) fn take_last_render_us(&self) -> u64 {
+        let us = self.last_render_us.get();
+        self.last_render_us.set(0);
+        us
     }
 }
 
@@ -521,11 +565,20 @@ impl PdfiumExecutor for RealPdfiumExecutor {
 /// type — the §6.1 invariant by construction.
 pub(crate) struct OwnerPageRenderer {
     handle: Rc<RefCell<PdfiumOwnerHandle>>,
+    /// T1: records the owner render work time each response carried; a
+    /// clone of the scan's shared commit-path recorder.
+    commit_recorder: ocrx_output::commit_profile::CommitRecorder,
 }
 
 impl OwnerPageRenderer {
-    pub(crate) fn new(handle: Rc<RefCell<PdfiumOwnerHandle>>) -> Self {
-        Self { handle }
+    pub(crate) fn new(
+        handle: Rc<RefCell<PdfiumOwnerHandle>>,
+        commit_recorder: ocrx_output::commit_profile::CommitRecorder,
+    ) -> Self {
+        Self {
+            handle,
+            commit_recorder,
+        }
     }
 }
 
@@ -541,9 +594,15 @@ impl PageRenderer for OwnerPageRenderer {
 
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
         crate::inject_render_failure(page)?;
-        self.handle
+        let rendered = self
+            .handle
             .borrow_mut()
-            .render_via(PdfRequest::Render { page })
+            .render_via(PdfRequest::Render { page });
+        // T1: owner work time from the response (0 after a failure;
+        // diagnostic only — the caller wait already covers it).
+        let owner_us = self.handle.borrow().take_last_render_us();
+        self.commit_recorder.record_owner_render(page, owner_us);
+        rendered
     }
 
     fn render_perturbed(
@@ -553,13 +612,17 @@ impl PageRenderer for OwnerPageRenderer {
         denominator: u32,
     ) -> std::io::Result<RenderedPage> {
         crate::inject_render_failure(page)?;
-        self.handle
+        let rendered = self
+            .handle
             .borrow_mut()
             .render_via(PdfRequest::RenderPerturbed {
                 page,
                 numerator,
                 denominator,
-            })
+            });
+        let owner_us = self.handle.borrow().take_last_render_us();
+        self.commit_recorder.record_owner_render(page, owner_us);
+        rendered
     }
 }
 
@@ -813,7 +876,10 @@ mod tests {
         let (executor, calls) = FakeExecutor::new();
         let (handle, _calls) = executor.spawn();
         let handle = Rc::new(RefCell::new(handle));
-        let mut renderer = OwnerPageRenderer::new(Rc::clone(&handle));
+        let mut renderer = OwnerPageRenderer::new(
+            Rc::clone(&handle),
+            ocrx_output::commit_profile::CommitRecorder::disabled(),
+        );
         assert!(renderer.preflight().is_ok());
         let page = renderer.render(1).unwrap();
         assert_eq!(page_marker(&page), 11); // doc prefix 1, page 1
