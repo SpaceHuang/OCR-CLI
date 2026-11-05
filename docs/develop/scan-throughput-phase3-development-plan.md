@@ -1,7 +1,7 @@
 # 扫描吞吐优化三期执行计划（backend sampling 主杠杆 + 提交路径 fallback）
 
 **日期**：2026-11-05
-**状态**：v2.1——2026-11-05 复审 **PASS**（无方案级阻断；记录：主仓库 `docs/review/scan-throughput-phase3-development-plan.md`），v2.0 五项阻断（BLK-1 代次键 / BLK-2 S0 可实施性门禁 / BLK-3 正确性先行 / BLK-4 T1 采集链 / BLK-5 P2 收益模型）确认全部解除，计划进入实现。执行序 `S0 →（S0.5 双条件决策门）→ BS 主线 ∥ T1`；该结论不预先放行 BS 合入——BS 仍须通过 S0.5 双条件决策门与 BS.4 第二档/resume/性能门禁。
+**状态**：v2.1——2026-11-05 复审 **PASS** 后**已执行完毕（2026-11-05 收官）**：S0 决策门裁决 BS no-go（−2.5% ≪ 8%），T1 插桩合入（`8fbe735`）并以实测裁决 fallback P1/P2/P3 全部 no-go（−1.9% / 0 / −3.2%，`6200ec8`）——两个决策门均按"未过线即关闭归档"机制工作，未硬凑。总报告：`docs/test/reports/phase3-summary-2026-11-05.md`。执行记录：S0 spike 在 `scratch/backend-sampling-spike`（保留不合入）；主线交付 = T1 commit-profile 通道。
 **输入数据**：
 - 二期总报告与实现评审响应：`docs/test/reports/phase2-summary-2026-11-04.md`、`docs/review/scan-throughput-phase2-implementation-review-response.md`
 - X1 报告两轮实测（md-small-20 26.2 s / 5.9×）：`docs/develop/cross-doc-orchestration-2026-11-04.md` §2④

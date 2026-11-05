@@ -1,5 +1,7 @@
 //! Atomic output and checkpoint boundary.
 
+pub mod commit_profile;
+
 /// Stable result status used by CLI reporters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResultStatus {
@@ -690,12 +692,22 @@ where
         let mut attempts = start_attempt.saturating_sub(1);
         loop {
             attempts += 1;
+            // T1: the caller-side wait is the model's R input; every render
+            // attempt (retry perturbations included) gets its own row keyed
+            // by the generation allocated here.
+            let generation = self.commit_recorder.begin_render(page);
+            let render_started = std::time::Instant::now();
             let image = if attempts == 1 {
                 self.renderer.render(page)
             } else {
                 let (numerator, denominator) = if attempts == 2 { (47, 50) } else { (53, 50) };
                 self.renderer.render_perturbed(page, numerator, denominator)
             };
+            self.commit_recorder.record_render_wait(
+                page,
+                generation,
+                u64::try_from(render_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            );
             let image = match image {
                 Ok(image) => image,
                 Err(_) => {
@@ -869,6 +881,7 @@ where
                     &mut degenerated,
                     &mut warnings,
                     &mut diagnostics,
+                    &self.commit_recorder,
                 )?;
                 terminal.clear();
                 continue;
@@ -880,7 +893,16 @@ where
             let mut render_failed: std::collections::BTreeMap<u32, bool> =
                 std::collections::BTreeMap::new();
             for &page in &window {
-                match self.renderer.render(page) {
+                // T1: caller-side render wait, one row per (page, generation).
+                let generation = self.commit_recorder.begin_render(page);
+                let render_started = std::time::Instant::now();
+                let rendered = self.renderer.render(page);
+                self.commit_recorder.record_render_wait(
+                    page,
+                    generation,
+                    u64::try_from(render_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                );
+                match rendered {
                     Ok(image) => images.push((page, image)),
                     Err(_) => {
                         render_failed.insert(page, cancellation.is_cancelled());
@@ -1074,6 +1096,9 @@ where
                             audit: Some(image.audit),
                         };
                         diagnostics.push(checkpoint.diagnostic());
+                        // T1: write span + terminal fold (mirror of
+                        // `commit_terminal_pages`).
+                        let write_started = std::time::Instant::now();
                         commit_page(
                             root,
                             page,
@@ -1082,11 +1107,17 @@ where
                             &artifact.page_json,
                             &checkpoint,
                         )?;
+                        self.commit_recorder.record_commit_write(
+                            page,
+                            u64::try_from(write_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                        );
+                        self.commit_recorder.mark_terminal(page);
                         completed += 1;
                     }
                     TerminalPage::RenderFailed { page, cancelled } => {
                         let page = *page;
                         let cancelled = *cancelled;
+                        self.commit_recorder.mark_terminal(page);
                         if !cancelled {
                             failed += 1;
                         }
@@ -1108,6 +1139,7 @@ where
                         let page = *page;
                         let audit = *audit;
                         let cancelled = cancellation.is_cancelled();
+                        self.commit_recorder.mark_terminal(page);
                         if !cancelled {
                             failed += 1;
                         }
@@ -1139,11 +1171,16 @@ where
             && !cancellation.is_cancelled()
             && completed == u32::try_from(page_numbers.len()).unwrap_or(u32::MAX)
         {
+            // T1: finalize span (merge + cleanup), recorded once per scan.
+            let finalize_started = std::time::Instant::now();
             let pages = collect_page_markdowns(root, page_numbers)?;
             finalize_document(root, pages)?;
             if !keep_pages {
                 cleanup_full_page_images(root, page_numbers)?;
             }
+            self.commit_recorder.record_finalize(
+                u64::try_from(finalize_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            );
         }
         Ok(JobSummary {
             selected_pages: u32::try_from(page_numbers.len()).unwrap_or(u32::MAX),
@@ -1192,16 +1229,48 @@ pub struct ScanService<R, L, A> {
     renderer: R,
     loader: L,
     recognizer: A,
+    /// T1 commit-path profiler: env-gated (OCRX_STEP_PROFILE), shared with
+    /// the CLI's owner-render/PNG-encode clones through
+    /// [`ScanService::with_commit_recorder`].
+    commit_recorder: commit_profile::CommitRecorder,
 }
 
 impl<R, L, A> ScanService<R, L, A> {
     #[must_use]
     pub fn new(renderer: R, loader: L, recognizer: A) -> Self {
+        Self::with_commit_recorder(
+            renderer,
+            loader,
+            recognizer,
+            commit_profile::CommitRecorder::new_gated(),
+        )
+    }
+
+    /// T1: injects a caller-owned recorder so the CLI's owner-render and
+    /// PNG-encode clones and the service's render-wait/commit-write timing
+    /// land in one state (one `commit-profile.json` per document).
+    #[must_use]
+    pub fn with_commit_recorder(
+        renderer: R,
+        loader: L,
+        recognizer: A,
+        commit_recorder: commit_profile::CommitRecorder,
+    ) -> Self {
         Self {
             renderer,
             loader,
             recognizer,
+            commit_recorder,
         }
+    }
+
+    /// The commit-path profile snapshot; `None` when the recorder is
+    /// disabled (env-off runs, disabled-injected tests).
+    #[must_use]
+    pub fn commit_profile(&self) -> Option<commit_profile::CommitProfile> {
+        self.commit_recorder
+            .enabled()
+            .then(|| self.commit_recorder.snapshot())
     }
 }
 
@@ -1602,6 +1671,7 @@ fn commit_terminal_pages(
     degenerated: &mut u32,
     warnings: &mut std::collections::BTreeSet<String>,
     diagnostics: &mut Vec<PageDiagnostic>,
+    commit_recorder: &commit_profile::CommitRecorder,
 ) -> io::Result<()> {
     for entry in terminal {
         match entry {
@@ -1655,6 +1725,9 @@ fn commit_terminal_pages(
                     audit: Some(image.audit),
                 };
                 diagnostics.push(checkpoint.diagnostic());
+                // T1: the write span covers the atomic writes through the
+                // checkpoint rename inside `commit_page`.
+                let write_started = std::time::Instant::now();
                 commit_page(
                     root,
                     page,
@@ -1663,11 +1736,17 @@ fn commit_terminal_pages(
                     &artifact.page_json,
                     &checkpoint,
                 )?;
+                commit_recorder.record_commit_write(
+                    page,
+                    u64::try_from(write_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                );
+                commit_recorder.mark_terminal(page);
                 *completed += 1;
             }
             TerminalPage::RenderFailed { page, cancelled } => {
                 let page = *page;
                 let cancelled = *cancelled;
+                commit_recorder.mark_terminal(page);
                 if !cancelled {
                     *failed += 1;
                 }
@@ -1689,6 +1768,7 @@ fn commit_terminal_pages(
                 let page = *page;
                 let audit = *audit;
                 let cancelled = cancellation.is_cancelled();
+                commit_recorder.mark_terminal(page);
                 if !cancelled {
                     *failed += 1;
                 }
@@ -2701,6 +2781,201 @@ mod tests {
                 })
                 .collect()
         }
+    }
+
+    /// Fake whose recognition records a PNG encode into a shared T1
+    /// recorder — the same handoff the CLI recognizer performs, so the
+    /// end-to-end test proves the encode segment lands on the same profile
+    /// state as the service's render/commit segments (v2.1 T1, shared sink).
+    struct EncodingArtifacts {
+        calls: Vec<u32>,
+        encode_sink: Option<crate::commit_profile::CommitRecorder>,
+    }
+    impl PageArtifactRecognizer<u32> for EncodingArtifacts {
+        fn recognize_artifact(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+        ) -> std::io::Result<PageArtifactResult> {
+            self.calls.push(page);
+            if let Some(recorder) = &self.encode_sink {
+                recorder.record_png_encode(page, 1);
+            }
+            Ok(PageArtifactResult {
+                png: vec![page as u8],
+                markdown: format!("page {page}"),
+                degenerated: false,
+                raw_output: String::new(),
+                page_json: format!(
+                    r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]}}"#
+                ),
+                truncated: false,
+                warnings: Vec::new(),
+            })
+        }
+    }
+
+    /// Renderer with a measurable (>=1 microsecond) render wait so the
+    /// commit-profile e2e can assert non-zero render_wait_us — the plain
+    /// fake finishes in well under a microsecond, and a sub-microsecond
+    /// wait correctly records 0.
+    struct SleepyRenderer {
+        inner: FakeRenderer,
+    }
+    impl PageRenderer for SleepyRenderer {
+        fn preflight(&mut self) -> std::io::Result<()> {
+            self.inner.preflight()
+        }
+        fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            self.inner.render(page)
+        }
+    }
+
+    #[test]
+    fn commit_profile_captures_every_segment_end_to_end() {
+        // T1 acceptance precondition: with the recorder enabled, every
+        // segment (render wait, encode via the shared sink, commit write,
+        // finalize) fills non-zero, rows are keyed per page, and totals fold
+        // exactly the terminal attempts.
+        let root = test_dir("commit-profile-e2e");
+        let _ = fs::remove_dir_all(&root);
+        let recorder = crate::commit_profile::CommitRecorder::with_enabled(true);
+        let mut service = ScanService::with_commit_recorder(
+            SleepyRenderer {
+                inner: FakeRenderer {
+                    calls: Vec::new(),
+                    fail_page: None,
+                },
+            },
+            FakeLoader { loads: 0 },
+            EncodingArtifacts {
+                calls: Vec::new(),
+                encode_sink: Some(recorder.clone()),
+            },
+            recorder.clone(),
+        );
+        let cancellation = CancellationToken::new();
+        let summary = service
+            .run_with_checkpoints_heartbeat(
+                &[1, 2, 3],
+                &root,
+                &degeneration_compatibility(),
+                false,
+                false,
+                &cancellation,
+                &mut |_, _| {},
+            )
+            .unwrap();
+        assert_eq!(summary.completed_pages, 3);
+        let profile = service
+            .commit_profile()
+            .expect("enabled recorder yields the snapshot");
+        assert_eq!(profile.pages.len(), 3, "one row per page");
+        for row in &profile.pages {
+            assert_eq!(row.generation, 1, "single attempt per page");
+            assert!(
+                row.render_wait_us > 0,
+                "render wait recorded for page {}",
+                row.page
+            );
+            assert_eq!(
+                row.png_encode_us, 1,
+                "encode lands via the shared sink on page {}",
+                row.page
+            );
+            assert!(
+                row.commit_write_us > 0,
+                "commit write recorded for page {}",
+                row.page
+            );
+        }
+        assert_eq!(profile.pages_total, 3, "every page reached terminal state");
+        assert_eq!(profile.png_encode_us, 3);
+        assert!(profile.render_wait_us > 0);
+        assert!(profile.commit_write_us > 0);
+        assert!(profile.finalize_us > 0, "finalize recorded once");
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn commit_profile_disabled_yields_nothing() {
+        // Env-off runs (and disabled-injected tests) get no profile and no
+        // recorder state — the write gate in the CLI sees `None`.
+        let root = test_dir("commit-profile-disabled");
+        let _ = fs::remove_dir_all(&root);
+        let mut service = ScanService::with_commit_recorder(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            EncodingArtifacts {
+                calls: Vec::new(),
+                encode_sink: None,
+            },
+            crate::commit_profile::CommitRecorder::with_enabled(false),
+        );
+        let cancellation = CancellationToken::new();
+        let summary = service
+            .run_with_checkpoints_heartbeat(
+                &[1, 2],
+                &root,
+                &degeneration_compatibility(),
+                false,
+                false,
+                &cancellation,
+                &mut |_, _| {},
+            )
+            .unwrap();
+        assert_eq!(summary.completed_pages, 2);
+        assert!(service.commit_profile().is_none());
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn commit_profile_cancelled_scan_never_reaches_terminal_totals() {
+        // A cancelled scan writes nothing (CLI gate on `cancelled`), and the
+        // profile itself shows zero terminal folds and zero finalize — the
+        // observable "no partial write" contract.
+        let root = test_dir("commit-profile-cancelled");
+        let _ = fs::remove_dir_all(&root);
+        let recorder = crate::commit_profile::CommitRecorder::with_enabled(true);
+        let mut service = ScanService::with_commit_recorder(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            EncodingArtifacts {
+                calls: Vec::new(),
+                encode_sink: Some(recorder.clone()),
+            },
+            recorder,
+        );
+        let cancellation = CancellationToken::new();
+        cancellation.request_cancel();
+        let summary = service
+            .run_with_checkpoints_heartbeat(
+                &[1, 2],
+                &root,
+                &degeneration_compatibility(),
+                false,
+                false,
+                &cancellation,
+                &mut |_, _| {},
+            )
+            .unwrap();
+        assert!(summary.cancelled);
+        assert_eq!(summary.completed_pages, 0);
+        let profile = service
+            .commit_profile()
+            .expect("recorder enabled; snapshot still inspectable");
+        assert_eq!(profile.pages_total, 0, "nothing terminal under cancel");
+        assert_eq!(profile.finalize_us, 0, "finalize never ran");
+        assert_eq!(profile.commit_write_us, 0, "nothing was written");
+        fs::remove_dir_all(&root).ok();
     }
 
     #[test]

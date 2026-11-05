@@ -2027,6 +2027,8 @@ struct OvisRecognizer {
     /// document that fills the shared slot (fresh runtime = zero base).
     telemetry_base: Rc<RefCell<RuntimeTelemetry>>,
     step_profile_base: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
+    /// T1: PNG encode timing sink; clone of the scan's shared recorder.
+    commit_recorder: ocrx_output::commit_profile::CommitRecorder,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     fn recognize_artifact(
@@ -2074,11 +2076,17 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         let profile_snapshot = model.step_profile();
         let profile_base = self.step_profile_base.borrow().unwrap_or_default();
         *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
+        // T1: full-page PNG encode span (the E input of the commit model).
+        let encode_started = std::time::Instant::now();
         let mut png = Cursor::new(Vec::new());
         image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
             .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
             .write_to(&mut png, ImageFormat::Png)
             .map_err(std::io::Error::other)?;
+        self.commit_recorder.record_png_encode(
+            page,
+            u64::try_from(encode_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        );
         Ok(PageArtifactResult {
             png: png.into_inner(),
             markdown: artifact.markdown,
@@ -2125,7 +2133,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         let profile_snapshot = model.step_profile();
         let profile_base = self.step_profile_base.borrow().unwrap_or_default();
         *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-        for ((_page, image), output) in pages.iter().zip(outputs) {
+        for ((page, image), output) in pages.iter().zip(outputs) {
             let output = match output {
                 Ok(output) => output,
                 Err(error) => {
@@ -2133,6 +2141,9 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
                     continue;
                 }
             };
+            // T1: full-page PNG encode span (the E input of the commit
+            // model); a failed encode leaves the row's bucket at 0.
+            let encode_started = std::time::Instant::now();
             let mut png = Cursor::new(Vec::new());
             let encoded = image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
                 .ok_or_else(|| std::io::Error::other("invalid RGB8"))
@@ -2145,6 +2156,10 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
                 results.push(Err(error));
                 continue;
             }
+            self.commit_recorder.record_png_encode(
+                *page,
+                u64::try_from(encode_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            );
             results.push(Ok(PageArtifactResult {
                 png: png.into_inner(),
                 markdown: output.markdown,
@@ -2496,6 +2511,10 @@ fn scan_document(
         &ProgressEvent::for_stage(ProgressStage::Extracting, None, 0, pages.len() as u32),
         progress_mode,
     );
+    // T1 commit-path profiler: one shared recorder per document scan — the
+    // renderer (owner work time), the recognizer (PNG encode) and the
+    // service (render wait / commit write / finalize) all hold clones.
+    let commit_recorder = ocrx_output::commit_profile::CommitRecorder::new_gated();
     let renderer: Box<dyn PageRenderer> = if let Some(worker) = std::env::var_os("OCRX_PDF_WORKER")
     {
         let worker_output =
@@ -2528,9 +2547,10 @@ fn scan_document(
     } else {
         // P3 (plan §6.2): the in-process render pipeline runs on the owner
         // thread with a K=2 prefetch window; the wrapper only forwards.
-        Box::new(pdfium_owner::OwnerPageRenderer::new(Rc::clone(
-            &pdfium_owner_handle,
-        )))
+        Box::new(pdfium_owner::OwnerPageRenderer::new(
+            Rc::clone(&pdfium_owner_handle),
+            commit_recorder.clone(),
+        ))
     };
     let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let step_profile = Rc::new(RefCell::new(None));
@@ -2545,6 +2565,7 @@ fn scan_document(
         step_profile: Rc::clone(&step_profile),
         telemetry_base: Rc::clone(&telemetry_base),
         step_profile_base: Rc::clone(&step_profile_base),
+        commit_recorder: commit_recorder.clone(),
     };
     // Keep compatibility metadata stable without touching model resources.
     // Actual profile/device resolution is deferred until the final OCR queue
@@ -3131,6 +3152,9 @@ fn scan_document(
     // M-10: the reported backend must reflect the runtime that actually ran;
     // set to "cpu" when the GPU→CPU fallback triggered inside the branch below.
     let mut runtime_fallback_to_cpu = false;
+    // T1: captured inside the run branches (the service owns the recorder
+    // state); the write gate below suppresses cancelled/failed scans.
+    let mut commit_profile_snapshot = None;
     let summary = if execution_plan.initialize_runtime {
         match env.model_slot {
             ModelSlot::PerCall => {
@@ -3172,7 +3196,12 @@ fn scan_document(
                 let loader = PreloadedLoader {
                     model: Some(loaded_model),
                 };
-                let mut service = ScanService::new(renderer, loader, recognizer);
+                let mut service = ScanService::with_commit_recorder(
+                    renderer,
+                    loader,
+                    recognizer,
+                    commit_recorder.clone(),
+                );
                 // W3.1/R-1 heartbeat wiring: forward the runtime's per-second
                 // generation progress to the reporter so multi-minute CPU
                 // pages show liveness between page boundaries.
@@ -3188,22 +3217,22 @@ fn scan_document(
                         progress_mode,
                     );
                 };
-                service
-                    .run_with_checkpoints_heartbeat(
-                        &ocr_service_pages,
-                        output,
-                        &ocr_compatibility,
-                        options.resume,
-                        options.keep_pages,
-                        cancellation,
-                        &mut heartbeat,
-                    )
-                    .map(|mut summary| {
-                        if let Some(warning) = gpu_fallback_warning {
-                            summary.warnings.push(warning);
-                        }
-                        summary
-                    })
+                let run_result = service.run_with_checkpoints_heartbeat(
+                    &ocr_service_pages,
+                    output,
+                    &ocr_compatibility,
+                    options.resume,
+                    options.keep_pages,
+                    cancellation,
+                    &mut heartbeat,
+                );
+                commit_profile_snapshot = service.commit_profile();
+                run_result.map(|mut summary| {
+                    if let Some(warning) = gpu_fallback_warning {
+                        summary.warnings.push(warning);
+                    }
+                    summary
+                })
             }
             ModelSlot::Shared(slot) => {
                 let shared = slot
@@ -3216,7 +3245,12 @@ fn scan_document(
                     let _peak_discarded = stop_vram_sampler(vram_sampler.take());
                 }
                 let loader = PreloadedLoader { model: None };
-                let mut service = ScanService::new(renderer, loader, recognizer);
+                let mut service = ScanService::with_commit_recorder(
+                    renderer,
+                    loader,
+                    recognizer,
+                    commit_recorder.clone(),
+                );
                 let total_pages = ocr_service_pages.len() as u32;
                 let mut heartbeat = |page: u32, event: GenerationProgress| {
                     reporter.progress(
@@ -3231,23 +3265,23 @@ fn scan_document(
                 };
                 // X1.2: the shared actor runs this document's windows and
                 // stays alive for the next document (run_pages_with_model).
-                service
-                    .run_pages_with_model(
-                        &mut shared.runtime,
-                        &ocr_service_pages,
-                        output,
-                        &ocr_compatibility,
-                        options.resume,
-                        options.keep_pages,
-                        cancellation,
-                        &mut heartbeat,
-                    )
-                    .map(|mut summary| {
-                        if let Some(warning) = &shared.gpu_warning {
-                            summary.warnings.push(warning.clone());
-                        }
-                        summary
-                    })
+                let run_result = service.run_pages_with_model(
+                    &mut shared.runtime,
+                    &ocr_service_pages,
+                    output,
+                    &ocr_compatibility,
+                    options.resume,
+                    options.keep_pages,
+                    cancellation,
+                    &mut heartbeat,
+                );
+                commit_profile_snapshot = service.commit_profile();
+                run_result.map(|mut summary| {
+                    if let Some(warning) = &shared.gpu_warning {
+                        summary.warnings.push(warning.clone());
+                    }
+                    summary
+                })
             }
         }
     } else {
@@ -3273,6 +3307,21 @@ fn scan_document(
         )
     {
         eprintln!("warning: step-profile.json write failed: {error}");
+    }
+    // T1: the commit-path profile — same opt-in switch, one JSON per
+    // document root; suppressed on cancelled/failed scans (v2.1 T1
+    // contract: no partial writes).
+    if ocrx_runtime::StepProfile::env_enabled()
+        && let Ok(summary) = &summary
+        && !summary.cancelled
+        && summary.failed_pages == 0
+        && let Some(commit_profile) = commit_profile_snapshot
+        && let Err(error) = ocrx_output::atomic_write(
+            output.join("commit-profile.json"),
+            commit_profile.to_json().as_bytes(),
+        )
+    {
+        eprintln!("warning: commit-profile.json write failed: {error}");
     }
     // P3 (plan §6.2, BLK-2): a poisoned owner aborts the scan fail-loud with
     // a structured error — completed pages keep their checkpoints for
