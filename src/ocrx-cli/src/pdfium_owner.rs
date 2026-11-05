@@ -343,8 +343,7 @@ impl PdfiumOwnerHandle {
                             // prefetch window (plan §6.2); a non-identity ratio
                             // resamples the raw render like the serial path.
                             let started = std::time::Instant::now();
-                            let rendered =
-                                state.render_direct(page, numerator, denominator);
+                            let rendered = state.render_direct(page, numerator, denominator);
                             let owner_us =
                                 u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
                             PdfResponse::Render(rendered.map(|page| (page, owner_us)))

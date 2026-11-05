@@ -2133,7 +2133,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         let profile_snapshot = model.step_profile();
         let profile_base = self.step_profile_base.borrow().unwrap_or_default();
         *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-        for ((_page, image), output) in pages.iter().zip(outputs) {
+        for ((page, image), output) in pages.iter().zip(outputs) {
             let output = match output {
                 Ok(output) => output,
                 Err(error) => {
@@ -2157,7 +2157,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
                 continue;
             }
             self.commit_recorder.record_png_encode(
-                *_page,
+                *page,
                 u64::try_from(encode_started.elapsed().as_micros()).unwrap_or(u64::MAX),
             );
             results.push(Ok(PageArtifactResult {

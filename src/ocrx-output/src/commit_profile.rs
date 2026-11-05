@@ -143,7 +143,10 @@ impl CommitRecorder {
 
     #[must_use]
     pub fn enabled(&self) -> bool {
-        self.inner.lock().map(|state| state.enabled).unwrap_or(false)
+        self.inner
+            .lock()
+            .map(|state| state.enabled)
+            .unwrap_or(false)
     }
 
     /// Allocates the page's next render generation and starts the caller's
@@ -157,14 +160,17 @@ impl CommitRecorder {
             return 0;
         }
         let generation = next_generation(&mut state, page);
-        state.rows.entry((page, generation)).or_insert(PageCommitProfile {
-            page,
-            generation,
-            render_wait_us: 0,
-            owner_render_us: 0,
-            png_encode_us: 0,
-            commit_write_us: 0,
-        });
+        state
+            .rows
+            .entry((page, generation))
+            .or_insert(PageCommitProfile {
+                page,
+                generation,
+                render_wait_us: 0,
+                owner_render_us: 0,
+                png_encode_us: 0,
+                commit_write_us: 0,
+            });
         generation
     }
 
@@ -316,7 +322,10 @@ mod tests {
         assert_eq!(profile.pages[0].page, 1);
         assert_eq!(profile.pages[0].generation, 1);
         assert_eq!(profile.pages[0].render_wait_us, 100);
-        assert_eq!(profile.pages[0].png_encode_us, 10, "encode lands on its own row");
+        assert_eq!(
+            profile.pages[0].png_encode_us, 10,
+            "encode lands on its own row"
+        );
         assert_eq!(profile.pages[1].generation, 2);
         assert_eq!(profile.pages[1].render_wait_us, 150);
         assert_eq!(profile.pages[1].commit_write_us, 5);
