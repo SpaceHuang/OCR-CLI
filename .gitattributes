@@ -29,3 +29,6 @@ docs/test/reports/phase2-t0-*-data/** -text
 
 # CUDA-vs-Vulkan engine bench data (raw bytes)
 docs/test/reports/llamacpp-cuda-vs-vulkan-bench-2026-11-05-data/** -text
+
+# window depth curve extension data (raw bytes)
+docs/test/reports/window-depth-curve-2026-11-07-data/** -text
