@@ -2382,6 +2382,8 @@ fn scan_document(
     // it here (the historical spawn point, now scoped to the function); the
     // orchestrated path reuses the invocation-wide owner, switched between
     // documents through the SwitchDocument protocol at scheduling bounds.
+    // W2: the owner prefetches a full window ahead so the next window's
+    // render burst hides inside the current window's decode.
     let pdfium_owner_handle: Rc<RefCell<pdfium_owner::PdfiumOwnerHandle>> = match env.owner {
         Some(owner) => Rc::clone(owner),
         None => Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
@@ -2389,6 +2391,7 @@ fn scan_document(
             input.to_path_buf(),
             RenderOptions { dpi },
             options.password.clone(),
+            u32::try_from(env.window_depth).unwrap_or(2),
         ))),
     };
     let page_count = match pdfium_owner_handle.borrow_mut().page_count() {
@@ -4045,11 +4048,13 @@ fn run_scan_multi(options: ScanOptions) -> ! {
     // X1 protocol ①: ONE owner for the whole invocation, spawned on the
     // first input; documents switch through the protocol at scheduling
     // boundaries. A per-document spawn is structurally impossible here.
+    let window_depth = resolve_window_depth(&options.device);
     let owner = Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
         library,
         inputs[0].clone(),
         RenderOptions { dpi },
         options.password.clone(),
+        u32::try_from(window_depth).unwrap_or(2),
     )));
     let mut model_slot = ModelSlot::Shared(None);
     let mut documents: Vec<ScanSummaryDocument> = Vec::new();
@@ -4120,7 +4125,7 @@ fn run_scan_multi(options: ScanOptions) -> ! {
                 owner: Some(&owner),
                 model_slot: &mut model_slot,
                 stdout_results: false,
-                window_depth: resolve_window_depth(&options.device),
+                window_depth,
             },
             &canonical,
             &doc_output,
