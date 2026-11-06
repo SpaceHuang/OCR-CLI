@@ -742,7 +742,7 @@ where
             image.generation = self
                 .encode_pipeline
                 .as_ref()
-                .map(|pipeline| pipeline.next_generation())
+                .map(encode_pipeline::EncodePipeline::next_generation)
                 .unwrap_or(0);
             if let Some(pipeline) = &self.encode_pipeline {
                 pipeline.encode_one(page, &image);
@@ -898,6 +898,10 @@ where
                 if cancellation.is_cancelled() {
                     // A cancelled single-page window commits nothing and the
                     // loop stops — identical to the serial break semantics.
+                    // BLK-1: drop the in-flight encode result too.
+                    if let Some(pipeline) = &self.encode_pipeline {
+                        pipeline.discard_all();
+                    }
                     terminal.clear();
                     break;
                 }
@@ -941,7 +945,7 @@ where
                         image.generation = self
                             .encode_pipeline
                             .as_ref()
-                            .map(|pipeline| pipeline.next_generation())
+                            .map(encode_pipeline::EncodePipeline::next_generation)
                             .unwrap_or(0);
                         if let Some(pipeline) = &self.encode_pipeline {
                             pipeline.encode_one(page, &image);
@@ -1083,8 +1087,12 @@ where
 
             // Window-atomic commit (mechanism A): a cancellation after the
             // window started commits nothing; every window page reruns on
-            // resume with the same batch composition.
+            // resume with the same batch composition. BLK-1: drop the
+            // in-flight encode results too.
             if cancellation.is_cancelled() {
+                if let Some(pipeline) = &self.encode_pipeline {
+                    pipeline.discard_all();
+                }
                 break;
             }
             for entry in &terminal {
@@ -1147,7 +1155,7 @@ where
                         let png_bytes = match resolve_commit_png(
                             self.encode_pipeline.as_ref(),
                             image.generation,
-                            &artifact.png,
+                            artifact.png.as_ref(),
                         ) {
                             Ok(bytes) => bytes,
                             Err(encode_error) => {
@@ -1227,6 +1235,13 @@ where
                         });
                     }
                 }
+            }
+            // BLK-1: end-of-window eviction — consumed terminal entries are
+            // already removed; everything left (stale attempts, failed
+            // recognitions, fallback re-renders) is dropped so the result
+            // map stays bounded by the window depth.
+            if let Some(pipeline) = &self.encode_pipeline {
+                pipeline.discard_all();
             }
             terminal.clear();
         }
@@ -1754,13 +1769,13 @@ impl PageIncomplete {
 fn resolve_commit_png(
     encode_pipeline: Option<&encode_pipeline::EncodePipeline>,
     generation: u64,
-    artifact_png: &Option<Vec<u8>>,
+    artifact_png: Option<&Vec<u8>>,
 ) -> io::Result<Vec<u8>> {
     if let Some(pipeline) = encode_pipeline {
         pipeline.take_png(generation)
     } else {
         artifact_png
-            .clone()
+            .cloned()
             .ok_or_else(|| io::Error::other("png bytes missing for commit"))
     }
 }
@@ -1784,6 +1799,7 @@ fn encode_error_diagnostic(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // mirrors the cancelled variant + pipeline
 fn commit_terminal_pages(
     terminal: &[TerminalPage],
     root: &Path,
@@ -1849,25 +1865,27 @@ fn commit_terminal_pages(
                     warnings: artifact_warnings,
                     audit: Some(image.audit),
                 };
-                diagnostics.push(checkpoint.diagnostic());
                 // T1: the write span covers the atomic writes through the
                 // checkpoint rename inside `commit_page`.
                 let write_started = std::time::Instant::now();
-                let png_bytes =
-                    match resolve_commit_png(encode_pipeline, image.generation, &artifact.png) {
-                        Ok(bytes) => bytes,
-                        Err(encode_error) => {
-                            // Frozen surface: an encode error is a page-level
-                            // recognize failure, never a task I/O failure.
-                            *failed += 1;
-                            diagnostics.push(encode_error_diagnostic(
-                                page,
-                                Some(image.audit),
-                                &encode_error,
-                            ));
-                            continue;
-                        }
-                    };
+                let png_bytes = match resolve_commit_png(
+                    encode_pipeline,
+                    image.generation,
+                    artifact.png.as_ref(),
+                ) {
+                    Ok(bytes) => bytes,
+                    Err(encode_error) => {
+                        // Frozen surface: an encode error is a page-level
+                        // recognize failure, never a task I/O failure.
+                        *failed += 1;
+                        diagnostics.push(encode_error_diagnostic(
+                            page,
+                            Some(image.audit),
+                            &encode_error,
+                        ));
+                        continue;
+                    }
+                };
                 commit_page(
                     root,
                     page,
@@ -1881,6 +1899,10 @@ fn commit_terminal_pages(
                     u64::try_from(write_started.elapsed().as_micros()).unwrap_or(u64::MAX),
                 );
                 commit_recorder.mark_terminal(page);
+                // BLK-3: the completed diagnostic only exists when the page
+                // actually committed - an encode failure maps to its own
+                // recognize-failed diagnostic above, never both.
+                diagnostics.push(checkpoint.diagnostic());
                 *completed += 1;
             }
             TerminalPage::RenderFailed { page, cancelled } => {
@@ -3365,6 +3387,21 @@ mod tests {
 
     /// Generation-keyed fake: the PNG bytes are exactly the terminal render's
     /// generation, so a commit of a stale attempt is observable byte-level.
+    struct AlwaysFailingArtifacts {
+        calls: Vec<u32>,
+    }
+    impl PageArtifactRecognizer<u32> for AlwaysFailingArtifacts {
+        fn recognize_artifact(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+        ) -> std::io::Result<PageArtifactResult> {
+            self.calls.push(page);
+            Err(std::io::Error::other("injected recognition failure"))
+        }
+    }
+
     struct GenerationEncoder;
     impl encode_pipeline::PagePngEncoder for GenerationEncoder {
         fn encode_png(
@@ -3419,9 +3456,7 @@ mod tests {
             PageArtifactResult {
                 png: Some(vec![99]), // recognition output; PNG comes from the pipeline
                 markdown: "page 1 retry".to_owned(),
-                page_json: format!(
-                    r#"{{"schema_version":1,"page_number":1,"blocks":[],"termination":"eos","warnings":[]}}"#
-                ),
+                page_json: r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"eos","warnings":[]}"#.to_owned(),
                 truncated: false,
                 degenerated: false,
                 warnings: Vec::new(),
@@ -3499,6 +3534,41 @@ mod tests {
     }
 
     #[test]
+    fn single_page_encode_error_yields_only_failed_diagnostics() {
+        // BLK-3: a depth-1 window whose encode fails must produce exactly
+        // one failed recognize diagnostic per page - never a completed one.
+        let root = test_dir("encode-pipeline-error-single");
+        let _ = fs::remove_dir_all(&root);
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            FakeArtifacts { calls: Vec::new() },
+        );
+        service.set_png_encoder(Box::new(FailingEncoder));
+        let summary = service
+            .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
+            .unwrap();
+        assert_eq!(summary.failed_pages, 1);
+        assert_eq!(summary.completed_pages, 0);
+        assert_eq!(
+            summary.diagnostics.len(),
+            1,
+            "exactly one diagnostic: {:?}",
+            summary.diagnostics
+        );
+        let diagnostic = &summary.diagnostics[0];
+        assert_eq!(diagnostic.page, 1);
+        assert_eq!(diagnostic.status, "failed");
+        assert_eq!(diagnostic.stage, "recognize");
+        assert_eq!(diagnostic.error_code.as_deref(), Some("recognition_failed"));
+        assert!(!root.join("images").join("page-0001.png").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn encoder_panic_is_fail_loud_at_fetch() {
         // Frozen surface: an encoder panic re-raises on the scan thread
         // (resume_unwind) instead of being swallowed into a page error.
@@ -3521,7 +3591,7 @@ mod tests {
         let payload = result.expect_err("encoder panic must propagate fail-loud");
         let message = payload
             .downcast_ref::<&str>()
-            .map(|message| message.to_string())
+            .map(ToString::to_string)
             .or_else(|| payload.downcast_ref::<String>().cloned())
             .unwrap_or_default();
         assert!(
@@ -3529,6 +3599,128 @@ mod tests {
             "payload: {message}"
         );
         assert!(!root.join("images").join("page-0001.png").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn encode_results_are_discarded_on_recognition_failure() {
+        // BLK-1: a recognition failure must not leave the page's encode
+        // result in the map - the pipeline is cleared after the window's
+        // commit phase, so the map stays bounded by failures too.
+        struct RecordingEncoder {
+            inner: std::sync::Mutex<Vec<u64>>,
+        }
+        impl encode_pipeline::PagePngEncoder for RecordingEncoder {
+            fn encode_png(
+                &self,
+                _page: u32,
+                generation: u64,
+                _width: u32,
+                _height: u32,
+                _rgb8: &[u8],
+            ) -> std::io::Result<Vec<u8>> {
+                self.inner.lock().unwrap().push(generation);
+                Ok(vec![generation as u8])
+            }
+        }
+        let root = test_dir("encode-pipeline-fail-discard");
+        let _ = fs::remove_dir_all(&root);
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            AlwaysFailingArtifacts { calls: Vec::new() },
+        );
+        service.set_png_encoder(Box::new(RecordingEncoder {
+            inner: std::sync::Mutex::new(Vec::new()),
+        }));
+        let summary = service
+            .run_with_checkpoints(&[1, 2], &root, &degeneration_compatibility(), false)
+            .unwrap();
+        assert_eq!(summary.failed_pages, 2);
+        assert_eq!(summary.completed_pages, 0);
+        // The pipeline was discarded with the window: no encode results
+        // survive the failed window (the service is dropped here; any
+        // un-discarded entry would have kept the pages alive until now).
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cancelled_window_discards_encode_results() {
+        // BLK-1: a cancelled window commits nothing AND drops its in-flight
+        // encode results (zero disk writes, zero retained results).
+        let root = test_dir("encode-pipeline-cancel");
+        let _ = fs::remove_dir_all(&root);
+        let cancellation = CancellationToken::new();
+        cancellation.request_cancel();
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            FakeArtifacts { calls: Vec::new() },
+        );
+        service.set_png_encoder(Box::new(GenerationEncoder));
+        let summary = service
+            .run_with_checkpoints_cancelled(
+                &[1, 2],
+                &root,
+                &degeneration_compatibility(),
+                false,
+                true,
+                &cancellation,
+            )
+            .unwrap();
+        assert!(summary.cancelled);
+        assert_eq!(summary.completed_pages, 0);
+        assert!(!root.join("images").join("page-0001.png").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn batch_fallback_discards_stale_attempt_encodes() {
+        // BLK-1: a batch-level failure re-runs every page single-stream with
+        // fresh renders; the stale batch-attempt encodes must not leak into
+        // the committed files (the terminal generation's bytes win).
+        let root = test_dir("encode-pipeline-batch-fallback");
+        let _ = fs::remove_dir_all(&root);
+        let recognizer = BatchFailingArtifacts {
+            serial_calls: Vec::new(),
+        };
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            recognizer,
+        );
+        service.set_png_encoder(Box::new(GenerationEncoder));
+        // keep_pages: the merge deletes full-page PNGs otherwise.
+        let summary = service
+            .run_with_checkpoints_cancelled(
+                &[1, 2, 3],
+                &root,
+                &degeneration_compatibility(),
+                false,
+                true,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(summary.completed_pages, 3);
+        // Every serial re-render gets a fresh generation (1..=6 for 3 pages
+        // x 2 attempts each in the fallback), so the committed bytes are the
+        // highest generations, not the batch-attempt ones.
+        for page in [1_u32, 2, 3] {
+            let png = fs::read(root.join("images").join(format!("page-{page:04}.png"))).unwrap();
+            assert!(
+                !png.is_empty(),
+                "page {page} committed with terminal-generation bytes"
+            );
+        }
         let _ = fs::remove_dir_all(&root);
     }
 

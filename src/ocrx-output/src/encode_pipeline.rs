@@ -13,7 +13,7 @@
 //! panic is fail-loud (re-raised on the scan thread at fetch time); a lost
 //! result is an internal invariant violation (same).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -45,6 +45,7 @@ enum EncodeOutcome {
 }
 
 struct PipelineInner {
+    /// Stored encode results, keyed by render generation.
     results: Mutex<BTreeMap<u64, EncodeOutcome>>,
     done: Condvar,
 }
@@ -56,6 +57,8 @@ pub(crate) struct EncodePipeline {
     encoder: Arc<Box<dyn PagePngEncoder>>,
     inner: Arc<PipelineInner>,
     generations: Arc<AtomicU64>,
+    /// Enqueued-but-not-yet-stored generations (the worker owns the job).
+    pending: Arc<Mutex<HashSet<u64>>>,
 }
 
 impl EncodePipeline {
@@ -67,6 +70,7 @@ impl EncodePipeline {
                 done: Condvar::new(),
             }),
             generations: Arc::new(AtomicU64::new(0)),
+            pending: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -84,9 +88,12 @@ impl EncodePipeline {
         let generation = image.generation;
         let encoder = Arc::clone(&self.encoder);
         let inner = Arc::clone(&self.inner);
+        let pending = Arc::clone(&self.pending);
+        let pending_for_worker = Arc::clone(&pending);
         let pixels = image.rgb8.clone();
         let width = image.width;
         let height = image.height;
+        pending.lock().unwrap().insert(generation);
         let worker = std::thread::Builder::new()
             .name(format!("png-encode-{page}"))
             .spawn(move || {
@@ -96,11 +103,15 @@ impl EncodePipeline {
                     Ok(result) => EncodeOutcome::Done(result),
                     Err(payload) => EncodeOutcome::Panicked(Panicked(payload)),
                 };
-                let mut results = inner.results.lock().unwrap();
-                results.insert(generation, outcome);
+                {
+                    let mut results = inner.results.lock().unwrap();
+                    results.insert(generation, outcome);
+                }
+                pending_for_worker.lock().unwrap().remove(&generation);
                 inner.done.notify_all();
             });
         if let Err(spawn_error) = worker {
+            pending.lock().unwrap().remove(&generation);
             let mut results = self.inner.results.lock().unwrap();
             results.insert(
                 generation,
@@ -110,9 +121,10 @@ impl EncodePipeline {
         }
     }
 
-    /// Fetches the encoded bytes for `generation`, blocking until the worker
-    /// stores them (encodes are ~15 ms; the fetch happens after the window's
-    /// decode, so the wait is bounded by the worker's own runtime).
+    /// Fetches the encoded bytes for `generation`. Waits while the worker is
+    /// still in flight; a generation that is neither stored nor in flight is
+    /// an internal invariant violation surfaced as an error (never an
+    /// unbounded wait).
     pub(crate) fn take_png(&self, generation: u64) -> std::io::Result<Vec<u8>> {
         let mut results = self.inner.results.lock().unwrap();
         loop {
@@ -123,9 +135,27 @@ impl EncodePipeline {
                     std::panic::resume_unwind(payload.0);
                 }
                 None => {
+                    if !self.pending.lock().unwrap().contains(&generation) {
+                        return Err(std::io::Error::other(format!(
+                            "encode result missing for generation {generation}"
+                        )));
+                    }
                     results = self.inner.done.wait(results).unwrap();
                 }
             }
         }
+    }
+
+    /// Discards every non-terminal result and cancels unknown in-flight
+    /// waits (BLK-1). Called when a window's commit phase ends (consumed
+    /// terminal entries are already removed; the rest are stale attempts,
+    /// failed recognitions, or fallback re-renders) and on cancellation.
+    /// Workers already in flight finish on their own (~15 ms of pure CPU)
+    /// and their results are dropped here without ever reaching disk.
+    pub(crate) fn discard_all(&self) {
+        self.pending.lock().unwrap().clear();
+        let mut results = self.inner.results.lock().unwrap();
+        results.clear();
+        self.inner.done.notify_all();
     }
 }

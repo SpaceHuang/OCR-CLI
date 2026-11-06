@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
 Windows real Ctrl+C smoke test for the W3.3 cancel/resume contract.
@@ -111,9 +111,10 @@ $scanArgs = @(
     "--output-dir"
     "`"$outputDir`""
     "--pages"
-    # Stage C (WINDOW_DEPTH=8): pages 1-8 are window 1 (committed, the cancel
-    # anchor); the signal must land while window 2 (pages 9-12) is in flight.
-    "1-12"
+    # Phase-4 (WINDOW_DEPTH=16 on the >=12 GiB GPU path): pages 1-16 are
+    # window 1 (committed, the cancel anchor); the signal must land while
+    # window 2 (pages 17-20) is in flight.
+    "1-20"
     # The fixture pages carry a reliable text layer, so default content-aware
     # routing finishes them natively without ever reaching the OCR generation
     # loop the Ctrl+C contract covers. Force the OCR queue.
@@ -122,7 +123,7 @@ $scanArgs = @(
     "--model-profile"
     "compact"
     "--device"
-    "cpu"
+    "vulkan"
     "--offline"
     "--non-interactive"
     "--report"
@@ -171,19 +172,19 @@ try {
 
     $childPid = $pi.dwProcessId
     # Windowed commits are atomic (plan §7.4 mechanism A): window 1 is pages
-    # 1-8, committed together; the signal lands while window 2 (pages 9-12) is
-    # in flight with zero checkpoints of its own.
-    $firstCheckpoint = Join-Path $outputDir "page-0008.checkpoint"
-    $secondCheckpoint = Join-Path $outputDir "page-0009.checkpoint"
+    # 1-16, committed together; the signal lands while window 2 (pages 17-20)
+    # is in flight with zero checkpoints of its own.
+    $firstCheckpoint = Join-Path $outputDir "page-0016.checkpoint"
+    $secondCheckpoint = Join-Path $outputDir "page-0017.checkpoint"
     $deadline = (Get-Date).AddMinutes(12)
     while (-not (Test-Path -LiteralPath $firstCheckpoint)) {
         if ((Get-Date) -gt $deadline) {
-            throw "page 8 did not commit before deadline; output was not produced"
+            throw "page 16 did not commit before deadline; output was not produced"
         }
         Start-Sleep -Milliseconds 250
     }
     if (Test-Path -LiteralPath $secondCheckpoint) {
-        throw "page 9 already committed before the cancel could be exercised; the workload is too small to smoke-test cancellation"
+        throw "page 17 already committed before the cancel could be exercised; the workload is too small to smoke-test cancellation"
     }
 
     # CTRL_BREAK_EVENT (1) targets the new process group reliably on Windows.
@@ -210,9 +211,9 @@ try {
     if (-not (Test-Path -LiteralPath $firstCheckpoint)) {
         throw "completed page checkpoint was not retained after cancellation"
     }
-    # Mechanism A evidence: the cancelled in-flight window (pages 9-12) must
+    # Mechanism A evidence: the cancelled in-flight window (pages 17-20) must
     # have produced zero checkpoints.
-    foreach ($inFlight in 9..12) {
+    foreach ($inFlight in 17..20) {
         $inFlightPath = Join-Path $outputDir ("page-{0:D4}.checkpoint" -f $inFlight)
         if (Test-Path -LiteralPath $inFlightPath) {
             throw "cancelled window page $inFlight left a checkpoint; window-atomic commit (mechanism A) is broken"
@@ -222,13 +223,13 @@ try {
         throw "temporary .part files were left behind after cancellation"
     }
 
-    # Resume must reuse window 1 (pages 1-8) and finish pages 9-12. The model load writes
+    # Resume must reuse window 1 (pages 1-16) and finish pages 17-20. The model load writes
     # llama.cpp progress logs to stderr; with a Stop preference PowerShell 5.1
     # turns each stderr line into a terminating error, so relax the preference
     # around this native invocation (the exit code is the contract here).
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $Binary scan $Fixture --output-dir $outputDir --pages 1-12 --pdf-mode ocr --model-profile compact `
+    & $Binary scan $Fixture --output-dir $outputDir --pages 1-20 --pdf-mode ocr --model-profile compact `
         --device cpu --offline --non-interactive --report json --resume `
         --max-image-tokens 128 --max-output-tokens 128 2>&1 | Out-Null
     $ErrorActionPreference = $previousPreference
@@ -236,8 +237,8 @@ try {
     if ($resumeCode -notin @(0, 10)) {
         throw "resume scan failed with exit code $resumeCode"
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $outputDir "page-0009.checkpoint"))) {
-        throw "resume scan did not produce the cancelled window's page 9 checkpoint"
+    if (-not (Test-Path -LiteralPath (Join-Path $outputDir "page-0017.checkpoint"))) {
+        throw "resume scan did not produce the cancelled window's page 17 checkpoint"
     }
 
     Write-Host "ctrl-c smoke ok: cancelled=130, checkpoint retained, resume completed (code $resumeCode)"

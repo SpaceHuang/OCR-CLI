@@ -1945,18 +1945,14 @@ fn load_runtime_with_fallback(
     max_image_tokens: u32,
     context_size: u32,
     window_depth: usize,
-) -> std::io::Result<(LlamaMtmdRuntime, Option<String>)> {
+) -> std::io::Result<(LlamaMtmdRuntime, Option<String>, usize)> {
+    // BLK-2: the CPU path (and the GPU->CPU fallback) always runs the
+    // compiled floor depth - the 16 tier is a GPU-VRAM decision only.
     if !gpu {
-        return LlamaMtmdRuntime::load(
-            model,
-            mmproj,
-            false,
-            max_image_tokens,
-            context_size,
-            window_depth,
-        )
-        .map(|runtime| (runtime, None))
-        .map_err(std::io::Error::other);
+        let depth = effective_depth_after_fallback(false, window_depth);
+        return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size, depth)
+            .map(|runtime| (runtime, None, depth))
+            .map_err(std::io::Error::other);
     }
     match LlamaMtmdRuntime::load(
         model,
@@ -1966,24 +1962,20 @@ fn load_runtime_with_fallback(
         context_size,
         window_depth,
     ) {
-        Ok(runtime) => Ok((runtime, None)),
+        Ok(runtime) => Ok((runtime, None, window_depth)),
         Err(gpu_error) => {
-            let cpu_runtime = LlamaMtmdRuntime::load(
-                model,
-                mmproj,
-                false,
-                max_image_tokens,
-                context_size,
-                window_depth,
-            )
-            .map_err(|cpu_error| {
-                std::io::Error::other(format!(
-                    "gpu load failed: {gpu_error}; cpu fallback failed: {cpu_error}"
-                ))
-            })?;
+            let depth = effective_depth_after_fallback(false, window_depth);
+            let cpu_runtime =
+                LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size, depth)
+                    .map_err(|cpu_error| {
+                        std::io::Error::other(format!(
+                            "gpu load failed: {gpu_error}; cpu fallback failed: {cpu_error}"
+                        ))
+                    })?;
             Ok((
                 cpu_runtime,
                 Some(format!("gpu init failed; fallback to cpu: {gpu_error}")),
+                depth,
             ))
         }
     }
@@ -2267,6 +2259,44 @@ fn probe_cuda_vram_bytes() -> Option<u64> {
     Some(mb.saturating_mul(1024 * 1024))
 }
 
+/// Phase-4 BLK-2: the batch depth that actually takes effect. The 16 tier
+/// is a GPU-VRAM decision; a CPU runtime (requested or GPU->CPU fallback)
+/// always runs the compiled floor.
+fn effective_depth_after_fallback(gpu_ok: bool, requested_depth: usize) -> usize {
+    if gpu_ok {
+        requested_depth
+    } else {
+        ocrx_core::WINDOW_DEPTH
+    }
+}
+
+/// Phase-4 BLK-2: rebuilds a compatibility key with a different `;batch=`
+/// depth (the GPU->CPU fallback drops the 16 tier to the floor). The rest of
+/// the key is preserved verbatim.
+fn with_batch_depth(
+    key: &ocrx_output::CompatibilityKey,
+    depth: usize,
+) -> ocrx_output::CompatibilityKey {
+    let parameters = key
+        .parameters
+        .split(';')
+        .map(|segment| {
+            if segment.starts_with("batch=") {
+                format!("batch={depth}")
+            } else {
+                segment.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    ocrx_output::CompatibilityKey {
+        input_sha256: key.input_sha256.clone(),
+        model: key.model.clone(),
+        profile: key.profile.clone(),
+        parameters,
+    }
+}
+
 /// Phase-4 W1: the effective window depth for this invocation - resolve the
 /// device (explicit `--device` wins; `auto` uses the same recommendation the
 /// model resolution will make), probe its VRAM, tier the depth.
@@ -2409,6 +2439,12 @@ fn scan_document(
             u32::try_from(env.window_depth * 2).unwrap_or(2),
         ))),
     };
+
+    // BLK-4: prime the first window's renders - they overlap the model's
+    // verify+load (5.3 s) instead of the first window's critical path.
+    pdfium_owner_handle
+        .borrow_mut()
+        .prime_prefetch(u32::try_from(env.window_depth).unwrap_or(2));
     let page_count = match pdfium_owner_handle.borrow_mut().page_count() {
         Ok(count) => count,
         Err(error) => {
@@ -2712,7 +2748,7 @@ fn scan_document(
     // (;batch=<depth>) and the scan service (window building) / runtime
     // (context capacity).
     let window_depth = resolve_window_depth(&options.device);
-    let compatibility = CompatibilityKey {
+    let mut compatibility = CompatibilityKey {
         input_sha256,
         model: "ovisocr2".to_owned(),
         profile: "native".to_owned(),
@@ -3044,17 +3080,18 @@ fn scan_document(
                 if let ModelSlot::Shared(slot) = env.model_slot
                     && slot.is_none()
                 {
-                    let (loaded_model, gpu_fallback_warning) = match load_runtime_with_fallback(
-                        &model,
-                        &mmproj,
-                        resolved_device != "cpu",
-                        options.max_image_tokens.unwrap_or(1024),
-                        options.context_size.unwrap_or(20_480),
-                        env.window_depth,
-                    ) {
-                        Ok(value) => value,
-                        Err(error) => {
-                            reporter.error(
+                    let (loaded_model, gpu_fallback_warning, effective_depth) =
+                        match load_runtime_with_fallback(
+                            &model,
+                            &mmproj,
+                            resolved_device != "cpu",
+                            options.max_image_tokens.unwrap_or(1024),
+                            options.context_size.unwrap_or(20_480),
+                            env.window_depth,
+                        ) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                reporter.error(
                                 &ErrorReport {
                                     code: 6,
                                     kind: "runtime".to_owned(),
@@ -3067,15 +3104,32 @@ fn scan_document(
                                 },
                                 report_format,
                             );
-                            emit_reporter(reporter);
-                            return 6;
-                        }
-                    };
+                                emit_reporter(reporter);
+                                return 6;
+                            }
+                        };
+                    // BLK-2: a GPU->CPU fallback must drop the 16 tier - the
+                    // runtime, window orchestration, prefetch and compat key
+                    // all follow the ACTUAL depth (8 on CPU).
+                    let fallback_to_cpu = gpu_fallback_warning.is_some();
+                    if fallback_to_cpu && effective_depth != ocrx_core::WINDOW_DEPTH {
+                        // BLK-2: rebuild the compat key with the floor depth
+                        // so the OCR pages and resume flow follow the ACTUAL
+                        // (CPU) batch depth.
+                        compatibility = with_batch_depth(&compatibility, ocrx_core::WINDOW_DEPTH);
+                    }
+                    if fallback_to_cpu {
+                        device = "cpu".to_owned();
+                    }
                     *slot = Some(SharedRuntime {
                         runtime: loaded_model,
                         profile: resolved_profile,
-                        device: resolved_device,
-                        fallback_to_cpu: gpu_fallback_warning.is_some(),
+                        device: if fallback_to_cpu {
+                            "cpu".to_owned()
+                        } else {
+                            resolved_device
+                        },
+                        fallback_to_cpu,
                         gpu_warning: gpu_fallback_warning,
                     });
                 }
@@ -3237,7 +3291,7 @@ fn scan_document(
         *telemetry_base.borrow_mut() = shared.runtime.telemetry();
         *step_profile_base.borrow_mut() = Some(shared.runtime.step_profile());
     }
-    let ocr_compatibility = if execution_plan.initialize_runtime {
+    let mut ocr_compatibility = if execution_plan.initialize_runtime {
         make_ocr_compatibility(&compatibility, &profile, &device)
     } else {
         compatibility.clone()
@@ -3283,33 +3337,34 @@ fn scan_document(
                 // W4.1: load once with GPU→CPU fallback so a machine whose GPU
                 // is absent or unusable degrades to CPU with a recorded
                 // warning instead of aborting the whole scan with exit 6.
-                let (loaded_model, gpu_fallback_warning) = match load_runtime_with_fallback(
-                    &model,
-                    &mmproj,
-                    device != "cpu",
-                    options.max_image_tokens.unwrap_or(1024),
-                    options.context_size.unwrap_or(20_480),
-                    env.window_depth,
-                ) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        reporter.error(
-                            &ErrorReport {
-                                code: 6,
-                                kind: "runtime".to_owned(),
-                                message: "runtime initialization failed".to_owned(),
-                                cause: Some(error.to_string()),
-                                suggestion: Some(
-                                    "verify model/runtime compatibility or use --device cpu"
-                                        .to_owned(),
-                                ),
-                            },
-                            report_format,
-                        );
-                        emit_reporter(reporter);
-                        return 6;
-                    }
-                };
+                let (loaded_model, gpu_fallback_warning, effective_depth) =
+                    match load_runtime_with_fallback(
+                        &model,
+                        &mmproj,
+                        device != "cpu",
+                        options.max_image_tokens.unwrap_or(1024),
+                        options.context_size.unwrap_or(20_480),
+                        env.window_depth,
+                    ) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            reporter.error(
+                                &ErrorReport {
+                                    code: 6,
+                                    kind: "runtime".to_owned(),
+                                    message: "runtime initialization failed".to_owned(),
+                                    cause: Some(error.to_string()),
+                                    suggestion: Some(
+                                        "verify model/runtime compatibility or use --device cpu"
+                                            .to_owned(),
+                                    ),
+                                },
+                                report_format,
+                            );
+                            emit_reporter(reporter);
+                            return 6;
+                        }
+                    };
                 runtime_fallback_to_cpu = gpu_fallback_warning.is_some();
                 if runtime_fallback_to_cpu {
                     // Review m4: the sampler reads SYSTEM-wide VRAM via
@@ -3325,8 +3380,19 @@ fn scan_document(
                     recognizer,
                     commit_recorder.clone(),
                 );
-                // Phase-4 W1: VRAM-tiered window depth for this invocation.
-                service.set_window_depth(env.window_depth);
+                // BLK-2: unify depth + compat key with the ACTUAL runtime
+                // (a GPU->CPU fallback drops the 16 tier to the floor).
+                let fallback_to_cpu = gpu_fallback_warning.is_some();
+                if fallback_to_cpu && effective_depth != env.window_depth {
+                    compatibility = with_batch_depth(&compatibility, effective_depth);
+                    ocr_compatibility = make_ocr_compatibility(&compatibility, &profile, "cpu");
+                }
+                service.set_window_depth(effective_depth);
+                if fallback_to_cpu {
+                    pdfium_owner_handle
+                        .borrow_mut()
+                        .set_prefetch_depth(u32::try_from(effective_depth * 2).unwrap_or(2));
+                }
                 // Phase-4 W3: install the recognizer's donated encoder.
                 if let Some(encoder) = png_encoder.take() {
                     service.set_png_encoder(encoder);
@@ -3380,8 +3446,12 @@ fn scan_document(
                     recognizer,
                     commit_recorder.clone(),
                 );
-                // Phase-4 W1: VRAM-tiered window depth for this invocation.
-                service.set_window_depth(env.window_depth);
+                // BLK-2: the CPU runtime (GPU->CPU fallback) runs the floor.
+                if runtime_fallback_to_cpu {
+                    service.set_window_depth(ocrx_core::WINDOW_DEPTH);
+                } else {
+                    service.set_window_depth(env.window_depth);
+                }
                 // Phase-4 W3: install the recognizer's donated encoder.
                 if let Some(encoder) = png_encoder.take() {
                     service.set_png_encoder(encoder);
@@ -4082,6 +4152,11 @@ fn run_scan_multi(options: ScanOptions) -> ! {
         options.password.clone(),
         u32::try_from(window_depth * 2).unwrap_or(2),
     )));
+
+    // BLK-4: prime the first window's renders (overlaps model load).
+    owner
+        .borrow_mut()
+        .prime_prefetch(u32::try_from(window_depth).unwrap_or(2));
     let mut model_slot = ModelSlot::Shared(None);
     let mut documents: Vec<ScanSummaryDocument> = Vec::new();
     let mut cancelled = false;
@@ -4620,8 +4695,9 @@ mod tests {
         NativeValidationRoute, ResolvedConfig, ResourceSnapshot, RoutingCounts, ScanExecutionPlan,
         ScanOptions, ScanResultFields, ScanSummaryDocument, SegmentRenderer, WorkerScanRenderer,
         aggregate_scan_exit, build_final_ocr_queue, current_platform, doctor_json_report,
-        dynamic_fallback_requires_model_assets, final_routing_diagnostics, format_routing_summary,
-        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
+        dynamic_fallback_requires_model_assets, effective_depth_after_fallback,
+        final_routing_diagnostics, format_routing_summary, initial_ocr_queue,
+        initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
         native_candidate_pages, native_only_decision, ocr_queue_after_native_phase,
         output_dir_for_doc, parse_command, parse_injected_failure_page, parse_page_selection,
         parse_scan_args, pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required,
@@ -4630,7 +4706,7 @@ mod tests {
         routing_diagnostic_with_processing, run_native_first_phase, scan_summary_json,
         service_pages_from_ocr_queue, should_initialize_ocr_runtime,
         try_routing_diagnostic_with_processing, validate_text_mode_classifications,
-        with_ocr_runtime, write_routing_checkpoint_sidecars,
+        with_batch_depth, with_ocr_runtime, write_routing_checkpoint_sidecars,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
@@ -4735,6 +4811,41 @@ mod tests {
             "one input key per document entry: {json}"
         );
         assert!(json.contains("\"inputs\":[\"D:"), "{json}");
+    }
+
+    #[test]
+    fn effective_depth_drops_to_floor_on_gpu_cpu_fallback() {
+        // BLK-2: the 16 tier is a GPU-VRAM decision; a CPU runtime (requested
+        // or GPU->CPU fallback) always runs the compiled floor.
+        assert_eq!(effective_depth_after_fallback(true, 16), 16);
+        assert_eq!(
+            effective_depth_after_fallback(false, 16),
+            ocrx_core::WINDOW_DEPTH
+        );
+        assert_eq!(effective_depth_after_fallback(false, 8), 8);
+    }
+
+    #[test]
+    fn with_batch_depth_rewrites_only_the_batch_segment() {
+        // BLK-2: the GPU->CPU fallback rebuilds the compat key with the floor
+        // depth; every other segment stays verbatim so unrelated config
+        // changes still invalidate.
+        let key = ocrx_output::CompatibilityKey {
+            input_sha256: "abc".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: "pdf-mode=auto;quality-tier=l2;platform=windows;batch=16;route=native"
+                .to_owned(),
+        };
+        let rebuilt = with_batch_depth(&key, 8);
+        assert_eq!(
+            rebuilt.parameters,
+            "pdf-mode=auto;quality-tier=l2;platform=windows;batch=8;route=native"
+        );
+        assert_eq!(rebuilt.input_sha256, "abc");
+        assert_eq!(rebuilt.model, "ovisocr2");
+        // Depth unchanged -> key verbatim.
+        assert_eq!(with_batch_depth(&key, 16).parameters, key.parameters);
     }
 
     #[test]
