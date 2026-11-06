@@ -32,3 +32,6 @@ docs/test/reports/llamacpp-cuda-vs-vulkan-bench-2026-11-05-data/** -text
 
 # window depth curve extension data (raw bytes)
 docs/test/reports/window-depth-curve-2026-11-07-data/** -text
+
+# phase-4 measurement data (raw bytes)
+docs/test/reports/phase4-2026-11-07-data/** -text
