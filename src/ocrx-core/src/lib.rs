@@ -116,6 +116,26 @@ impl CancellationToken {
 /// stands: performance numbers must come from a correctness-gated build.
 pub const WINDOW_DEPTH: usize = 8;
 
+/// Phase-4 depth tiering: the window depth is selected per device from the
+/// GPU's VRAM capacity. The 4090-class measured basis (2026-11-07 probe,
+/// `docs/test/reports/window-depth-curve-2026-11-07-data/`): depth 16 runs
+/// the golden set -5.9% same-day paired at a 7.87 GiB VRAM peak with
+/// similarity 1.000000 vs the depth-8 reference, while depth 12 hits a
+/// kernel-quantization pit (-11%) and is skipped entirely. The 8 tier keeps
+/// the original 6-GB-class freeze rule (C stage) for smaller cards.
+///
+/// `vram_bytes` is the device-local VRAM capacity (`None` = CPU backend or
+/// probe unavailable): the 16 tier needs the measured ~8 GiB peak plus
+/// desktop headroom, so it opens at 12 GiB. Tier ladder is {8, 16} only.
+#[must_use]
+pub fn window_depth_for_vram(vram_bytes: Option<u64>) -> usize {
+    const TWELVE_GIB: u64 = 12 * 1024 * 1024 * 1024;
+    match vram_bytes {
+        Some(vram) if vram >= TWELVE_GIB => 16,
+        _ => WINDOW_DEPTH,
+    }
+}
+
 /// Prefix marking a batch-level window failure; the scan side falls back to
 /// depth-1 (single-stream) resubmission when it sees it (plan §7.3③).
 pub const BATCH_ERROR_PREFIX: &str = "batch inference failed";
@@ -1769,6 +1789,22 @@ mod tests {
         };
         assert!(child.is_cancelled());
         assert!(!child.force_exit());
+    }
+
+    #[test]
+    fn window_depth_tiers_by_vram_and_skips_the_pit() {
+        // Phase-4 W1: {8, 16} only - depth 12 measured -11% (kernel
+        // quantization pit), so the ladder must skip it entirely.
+        assert_eq!(window_depth_for_vram(None), 8, "CPU / probe failure = 8");
+        assert_eq!(window_depth_for_vram(Some(0)), 8);
+        assert_eq!(window_depth_for_vram(Some(6 * 1024 * 1024 * 1024)), 8);
+        assert_eq!(window_depth_for_vram(Some(8 * 1024 * 1024 * 1024)), 8);
+        assert_eq!(
+            window_depth_for_vram(Some(12 * 1024 * 1024 * 1024)),
+            16,
+            "12 GiB opens the 16 tier"
+        );
+        assert_eq!(window_depth_for_vram(Some(24 * 1024 * 1024 * 1024)), 16);
     }
 
     #[test]

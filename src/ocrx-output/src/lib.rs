@@ -809,8 +809,8 @@ where
             // Start (or extend) a window: leading resume-skipped pages are
             // drained one by one; live pages join the window until it is full
             // or the job ends.
-            let mut window: Vec<u32> = Vec::with_capacity(ocrx_runtime::WINDOW_DEPTH);
-            while cursor < page_numbers.len() && window.len() < ocrx_runtime::WINDOW_DEPTH {
+            let mut window: Vec<u32> = Vec::with_capacity(self.window_depth);
+            while cursor < page_numbers.len() && window.len() < self.window_depth {
                 let page = page_numbers[cursor];
                 cursor += 1;
                 let checkpoint_path = root.join(format!("page-{page:04}.checkpoint"));
@@ -1233,6 +1233,10 @@ pub struct ScanService<R, L, A> {
     /// the CLI's owner-render/PNG-encode clones through
     /// [`ScanService::with_commit_recorder`].
     commit_recorder: commit_profile::CommitRecorder,
+    /// Phase-4 W1: VRAM-tiered window depth (16 on >=12 GiB GPUs, else the
+    /// WINDOW_DEPTH floor). Defaults to the compiled floor; the CLI sets it
+    /// after device/VRAM probing via [`ScanService::set_window_depth`].
+    window_depth: usize,
 }
 
 impl<R, L, A> ScanService<R, L, A> {
@@ -1261,7 +1265,15 @@ impl<R, L, A> ScanService<R, L, A> {
             loader,
             recognizer,
             commit_recorder,
+            window_depth: ocrx_runtime::WINDOW_DEPTH,
         }
+    }
+
+    /// Phase-4 W1: overrides the window depth for this service (the
+    /// VRAM-tiered selection computed by the CLI). Unset = the compiled
+    /// WINDOW_DEPTH floor.
+    pub fn set_window_depth(&mut self, window_depth: usize) {
+        self.window_depth = window_depth.max(1);
     }
 
     /// The commit-path profile snapshot; `None` when the recorder is

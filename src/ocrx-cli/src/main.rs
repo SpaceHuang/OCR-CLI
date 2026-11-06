@@ -1944,22 +1944,43 @@ fn load_runtime_with_fallback(
     gpu: bool,
     max_image_tokens: u32,
     context_size: u32,
+    window_depth: usize,
 ) -> std::io::Result<(LlamaMtmdRuntime, Option<String>)> {
     if !gpu {
-        return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size)
-            .map(|runtime| (runtime, None))
-            .map_err(std::io::Error::other);
+        return LlamaMtmdRuntime::load(
+            model,
+            mmproj,
+            false,
+            max_image_tokens,
+            context_size,
+            window_depth,
+        )
+        .map(|runtime| (runtime, None))
+        .map_err(std::io::Error::other);
     }
-    match LlamaMtmdRuntime::load(model, mmproj, true, max_image_tokens, context_size) {
+    match LlamaMtmdRuntime::load(
+        model,
+        mmproj,
+        true,
+        max_image_tokens,
+        context_size,
+        window_depth,
+    ) {
         Ok(runtime) => Ok((runtime, None)),
         Err(gpu_error) => {
-            let cpu_runtime =
-                LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size)
-                    .map_err(|cpu_error| {
-                        std::io::Error::other(format!(
-                            "gpu load failed: {gpu_error}; cpu fallback failed: {cpu_error}"
-                        ))
-                    })?;
+            let cpu_runtime = LlamaMtmdRuntime::load(
+                model,
+                mmproj,
+                false,
+                max_image_tokens,
+                context_size,
+                window_depth,
+            )
+            .map_err(|cpu_error| {
+                std::io::Error::other(format!(
+                    "gpu load failed: {gpu_error}; cpu fallback failed: {cpu_error}"
+                ))
+            })?;
             Ok((
                 cpu_runtime,
                 Some(format!("gpu init failed; fallback to cpu: {gpu_error}")),
@@ -2174,6 +2195,79 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     }
 }
 
+/// Phase-4 W1: VRAM capacity probe for the resolved device. Vulkan uses the
+/// vulkano physical-device DEVICE_LOCAL heap (safe wrapper, same pattern as
+/// the availability probe); CUDA shells `nvidia-smi --query-gpu=memory.total`
+/// (same subprocess pattern as the VRAM sampler). `None` = CPU backend,
+/// probe failure, or non-Windows - the caller stays on the 8 tier.
+#[allow(clippy::too_many_lines)]
+fn probe_vram_bytes(device: &str) -> Option<u64> {
+    match device {
+        "vulkan" => probe_vulkan_vram_bytes(),
+        "cuda" => probe_cuda_vram_bytes(),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "vulkan")]
+fn probe_vulkan_vram_bytes() -> Option<u64> {
+    use vulkano::VulkanLibrary;
+    use vulkano::instance::{Instance, InstanceCreateInfo};
+    use vulkano::memory::MemoryHeapFlags;
+
+    let library = VulkanLibrary::new().ok()?;
+    let instance = Instance::new(library, InstanceCreateInfo::default()).ok()?;
+    instance
+        .enumerate_physical_devices()
+        .ok()?
+        .filter_map(|physical| {
+            let properties = physical.memory_properties();
+            properties
+                .memory_heaps
+                .iter()
+                .filter(|heap| heap.flags.contains(MemoryHeapFlags::DEVICE_LOCAL))
+                .map(|heap| heap.size)
+                .max()
+        })
+        .max()
+}
+
+#[cfg(not(feature = "vulkan"))]
+fn probe_vulkan_vram_bytes() -> Option<u64> {
+    None
+}
+
+fn probe_cuda_vram_bytes() -> Option<u64> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let first = text.lines().next()?;
+    let mb = first.trim().parse::<u64>().ok()?;
+    Some(mb.saturating_mul(1024 * 1024))
+}
+
+/// Phase-4 W1: the effective window depth for this invocation - resolve the
+/// device (explicit `--device` wins; `auto` uses the same recommendation the
+/// model resolution will make), probe its VRAM, tier the depth.
+fn resolve_window_depth(requested_device: &str) -> usize {
+    let device = if requested_device == "auto" {
+        recommend_device(resource_snapshot(), "auto")
+            .map(|resolved| resolved)
+            .unwrap_or_else(|_| requested_device.to_owned())
+    } else {
+        requested_device.to_owned()
+    };
+    ocrx_core::window_depth_for_vram(probe_vram_bytes(&device))
+}
+
 /// Per-invocation shared state for one document scan (X1.2). `owner` is
 /// `None` on the single-input path: `scan_document` then spawns the
 /// invocation's owner at the historical spawn point, byte-identically. The
@@ -2188,6 +2282,8 @@ struct DocScanEnv<'a> {
     cancellation: &'a CancellationToken,
     owner: Option<&'a Rc<RefCell<pdfium_owner::PdfiumOwnerHandle>>>,
     model_slot: &'a mut ModelSlot,
+    /// Phase-4 W1: the VRAM-tiered window depth for this invocation.
+    window_depth: usize,
     /// BLK-4 stdout contract: the single-input path prints its `result.json`
     /// on stdout (the historical machine interface). The orchestrator
     /// suppresses per-document stdout results - with `--report json` its
@@ -2591,6 +2687,10 @@ fn scan_document(
             return 3;
         }
     };
+    // Phase-4 W1: the VRAM-tiered window depth rides the compatibility key
+    // (;batch=<depth>) and the scan service (window building) / runtime
+    // (context capacity).
+    let window_depth = resolve_window_depth(&options.device);
     let compatibility = CompatibilityKey {
         input_sha256,
         model: "ovisocr2".to_owned(),
@@ -2613,7 +2713,7 @@ fn scan_document(
             options.max_image_tokens.unwrap_or(1024),
             options.context_size.unwrap_or(20_480),
             options.device,
-            ocrx_runtime::WINDOW_DEPTH
+            window_depth
         ),
     };
     let mut initial_queue = if options.resume {
@@ -2929,6 +3029,7 @@ fn scan_document(
                         resolved_device != "cpu",
                         options.max_image_tokens.unwrap_or(1024),
                         options.context_size.unwrap_or(20_480),
+                        env.window_depth,
                     ) {
                         Ok(value) => value,
                         Err(error) => {
@@ -3167,6 +3268,7 @@ fn scan_document(
                     device != "cpu",
                     options.max_image_tokens.unwrap_or(1024),
                     options.context_size.unwrap_or(20_480),
+                    env.window_depth,
                 ) {
                     Ok(value) => value,
                     Err(error) => {
@@ -3202,6 +3304,8 @@ fn scan_document(
                     recognizer,
                     commit_recorder.clone(),
                 );
+                // Phase-4 W1: VRAM-tiered window depth for this invocation.
+                service.set_window_depth(env.window_depth);
                 // W3.1/R-1 heartbeat wiring: forward the runtime's per-second
                 // generation progress to the reporter so multi-minute CPU
                 // pages show liveness between page boundaries.
@@ -3251,6 +3355,8 @@ fn scan_document(
                     recognizer,
                     commit_recorder.clone(),
                 );
+                // Phase-4 W1: VRAM-tiered window depth for this invocation.
+                service.set_window_depth(env.window_depth);
                 let total_pages = ocr_service_pages.len() as u32;
                 let mut heartbeat = |page: u32, event: GenerationProgress| {
                     reporter.progress(
@@ -3758,6 +3864,7 @@ fn run_scan(options: ScanOptions) -> ! {
             owner: None,
             model_slot: &mut model_slot,
             stdout_results: true,
+            window_depth: resolve_window_depth(&options.device),
         },
         &input,
         &output,
@@ -4013,6 +4120,7 @@ fn run_scan_multi(options: ScanOptions) -> ! {
                 owner: Some(&owner),
                 model_slot: &mut model_slot,
                 stdout_results: false,
+                window_depth: resolve_window_depth(&options.device),
             },
             &canonical,
             &doc_output,

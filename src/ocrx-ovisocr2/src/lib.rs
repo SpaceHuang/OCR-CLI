@@ -1012,7 +1012,7 @@ mod tests {
         );
         let use_gpu = cfg!(target_os = "macos");
         let mut runtime =
-            ocrx_runtime::LlamaMtmdRuntime::load(&model, &mmproj, use_gpu, 1024, 16_384)
+            ocrx_runtime::LlamaMtmdRuntime::load(&model, &mmproj, use_gpu, 1024, 16_384, 8)
                 .expect("real runtime load");
         let root = std::env::temp_dir().join(format!("ocrx-e2e-figure-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
