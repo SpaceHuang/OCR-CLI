@@ -872,7 +872,11 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert!(calls.load(Ordering::SeqCst) >= 6, "K=6 prefetch must render pages 2..=6 (observed calls={})", calls.load(Ordering::SeqCst));
+        assert!(
+            calls.load(Ordering::SeqCst) >= 6,
+            "K=6 prefetch must render pages 2..=6 (observed calls={})",
+            calls.load(Ordering::SeqCst)
+        );
         // Pages 2..=6 were prefetched (calls >= 6 covers page 1 + 2..=6), so
         // consuming them must serve the prefetched values: page 2 is the
         // fake's injected failure carried as a value, 3..=6 carry the right

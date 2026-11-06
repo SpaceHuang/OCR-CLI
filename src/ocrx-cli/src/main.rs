@@ -2034,6 +2034,37 @@ fn stop_vram_sampler(
     (bytes > 0).then_some(bytes)
 }
 
+/// Phase-4 W3: the production PNG encoder - byte-identical to the former
+/// inline encode (same `image` crate call, same default parameters), moved
+/// behind the [`PagePngEncoder`] trait so the scan service's EncodePipeline
+/// can run it on worker threads while the window decodes.
+struct ImagePngEncoder {
+    commit_recorder: ocrx_output::commit_profile::CommitRecorder,
+}
+
+impl ocrx_output::encode_pipeline::PagePngEncoder for ImagePngEncoder {
+    fn encode_png(
+        &self,
+        page: u32,
+        _generation: u64,
+        width: u32,
+        height: u32,
+        rgb8: &[u8],
+    ) -> std::io::Result<Vec<u8>> {
+        let encode_started = std::time::Instant::now();
+        let mut png = Cursor::new(Vec::new());
+        image::RgbImage::from_raw(width, height, rgb8.to_vec())
+            .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
+            .write_to(&mut png, ImageFormat::Png)
+            .map_err(std::io::Error::other)?;
+        self.commit_recorder.record_png_encode(
+            page,
+            u64::try_from(encode_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        );
+        Ok(png.into_inner())
+    }
+}
+
 struct OvisRecognizer {
     output: PathBuf,
     max_tokens: u32,
@@ -2052,6 +2083,14 @@ struct OvisRecognizer {
     commit_recorder: ocrx_output::commit_profile::CommitRecorder,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
+    /// Phase-4 W3: donates the production encoder - the scan service's
+    /// EncodePipeline runs it while the window decodes.
+    fn png_encoder(&self) -> Option<Box<dyn ocrx_output::encode_pipeline::PagePngEncoder>> {
+        Some(Box::new(ImagePngEncoder {
+            commit_recorder: self.commit_recorder.clone(),
+        }))
+    }
+
     fn recognize_artifact(
         &mut self,
         model: &mut LlamaMtmdRuntime,
@@ -2097,19 +2136,11 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         let profile_snapshot = model.step_profile();
         let profile_base = self.step_profile_base.borrow().unwrap_or_default();
         *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-        // T1: full-page PNG encode span (the E input of the commit model).
-        let encode_started = std::time::Instant::now();
-        let mut png = Cursor::new(Vec::new());
-        image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
-            .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
-            .write_to(&mut png, ImageFormat::Png)
-            .map_err(std::io::Error::other)?;
-        self.commit_recorder.record_png_encode(
-            page,
-            u64::try_from(encode_started.elapsed().as_micros()).unwrap_or(u64::MAX),
-        );
+        // Phase-4 W3: the PNG encode moved to the scan service's
+        // EncodePipeline (it overlaps the window decode); the artifact
+        // carries recognition output only.
         Ok(PageArtifactResult {
-            png: png.into_inner(),
+            png: None,
             markdown: artifact.markdown,
             page_json: artifact.page_json,
             truncated: artifact.truncated,
@@ -2154,7 +2185,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         let profile_snapshot = model.step_profile();
         let profile_base = self.step_profile_base.borrow().unwrap_or_default();
         *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-        for ((page, image), output) in pages.iter().zip(outputs) {
+        for (page, output) in pages.iter().zip(outputs) {
             let output = match output {
                 Ok(output) => output,
                 Err(error) => {
@@ -2162,27 +2193,9 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
                     continue;
                 }
             };
-            // T1: full-page PNG encode span (the E input of the commit
-            // model); a failed encode leaves the row's bucket at 0.
-            let encode_started = std::time::Instant::now();
-            let mut png = Cursor::new(Vec::new());
-            let encoded = image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
-                .ok_or_else(|| std::io::Error::other("invalid RGB8"))
-                .and_then(|pixmap| {
-                    pixmap
-                        .write_to(&mut png, ImageFormat::Png)
-                        .map_err(std::io::Error::other)
-                });
-            if let Err(error) = encoded {
-                results.push(Err(error));
-                continue;
-            }
-            self.commit_recorder.record_png_encode(
-                *page,
-                u64::try_from(encode_started.elapsed().as_micros()).unwrap_or(u64::MAX),
-            );
+            let _ = page;
             results.push(Ok(PageArtifactResult {
-                png: png.into_inner(),
+                png: None,
                 markdown: output.markdown,
                 page_json: output.page_json,
                 truncated: output.truncated,
@@ -2666,6 +2679,9 @@ fn scan_document(
         step_profile_base: Rc::clone(&step_profile_base),
         commit_recorder: commit_recorder.clone(),
     };
+    // Phase-4 W3: extract the donated PNG encoder before the recognizer
+    // moves into the scan service.
+    let mut png_encoder = recognizer.png_encoder();
     // Keep compatibility metadata stable without touching model resources.
     // Actual profile/device resolution is deferred until the final OCR queue
     // exists below.
@@ -3309,6 +3325,10 @@ fn scan_document(
                 );
                 // Phase-4 W1: VRAM-tiered window depth for this invocation.
                 service.set_window_depth(env.window_depth);
+                // Phase-4 W3: install the recognizer's donated encoder.
+                if let Some(encoder) = png_encoder.take() {
+                    service.set_png_encoder(encoder);
+                }
                 // W3.1/R-1 heartbeat wiring: forward the runtime's per-second
                 // generation progress to the reporter so multi-minute CPU
                 // pages show liveness between page boundaries.
@@ -3360,6 +3380,10 @@ fn scan_document(
                 );
                 // Phase-4 W1: VRAM-tiered window depth for this invocation.
                 service.set_window_depth(env.window_depth);
+                // Phase-4 W3: install the recognizer's donated encoder.
+                if let Some(encoder) = png_encoder.take() {
+                    service.set_png_encoder(encoder);
+                }
                 let total_pages = ocr_service_pages.len() as u32;
                 let mut heartbeat = |page: u32, event: GenerationProgress| {
                     reporter.progress(
