@@ -1,0 +1,27 @@
+save_name: omnidocbench-balanced-all_quick_match
+[page_match]
+workers: 8
+page_count: 1651
+quick_match_truncated_timeout_sec: 300
+match_timeout_sec: 420
+fallbacks:
+  - page_timeout: count=0
+  - quick_match_timeout: count=4
+    case: docstructbench_enbook-zlib-o.O-17208435.pdf_105.jpg
+    case: docstructbench_enbook-zlib-o.O-17208435.pdf_57.jpg
+    case: exam_paper_en-file-putnam-archive_2006_Problems_2006_page_001.png
+    case: newspaper_1cddf9d22ca549f3a86cf1512a3110cc_1.jpg
+[display_formula.CDM]
+workers: 8
+timeout_sec: None
+sample_count: 2352
+timeout_case_count: 0
+error_case_count: 0
+exception_case_count: 0
+[table.TEDS]
+workers: 8
+timeout_sec: 120.0
+sample_count: 665
+timeout_case_count: 0
+error_case_count: 0
+exception_case_count: 0

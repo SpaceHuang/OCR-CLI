@@ -1,0 +1,501 @@
+2026-11-05 17:25:34.687 | INFO     | src.dataset.end2end_dataset:_collect_page_matches:2055 - [quick-match] using page workers=8
+Matching pages:   0%|                                                                                                 | 0/3 [00:00<?, ?it/s]Matching pages:  33%|#############################6                                                           | 1/3 [00:00<00:00,  3.10it/s]Matching pages:  67%|###########################################################3                             | 2/3 [00:00<00:00,  4.54it/s]2026-11-05 17:25:35.443 | INFO     | src.dataset.end2end_dataset:_match_display_formula_candidates:1569 - [formula-match-candidate] page-14cd673f-d86d-45a7-a13e-2b4e1d91c08f.png: choose=quick_unsplit page_cost=26.0370
+Matching pages: 100%|#########################################################################################| 3/3 [00:00<00:00,  4.00it/s]Matching pages: 100%|#########################################################################################| 3/3 [00:00<00:00,  3.96it/s]
+###### Process:  smoke-balanced_quick_match
+【text_block】
+Edit_dist:
+---------------  --------
+ALL_page_avg     0.269932
+edit_whole       0.13591
+edit_sample_avg  0.167341
+---------------  --------
+====================================================================================================
+----Anno Attribute---------------
+sample_count:
+
+====================================================================================================
+Edit_dist:
+--------------------------------  ----------
+ALL                               0.269932
+data_source: academic_literature  0.00172861
+data_source: book                 0.262343
+data_source: note                 0.545723
+handwriting                       0.545723
+language: english                 0.00172861
+language: simplified_chinese      0.404033
+layout: single_column             0.269932
+subset: equation_hard             0.269932
+--------------------------------  ----------
+====================================================================================================
+[CDM] texlive_root=/usr/local/texlive/2025
+[CDM] texlive_bin=/usr/local/texlive/2025/bin/x86_64-linux
+[CDM] pdflatex=/usr/local/texlive/2025/bin/x86_64-linux/pdflatex
+[CDM] pdflatex_version=pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025)
+[CDM] kpsewhich=/usr/local/texlive/2025/bin/x86_64-linux/kpsewhich
+[CDM] kpsewhich_texmfroot=/usr/local/texlive/2025
+[CDM] texmfcnf=/usr/local/texlive/2025:/usr/local/texlive/2025/texmf-dist/web2c
+[CDM] cjk_font=gkai
+[CDM] cjk_sty=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/CJK.sty
+[CDM] cjk_font_fd=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/UTF8/c70gkai.fd
+[CDM] workers=8 samples=5
+CDM:   0%|                                                                                                            | 0/5 [00:00<?, ?it/s]/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/lib/python3.10/site-packages/PIL/Image.py:1056: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+  warnings.warn(
+/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/lib/python3.10/site-packages/PIL/Image.py:1056: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+  warnings.warn(
+/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/lib/python3.10/site-packages/PIL/Image.py:1056: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+  warnings.warn(
+CDM:  20%|####################                                                                                | 1/5 [00:01<00:07,  1.93s/it]CDM:  80%|################################################################################                    | 4/5 [00:02<00:00,  2.32it/s]CDM: 100%|####################################################################################################| 5/5 [00:02<00:00,  2.29it/s]
+【display_formula】
+Edit_dist:
+---------------  ---------
+ALL_page_avg     0.0266906
+edit_whole       0.0301508
+edit_sample_avg  0.0221133
+---------------  ---------
+====================================================================================================
+CDM:
+---  ------
+all  0.9746
+---  ------
+====================================================================================================
+----Anno Attribute---------------
+sample_count:
+
+====================================================================================================
+CDM:
+--------------------------------  -----
+ALL                               0.976
+data_source: academic_literature  0.983
+data_source: note                 0.969
+handwriting                       0.969
+language: english                 0.983
+language: simplified_chinese      0.969
+layout: single_column             0.976
+subset: equation_hard             0.976
+--------------------------------  -----
+====================================================================================================
+Edit_dist:
+--------------------------------  ---------
+ALL                               0.0266906
+data_source: academic_literature  0.0396825
+data_source: note                 0.0136986
+handwriting                       0.0136986
+language: english                 0.0396825
+language: simplified_chinese      0.0136986
+layout: single_column             0.0266906
+subset: equation_hard             0.0266906
+--------------------------------  ---------
+====================================================================================================
+TEDS:   0%|                                                                                                           | 0/1 [00:00<?, ?it/s]TEDS: 100%|###################################################################################################| 1/1 [00:00<00:00, 20.35it/s]
+【table】
+TEDS:
+---  --------
+all  0.953968
+---  --------
+====================================================================================================
+TEDS_structure_only:
+---  -
+all  1
+---  -
+====================================================================================================
+Edit_dist:
+---------------  ---------
+ALL_page_avg     0.0201097
+edit_whole       0.0201097
+edit_sample_avg  0.0201097
+---------------  ---------
+====================================================================================================
+----Anno Attribute---------------
+sample_count:
+
+====================================================================================================
+Edit_dist:
+--------------------------------  ---------
+ALL                               0.0201097
+data_source: academic_literature  0.0201097
+language: english                 0.0201097
+layout: single_column             0.0201097
+subset: equation_hard             0.0201097
+--------------------------------  ---------
+====================================================================================================
+TEDS:
+--------------------------------  --------
+ALL                               0.953968
+data_source: academic_literature  0.953968
+language: english                 0.953968
+layout: single_column             0.953968
+subset: equation_hard             0.953968
+--------------------------------  --------
+====================================================================================================
+TEDS_structure_only:
+--------------------------------  -
+ALL                               1
+data_source: academic_literature  1
+language: english                 1
+layout: single_column             1
+subset: equation_hard             1
+--------------------------------  -
+====================================================================================================
+【reading_order】
+Edit_dist:
+---------------  --------
+ALL_page_avg     0.127976
+edit_whole       0.171429
+edit_sample_avg  0.127976
+---------------  --------
+====================================================================================================
+----Anno Attribute---------------
+sample_count:
+
+====================================================================================================
+Edit_dist:
+--------------------------------  ---------
+ALL                               0.127976
+data_source: academic_literature  0.0714286
+data_source: book                 0
+data_source: note                 0.3125
+handwriting                       0.3125
+language: english                 0.0714286
+language: simplified_chinese      0.15625
+layout: single_column             0.127976
+subset: equation_hard             0.127976
+--------------------------------  ---------
+====================================================================================================
+========== RUNTIME_ENVIRONMENT smoke-balanced_quick_match ==========
+save_name: smoke-balanced_quick_match
+[system]
+platform: Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35
+python_version: 3.10.16 (main, Dec 11 2024, 16:24:50) [GCC 11.2.0]
+python_executable: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/bin/python
+python_prefix: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310
+conda_env: omnidocbench_v16_smoke_20260408_py310
+conda_prefix: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310
+libc: glibc 2.35
+uname: Linux b58d44f00d28 5.15.167.4-microsoft-standard-WSL2 #1 SMP Tue Nov 5 00:21:55 UTC 2024 x86_64 x86_64
+os_release: {"BUG_REPORT_URL": "https://bugs.launchpad.net/ubuntu/", "HOME_URL": "https://www.ubuntu.com/", "ID": "ubuntu", "ID_LIKE": "debian", "NAME": "Ubuntu", "PRETTY_NAME": "Ubuntu 22.04.5 LTS", "PRIVACY_POLICY_URL": "https://www.ubuntu.com/legal/terms-and-policies/privacy-policy", "SUPPORT_URL": "https://help.ubuntu.com/", "UBUNTU_CODENAME": "jammy", "VERSION": "22.04.5 LTS (Jammy Jellyfish)", "VERSION_CODENAME": "jammy", "VERSION_ID": "22.04"}
+[system_packages]
+package_manager: dpkg-query
+fontconfig: fontconfig=2.13.1-4.2ubuntu5
+ghostscript: ghostscript=9.55.0~dfsg1-0ubuntu5.11
+imagemagick: unavailable (dpkg-query: no packages found matching imagemagick)
+latexml: latexml=
+python3: python3=3.10.6-1~22.04.1
+python3-pip: python3-pip=22.0.2+dfsg-1ubuntu0.7
+python3-setuptools: python3-setuptools=59.6.0-1.2ubuntu0.22.04.2
+python3-wheel: python3-wheel=0.37.1-2ubuntu0.22.04.1
+texlive-base: unavailable (dpkg-query: no packages found matching texlive-base)
+texlive-binaries: texlive-binaries=
+texlive-fonts-recommended: unavailable (dpkg-query: no packages found matching texlive-fonts-recommended)
+texlive-lang-chinese: unavailable (dpkg-query: no packages found matching texlive-lang-chinese)
+texlive-lang-cjk: unavailable (dpkg-query: no packages found matching texlive-lang-cjk)
+texlive-latex-base: unavailable (dpkg-query: no packages found matching texlive-latex-base)
+texlive-latex-extra: unavailable (dpkg-query: no packages found matching texlive-latex-extra)
+texlive-plain-generic: unavailable (dpkg-query: no packages found matching texlive-plain-generic)
+[python_packages]
+Levenshtein: 0.25.1
+Pillow: 10.4.0
+PyYAML: 6.0.2
+apted: 1.0.3
+beautifulsoup4: 4.11.1
+evaluate: 0.4.3
+func-timeout: 4.3.5
+loguru: 0.7.2
+lxml: 4.9.1
+matplotlib: 3.7.5
+nltk: 3.9.1
+numpy: 1.24.4
+pandas: 2.0.3
+pip: 25.0
+pylatexenc: 2.10
+scipy: 1.10.1
+setuptools: 75.8.0
+tabulate: 0.9.0
+tqdm: 4.67.1
+wheel: 0.45.1
+[external_tools]
+convert: path=/usr/local/bin/convert returncode=0 output=WARNING: The convert command is deprecated in IMv7, use "magick" instead of "convert" or "magick convert" | Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5)
+ghostscript: path=/usr/bin/gs returncode=0 output=9.55.0
+identify: path=/usr/local/bin/identify returncode=0 output=Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib
+kpsewhich: path=/usr/local/texlive/2025/bin/x86_64-linux/kpsewhich returncode=0 output=kpathsea version 6.4.1 | Copyright 2023 Karl Berry & Olaf Weber. | License LGPLv2.1+: GNU Lesser GPL version 2.1 or later <https://gnu.org/licenses/lgpl.html> | This is free software: you are free to change and redistribute it. | There is NO WARRANTY, to the extent permitted by law.
+latexmlc: path=latexmlc returncode=None output=unavailable (FileNotFoundError: [Errno 2] No such file or directory: 'latexmlc')
+magick: path=/usr/local/bin/magick returncode=0 output=Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib
+pdflatex: path=/usr/local/texlive/2025/bin/x86_64-linux/pdflatex returncode=0 output=pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025) | kpathsea version 6.4.1 | Copyright 2025 Han The Thanh (pdfTeX) et al. | There is NO warranty.  Redistribution of this software is | covered by the terms of both the pdfTeX copyright and
+tlmgr: path=/usr/local/texlive/2025/bin/x86_64-linux/tlmgr returncode=0 output=tlmgr revision 76773 (2025-11-06 20:43:29 +0100) | tlmgr using installation: /usr/local/texlive/2025 | TeX Live (https://tug.org/texlive) version 2025
+[texlive]
+cjk_font_family: gkai
+cjk_sty: status=ok path=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/CJK.sty version=4.8.5 (16-Oct-2021) date=2021/10/16 header=% This is the file CJK.sty of the CJK package
+cjk_font_fd: status=ok path=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/UTF8/c70gkai.fd version=4.8.5 (16-Oct-2021) date=2021/10/16 header=% This is the file c70gkai.fd of the CJK package
+
+========== END_RUNTIME_ENVIRONMENT smoke-balanced_quick_match ==========
+========== STAGE_EXECUTION smoke-balanced_quick_match ==========
+save_name: smoke-balanced_quick_match
+[page_match]
+workers: 8
+page_count: 3
+quick_match_truncated_timeout_sec: 300
+match_timeout_sec: 420
+fallbacks:
+  - page_timeout: count=0
+  - quick_match_timeout: count=0
+[display_formula.CDM]
+workers: 8
+timeout_sec: None
+sample_count: 5
+timeout_case_count: 0
+error_case_count: 0
+exception_case_count: 0
+[table.TEDS]
+workers: 8
+timeout_sec: 120.0
+sample_count: 1
+timeout_case_count: 0
+error_case_count: 0
+exception_case_count: 0
+
+========== END_STAGE_EXECUTION smoke-balanced_quick_match ==========
+========== FINAL_EVAL_RUN_REPORT smoke-balanced_quick_match ==========
+{
+  "notebook_metric_summary": {
+    "metrics": {
+      "display_formula_CDM": {
+        "notebook_value": 97.6,
+        "page_denominator": 2,
+        "raw": 0.976
+      },
+      "reading_order_Edit_dist": {
+        "notebook_value": 0.12797619047619047,
+        "page_denominator": 3,
+        "raw": 0.12797619047619047
+      },
+      "table_TEDS": {
+        "notebook_value": 95.3968253968254,
+        "page_denominator": 1,
+        "raw": 0.953968253968254
+      },
+      "table_TEDS_structure_only": {
+        "notebook_value": 100.0,
+        "page_denominator": 1,
+        "raw": 1.0
+      },
+      "text_block_Edit_dist": {
+        "notebook_value": 0.2699315756344634,
+        "page_denominator": 3,
+        "raw": 0.2699315756344634
+      }
+    },
+    "overall_notebook": 88.66788927779304,
+    "source": "tools/generate_result_tables.ipynb#cell-2"
+  },
+  "page_denominators": {
+    "display_formula": {
+      "CDM": {
+        "ALL": 2
+      },
+      "Edit_dist": {
+        "ALL": 2
+      }
+    },
+    "reading_order": {
+      "Edit_dist": {
+        "ALL": 3
+      }
+    },
+    "table": {
+      "Edit_dist": {
+        "ALL": 1
+      },
+      "TEDS": {
+        "ALL": 1
+      },
+      "TEDS_structure_only": {
+        "ALL": 1
+      }
+    },
+    "text_block": {
+      "Edit_dist": {
+        "ALL": 3
+      }
+    }
+  },
+  "runtime_environment": {
+    "external_tools": {
+      "convert": {
+        "output": "WARNING: The convert command is deprecated in IMv7, use \"magick\" instead of \"convert\" or \"magick convert\" | Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5)",
+        "path": "/usr/local/bin/convert",
+        "returncode": 0
+      },
+      "ghostscript": {
+        "output": "9.55.0",
+        "path": "/usr/bin/gs",
+        "returncode": 0
+      },
+      "identify": {
+        "output": "Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib",
+        "path": "/usr/local/bin/identify",
+        "returncode": 0
+      },
+      "kpsewhich": {
+        "output": "kpathsea version 6.4.1 | Copyright 2023 Karl Berry & Olaf Weber. | License LGPLv2.1+: GNU Lesser GPL version 2.1 or later <https://gnu.org/licenses/lgpl.html> | This is free software: you are free to change and redistribute it. | There is NO WARRANTY, to the extent permitted by law.",
+        "path": "/usr/local/texlive/2025/bin/x86_64-linux/kpsewhich",
+        "returncode": 0
+      },
+      "latexmlc": {
+        "output": "unavailable (FileNotFoundError: [Errno 2] No such file or directory: 'latexmlc')",
+        "path": "latexmlc",
+        "returncode": null
+      },
+      "magick": {
+        "output": "Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib",
+        "path": "/usr/local/bin/magick",
+        "returncode": 0
+      },
+      "pdflatex": {
+        "output": "pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025) | kpathsea version 6.4.1 | Copyright 2025 Han The Thanh (pdfTeX) et al. | There is NO warranty.  Redistribution of this software is | covered by the terms of both the pdfTeX copyright and",
+        "path": "/usr/local/texlive/2025/bin/x86_64-linux/pdflatex",
+        "returncode": 0
+      },
+      "tlmgr": {
+        "output": "tlmgr revision 76773 (2025-11-06 20:43:29 +0100) | tlmgr using installation: /usr/local/texlive/2025 | TeX Live (https://tug.org/texlive) version 2025",
+        "path": "/usr/local/texlive/2025/bin/x86_64-linux/tlmgr",
+        "returncode": 0
+      }
+    },
+    "python_packages": {
+      "Levenshtein": "0.25.1",
+      "Pillow": "10.4.0",
+      "PyYAML": "6.0.2",
+      "apted": "1.0.3",
+      "beautifulsoup4": "4.11.1",
+      "evaluate": "0.4.3",
+      "func-timeout": "4.3.5",
+      "loguru": "0.7.2",
+      "lxml": "4.9.1",
+      "matplotlib": "3.7.5",
+      "nltk": "3.9.1",
+      "numpy": "1.24.4",
+      "pandas": "2.0.3",
+      "pip": "25.0",
+      "pylatexenc": "2.10",
+      "scipy": "1.10.1",
+      "setuptools": "75.8.0",
+      "tabulate": "0.9.0",
+      "tqdm": "4.67.1",
+      "wheel": "0.45.1"
+    },
+    "system": {
+      "conda_env": "omnidocbench_v16_smoke_20260408_py310",
+      "conda_prefix": "/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310",
+      "libc": "glibc 2.35",
+      "os_release": {
+        "BUG_REPORT_URL": "https://bugs.launchpad.net/ubuntu/",
+        "HOME_URL": "https://www.ubuntu.com/",
+        "ID": "ubuntu",
+        "ID_LIKE": "debian",
+        "NAME": "Ubuntu",
+        "PRETTY_NAME": "Ubuntu 22.04.5 LTS",
+        "PRIVACY_POLICY_URL": "https://www.ubuntu.com/legal/terms-and-policies/privacy-policy",
+        "SUPPORT_URL": "https://help.ubuntu.com/",
+        "UBUNTU_CODENAME": "jammy",
+        "VERSION": "22.04.5 LTS (Jammy Jellyfish)",
+        "VERSION_CODENAME": "jammy",
+        "VERSION_ID": "22.04"
+      },
+      "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+      "python_executable": "/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/bin/python",
+      "python_prefix": "/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310",
+      "python_version": "3.10.16 (main, Dec 11 2024, 16:24:50) [GCC 11.2.0]",
+      "uname": "Linux b58d44f00d28 5.15.167.4-microsoft-standard-WSL2 #1 SMP Tue Nov 5 00:21:55 UTC 2024 x86_64 x86_64"
+    },
+    "system_packages": {
+      "package_manager": "dpkg-query",
+      "tracked_packages": {
+        "fontconfig": "fontconfig=2.13.1-4.2ubuntu5",
+        "ghostscript": "ghostscript=9.55.0~dfsg1-0ubuntu5.11",
+        "imagemagick": "unavailable (dpkg-query: no packages found matching imagemagick)",
+        "latexml": "latexml=",
+        "python3": "python3=3.10.6-1~22.04.1",
+        "python3-pip": "python3-pip=22.0.2+dfsg-1ubuntu0.7",
+        "python3-setuptools": "python3-setuptools=59.6.0-1.2ubuntu0.22.04.2",
+        "python3-wheel": "python3-wheel=0.37.1-2ubuntu0.22.04.1",
+        "texlive-base": "unavailable (dpkg-query: no packages found matching texlive-base)",
+        "texlive-binaries": "texlive-binaries=",
+        "texlive-fonts-recommended": "unavailable (dpkg-query: no packages found matching texlive-fonts-recommended)",
+        "texlive-lang-chinese": "unavailable (dpkg-query: no packages found matching texlive-lang-chinese)",
+        "texlive-lang-cjk": "unavailable (dpkg-query: no packages found matching texlive-lang-cjk)",
+        "texlive-latex-base": "unavailable (dpkg-query: no packages found matching texlive-latex-base)",
+        "texlive-latex-extra": "unavailable (dpkg-query: no packages found matching texlive-latex-extra)",
+        "texlive-plain-generic": "unavailable (dpkg-query: no packages found matching texlive-plain-generic)"
+      }
+    },
+    "texlive": {
+      "cjk_font_family": "gkai",
+      "cjk_font_fd": {
+        "date": "2021/10/16",
+        "header": "% This is the file c70gkai.fd of the CJK package",
+        "path": "/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/UTF8/c70gkai.fd",
+        "status": "ok",
+        "version": "4.8.5 (16-Oct-2021)"
+      },
+      "cjk_sty": {
+        "date": "2021/10/16",
+        "header": "% This is the file CJK.sty of the CJK package",
+        "path": "/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/CJK.sty",
+        "status": "ok",
+        "version": "4.8.5 (16-Oct-2021)"
+      }
+    }
+  },
+  "save_name": "smoke-balanced_quick_match",
+  "stage_execution": {
+    "metrics": {
+      "display_formula": {
+        "CDM": {
+          "error_case_count": 0,
+          "error_cases": [],
+          "exception_case_count": 0,
+          "exception_cases": [],
+          "sample_count": 5,
+          "timeout_case_count": 0,
+          "timeout_cases": [],
+          "timeout_sec": null,
+          "workers": 8
+        }
+      },
+      "table": {
+        "TEDS": {
+          "error_case_count": 0,
+          "error_cases": [],
+          "exception_case_count": 0,
+          "exception_cases": [],
+          "sample_count": 1,
+          "timeout_case_count": 0,
+          "timeout_cases": [],
+          "timeout_sec": 120.0,
+          "workers": 8
+        }
+      }
+    },
+    "page_match": {
+      "fallbacks": {
+        "page_timeout": {
+          "cases": [],
+          "count": 0
+        },
+        "quick_match_timeout": {
+          "cases": [],
+          "count": 0
+        }
+      },
+      "match_timeout_sec": 420,
+      "page_count": 3,
+      "quick_match_truncated_timeout_sec": 300,
+      "workers": 8
+    }
+  }
+}
+========== END_FINAL_EVAL_RUN_REPORT smoke-balanced_quick_match ==========
+[final-eval-run-report] saved to ./result/smoke-balanced_quick_match_run_summary.json
+[runtime-environment-json] saved to ./result/smoke-balanced_quick_match_runtime_environment.json
+[runtime-environment-log] saved to ./result/smoke-balanced_quick_match_runtime_environment.log
+[stage-execution-json] saved to ./result/smoke-balanced_quick_match_stage_execution.json
+[stage-execution-log] saved to ./result/smoke-balanced_quick_match_stage_execution.log

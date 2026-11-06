@@ -1,0 +1,63 @@
+save_name: omnidocbench-reference-all_quick_match
+[system]
+platform: Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35
+python_version: 3.10.16 (main, Dec 11 2024, 16:24:50) [GCC 11.2.0]
+python_executable: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/bin/python
+python_prefix: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310
+conda_env: omnidocbench_v16_smoke_20260408_py310
+conda_prefix: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310
+libc: glibc 2.35
+uname: Linux e808579132b0 5.15.167.4-microsoft-standard-WSL2 #1 SMP Tue Nov 5 00:21:55 UTC 2024 x86_64 x86_64
+os_release: {"BUG_REPORT_URL": "https://bugs.launchpad.net/ubuntu/", "HOME_URL": "https://www.ubuntu.com/", "ID": "ubuntu", "ID_LIKE": "debian", "NAME": "Ubuntu", "PRETTY_NAME": "Ubuntu 22.04.5 LTS", "PRIVACY_POLICY_URL": "https://www.ubuntu.com/legal/terms-and-policies/privacy-policy", "SUPPORT_URL": "https://help.ubuntu.com/", "UBUNTU_CODENAME": "jammy", "VERSION": "22.04.5 LTS (Jammy Jellyfish)", "VERSION_CODENAME": "jammy", "VERSION_ID": "22.04"}
+[system_packages]
+package_manager: dpkg-query
+fontconfig: fontconfig=2.13.1-4.2ubuntu5
+ghostscript: ghostscript=9.55.0~dfsg1-0ubuntu5.11
+imagemagick: unavailable (dpkg-query: no packages found matching imagemagick)
+latexml: latexml=
+python3: python3=3.10.6-1~22.04.1
+python3-pip: python3-pip=22.0.2+dfsg-1ubuntu0.7
+python3-setuptools: python3-setuptools=59.6.0-1.2ubuntu0.22.04.2
+python3-wheel: python3-wheel=0.37.1-2ubuntu0.22.04.1
+texlive-base: unavailable (dpkg-query: no packages found matching texlive-base)
+texlive-binaries: texlive-binaries=
+texlive-fonts-recommended: unavailable (dpkg-query: no packages found matching texlive-fonts-recommended)
+texlive-lang-chinese: unavailable (dpkg-query: no packages found matching texlive-lang-chinese)
+texlive-lang-cjk: unavailable (dpkg-query: no packages found matching texlive-lang-cjk)
+texlive-latex-base: unavailable (dpkg-query: no packages found matching texlive-latex-base)
+texlive-latex-extra: unavailable (dpkg-query: no packages found matching texlive-latex-extra)
+texlive-plain-generic: unavailable (dpkg-query: no packages found matching texlive-plain-generic)
+[python_packages]
+Levenshtein: 0.25.1
+Pillow: 10.4.0
+PyYAML: 6.0.2
+apted: 1.0.3
+beautifulsoup4: 4.11.1
+evaluate: 0.4.3
+func-timeout: 4.3.5
+loguru: 0.7.2
+lxml: 4.9.1
+matplotlib: 3.7.5
+nltk: 3.9.1
+numpy: 1.24.4
+pandas: 2.0.3
+pip: 25.0
+pylatexenc: 2.10
+scipy: 1.10.1
+setuptools: 75.8.0
+tabulate: 0.9.0
+tqdm: 4.67.1
+wheel: 0.45.1
+[external_tools]
+convert: path=/usr/local/bin/convert returncode=0 output=WARNING: The convert command is deprecated in IMv7, use "magick" instead of "convert" or "magick convert" | Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5)
+ghostscript: path=/usr/bin/gs returncode=0 output=9.55.0
+identify: path=/usr/local/bin/identify returncode=0 output=Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib
+kpsewhich: path=/usr/local/texlive/2025/bin/x86_64-linux/kpsewhich returncode=0 output=kpathsea version 6.4.1 | Copyright 2023 Karl Berry & Olaf Weber. | License LGPLv2.1+: GNU Lesser GPL version 2.1 or later <https://gnu.org/licenses/lgpl.html> | This is free software: you are free to change and redistribute it. | There is NO WARRANTY, to the extent permitted by law.
+latexmlc: path=latexmlc returncode=None output=unavailable (FileNotFoundError: [Errno 2] No such file or directory: 'latexmlc')
+magick: path=/usr/local/bin/magick returncode=0 output=Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib
+pdflatex: path=/usr/local/texlive/2025/bin/x86_64-linux/pdflatex returncode=0 output=pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025) | kpathsea version 6.4.1 | Copyright 2025 Han The Thanh (pdfTeX) et al. | There is NO warranty.  Redistribution of this software is | covered by the terms of both the pdfTeX copyright and
+tlmgr: path=/usr/local/texlive/2025/bin/x86_64-linux/tlmgr returncode=0 output=tlmgr revision 76773 (2025-11-06 20:43:29 +0100) | tlmgr using installation: /usr/local/texlive/2025 | TeX Live (https://tug.org/texlive) version 2025
+[texlive]
+cjk_font_family: gkai
+cjk_sty: status=ok path=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/CJK.sty version=4.8.5 (16-Oct-2021) date=2021/10/16 header=% This is the file CJK.sty of the CJK package
+cjk_font_fd: status=ok path=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/UTF8/c70gkai.fd version=4.8.5 (16-Oct-2021) date=2021/10/16 header=% This is the file c70gkai.fd of the CJK package

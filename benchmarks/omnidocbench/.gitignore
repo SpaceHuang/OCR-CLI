@@ -1,0 +1,21 @@
+# OmniDocBench baseline: bulk data stays out of git (manifests + reports only).
+# Mirrors benchmarks/official-bf16/.gitignore convention.
+dataset/
+eval/
+pdfs/
+pdfs-smoke/
+gt-smoke.json
+scans/
+predictions/
+predictions-smoke/
+run-scans.sh
+.venv/
+__pycache__/
+post-scan.sh
+docker-pull.log
+eval-configs/
+# CDM intermediate debug trees (~90MB x 13 rounds, not durable evidence)
+reports/**/*_quick_match_display_formula/
+# matched GT/pred pair dumps (12-26MB each, debugging only)
+reports/*_quick_match_text_block_result.json
+reports/*_quick_match_table_result.json

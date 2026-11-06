@@ -1,0 +1,167 @@
+[
+    {
+        "gt_idx": [
+            0
+        ],
+        "gt": "$$b = \\cdots, -8, -4, 0, 4, 8, \\cdots$$",
+        "pred_idx": [
+            5
+        ],
+        "pred": "\\[ b = \\cdots - 8, -4, 0, 4, 8, \\cdots \\]",
+        "edit": 0.037037037037037035,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            11
+        ],
+        "pred_position": 252,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "page-14cd673f-d86d-45a7-a13e-2b4e1d91c08f.png",
+        "norm_gt": "b=\\cdots,-8,-4,0,4,8,\\cdots",
+        "norm_pred": "b=\\cdots-8,-4,0,4,8,\\cdots",
+        "gt_cdm": "b = \\cdots, -8, -4, 0, 4, 8, \\cdots",
+        "image_name": "page-14cd673f-d86d-45a7-a13e-2b4e1d91c08f.png",
+        "upper_len": 27,
+        "metric": {
+            "Edit_dist": 0.037037037037037035,
+            "CDM": 0.976
+        },
+        "Edit_num": 1,
+        "img_id_cdm": "0",
+        "pred_cdm": "b = \\cdots - 8, -4, 0, 4, 8, \\cdots"
+    },
+    {
+        "gt_idx": [
+            1
+        ],
+        "gt": "$$\\therefore 3m+1 = 1, 5, -1, -5.$$",
+        "pred_idx": [
+            10
+        ],
+        "pred": "\\[ \\therefore 3m+1=1,5,-1,-5 \\]",
+        "edit": 0.0,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            15
+        ],
+        "pred_position": 703,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "page-14cd673f-d86d-45a7-a13e-2b4e1d91c08f.png",
+        "norm_gt": "\\therefore3m+1=1,5,-1,-5",
+        "norm_pred": "\\therefore3m+1=1,5,-1,-5",
+        "gt_cdm": "\\therefore 3m+1 = 1, 5, -1, -5.",
+        "image_name": "page-14cd673f-d86d-45a7-a13e-2b4e1d91c08f.png",
+        "upper_len": 24,
+        "metric": {
+            "Edit_dist": 0.0,
+            "CDM": 0.968
+        },
+        "Edit_num": 0,
+        "img_id_cdm": "1",
+        "pred_cdm": "\\therefore 3m+1=1,5,-1,-5"
+    },
+    {
+        "gt_idx": [
+            2
+        ],
+        "gt": "$$\\therefore 3m = 0, 4, -2, -6.$$",
+        "pred_idx": [
+            11
+        ],
+        "pred": "\\[ \\therefore 3m=0,4,-2,-6 \\]",
+        "edit": 0.0,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            16
+        ],
+        "pred_position": 731,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "page-14cd673f-d86d-45a7-a13e-2b4e1d91c08f.png",
+        "norm_gt": "\\therefore3m=0,4,-2,-6",
+        "norm_pred": "\\therefore3m=0,4,-2,-6",
+        "gt_cdm": "\\therefore 3m = 0, 4, -2, -6.",
+        "image_name": "page-14cd673f-d86d-45a7-a13e-2b4e1d91c08f.png",
+        "upper_len": 22,
+        "metric": {
+            "Edit_dist": 0.0,
+            "CDM": 0.963
+        },
+        "Edit_num": 0,
+        "img_id_cdm": "2",
+        "pred_cdm": "\\therefore 3m=0,4,-2,-6"
+    },
+    {
+        "gt_idx": [
+            3
+        ],
+        "gt": "$$\\# \\left( \\text{Params}\\right)  = {2DV} + {4D} + {LD}\\left( {{12D} + 2\\left( {{d}_{w} + {d}_{a} + {d}_{v} + {d}_{g}}\\right)  + {19}}\\right)  - \\left( {{2D}{d}_{v} + D}\\right) \\text{.} \\tag{26}$$",
+        "pred_idx": [
+            3
+        ],
+        "pred": "\\[ \\# (\\text {Params}) = 2 D V + 4 D + L D \\left(1 2 D + 2 \\left(d _ {w} + d _ {a} + d _ {v} + d _ {g}\\right) + 1 9\\right) - (2 D d _ {v} + D). \\tag {26} \\]",
+        "edit": 0.0,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            4
+        ],
+        "pred_position": 954,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "page-f9583127-1277-4424-be9d-35430e0aedd6.png",
+        "norm_gt": "\\#(params)=2dv+4d+ld(12d+2(d_w+d_a+d_v+d_g)+19)-(2dd_v+d).",
+        "norm_pred": "\\#(params)=2dv+4d+ld(12d+2(d_w+d_a+d_v+d_g)+19)-(2dd_v+d).",
+        "gt_cdm": "\\# \\left( \\text{Params}\\right)  = {2DV} + {4D} + {LD}\\left( {{12D} + 2\\left( {{d}_{w} + {d}_{a} + {d}_{v} + {d}_{g}}\\right)  + {19}}\\right)  - \\left( {{2D}{d}_{v} + D}\\right) \\text{.}",
+        "image_name": "page-f9583127-1277-4424-be9d-35430e0aedd6.png",
+        "upper_len": 58,
+        "metric": {
+            "Edit_dist": 0.0,
+            "CDM": 1.0
+        },
+        "Edit_num": 0,
+        "img_id_cdm": "3",
+        "pred_cdm": "\\# (\\text {Params}) = 2 D V + 4 D + L D \\left(1 2 D + 2 \\left(d _ {w} + d _ {a} + d _ {v} + d _ {g}\\right) + 1 9\\right) - (2 D d _ {v} + D)."
+    },
+    {
+        "gt_idx": [
+            11
+        ],
+        "gt": "$$\\text{start_address}=4096\\cdot(ak^3\\pmod p,\\;\\text{end_address}=\\text{start_address}+4097.$$",
+        "pred_idx": [
+            11
+        ],
+        "pred": "\\[ \\text { start\\_address } = 4 0 9 6 \\cdot (a k ^ {3} \\mod p), \\quad \\text { end\\_address } = \\text { start\\_address } + 4 0 9 7. \\]",
+        "edit": 0.07352941176470588,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            12
+        ],
+        "pred_position": 2812,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "page-f9583127-1277-4424-be9d-35430e0aedd6.png",
+        "norm_gt": "start_address=4096\\cdot(ak^3\\pmodp,end_address=start_address+4097",
+        "norm_pred": "start\\_address=4096\\cdot(ak^3\\modp),end\\_address=start\\_address+4097",
+        "gt_cdm": "\\text{start_address}=4096\\cdot(ak^3\\pmod p,\\;\\text{end_address}=\\text{start_address}+4097.",
+        "image_name": "page-f9583127-1277-4424-be9d-35430e0aedd6.png",
+        "upper_len": 68,
+        "metric": {
+            "Edit_dist": 0.07352941176470588,
+            "CDM": 0.966
+        },
+        "Edit_num": 5,
+        "img_id_cdm": "4",
+        "pred_cdm": "\\text { start\\_address } = 4 0 9 6 \\cdot (a k ^ {3} \\mod p), \\quad \\text { end\\_address } = \\text { start\\_address } + 4 0 9 7."
+    }
+]

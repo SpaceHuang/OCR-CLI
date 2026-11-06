@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "set_id": "omnidocbench-baseline",
+  "purpose": "External quality baseline for the ocrx scan pipeline ahead of the v2 inference-platform refactor; leaderboard submission is out of scope.",
+  "benchmark": {
+    "name": "OmniDocBench",
+    "version": "v1.6 (main branch, 2026-10-29)",
+    "dataset_repo": "opendatalab/OmniDocBench (huggingface)",
+    "dataset_revision": "aa1ee96d106dbe53d0ae59474d75c6e6d9b53fec",
+    "dataset_license": "research use only, not for commercial use",
+    "gt_pages": 1651,
+    "languages": {
+      "english": 755,
+      "simplified_chinese": 765,
+      "traditional_chinese": 13,
+      "en_ch_mixed": 116,
+      "other": 2
+    },
+    "eval_repo_head": "ea2d138c7d2e185feb71ef8014e97d7206820b34",
+    "eval_toolkit_version": "1.6.0",
+    "eval_docker_image": "ghcr.io/zeng-weijun/omnidocbench-eval:repro-ubuntu2204",
+    "eval_docker_image_note": "pulled via ghcr.nju.edu.cn mirror (ghcr.io blob CDN unreachable from this network); runtime verified with script/verify_repro_runtime.sh",
+    "eval_match_method": "quick_match",
+    "official_ovisocr2_reference": "96.58 overall (BF16, transformers; OvisOCR2 technical report)"
+  },
+  "pipeline": {
+    "ocrx_binary": "C:/Users/WIN11/.local/bin/ocrx",
+    "ocrx_version": "0.1.0",
+    "ocrx_binary_sha256": "f3b6e06870cc9a6022d4bcc7eb3ef81a7cddb4bfbb222c01472f7cfde71ae1e6",
+    "ocrx_build_date": "2026-11-05",
+    "repo_head": "1d6d109",
+    "backend": "vulkan",
+    "gpu": "RTX 4090D 24GB",
+    "model": "ATH-MaaS/OvisOCR2",
+    "gguf_repo": "Abiray/OvisOCR2-GGUF rev 8a22290a",
+    "llama_cpp": "wrapper 0.1.152 / sys 0.1.153 (rev 9e3b928), batched window depth 8"
+  },
+  "pdf_wrapping": {
+    "script": "scripts/build-omnidocbench-pdfs.py",
+    "render_dpi": 300,
+    "mediabox_rule": "page points = pixels * 72 / 300 (300 DPI PDFium render reproduces source pixel grid)",
+    "reencoded_pages": 0,
+    "formats": { "JPEG": 1015, "PNG": 636 },
+    "oversized_pages": 172,
+    "oversized_note": "PDFium downscales proportionally to the 2880x2880 budget; per-page ratio in scans/<profile>/<doc>/page-0001.render-audit"
+  },
+  "scan": {
+    "command_template": "ocrx scan pdfs -o scans/<profile> --model ovisocr2 --model-profile <profile> --dpi 300 --non-interactive --progress off --log-level warn",
+    "profiles": ["compact", "balanced", "quality", "reference"],
+    "profile_quantization": {
+      "compact": "Q4_K_M",
+      "balanced": "Q5_K_M",
+      "quality": "Q8_0",
+      "reference": "F16"
+    },
+    "fixed_flags": {
+      "pdf_mode": "auto",
+      "quality_tier": "l2",
+      "dpi": 300,
+      "max_image_tokens": 1024,
+      "max_output_tokens": 16384,
+      "context_size": 20480
+    }
+  },
+  "prediction_export": {
+    "script": "scripts/export-omnidocbench-predictions.py",
+    "transforms": [
+      "strip bbox-crop image links ![...](images/...)",
+      "strip leaked <think>...</think> reasoning blocks (known ocrx defect, counted in export-report.json)"
+    ],
+    "naming": "<page_info.image_path stem>.md per GT page"
+  },
+  "evaluation": {
+    "script": "scripts/run-omnidocbench-eval.py",
+    "metrics": ["text Edit_dist", "formula Edit_dist + CDM", "table TEDS + Edit_dist", "reading_order Edit_dist"],
+    "overall_formula": "((1 - text_edit) * 100 + table_teds + formula_cdm) / 3",
+    "workers": 8,
+    "splits": {
+      "all": "no filter (1651 pages)",
+      "en": "filter language=english (755)",
+      "zh": "filter language=simplified_chinese (765)",
+      "note": "en_ch_mixed/traditional_chinese/other (131 pages) excluded from splits, included in all"
+    }
+  },
+  "reproduce": {
+    "dataset_download": "HF_ENDPOINT=https://hf-mirror.com hf download opendatalab/OmniDocBench --repo-type dataset --revision aa1ee96d106dbe53d0ae59474d75c6e6d9b53fec --local-dir dataset --include \"OmniDocBench.json\" \"with_mask.json\" \"images/*\"",
+    "steps": ["see README.md runbook"]
+  }
+}

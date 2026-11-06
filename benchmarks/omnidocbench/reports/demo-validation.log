@@ -1,0 +1,664 @@
+2026-11-05 17:24:45.826 | INFO     | src.dataset.end2end_dataset:_collect_page_matches:2055 - [quick-match] using page workers=8
+Matching pages:   0%|                                                                                                | 0/18 [00:00<?, ?it/s]Matching pages:  28%|########################4                                                               | 5/18 [00:00<00:00, 37.54it/s]Matching pages:  50%|############################################                                            | 9/18 [00:00<00:00, 34.71it/s]Matching pages:  72%|##############################################################8                        | 13/18 [00:00<00:00, 29.27it/s]Matching pages:  89%|#############################################################################3         | 16/18 [00:01<00:00,  8.09it/s]2026-11-05 17:24:48.162 | INFO     | src.dataset.end2end_dataset:_match_display_formula_candidates:1569 - [formula-match-candidate] docstructbench_llm-raw-scihub-o.O-j.physletb.2004.06.101.pdf_3.jpg: choose=hungarian_unsplit page_cost=43.0799
+Matching pages: 100%|#######################################################################################| 18/18 [00:02<00:00,  4.84it/s]Matching pages: 100%|#######################################################################################| 18/18 [00:02<00:00,  7.71it/s]
+###### Process:  predictions_quick_match
+【text_block】
+Edit_dist:
+---------------  --------
+ALL_page_avg     0.335621
+edit_whole       0.475074
+edit_sample_avg  0.511754
+---------------  --------
+====================================================================================================
+----Anno Attribute---------------
+Edit_dist:
+--------------------------------------  --------
+text_background: multi_colored          0.360388
+text_background: single_colored         0.318009
+text_background: white                  0.517886
+text_language: text_en_ch_mixed         0.318496
+text_language: text_english             0.067674
+text_language: text_simplified_chinese  0.727724
+text_rotate: horizontal                 1
+text_rotate: normal                     0.499739
+--------------------------------------  --------
+====================================================================================================
+sample_count:
+--------------------------------------  ---
+text_background: multi_colored           16
+text_background: single_colored           8
+text_background: white                  206
+text_language: text_en_ch_mixed           7
+text_language: text_english              74
+text_language: text_simplified_chinese  148
+text_rotate: horizontal                   1
+text_rotate: normal                     228
+--------------------------------------  ---
+====================================================================================================
+Edit_dist:
+--------------------------------  ----------
+ALL                               0.335621
+None                              0.558218
+colorful_backgroud                0.0691529
+data_source: PPT2PDF              0.00378788
+data_source: academic_literature  0.0693487
+data_source: book                 0.405543
+data_source: colorful_textbook    0.470388
+data_source: exam_paper           0.0525129
+data_source: magazine             0.322845
+data_source: newspaper            0.561987
+data_source: note                 0.581583
+data_source: research_report      0.552598
+fuzzy_scan                        0.470388
+language: en_ch_mixed             0.337711
+language: english                 0.0611526
+language: simplified_chinese      0.527541
+layout: 1andmore_column           0.282527
+layout: double_column             0.507062
+layout: other_layout              0.701742
+layout: single_column             0.213366
+layout: three_column              0.124104
+--------------------------------  ----------
+====================================================================================================
+[CDM] texlive_root=/usr/local/texlive/2025
+[CDM] texlive_bin=/usr/local/texlive/2025/bin/x86_64-linux
+[CDM] pdflatex=/usr/local/texlive/2025/bin/x86_64-linux/pdflatex
+[CDM] pdflatex_version=pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025)
+[CDM] kpsewhich=/usr/local/texlive/2025/bin/x86_64-linux/kpsewhich
+[CDM] kpsewhich_texmfroot=/usr/local/texlive/2025
+[CDM] texmfcnf=/usr/local/texlive/2025:/usr/local/texlive/2025/texmf-dist/web2c
+[CDM] cjk_font=gkai
+[CDM] cjk_sty=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/CJK.sty
+[CDM] cjk_font_fd=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/UTF8/c70gkai.fd
+[CDM] workers=8 samples=23
+CDM:   0%|                                                                                                           | 0/23 [00:00<?, ?it/s]/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/lib/python3.10/site-packages/PIL/Image.py:1056: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+  warnings.warn(
+/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/lib/python3.10/site-packages/PIL/Image.py:1056: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+  warnings.warn(
+/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/lib/python3.10/site-packages/PIL/Image.py:1056: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+  warnings.warn(
+/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/lib/python3.10/site-packages/PIL/Image.py:1056: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+  warnings.warn(
+CDM:   4%|####3                                                                                              | 1/23 [00:02<00:50,  2.28s/it]CDM:  13%|############9                                                                                      | 3/23 [00:02<00:12,  1.55it/s]CDM:  17%|#################2                                                                                 | 4/23 [00:02<00:08,  2.16it/s]CDM:  39%|######################################7                                                            | 9/23 [00:04<00:05,  2.55it/s]CDM:  43%|##########################################6                                                       | 10/23 [00:04<00:05,  2.45it/s]CDM:  57%|#######################################################3                                          | 13/23 [00:04<00:02,  3.90it/s]CDM:  70%|####################################################################1                             | 16/23 [00:05<00:01,  4.42it/s]CDM:  74%|########################################################################4                         | 17/23 [00:06<00:02,  2.69it/s]CDM:  78%|############################################################################6                     | 18/23 [00:07<00:01,  2.69it/s]CDM:  83%|################################################################################9                 | 19/23 [00:07<00:01,  3.07it/s]CDM: 100%|##################################################################################################| 23/23 [00:07<00:00,  3.14it/s]
+【display_formula】
+Edit_dist:
+---------------  --------
+ALL_page_avg     0.236635
+edit_whole       0.246281
+edit_sample_avg  0.207207
+---------------  --------
+====================================================================================================
+CDM:
+---  --------
+all  0.882739
+---  --------
+====================================================================================================
+----Anno Attribute---------------
+CDM:
+-------------------  --------
+formula_type: print  0.882739
+-------------------  --------
+====================================================================================================
+Edit_dist:
+-------------------  --------
+formula_type: print  0.207207
+-------------------  --------
+====================================================================================================
+sample_count:
+-------------------  --
+formula_type: print  23
+-------------------  --
+====================================================================================================
+CDM:
+--------------------------------  --------
+ALL                               0.886415
+None                              0.858231
+colorful_backgroud                0.9146
+data_source: academic_literature  0.858231
+data_source: exam_paper           0.9146
+language: english                 0.886415
+layout: single_column             0.886415
+--------------------------------  --------
+====================================================================================================
+Edit_dist:
+--------------------------------  --------
+ALL                               0.236635
+None                              0.300766
+colorful_backgroud                0.172503
+data_source: academic_literature  0.300766
+data_source: exam_paper           0.172503
+language: english                 0.236635
+layout: single_column             0.236635
+--------------------------------  --------
+====================================================================================================
+[TEDS] workers=8 samples=10 timeout=120.0
+TEDS:   0%|                                                                                                          | 0/10 [00:00<?, ?it/s]TEDS:  30%|#############################4                                                                    | 3/10 [00:00<00:00, 29.32it/s]TEDS:  60%|##########################################################8                                       | 6/10 [00:00<00:00, 28.81it/s]TEDS: 100%|#################################################################################################| 10/10 [00:00<00:00, 41.50it/s]
+【table】
+TEDS:
+---  --------
+all  0.796747
+---  --------
+====================================================================================================
+TEDS_structure_only:
+---  --------
+all  0.911589
+---  --------
+====================================================================================================
+Edit_dist:
+---------------  --------
+ALL_page_avg     0.190512
+edit_whole       0.184972
+edit_sample_avg  0.19154
+---------------  --------
+====================================================================================================
+----Anno Attribute---------------
+Edit_dist:
+----------------------------------  ---------
+include_background: False           0.225598
+include_background: True            0.157482
+include_equation: False             0.218516
+include_equation: True              0.0836362
+include_photo: False                0.19154
+language: table_en                  0.230687
+language: table_simplified_chinese  0.174763
+line: fewer_line                    0.158414
+line: full_line                     0.236756
+line: less_line                     0.176309
+table_layout: horizontal            0.19154
+with_span: False                    0.232364
+with_span: True                     0.150716
+with_structured_text: False         0.19154
+----------------------------------  ---------
+====================================================================================================
+TEDS:
+----------------------------------  --------
+include_background: False           0.792128
+include_background: True            0.801367
+include_equation: False             0.776947
+include_equation: True              0.875948
+include_photo: False                0.796747
+language: table_en                  0.885887
+language: table_simplified_chinese  0.758545
+line: fewer_line                    0.780354
+line: full_line                     0.827934
+line: less_line                     0.753968
+table_layout: horizontal            0.796747
+with_span: False                    0.740699
+with_span: True                     0.852796
+with_structured_text: False         0.796747
+----------------------------------  --------
+====================================================================================================
+TEDS_structure_only:
+----------------------------------  --------
+include_background: False           0.907024
+include_background: True            0.916153
+include_equation: False             0.89667
+include_equation: True              0.971264
+include_photo: False                0.911589
+language: table_en                  0.980843
+language: table_simplified_chinese  0.881908
+line: fewer_line                    0.928188
+line: full_line                     0.928922
+line: less_line                     0.759259
+table_layout: horizontal            0.911589
+with_span: False                    0.920635
+with_span: True                     0.902542
+with_structured_text: False         0.911589
+----------------------------------  --------
+====================================================================================================
+sample_count:
+----------------------------------  --
+include_background: False            5
+include_background: True             5
+include_equation: False              8
+include_equation: True               2
+include_photo: False                10
+language: table_en                   3
+language: table_simplified_chinese   7
+line: fewer_line                     5
+line: full_line                      4
+line: less_line                      1
+table_layout: horizontal            10
+with_span: False                     5
+with_span: True                      5
+with_structured_text: False         10
+----------------------------------  --
+====================================================================================================
+Edit_dist:
+--------------------------------  ----------
+ALL                               0.190512
+colorful_backgroud                0.0837375
+data_source: academic_literature  0.141026
+data_source: book                 0.176309
+data_source: colorful_textbook    0.00747508
+data_source: exam_paper           0.16
+data_source: magazine             0.0262467
+data_source: note                 0.389774
+data_source: research_report      0.212004
+fuzzy_scan                        0.00747508
+language: en_ch_mixed             0.543561
+language: english                 0.102834
+language: simplified_chinese      0.17251
+layout: 1andmore_column           0.167004
+layout: double_column             0.141026
+layout: other_layout              0.0262467
+layout: single_column             0.242666
+--------------------------------  ----------
+====================================================================================================
+TEDS:
+--------------------------------  --------
+ALL                               0.814491
+colorful_backgroud                0.940916
+data_source: academic_literature  0.785222
+data_source: book                 0.753968
+data_source: colorful_textbook    0.999479
+data_source: exam_paper           0.882353
+data_source: magazine             0.966674
+data_source: note                 0.714952
+data_source: research_report      0.756409
+fuzzy_scan                        0.999479
+language: en_ch_mixed             0.872959
+language: english                 0.889018
+language: simplified_chinese      0.758081
+layout: 1andmore_column           0.759705
+layout: double_column             0.785222
+layout: other_layout              0.966674
+layout: single_column             0.811823
+--------------------------------  --------
+====================================================================================================
+TEDS_structure_only:
+--------------------------------  --------
+ALL                               0.914552
+colorful_backgroud                0.941176
+data_source: academic_literature  0.942529
+data_source: book                 0.759259
+data_source: colorful_textbook    1
+data_source: exam_paper           0.882353
+data_source: magazine             1
+data_source: note                 0.916667
+data_source: research_report      0.906746
+fuzzy_scan                        1
+language: en_ch_mixed             1
+language: english                 0.941627
+language: simplified_chinese      0.881217
+layout: 1andmore_column           0.883637
+layout: double_column             0.942529
+layout: other_layout              1
+layout: single_column             0.904233
+--------------------------------  --------
+====================================================================================================
+【reading_order】
+Edit_dist:
+---------------  --------
+ALL_page_avg     0.2243
+edit_whole       0.430605
+edit_sample_avg  0.2243
+---------------  --------
+====================================================================================================
+----Anno Attribute---------------
+sample_count:
+
+====================================================================================================
+Edit_dist:
+--------------------------------  ---------
+ALL                               0.2243
+None                              0.28381
+colorful_backgroud                0.0592949
+data_source: PPT2PDF              0
+data_source: academic_literature  0.2025
+data_source: book                 0.125
+data_source: colorful_textbook    0.348214
+data_source: exam_paper           0.115385
+data_source: magazine             0.1
+data_source: newspaper            0.493151
+data_source: note                 0.142857
+data_source: research_report      0.491597
+fuzzy_scan                        0.348214
+language: en_ch_mixed             0.142857
+language: english                 0.108681
+language: simplified_chinese      0.313378
+layout: 1andmore_column           0.321267
+layout: double_column             0.174107
+layout: other_layout              0.593151
+layout: single_column             0.168016
+layout: three_column              0
+--------------------------------  ---------
+====================================================================================================
+========== RUNTIME_ENVIRONMENT predictions_quick_match ==========
+save_name: predictions_quick_match
+[system]
+platform: Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35
+python_version: 3.10.16 (main, Dec 11 2024, 16:24:50) [GCC 11.2.0]
+python_executable: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/bin/python
+python_prefix: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310
+conda_env: omnidocbench_v16_smoke_20260408_py310
+conda_prefix: /opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310
+libc: glibc 2.35
+uname: Linux 8b0f76a41752 5.15.167.4-microsoft-standard-WSL2 #1 SMP Tue Nov 5 00:21:55 UTC 2024 x86_64 x86_64
+os_release: {"BUG_REPORT_URL": "https://bugs.launchpad.net/ubuntu/", "HOME_URL": "https://www.ubuntu.com/", "ID": "ubuntu", "ID_LIKE": "debian", "NAME": "Ubuntu", "PRETTY_NAME": "Ubuntu 22.04.5 LTS", "PRIVACY_POLICY_URL": "https://www.ubuntu.com/legal/terms-and-policies/privacy-policy", "SUPPORT_URL": "https://help.ubuntu.com/", "UBUNTU_CODENAME": "jammy", "VERSION": "22.04.5 LTS (Jammy Jellyfish)", "VERSION_CODENAME": "jammy", "VERSION_ID": "22.04"}
+[system_packages]
+package_manager: dpkg-query
+fontconfig: fontconfig=2.13.1-4.2ubuntu5
+ghostscript: ghostscript=9.55.0~dfsg1-0ubuntu5.11
+imagemagick: unavailable (dpkg-query: no packages found matching imagemagick)
+latexml: latexml=
+python3: python3=3.10.6-1~22.04.1
+python3-pip: python3-pip=22.0.2+dfsg-1ubuntu0.7
+python3-setuptools: python3-setuptools=59.6.0-1.2ubuntu0.22.04.2
+python3-wheel: python3-wheel=0.37.1-2ubuntu0.22.04.1
+texlive-base: unavailable (dpkg-query: no packages found matching texlive-base)
+texlive-binaries: texlive-binaries=
+texlive-fonts-recommended: unavailable (dpkg-query: no packages found matching texlive-fonts-recommended)
+texlive-lang-chinese: unavailable (dpkg-query: no packages found matching texlive-lang-chinese)
+texlive-lang-cjk: unavailable (dpkg-query: no packages found matching texlive-lang-cjk)
+texlive-latex-base: unavailable (dpkg-query: no packages found matching texlive-latex-base)
+texlive-latex-extra: unavailable (dpkg-query: no packages found matching texlive-latex-extra)
+texlive-plain-generic: unavailable (dpkg-query: no packages found matching texlive-plain-generic)
+[python_packages]
+Levenshtein: 0.25.1
+Pillow: 10.4.0
+PyYAML: 6.0.2
+apted: 1.0.3
+beautifulsoup4: 4.11.1
+evaluate: 0.4.3
+func-timeout: 4.3.5
+loguru: 0.7.2
+lxml: 4.9.1
+matplotlib: 3.7.5
+nltk: 3.9.1
+numpy: 1.24.4
+pandas: 2.0.3
+pip: 25.0
+pylatexenc: 2.10
+scipy: 1.10.1
+setuptools: 75.8.0
+tabulate: 0.9.0
+tqdm: 4.67.1
+wheel: 0.45.1
+[external_tools]
+convert: path=/usr/local/bin/convert returncode=0 output=WARNING: The convert command is deprecated in IMv7, use "magick" instead of "convert" or "magick convert" | Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5)
+ghostscript: path=/usr/bin/gs returncode=0 output=9.55.0
+identify: path=/usr/local/bin/identify returncode=0 output=Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib
+kpsewhich: path=/usr/local/texlive/2025/bin/x86_64-linux/kpsewhich returncode=0 output=kpathsea version 6.4.1 | Copyright 2023 Karl Berry & Olaf Weber. | License LGPLv2.1+: GNU Lesser GPL version 2.1 or later <https://gnu.org/licenses/lgpl.html> | This is free software: you are free to change and redistribute it. | There is NO WARRANTY, to the extent permitted by law.
+latexmlc: path=latexmlc returncode=None output=unavailable (FileNotFoundError: [Errno 2] No such file or directory: 'latexmlc')
+magick: path=/usr/local/bin/magick returncode=0 output=Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib
+pdflatex: path=/usr/local/texlive/2025/bin/x86_64-linux/pdflatex returncode=0 output=pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025) | kpathsea version 6.4.1 | Copyright 2025 Han The Thanh (pdfTeX) et al. | There is NO warranty.  Redistribution of this software is | covered by the terms of both the pdfTeX copyright and
+tlmgr: path=/usr/local/texlive/2025/bin/x86_64-linux/tlmgr returncode=0 output=tlmgr revision 76773 (2025-11-06 20:43:29 +0100) | tlmgr using installation: /usr/local/texlive/2025 | TeX Live (https://tug.org/texlive) version 2025
+[texlive]
+cjk_font_family: gkai
+cjk_sty: status=ok path=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/CJK.sty version=4.8.5 (16-Oct-2021) date=2021/10/16 header=% This is the file CJK.sty of the CJK package
+cjk_font_fd: status=ok path=/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/UTF8/c70gkai.fd version=4.8.5 (16-Oct-2021) date=2021/10/16 header=% This is the file c70gkai.fd of the CJK package
+
+========== END_RUNTIME_ENVIRONMENT predictions_quick_match ==========
+========== STAGE_EXECUTION predictions_quick_match ==========
+save_name: predictions_quick_match
+[page_match]
+workers: 8
+page_count: 18
+quick_match_truncated_timeout_sec: 300
+match_timeout_sec: 420
+fallbacks:
+  - page_timeout: count=0
+  - quick_match_timeout: count=0
+[display_formula.CDM]
+workers: 8
+timeout_sec: None
+sample_count: 23
+timeout_case_count: 0
+error_case_count: 0
+exception_case_count: 0
+[table.TEDS]
+workers: 8
+timeout_sec: 120.0
+sample_count: 10
+timeout_case_count: 0
+error_case_count: 0
+exception_case_count: 0
+
+========== END_STAGE_EXECUTION predictions_quick_match ==========
+========== FINAL_EVAL_RUN_REPORT predictions_quick_match ==========
+{
+  "notebook_metric_summary": {
+    "metrics": {
+      "display_formula_CDM": {
+        "notebook_value": 88.64153846153846,
+        "page_denominator": 2,
+        "raw": 0.8864153846153846
+      },
+      "reading_order_Edit_dist": {
+        "notebook_value": 0.22430037417144588,
+        "page_denominator": 18,
+        "raw": 0.22430037417144588
+      },
+      "table_TEDS": {
+        "notebook_value": 81.44908741318889,
+        "page_denominator": 9,
+        "raw": 0.8144908741318889
+      },
+      "table_TEDS_structure_only": {
+        "notebook_value": 91.45518147659233,
+        "page_denominator": 9,
+        "raw": 0.9145518147659233
+      },
+      "text_block_Edit_dist": {
+        "notebook_value": 0.3356214754013134,
+        "page_denominator": 18,
+        "raw": 0.3356214754013134
+      }
+    },
+    "overall_notebook": 78.842826111532,
+    "source": "tools/generate_result_tables.ipynb#cell-2"
+  },
+  "page_denominators": {
+    "display_formula": {
+      "CDM": {
+        "ALL": 2
+      },
+      "Edit_dist": {
+        "ALL": 2
+      }
+    },
+    "reading_order": {
+      "Edit_dist": {
+        "ALL": 18
+      }
+    },
+    "table": {
+      "Edit_dist": {
+        "ALL": 9
+      },
+      "TEDS": {
+        "ALL": 9
+      },
+      "TEDS_structure_only": {
+        "ALL": 9
+      }
+    },
+    "text_block": {
+      "Edit_dist": {
+        "ALL": 18
+      }
+    }
+  },
+  "runtime_environment": {
+    "external_tools": {
+      "convert": {
+        "output": "WARNING: The convert command is deprecated in IMv7, use \"magick\" instead of \"convert\" or \"magick convert\" | Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5)",
+        "path": "/usr/local/bin/convert",
+        "returncode": 0
+      },
+      "ghostscript": {
+        "output": "9.55.0",
+        "path": "/usr/bin/gs",
+        "returncode": 0
+      },
+      "identify": {
+        "output": "Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib",
+        "path": "/usr/local/bin/identify",
+        "returncode": 0
+      },
+      "kpsewhich": {
+        "output": "kpathsea version 6.4.1 | Copyright 2023 Karl Berry & Olaf Weber. | License LGPLv2.1+: GNU Lesser GPL version 2.1 or later <https://gnu.org/licenses/lgpl.html> | This is free software: you are free to change and redistribute it. | There is NO WARRANTY, to the extent permitted by law.",
+        "path": "/usr/local/texlive/2025/bin/x86_64-linux/kpsewhich",
+        "returncode": 0
+      },
+      "latexmlc": {
+        "output": "unavailable (FileNotFoundError: [Errno 2] No such file or directory: 'latexmlc')",
+        "path": "latexmlc",
+        "returncode": null
+      },
+      "magick": {
+        "output": "Version: ImageMagick 7.1.1-47 Q16-HDRI x86_64 c8f4e8cb7:20250329 https://imagemagick.org | Copyright: (C) 1999 ImageMagick Studio LLC | License: https://imagemagick.org/script/license.php | Features: Cipher DPC HDRI OpenMP(4.5) | Delegates (built-in): fontconfig freetype jbig jng jpeg lzma pangocairo png tiff x zlib",
+        "path": "/usr/local/bin/magick",
+        "returncode": 0
+      },
+      "pdflatex": {
+        "output": "pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025) | kpathsea version 6.4.1 | Copyright 2025 Han The Thanh (pdfTeX) et al. | There is NO warranty.  Redistribution of this software is | covered by the terms of both the pdfTeX copyright and",
+        "path": "/usr/local/texlive/2025/bin/x86_64-linux/pdflatex",
+        "returncode": 0
+      },
+      "tlmgr": {
+        "output": "tlmgr revision 76773 (2025-11-06 20:43:29 +0100) | tlmgr using installation: /usr/local/texlive/2025 | TeX Live (https://tug.org/texlive) version 2025",
+        "path": "/usr/local/texlive/2025/bin/x86_64-linux/tlmgr",
+        "returncode": 0
+      }
+    },
+    "python_packages": {
+      "Levenshtein": "0.25.1",
+      "Pillow": "10.4.0",
+      "PyYAML": "6.0.2",
+      "apted": "1.0.3",
+      "beautifulsoup4": "4.11.1",
+      "evaluate": "0.4.3",
+      "func-timeout": "4.3.5",
+      "loguru": "0.7.2",
+      "lxml": "4.9.1",
+      "matplotlib": "3.7.5",
+      "nltk": "3.9.1",
+      "numpy": "1.24.4",
+      "pandas": "2.0.3",
+      "pip": "25.0",
+      "pylatexenc": "2.10",
+      "scipy": "1.10.1",
+      "setuptools": "75.8.0",
+      "tabulate": "0.9.0",
+      "tqdm": "4.67.1",
+      "wheel": "0.45.1"
+    },
+    "system": {
+      "conda_env": "omnidocbench_v16_smoke_20260408_py310",
+      "conda_prefix": "/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310",
+      "libc": "glibc 2.35",
+      "os_release": {
+        "BUG_REPORT_URL": "https://bugs.launchpad.net/ubuntu/",
+        "HOME_URL": "https://www.ubuntu.com/",
+        "ID": "ubuntu",
+        "ID_LIKE": "debian",
+        "NAME": "Ubuntu",
+        "PRETTY_NAME": "Ubuntu 22.04.5 LTS",
+        "PRIVACY_POLICY_URL": "https://www.ubuntu.com/legal/terms-and-policies/privacy-policy",
+        "SUPPORT_URL": "https://help.ubuntu.com/",
+        "UBUNTU_CODENAME": "jammy",
+        "VERSION": "22.04.5 LTS (Jammy Jellyfish)",
+        "VERSION_CODENAME": "jammy",
+        "VERSION_ID": "22.04"
+      },
+      "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+      "python_executable": "/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310/bin/python",
+      "python_prefix": "/opt/miniconda310/envs/omnidocbench_v16_smoke_20260408_py310",
+      "python_version": "3.10.16 (main, Dec 11 2024, 16:24:50) [GCC 11.2.0]",
+      "uname": "Linux 8b0f76a41752 5.15.167.4-microsoft-standard-WSL2 #1 SMP Tue Nov 5 00:21:55 UTC 2024 x86_64 x86_64"
+    },
+    "system_packages": {
+      "package_manager": "dpkg-query",
+      "tracked_packages": {
+        "fontconfig": "fontconfig=2.13.1-4.2ubuntu5",
+        "ghostscript": "ghostscript=9.55.0~dfsg1-0ubuntu5.11",
+        "imagemagick": "unavailable (dpkg-query: no packages found matching imagemagick)",
+        "latexml": "latexml=",
+        "python3": "python3=3.10.6-1~22.04.1",
+        "python3-pip": "python3-pip=22.0.2+dfsg-1ubuntu0.7",
+        "python3-setuptools": "python3-setuptools=59.6.0-1.2ubuntu0.22.04.2",
+        "python3-wheel": "python3-wheel=0.37.1-2ubuntu0.22.04.1",
+        "texlive-base": "unavailable (dpkg-query: no packages found matching texlive-base)",
+        "texlive-binaries": "texlive-binaries=",
+        "texlive-fonts-recommended": "unavailable (dpkg-query: no packages found matching texlive-fonts-recommended)",
+        "texlive-lang-chinese": "unavailable (dpkg-query: no packages found matching texlive-lang-chinese)",
+        "texlive-lang-cjk": "unavailable (dpkg-query: no packages found matching texlive-lang-cjk)",
+        "texlive-latex-base": "unavailable (dpkg-query: no packages found matching texlive-latex-base)",
+        "texlive-latex-extra": "unavailable (dpkg-query: no packages found matching texlive-latex-extra)",
+        "texlive-plain-generic": "unavailable (dpkg-query: no packages found matching texlive-plain-generic)"
+      }
+    },
+    "texlive": {
+      "cjk_font_family": "gkai",
+      "cjk_font_fd": {
+        "date": "2021/10/16",
+        "header": "% This is the file c70gkai.fd of the CJK package",
+        "path": "/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/UTF8/c70gkai.fd",
+        "status": "ok",
+        "version": "4.8.5 (16-Oct-2021)"
+      },
+      "cjk_sty": {
+        "date": "2021/10/16",
+        "header": "% This is the file CJK.sty of the CJK package",
+        "path": "/usr/local/texlive/2025/texmf-dist/tex/latex/cjk/texinput/CJK.sty",
+        "status": "ok",
+        "version": "4.8.5 (16-Oct-2021)"
+      }
+    }
+  },
+  "save_name": "predictions_quick_match",
+  "stage_execution": {
+    "metrics": {
+      "display_formula": {
+        "CDM": {
+          "error_case_count": 0,
+          "error_cases": [],
+          "exception_case_count": 0,
+          "exception_cases": [],
+          "sample_count": 23,
+          "timeout_case_count": 0,
+          "timeout_cases": [],
+          "timeout_sec": null,
+          "workers": 8
+        }
+      },
+      "table": {
+        "TEDS": {
+          "error_case_count": 0,
+          "error_cases": [],
+          "exception_case_count": 0,
+          "exception_cases": [],
+          "sample_count": 10,
+          "timeout_case_count": 0,
+          "timeout_cases": [],
+          "timeout_sec": 120.0,
+          "workers": 8
+        }
+      }
+    },
+    "page_match": {
+      "fallbacks": {
+        "page_timeout": {
+          "cases": [],
+          "count": 0
+        },
+        "quick_match_timeout": {
+          "cases": [],
+          "count": 0
+        }
+      },
+      "match_timeout_sec": 420,
+      "page_count": 18,
+      "quick_match_truncated_timeout_sec": 300,
+      "workers": 8
+    }
+  }
+}
+========== END_FINAL_EVAL_RUN_REPORT predictions_quick_match ==========
+[final-eval-run-report] saved to ./result/predictions_quick_match_run_summary.json
+[runtime-environment-json] saved to ./result/predictions_quick_match_runtime_environment.json
+[runtime-environment-log] saved to ./result/predictions_quick_match_runtime_environment.log
+[stage-execution-json] saved to ./result/predictions_quick_match_stage_execution.json
+[stage-execution-log] saved to ./result/predictions_quick_match_stage_execution.log
