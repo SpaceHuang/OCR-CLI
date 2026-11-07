@@ -229,8 +229,13 @@ try {
     # around this native invocation (the exit code is the contract here).
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    # BLK-3: resume must use the SAME effective config as the first scan
+    # (vulkan -> depth 16 -> batch=16), or the compat key mismatches and
+    # window 1 is re-run wholesale, defeating the reuse contract.
+    $page1Md = Join-Path $outputDir "page-0001.md"
+    $page1IdentityBefore = (Get-FileHash -Algorithm SHA256 $page1Md).Hash
     & $Binary scan $Fixture --output-dir $outputDir --pages 1-20 --pdf-mode ocr --model-profile compact `
-        --device cpu --offline --non-interactive --report json --resume `
+        --device vulkan --offline --non-interactive --report json --resume `
         --max-image-tokens 128 --max-output-tokens 128 2>&1 | Out-Null
     $ErrorActionPreference = $previousPreference
     $resumeCode = $LASTEXITCODE
@@ -239,6 +244,12 @@ try {
     }
     if (-not (Test-Path -LiteralPath (Join-Path $outputDir "page-0017.checkpoint"))) {
         throw "resume scan did not produce the cancelled window's page 17 checkpoint"
+    }
+    # BLK-3 reuse assertion: window 1's artifacts must be untouched by the
+    # resume (a compat-key mismatch would re-run pages 1-16 wholesale).
+    $page1IdentityAfter = (Get-FileHash -Algorithm SHA256 $page1Md).Hash
+    if ($page1IdentityAfter -ne $page1IdentityBefore) {
+        throw "resume re-ran window 1: page-0001.md changed during resume"
     }
 
     Write-Host "ctrl-c smoke ok: cancelled=130, checkpoint retained, resume completed (code $resumeCode)"

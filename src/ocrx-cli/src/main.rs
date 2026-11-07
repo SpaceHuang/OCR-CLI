@@ -2303,7 +2303,6 @@ fn with_batch_depth(
 fn resolve_window_depth(requested_device: &str) -> usize {
     let device = if requested_device == "auto" {
         recommend_device(resource_snapshot(), "auto")
-            .map(|resolved| resolved)
             .unwrap_or_else(|_| requested_device.to_owned())
     } else {
         requested_device.to_owned()
@@ -2348,6 +2347,11 @@ struct SharedRuntime {
     runtime: LlamaMtmdRuntime,
     profile: String,
     device: String,
+    /// BLK-1: the ACTUAL window depth this runtime was loaded with (the 16
+    /// tier on the GPU, the floor 8 after a GPU->CPU fallback). Every later
+    /// document in the invocation derives its compat key and orchestration
+    /// from this, never from the GPU-tier guess.
+    window_depth: usize,
     fallback_to_cpu: bool,
     gpu_warning: Option<String>,
 }
@@ -2747,7 +2751,13 @@ fn scan_document(
     // Phase-4 W1: the VRAM-tiered window depth rides the compatibility key
     // (;batch=<depth>) and the scan service (window building) / runtime
     // (context capacity).
-    let window_depth = resolve_window_depth(&options.device);
+    // BLK-1: a shared runtime that already fell back to CPU carries its
+    // effective (floor) depth - every later document derives its compat key
+    // from the ACTUAL depth, never from the GPU-tier guess.
+    let window_depth = match env.model_slot {
+        ModelSlot::Shared(Some(shared)) => shared.window_depth,
+        _ => resolve_window_depth(&options.device),
+    };
     let mut compatibility = CompatibilityKey {
         input_sha256,
         model: "ovisocr2".to_owned(),
@@ -3112,14 +3122,19 @@ fn scan_document(
                     // runtime, window orchestration, prefetch and compat key
                     // all follow the ACTUAL depth (8 on CPU).
                     let fallback_to_cpu = gpu_fallback_warning.is_some();
-                    if fallback_to_cpu && effective_depth != ocrx_core::WINDOW_DEPTH {
-                        // BLK-2: rebuild the compat key with the floor depth
-                        // so the OCR pages and resume flow follow the ACTUAL
-                        // (CPU) batch depth.
-                        compatibility = with_batch_depth(&compatibility, ocrx_core::WINDOW_DEPTH);
-                    }
+                    // BLK-1: the rebuild is keyed on the FALLBACK itself, not
+                    // on the effective depth value - the base key was built
+                    // with the GPU tier (batch=16), so a fallback must rewrite
+                    // it to the floor even though effective_depth == 8 == floor.
                     if fallback_to_cpu {
-                        device = "cpu".to_owned();
+                        compatibility = with_batch_depth(&compatibility, ocrx_core::WINDOW_DEPTH);
+                        device = String::from("cpu");
+                        // BLK-1: the rolling prefetch follows the actual depth.
+                        if let Some(owner) = env.owner {
+                            owner.borrow_mut().set_prefetch_depth(
+                                u32::try_from(ocrx_core::WINDOW_DEPTH * 2).unwrap_or(2),
+                            );
+                        }
                     }
                     *slot = Some(SharedRuntime {
                         runtime: loaded_model,
@@ -3127,8 +3142,9 @@ fn scan_document(
                         device: if fallback_to_cpu {
                             "cpu".to_owned()
                         } else {
-                            resolved_device
+                            resolved_device.clone()
                         },
+                        window_depth: effective_depth,
                         fallback_to_cpu,
                         gpu_warning: gpu_fallback_warning,
                     });
@@ -3446,12 +3462,9 @@ fn scan_document(
                     recognizer,
                     commit_recorder.clone(),
                 );
-                // BLK-2: the CPU runtime (GPU->CPU fallback) runs the floor.
-                if runtime_fallback_to_cpu {
-                    service.set_window_depth(ocrx_core::WINDOW_DEPTH);
-                } else {
-                    service.set_window_depth(env.window_depth);
-                }
+                // BLK-2: the service follows the shared runtime's ACTUAL
+                // depth (16 on the GPU, the floor after a fallback).
+                service.set_window_depth(shared.window_depth);
                 // Phase-4 W3: install the recognizer's donated encoder.
                 if let Some(encoder) = png_encoder.take() {
                     service.set_png_encoder(encoder);
