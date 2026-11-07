@@ -3178,20 +3178,19 @@ fn scan_document(
                                     if checkpoint.resume_action(rebuilt_ocr, output, page_u32)
                                         == CheckpointResumeAction::SkipCommitted
                                     {
-                                        if let Ok(mut markdown) =
-                                            collect_page_markdowns(output, &[page_u32])
-                                        {
-                                            native_markdown.append(&mut markdown);
-                                            resume_skip_pages.insert(page_u32);
-                                            if checkpoint.truncated || checkpoint.degenerated {
-                                                resume_incomplete_checkpoints
-                                                    .push(checkpoint.clone());
-                                            }
+                                        // BLK-1 fix: the page's markdown is
+                                        // already on disk (page-*.md from the
+                                        // previous run); the service's per-page
+                                        // resume matching skips it and
+                                        // finalize_document collects it from
+                                        // the page file. No markdown
+                                        // duplication.
+                                        resume_skip_pages.insert(page_u32);
+                                        if checkpoint.truncated || checkpoint.degenerated {
+                                            resume_incomplete_checkpoints.push(checkpoint.clone());
                                         }
                                     }
                                 }
-                                initial_queue
-                                    .retain(|page| !resume_skip_pages.contains(&page.page));
                             }
                         }
                     }
