@@ -3780,6 +3780,76 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    #[test]
+    fn shared_fallback_truncated_page_counted_once() {
+        // Phase-4 BLK-1: after a cross-invocation GPU->CPU fallback re-match,
+        // a truncated page must be counted exactly once (by the service's
+        // SkipCommitted path). The CLI re-matching must not double-count via
+        // resume_incomplete_checkpoints.
+        //
+        // This test exercises the depth-1 serial path (which is what runs
+        // for a single-page doc after fallback) with a truncated artifact,
+        // verifying the service counts truncated=1 and the summary has
+        // exactly one diagnostic for the page.
+        let root = test_dir("shared-fallback-truncated-once");
+        let _ = fs::remove_dir_all(&root);
+        let script = std::collections::VecDeque::from(vec![PageArtifactResult {
+            png: Some(vec![1]),
+            markdown: "page 1 truncated content".to_owned(),
+            page_json: format!(
+                r#"{{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}}"#
+            ),
+            truncated: true,
+            degenerated: false,
+            warnings: vec!["truncated".to_owned()],
+            raw_output: String::new(),
+        }]);
+        let recognizer = ScriptedRecognizer {
+            script,
+            calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let mut service = ScanService::new(
+            FakeRenderer {
+                calls: Vec::new(),
+                fail_page: None,
+            },
+            FakeLoader { loads: 0 },
+            recognizer,
+        );
+        // keep_pages=true so the page file survives for verification.
+        let summary = service
+            .run_with_checkpoints_cancelled(
+                &[1],
+                &root,
+                &degeneration_compatibility(),
+                false, // no resume — fresh scan
+                true,  // keep_pages
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        // The service counts the truncated page exactly once.
+        assert_eq!(summary.truncated_pages, 1, "truncated counted once");
+        let truncated_diags: Vec<_> = summary
+            .diagnostics
+            .iter()
+            .filter(|d| d.page == 1 && d.status == "partial")
+            .collect();
+        assert_eq!(
+            truncated_diags.len(),
+            1,
+            "exactly one partial diagnostic for the truncated page: {:?}",
+            summary.diagnostics
+        );
+        // The page-0001.checkpoint exists and has truncated=true.
+        let cp_text = fs::read_to_string(root.join("page-0001.checkpoint")).unwrap();
+        assert!(cp_text.contains("truncated=true"));
+        // The page-0001.md exists with the truncated content.
+        assert!(root.join("page-0001.md").is_file());
+        let _ = fs::remove_dir_all(&root);
+    }
+
     fn degeneration_compatibility() -> CompatibilityKey {
         CompatibilityKey {
             input_sha256: "input".to_owned(),

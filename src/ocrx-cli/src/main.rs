@@ -3181,14 +3181,12 @@ fn scan_document(
                                         // BLK-1 fix: the page's markdown is
                                         // already on disk (page-*.md from the
                                         // previous run); the service's per-page
-                                        // resume matching skips it and
-                                        // finalize_document collects it from
-                                        // the page file. No markdown
-                                        // duplication.
+                                        // resume matching skips it, counts it
+                                        // (completed/truncated/degenerated), and
+                                        // adds its diagnostic — the CLI must not
+                                        // double-count via
+                                        // resume_incomplete_checkpoints.
                                         resume_skip_pages.insert(page_u32);
-                                        if checkpoint.truncated || checkpoint.degenerated {
-                                            resume_incomplete_checkpoints.push(checkpoint.clone());
-                                        }
                                     }
                                 }
                             }
