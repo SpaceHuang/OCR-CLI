@@ -1,0 +1,371 @@
+{
+ "schema_version": 1,
+ "task": "Q5.2 near-pure-image empty-output characterization (balanced)",
+ "n_pages": 45,
+ "summary": {
+  "tiny_output": 23,
+  "true_empty_model_output": 22
+ },
+ "pages": [
+  {
+   "stem": "book_en_国外数学教材-An Excursion through Elementary Mathematics（初等数学漫游）-An excursion through elementary mathematics, Vol.3 (Caminha Muniz Neto A)_0100",
+   "md_chars": 63,
+   "raw_chars": 63,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0092",
+   "md_chars": 34,
+   "raw_chars": 135,
+   "page_json_blocks": 2,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0085",
+   "md_chars": 2,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_001",
+   "md_chars": 46,
+   "raw_chars": 46,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_004",
+   "md_chars": 46,
+   "raw_chars": 46,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点四年级英语下册_课本_人教新起点英语4B电子课本_page_017",
+   "md_chars": 35,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点四年级英语下册_课本_人教新起点英语4B电子课本_page_043",
+   "md_chars": 21,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4",
+   "md_chars": 22,
+   "raw_chars": 150,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3",
+   "md_chars": 29,
+   "raw_chars": 142,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4",
+   "md_chars": 16,
+   "raw_chars": 102,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.jcp.2010.12.006.pdf_5",
+   "md_chars": 37,
+   "raw_chars": 100,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.physletb.2004.11.060.pdf_2",
+   "md_chars": 61,
+   "raw_chars": 143,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_2",
+   "md_chars": 3,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6",
+   "md_chars": 16,
+   "raw_chars": 100,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2801%2900019-8.pdf_10",
+   "md_chars": 0,
+   "raw_chars": 0,
+   "page_json_blocks": 0,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1041",
+   "md_chars": 34,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_482",
+   "md_chars": 44,
+   "raw_chars": 86,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_85",
+   "md_chars": 55,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_909",
+   "md_chars": 53,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_015",
+   "md_chars": 42,
+   "raw_chars": 42,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "notes_f7f010b78016aeebd76e56d9283eb67f_5",
+   "md_chars": 33,
+   "raw_chars": 33,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "page-49746735-505c-442d-b3f6-c55b1bf9e48b",
+   "md_chars": 53,
+   "raw_chars": 209,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "page-9390721f-e06c-47ea-8b21-0f27c72df7b7",
+   "md_chars": 41,
+   "raw_chars": 161,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "page-aae359c6-5e6e-4e18-9187-2e9d55b6e9bd",
+   "md_chars": 62,
+   "raw_chars": 167,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "page-b2cc5729-a6b2-49ba-af62-788bf069b617",
+   "md_chars": 17,
+   "raw_chars": 80,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "page-b342f5e6-cc5a-4920-b1b5-83f96bc476d8",
+   "md_chars": 35,
+   "raw_chars": 35,
+   "page_json_blocks": 2,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "PPT_1637904769_page_002",
+   "md_chars": 0,
+   "raw_chars": 0,
+   "page_json_blocks": 0,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "PPT_english-guidelines-for-humanities-students.zp199743_page_011",
+   "md_chars": 0,
+   "raw_chars": 0,
+   "page_json_blocks": 0,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "PPT_english-studies-s6-on-the-road-resource-3_page_003",
+   "md_chars": 0,
+   "raw_chars": 0,
+   "page_json_blocks": 0,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "scihub_ijcac.2012040101.pdf_5",
+   "md_chars": 62,
+   "raw_chars": 245,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "scihub_j.jmb.2003.10.009.pdf_4",
+   "md_chars": 39,
+   "raw_chars": 39,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "scihub_jneurosci.16-15-04625.1996.pdf_2",
+   "md_chars": 39,
+   "raw_chars": 39,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_1220",
+   "md_chars": 41,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_1235",
+   "md_chars": 35,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_1625",
+   "md_chars": 33,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_4245",
+   "md_chars": 25,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_4330",
+   "md_chars": 43,
+   "raw_chars": 43,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_485",
+   "md_chars": 57,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_4975",
+   "md_chars": 59,
+   "raw_chars": 0,
+   "page_json_blocks": 2,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_5300",
+   "md_chars": 56,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_5885",
+   "md_chars": 31,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_5940",
+   "md_chars": 52,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_805",
+   "md_chars": 61,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_90",
+   "md_chars": 48,
+   "raw_chars": 0,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "true_empty_model_output"
+  },
+  {
+   "stem": "yanbaor2_yanbaoPPT_5877",
+   "md_chars": 8,
+   "raw_chars": 43,
+   "page_json_blocks": 1,
+   "think_blocks_in_raw": 0,
+   "class": "tiny_output"
+  }
+ ]
+}

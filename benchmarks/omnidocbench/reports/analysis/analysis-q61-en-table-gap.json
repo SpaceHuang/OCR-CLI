@@ -1,0 +1,363 @@
+{
+ "schema_version": 1,
+ "task": "Q6.1 en table TEDS gap taxonomy (worst 50 pages)",
+ "note": "formula half closed by E2: token-2048 removed the en formula gap",
+ "n_worst_pages": 50,
+ "summary": {
+  "transcription_suspicion": 19,
+  "missing_or_dropped_table": 26,
+  "representation_suspicion": 5
+ },
+ "pages": [
+  {
+   "stem": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "page-50ffe5d2-cd27-449a-a813-d4a8c44b12ea",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "page-49746735-505c-442d-b3f6-c55b1bf9e48b",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "page-9390721f-e06c-47ea-8b21-0f27c72df7b7",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "page-213e6a57-ba81-4afb-8184-2e1cf2a7664d",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46",
+   "page_teds_mean": 0.0,
+   "gt_tables": 2,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "page-38fc7c6b-80ed-46be-bb53-29986a63ad3e",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983",
+   "page_teds_mean": 0.0,
+   "gt_tables": 3,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3",
+   "page_teds_mean": 0.0,
+   "gt_tables": 3,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11",
+   "page_teds_mean": 0.0,
+   "gt_tables": 2,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4",
+   "page_teds_mean": 0.0,
+   "gt_tables": 3,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-hup.777.pdf_8",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6",
+   "page_teds_mean": 0.0,
+   "gt_tables": 2,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2801%2900019-8.pdf_10",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5",
+   "page_teds_mean": 0.0,
+   "gt_tables": 2,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1898",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "newspaper_fe5ed29024932fad071afc53807b16ba_4",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "scihub_ijcac.2012040101.pdf_5",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "scihub_ijop.12033.pdf_5",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "scihub_j.cbpb.2019.110324.pdf_6",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "scihub_j.jmb.2003.10.009.pdf_4",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "scihub_jb%2Fmvh022.pdf_1",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "scihub_jneurosci.16-15-04625.1996.pdf_2",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "scihub_s00586-010-1656-7.pdf_3",
+   "page_teds_mean": 0.0,
+   "gt_tables": 2,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "scihub_j.1528-1167.2008.01552.x.pdf_3",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019",
+   "page_teds_mean": 0.0,
+   "gt_tables": 13,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025",
+   "page_teds_mean": 0.0,
+   "gt_tables": 26,
+   "pred_tables": 0,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014",
+   "page_teds_mean": 0.0,
+   "gt_tables": 5,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018",
+   "page_teds_mean": 0.0,
+   "gt_tables": 6,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010",
+   "page_teds_mean": 0.0,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "page-d2cdac80-318c-4157-ac6e-bdab333f66bd",
+   "page_teds_mean": 0.0711,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "magazine_TheEconomist.2024.02.24_page_076",
+   "page_teds_mean": 0.1267,
+   "gt_tables": 5,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "page-c7771a62-5b6b-48f0-b591-6b657d26e125",
+   "page_teds_mean": 0.2042,
+   "gt_tables": 2,
+   "pred_tables": 1,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2",
+   "page_teds_mean": 0.33,
+   "gt_tables": 6,
+   "pred_tables": 3,
+   "class": "missing_or_dropped_table"
+  },
+  {
+   "stem": "page-dbed9c07-e155-4ba1-92f9-a2962dc9a8f9",
+   "page_teds_mean": 0.3609,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "representation_suspicion"
+  },
+  {
+   "stem": "page-035cb436-c01e-41db-b40e-8977678777eb",
+   "page_teds_mean": 0.3711,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语下册_课本_人教新起点英语5B电子课本_page_011",
+   "page_teds_mean": 0.4017,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "docstructbench_llm-raw-the-eye-o.O-1995_2418.pdf_1",
+   "page_teds_mean": 0.4982,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "scihub_s00894-012-1568-z.pdf_2",
+   "page_teds_mean": 0.5198,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "representation_suspicion"
+  },
+  {
+   "stem": "page-232d386f-6c9d-4b50-9463-89dedce995e5",
+   "page_teds_mean": 0.5235,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "transcription_suspicion"
+  },
+  {
+   "stem": "newspaper_2a6b4fa088699701a6fa9ccecfb5c25d_1",
+   "page_teds_mean": 0.5269,
+   "gt_tables": 2,
+   "pred_tables": 2,
+   "class": "representation_suspicion"
+  },
+  {
+   "stem": "newspaper_2a6b4fa088699701a6fa9ccecfb5c25d_2",
+   "page_teds_mean": 0.5454,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "representation_suspicion"
+  },
+  {
+   "stem": "scihub_s11661-013-1726-7.pdf_2",
+   "page_teds_mean": 0.6397,
+   "gt_tables": 1,
+   "pred_tables": 1,
+   "class": "representation_suspicion"
+  }
+ ]
+}
