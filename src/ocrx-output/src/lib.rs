@@ -353,6 +353,9 @@ pub struct JobSummary {
     pub failed_pages: u32,
     pub truncated_pages: u32,
     pub degenerated_pages: u32,
+    /// Think removals summed over all committed/skipped pages (quality plan
+    /// Q3.1); surfaces in the scan result as `think_blocks_stripped_total`.
+    pub think_blocks_stripped: u64,
     pub warnings: Vec<String>,
     pub diagnostics: Vec<PageDiagnostic>,
     pub cancelled: bool,
@@ -369,6 +372,7 @@ pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
         failed_pages: native.failed_pages + ocr.failed_pages,
         truncated_pages: native.truncated_pages + ocr.truncated_pages,
         degenerated_pages: native.degenerated_pages + ocr.degenerated_pages,
+        think_blocks_stripped: native.think_blocks_stripped + ocr.think_blocks_stripped,
         warnings,
         diagnostics,
         cancelled: native.cancelled || ocr.cancelled,
@@ -620,6 +624,9 @@ pub struct PageArtifactResult {
     pub truncated: bool,
     pub degenerated: bool,
     pub warnings: Vec<String>,
+    /// Think removals at the adapter artifact entry (quality plan Q3.1):
+    /// complete blocks (incl. silent empty strips) plus stray tags.
+    pub think_blocks_stripped: u32,
     /// Pre-crop normalized raw output, preserved to the `page-NNNN.raw`
     /// sidecar for degenerated/repetition-cleaned pages (plan §3.3).
     pub raw_output: String,
@@ -790,6 +797,7 @@ where
         let mut failed = 0_u32;
         let mut truncated = 0_u32;
         let mut degenerated = 0_u32;
+        let mut think_blocks_stripped = 0_u64;
         let mut warnings = std::collections::BTreeSet::new();
         let mut diagnostics = Vec::new();
         // P4.4 (plan §7.3): pages are processed in windows of up to
@@ -823,6 +831,7 @@ where
                             if checkpoint.truncated {
                                 truncated += 1;
                             }
+                            think_blocks_stripped += u64::from(checkpoint.think_blocks_stripped);
                             warnings.extend(checkpoint.warnings.iter().cloned());
                             diagnostics.push(checkpoint.diagnostic());
                             completed += 1;
@@ -879,6 +888,7 @@ where
                     &mut failed,
                     &mut truncated,
                     &mut degenerated,
+                    &mut think_blocks_stripped,
                     &mut warnings,
                     &mut diagnostics,
                     &self.commit_recorder,
@@ -1067,6 +1077,7 @@ where
                         if artifact.degenerated {
                             degenerated += 1;
                         }
+                        think_blocks_stripped += u64::from(artifact.think_blocks_stripped);
                         warnings.extend(artifact_warnings.iter().cloned());
                         write_render_audit(root, page, image.audit)?;
                         // Raw-output sidecar (plan §3.3): preserved whenever
@@ -1093,6 +1104,7 @@ where
                             attempts,
                             raw: raw_pointer,
                             warnings: artifact_warnings,
+                            think_blocks_stripped: artifact.think_blocks_stripped,
                             audit: Some(image.audit),
                         };
                         diagnostics.push(checkpoint.diagnostic());
@@ -1188,6 +1200,7 @@ where
             failed_pages: failed,
             truncated_pages: truncated,
             degenerated_pages: degenerated,
+            think_blocks_stripped,
             warnings: warnings.into_iter().collect(),
             diagnostics,
             cancelled: cancellation.is_cancelled(),
@@ -1362,6 +1375,7 @@ impl ScanController {
                 .iter()
                 .filter(|page| page.status == PageStatus::Failed)
                 .count() as u32,
+            think_blocks_stripped: 0,
             truncated_pages: self
                 .pages
                 .iter()
@@ -1536,6 +1550,7 @@ pub fn pending_ocr_checkpoint(
         attempts: 1,
         raw: None,
         warnings: vec![reason.into()],
+        think_blocks_stripped: 0,
         audit: None,
     }
 }
@@ -1631,6 +1646,9 @@ pub struct PageCheckpoint {
     /// Raw-output sidecar pointer (`page-NNNN.raw`), per requirement §7.4.
     pub raw: Option<String>,
     pub warnings: Vec<String>,
+    /// Think removals at the adapter artifact entry (quality plan Q3.1);
+    /// additive v5 field, defaults to 0 when absent.
+    pub think_blocks_stripped: u32,
     pub audit: Option<RenderAudit>,
 }
 
@@ -1669,6 +1687,7 @@ fn commit_terminal_pages(
     failed: &mut u32,
     truncated: &mut u32,
     degenerated: &mut u32,
+    think_blocks_stripped: &mut u64,
     warnings: &mut std::collections::BTreeSet<String>,
     diagnostics: &mut Vec<PageDiagnostic>,
     commit_recorder: &commit_profile::CommitRecorder,
@@ -1697,6 +1716,7 @@ fn commit_terminal_pages(
                 if artifact.degenerated {
                     *degenerated += 1;
                 }
+                *think_blocks_stripped += u64::from(artifact.think_blocks_stripped);
                 warnings.extend(artifact_warnings.iter().cloned());
                 write_render_audit(root, page, image.audit)?;
                 // Raw-output sidecar (plan §3.3): preserved whenever the page
@@ -1722,6 +1742,7 @@ fn commit_terminal_pages(
                     attempts,
                     raw: raw_pointer,
                     warnings: artifact_warnings,
+                    think_blocks_stripped: artifact.think_blocks_stripped,
                     audit: Some(image.audit),
                 };
                 diagnostics.push(checkpoint.diagnostic());
@@ -2116,7 +2137,7 @@ pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> 
     // Additive v5 fields (plan §3.3): older parsers collect unknown lines
     // without reading them, so this stays bidirectionally compatible.
     let content = format!(
-        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\ndegenerated={}\nattempts={}\nraw={}\nwarnings={}\naudit={}\n",
+        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\ndegenerated={}\nattempts={}\nraw={}\nwarnings={}\nthink_blocks_stripped={}\naudit={}\n",
         checkpoint.page_number,
         encode_field(&checkpoint.compatibility.input_sha256),
         encode_field(&checkpoint.compatibility.model),
@@ -2129,6 +2150,7 @@ pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> 
         checkpoint.attempts,
         checkpoint.raw.as_deref().unwrap_or("none"),
         encode_field(&checkpoint.warnings.join("\n")),
+        checkpoint.think_blocks_stripped,
         checkpoint.audit.map_or_else(
             || "none".to_owned(),
             |audit| encode_field(&audit.as_checkpoint_fragment())
@@ -2212,6 +2234,15 @@ pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
         Some(&"none") | None => None,
         Some(name) => Some((*name).to_owned()),
     };
+    let think_blocks_stripped = match values.get("think_blocks_stripped") {
+        Some(value) => value.parse().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid checkpoint think_blocks_stripped count",
+            )
+        })?,
+        None => 0,
+    };
     Ok(PageCheckpoint {
         page_number,
         compatibility: CompatibilityKey {
@@ -2231,6 +2262,7 @@ pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
         } else {
             warning_text.split('\n').map(str::to_owned).collect()
         },
+        think_blocks_stripped,
         audit,
     })
 }
@@ -2725,6 +2757,7 @@ mod tests {
             self.calls.push(page);
             Ok(PageArtifactResult {
                 png: vec![page as u8],
+                think_blocks_stripped: 0,
                 markdown: format!("page {page}"),
                 degenerated: false,
                 raw_output: String::new(),
@@ -2753,6 +2786,7 @@ mod tests {
             self.serial_calls.push(page);
             Ok(PageArtifactResult {
                 png: vec![page as u8],
+                think_blocks_stripped: 0,
                 markdown: format!("page {page}"),
                 degenerated: false,
                 raw_output: String::new(),
@@ -2804,6 +2838,7 @@ mod tests {
             }
             Ok(PageArtifactResult {
                 png: vec![page as u8],
+                think_blocks_stripped: 0,
                 markdown: format!("page {page}"),
                 degenerated: false,
                 raw_output: String::new(),
@@ -3161,6 +3196,7 @@ mod tests {
     fn normal_artifact(page: u32) -> PageArtifactResult {
         PageArtifactResult {
             png: vec![page as u8],
+            think_blocks_stripped: 0,
             markdown: format!("clean page {page}"),
             page_json: format!(
                 r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]"}}"#
@@ -3175,6 +3211,7 @@ mod tests {
     fn degenerate_artifact(page: u32) -> PageArtifactResult {
         PageArtifactResult {
             png: vec![page as u8],
+            think_blocks_stripped: 0,
             markdown: format!("cropped page {page}"),
             page_json: format!(
                 r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"max_tokens","warnings":["truncated","repetition_removed","degenerated"]}}"#
@@ -3255,6 +3292,7 @@ mod tests {
             attempts: 3,
             raw: Some("page-0104.raw".to_owned()),
             warnings: vec!["truncated".to_owned(), "degenerated".to_owned()],
+            think_blocks_stripped: 0,
             audit: None,
         };
         super::write_checkpoint(&path, &checkpoint).unwrap();
@@ -3962,6 +4000,7 @@ mod tests {
             output_sha256: "output".to_owned(),
             truncated: true,
             warnings: vec!["truncated".to_owned(), "repetition_removed".to_owned()],
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -4014,6 +4053,7 @@ mod tests {
             output_sha256: "output".to_owned(),
             truncated: false,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -4036,6 +4076,7 @@ mod tests {
             complete: true,
             output_sha256: "output".to_owned(),
             truncated: false,
+            think_blocks_stripped: 0,
             warnings: Vec::new(),
             audit: None,
             degenerated: false,
@@ -4088,6 +4129,7 @@ mod tests {
             output_sha256: String::new(),
             truncated: false,
             warnings: vec!["native_validation_failed".to_owned()],
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -4168,6 +4210,7 @@ mod tests {
             output_sha256: String::new(),
             truncated: false,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -4415,6 +4458,7 @@ mod tests {
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         super::write_checkpoint(&path, &checkpoint).unwrap();
@@ -4558,6 +4602,7 @@ mod tests {
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         super::commit_page(&directory, 1, b"png", "page\r\ntext", "{}", &checkpoint).unwrap();
@@ -4588,6 +4633,7 @@ mod tests {
             complete: false,
             output_sha256: String::new(),
             truncated: false,
+            think_blocks_stripped: 0,
             degenerated: false,
             attempts: 1,
             raw: None,
@@ -4632,6 +4678,7 @@ mod tests {
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         let page = super::commit_native_page_and_collect(
@@ -4683,6 +4730,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 2,
                 failed_pages: 0,
@@ -4697,6 +4745,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 1,
@@ -4711,6 +4760,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 0,
@@ -4725,6 +4775,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 0,
@@ -4742,6 +4793,7 @@ mod tests {
     fn merge_job_summaries_combines_native_and_ocr_phases() {
         let native = JobSummary {
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             selected_pages: 3,
             completed_pages: 2,
             failed_pages: 0,
@@ -4760,6 +4812,7 @@ mod tests {
         };
         let ocr = JobSummary {
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             selected_pages: 1,
             completed_pages: 1,
             failed_pages: 0,

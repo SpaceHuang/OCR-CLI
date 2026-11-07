@@ -2094,6 +2094,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             truncated: artifact.truncated,
             degenerated: artifact.degenerated,
             warnings: artifact.warnings,
+            think_blocks_stripped: artifact.think_blocks_stripped,
             raw_output: artifact.raw_output,
         })
     }
@@ -2167,6 +2168,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
                 truncated: output.truncated,
                 degenerated: output.degenerated,
                 warnings: output.warnings,
+                think_blocks_stripped: output.think_blocks_stripped,
                 raw_output: output.raw_output,
             }));
         }
@@ -2759,6 +2761,7 @@ fn scan_document(
                 attempts: 1,
                 raw: None,
                 warnings: Vec::new(),
+                think_blocks_stripped: 0,
                 audit: None,
             };
             let committed =
@@ -2826,6 +2829,7 @@ fn scan_document(
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         match commit_native_page_and_collect(
@@ -3045,6 +3049,7 @@ fn scan_document(
                     failed_pages: ocr_service_pages.len() as u32,
                     truncated_pages: 0,
                     degenerated_pages: 0,
+                    think_blocks_stripped_total: 0,
                     warnings: vec![unavailable_reason],
                     diagnostics: ocr_service_pages
                         .iter()
@@ -3291,6 +3296,7 @@ fn scan_document(
             failed_pages: 0,
             truncated_pages: 0,
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -3588,6 +3594,7 @@ fn scan_document(
                 failed_pages: summary.failed_pages,
                 truncated_pages: summary.truncated_pages,
                 degenerated_pages: summary.degenerated_pages,
+                think_blocks_stripped_total: summary.think_blocks_stripped,
                 warnings: summary.warnings.clone(),
                 diagnostics: summary.diagnostics.clone(),
                 pdf_routing: final_routing_diagnostics_with_pending(
@@ -4172,6 +4179,7 @@ struct ScanResultFields<'a> {
     failed_pages: u32,
     truncated_pages: u32,
     degenerated_pages: u32,
+    think_blocks_stripped_total: u64,
     warnings: Vec<String>,
     diagnostics: Vec<PageDiagnostic>,
     pdf_routing: Vec<String>,
@@ -4226,7 +4234,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         .join(",");
     let pdf_routing = fields.pdf_routing.join(",");
     format!(
-        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
+        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
         fields.status,
         json_escape_path(fields.input),
         markdown,
@@ -4241,6 +4249,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         fields.failed_pages,
         fields.truncated_pages,
         fields.degenerated_pages,
+        fields.think_blocks_stripped_total,
         fields.routing_counts.native_text,
         fields.routing_counts.ocr,
         fields.routing_counts.empty,
@@ -5504,6 +5513,7 @@ mod tests {
                 attempts: 1,
                 raw: None,
                 warnings: vec!["truncated".to_owned()],
+                think_blocks_stripped: 0,
                 audit: None,
             },
         )
@@ -5718,6 +5728,7 @@ mod tests {
         let input = Path::new("/tmp/input\tname\n.pdf");
         let json = super::serialize_scan_result(&ScanResultFields {
             degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
             status: "partial",
             input,
             markdown_path: None,
@@ -5747,6 +5758,7 @@ mod tests {
 
         assert!(json.contains("\"status\":\"partial\""));
         assert!(json.contains("\"truncated\":1"));
+        assert!(json.contains("\"think_blocks_stripped_total\":0"));
         assert!(json.contains("\"document_type\":\"mixed\""));
         assert!(json.contains("\"warnings\":[\"truncated\"]"));
         assert!(json.contains(
@@ -5760,6 +5772,7 @@ mod tests {
         let routing = "{\"page\":3,\"classification\":{},\"processing\":{\"planned_method\":\"native_text\",\"actual_method\":\"ocr\",\"fallback_reason\":\"native_validation_failed\"}}".to_owned();
         let json = super::serialize_scan_result(&ScanResultFields {
             degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,
@@ -5794,6 +5807,7 @@ mod tests {
     fn scan_result_json_preserves_page_diagnostic_warnings_and_audit() {
         let json = super::serialize_scan_result(&ScanResultFields {
             degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,

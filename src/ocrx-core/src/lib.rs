@@ -1059,6 +1059,7 @@ impl PageDocument {
                 Some("repetition_removed") => Ok(PageWarning::RepetitionRemoved),
                 Some("render_scaled") => Ok(PageWarning::RenderScaled),
                 Some("degenerated") => Ok(PageWarning::Degenerated),
+                Some("think_removed") => Ok(PageWarning::ThinkRemoved),
                 _ => Err(DomainError::InvalidJson),
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1371,6 +1372,7 @@ pub enum PageWarning {
     RepetitionRemoved,
     RenderScaled,
     Degenerated,
+    ThinkRemoved,
 }
 
 impl PageWarning {
@@ -1380,6 +1382,7 @@ impl PageWarning {
             Self::RepetitionRemoved => "repetition_removed",
             Self::RenderScaled => "render_scaled",
             Self::Degenerated => "degenerated",
+            Self::ThinkRemoved => "think_removed",
         }
     }
 }

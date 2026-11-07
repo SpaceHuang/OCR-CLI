@@ -42,6 +42,9 @@ pub struct PageArtifactOutput {
     pub truncated: bool,
     pub degenerated: bool,
     pub warnings: Vec<String>,
+    /// Number of think removals (complete blocks + stray tags), including
+    /// silent empty-block strips (quality plan Q3.1).
+    pub think_blocks_stripped: u32,
     /// Pre-crop normalized raw model output, preserved for the
     /// `page-NNNN.raw` sidecar required by requirement §7.4.
     pub raw_output: String,
@@ -163,13 +166,14 @@ fn adapt_and_write(
     output_root: impl AsRef<Path>,
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     let truncated = response.finish_reason == "max_tokens";
-    // Single-source degeneration pipeline (plan §3.2.2): the tail crop runs
-    // once here, before bbox stripping, and the cropped text drives every
-    // downstream artifact (page .md, page.json, bbox extraction) so the
-    // artifacts can never diverge on the loop body.
+    // Single-source degeneration pipeline (plan §3.2.2): the think strip and
+    // tail crop each run once here, before bbox stripping, and the resulting
+    // text drives every downstream artifact (page .md, page.json, bbox
+    // extraction) so the artifacts can never diverge (quality plan Q3.1).
     let normalized_raw = normalize_line_endings(&response.raw_output);
-    let crop = degenerate_tail_crop(&normalized_raw);
-    let document = adapt_cropped_response(page, &crop.text, &response.finish_reason, &crop)
+    let think = strip_think_blocks(&normalized_raw);
+    let crop = degenerate_tail_crop(&think.text);
+    let document = adapt_cropped_response(page, &crop.text, &response.finish_reason, &crop, &think)
         .map_err(|error| format!("adapter: {error:?}"))?;
     let image = image::RgbImage::from_raw(width, height, rgb8).ok_or("invalid RGB8 image shape")?;
     let boxes = document
@@ -203,8 +207,142 @@ fn adapt_and_write(
             .iter()
             .map(|warning| warning.as_str().to_owned())
             .collect(),
+        think_blocks_stripped: u32::try_from(think.total()).unwrap_or(u32::MAX),
         raw_output: normalized_raw,
     })
+}
+
+/// Result of stripping leaked reasoning blocks from a raw model output
+/// (quality plan Q3). The strip semantics mirror the export script's
+/// `THINK_BLOCK` + `STRAY_THINK` passes byte for byte: complete
+/// `<think…>…</think>` blocks (non-greedy to the first close tag) with their
+/// trailing whitespace run, then stray `<think…>` / `</think…>` tags the same
+/// way. Word boundaries apply: `<thinking>` is never a think tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThinkStrip {
+    pub text: String,
+    /// Complete blocks whose interior had non-whitespace content; these set
+    /// the `think_removed` warning.
+    pub nonempty: usize,
+    /// Complete blocks whose interior was whitespace only; stripped silently
+    /// but counted into the result.
+    pub empty: usize,
+    /// Stray open/close tags removed outside a complete block.
+    pub strays: usize,
+}
+
+impl ThinkStrip {
+    pub fn total(&self) -> usize {
+        self.nonempty + self.empty + self.strays
+    }
+}
+
+/// Strips leaked `<think>` reasoning blocks from a raw model output. Runs
+/// once at the artifact entry so page .md, page.json and bbox extraction all
+/// consume the same stripped text (single-source, plan D-5).
+pub fn strip_think_blocks(input: &str) -> ThinkStrip {
+    fn is_tag_start(rest: &str) -> Option<(usize, bool)> {
+        // Returns (byte offset, is_open_tag) of the next `<think` / `</think`
+        // that forms a real tag (`\b`: the char after `think` is a word
+        // boundary) and ends at the first `>`.
+        let mut search = 0;
+        while let Some(rel) = rest[search..].find("<") {
+            let start = search + rel;
+            let after = &rest[start + 1..];
+            let (is_open, word) = if let Some(word) = after.strip_prefix("think") {
+                (true, word)
+            } else if let Some(word) = after.strip_prefix("/think") {
+                (false, word)
+            } else {
+                search = start + 1;
+                continue;
+            };
+            // `\b` after `think`: next char must not be alphanumeric or `_`.
+            let boundary = word
+                .chars()
+                .next()
+                .map_or(true, |c| !(c.is_alphanumeric() || c == '_'));
+            if !boundary {
+                search = start + 1;
+                continue;
+            }
+            let Some(_tag_end) = word.find('>') else {
+                // No closing `>`: not a tag, keep scanning.
+                search = start + 1;
+                continue;
+            };
+            return Some((start, is_open));
+        }
+        None
+    }
+
+    fn skip_whitespace(input: &str, mut offset: usize) -> usize {
+        while let Some(char) = input[offset..].chars().next() {
+            if char.is_whitespace() {
+                offset += char.len_utf8();
+            } else {
+                break;
+            }
+        }
+        offset
+    }
+
+    let mut output = String::with_capacity(input.len());
+    let mut nonempty = 0;
+    let mut empty = 0;
+    let mut strays = 0;
+    let mut rest = input;
+    loop {
+        let Some((start, is_open)) = is_tag_start(rest) else {
+            output.push_str(rest);
+            return ThinkStrip {
+                text: output,
+                nonempty,
+                empty,
+                strays,
+            };
+        };
+        output.push_str(&rest[..start]);
+        let after_tag = &rest[start..];
+        let tag_len = after_tag.find('>').map_or(0, |end| end + 1);
+        if is_open {
+            // Non-greedy block semantics: the block ends at the NEXT close
+            // tag, with any interleaved open tags counted as interior text.
+            let mut scan = tag_len;
+            let mut close_start = None;
+            while let Some((rel, opens_again)) = is_tag_start(&after_tag[scan..]) {
+                if !opens_again {
+                    close_start = Some(scan + rel);
+                    break;
+                }
+                let inner_len = after_tag[scan + rel..].find('>').map_or(0, |end| end + 1);
+                scan += rel + inner_len;
+            }
+            if let Some(close_start) = close_start {
+                let close_len = after_tag[close_start..].find('>').map_or(0, |end| end + 1);
+                let interior = &after_tag[tag_len..close_start];
+                if interior.trim().is_empty() {
+                    empty += 1;
+                } else {
+                    nonempty += 1;
+                }
+                // close_start is relative to after_tag (= rest[start..]);
+                // the skip offset must be absolute in rest.
+                let end = skip_whitespace(rest, start + close_start + close_len);
+                rest = &rest[end..];
+                continue;
+            }
+            // Unclosed open tag: stray tag, keep the content.
+            strays += 1;
+            let end = skip_whitespace(rest, start + tag_len);
+            rest = &rest[end..];
+            continue;
+        }
+        // Stray close tag.
+        strays += 1;
+        let end = skip_whitespace(rest, start + tag_len);
+        rest = &rest[end..];
+    }
 }
 
 fn validate_markdown_image_links(
@@ -294,13 +432,22 @@ pub fn adapt_response(
     response: &InferenceResponse,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     let normalized = normalize_line_endings(&response.raw_output);
-    let crop = degenerate_tail_crop(&normalized);
-    adapt_cropped_response(page_number, &crop.text, &response.finish_reason, &crop)
+    let think = strip_think_blocks(&normalized);
+    let crop = degenerate_tail_crop(&think.text);
+    adapt_cropped_response(
+        page_number,
+        &crop.text,
+        &response.finish_reason,
+        &crop,
+        &think,
+    )
 }
 
 /// Adapter entry for already-cropped text: the entry crop metadata is merged
 /// into the page warnings verbatim (plan §3.2.2); re-detecting on the cropped
-/// text would be a no-op and could not recover the metadata.
+/// text would be a no-op and could not recover the metadata. `think` carries
+/// the think-strip outcome so a non-empty block raises `think_removed`
+/// (quality plan Q3.1).
 ///
 /// # Errors
 ///
@@ -310,6 +457,7 @@ pub fn adapt_cropped_response(
     cropped: &str,
     finish_reason: &str,
     crop: &DegenerateTailCrop,
+    think: &ThinkStrip,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     build_page_document(
         page_number,
@@ -317,6 +465,7 @@ pub fn adapt_cropped_response(
         finish_reason,
         crop.degenerated,
         crop.repetition_removed,
+        think.nonempty,
     )
 }
 
@@ -349,13 +498,15 @@ fn parse_page_with_termination(
     finish_reason: &str,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     let normalized = normalize_line_endings(raw);
-    let crop = degenerate_tail_crop(&normalized);
+    let think = strip_think_blocks(&normalized);
+    let crop = degenerate_tail_crop(&think.text);
     build_page_document(
         page_number,
         &crop.text,
         finish_reason,
         crop.degenerated,
         crop.repetition_removed,
+        think.nonempty,
     )
 }
 
@@ -365,6 +516,7 @@ fn build_page_document(
     finish_reason: &str,
     crop_degenerated: bool,
     crop_repetition_removed: bool,
+    think_nonempty: usize,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     let mut blocks = Vec::new();
     let markdown = remove_bbox_image_placeholders(normalized);
@@ -400,6 +552,9 @@ fn build_page_document(
     }
     if crop_repetition_removed {
         warnings.push(PageWarning::RepetitionRemoved);
+    }
+    if think_nonempty > 0 {
+        warnings.push(PageWarning::ThinkRemoved);
     }
     if degenerated {
         warnings.push(PageWarning::Degenerated);
@@ -1364,5 +1519,156 @@ mod tests {
             format!("real content\n{period}{period}{period}")
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // ---- Q3: think-block stripping at the artifact entry (quality plan §4.3) ----
+
+    struct ThinkRuntime {
+        raw: String,
+    }
+    impl Runtime for ThinkRuntime {
+        fn info(&self) -> RuntimeInfo {
+            RuntimeInfo {
+                backend: Backend::Cpu,
+                image_token_limit: 1024,
+            }
+        }
+
+        fn generate(&mut self, _request: InferenceRequest) -> Result<InferenceResponse, String> {
+            Ok(InferenceResponse {
+                raw_output: self.raw.clone(),
+                finish_reason: "eos".to_owned(),
+            })
+        }
+    }
+
+    /// Parity vectors with the export-script semantics
+    /// (`THINK_BLOCK = r"<think\b[^>]*>.*?</think>\s*"`, DOTALL, then
+    /// `STRAY_THINK = r"</?think\b[^>]*>\s*"`); Q3 acceptance ① requires the
+    /// product strip to match the export strip byte for byte.
+    #[test]
+    fn strip_think_blocks_matches_export_script_semantics() {
+        // Complete empty block: removed with trailing whitespace, silent.
+        let strip = strip_think_blocks("<think>\n\n</think>\n\nBody");
+        assert_eq!(strip.text, "Body");
+        assert_eq!((strip.nonempty, strip.empty, strip.strays), (0, 1, 0));
+        // Complete non-empty block with attributes on the open tag.
+        let strip = strip_think_blocks("<think attrs=\"x\">reasoning</think> text");
+        assert_eq!(strip.text, "text");
+        assert_eq!((strip.nonempty, strip.empty, strip.strays), (1, 0, 0));
+        // Stray close tag between content: tag removed, no whitespace eaten.
+        let strip = strip_think_blocks("A</think>B");
+        assert_eq!(strip.text, "AB");
+        assert_eq!((strip.nonempty, strip.empty, strip.strays), (0, 0, 1));
+        // Unclosed open tag: the tag is stray, the content stays.
+        let strip = strip_think_blocks("A <think> x B");
+        assert_eq!(strip.text, "A x B");
+        assert_eq!(strip.strays, 1);
+        // Word boundary: `<thinking>` is NOT a think tag.
+        let strip = strip_think_blocks("<thinking> keep </thinking>");
+        assert_eq!(strip.text, "<thinking> keep </thinking>");
+        assert_eq!(strip.total(), 0);
+        // Nested malformed open tags: non-greedy block to the FIRST close,
+        // the remaining close tag is stray.
+        let strip = strip_think_blocks("<think>a<think>b</think>c</think>");
+        assert_eq!(strip.text, "c");
+        assert_eq!(strip.nonempty, 1);
+        assert_eq!(strip.strays, 1);
+        // Two complete blocks in sequence.
+        let strip = strip_think_blocks("<think>x</think>A<think>y</think>B");
+        assert_eq!(strip.text, "AB");
+        assert_eq!(strip.nonempty, 2);
+    }
+
+    #[test]
+    fn strip_think_blocks_is_idempotent() {
+        let once = strip_think_blocks("<think>\n\n</think>\n\nBody</think> tail");
+        let twice = strip_think_blocks(&once.text);
+        assert_eq!(once.text, twice.text);
+        assert_eq!(twice.total(), 0);
+    }
+
+    #[test]
+    fn think_page_artifacts_equal_no_think_page_except_the_removed_block() {
+        // BLK-3 expected-difference regression: stripping a think block on an
+        // otherwise normal page must change the artifacts by exactly the
+        // think block - the stripped page equals the clean page byte for
+        // byte, plus the single `think_removed` warning.
+        let body = "# Chapter 1\n\nThe product of two integers is given by $a \\cdot b$.\n";
+        let with_think = format!("<think>\ninternal reasoning\n</think>\n\n{body}");
+        let think_output = write_page_artifacts_with_status(
+            &mut ThinkRuntime {
+                raw: with_think.clone(),
+            },
+            7,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            std::env::temp_dir().join(format!("ocrx-ovis-think-{}", std::process::id())),
+        )
+        .unwrap();
+        let clean_output = write_page_artifacts_with_status(
+            &mut ThinkRuntime {
+                raw: body.to_owned(),
+            },
+            7,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            std::env::temp_dir().join(format!("ocrx-ovis-think-clean-{}", std::process::id())),
+        )
+        .unwrap();
+        assert_eq!(think_output.markdown, clean_output.markdown);
+        assert_eq!(
+            think_output.warnings,
+            [clean_output.warnings, vec!["think_removed".to_owned()]].concat()
+        );
+        assert_eq!(think_output.think_blocks_stripped, 1);
+        // The raw sidecar contract (§7.4) keeps the pre-strip normalized raw.
+        assert_eq!(think_output.raw_output, with_think);
+        // page.json differs only by the warning.
+        let think_document = PageDocument::from_json(&think_output.page_json).unwrap();
+        let clean_document = PageDocument::from_json(&clean_output.page_json).unwrap();
+        assert_eq!(think_document.blocks, clean_document.blocks);
+        assert!(think_document.warnings.contains(&PageWarning::ThinkRemoved));
+        assert!(clean_document.warnings.is_empty());
+    }
+
+    #[test]
+    fn empty_think_block_is_stripped_silently_but_counted() {
+        let output = write_page_artifacts_with_status(
+            &mut ThinkRuntime {
+                raw: "<think>\n\n</think>\n\nBody text".to_owned(),
+            },
+            8,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            std::env::temp_dir().join(format!("ocrx-ovis-think-empty-{}", std::process::id())),
+        )
+        .unwrap();
+        assert_eq!(output.markdown.trim_start(), "Body text");
+        assert!(
+            !output
+                .warnings
+                .iter()
+                .any(|warning| warning == "think_removed")
+        );
+        assert_eq!(output.think_blocks_stripped, 1);
+        let document = PageDocument::from_json(&output.page_json).unwrap();
+        assert!(!document.warnings.contains(&PageWarning::ThinkRemoved));
+    }
+
+    #[test]
+    fn no_think_pages_stay_byte_identical() {
+        // The golden reference fixture has no think block; the strip stage
+        // must be a no-op on it (Q3 acceptance ③ / gold-set zero-diff gate).
+        let raw = include_str!("../tests/fixtures/reference/page-01.raw.md");
+        let strip = strip_think_blocks(raw);
+        assert_eq!(strip.text, raw);
+        assert_eq!(strip.total(), 0);
     }
 }
