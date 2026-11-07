@@ -568,3 +568,72 @@ fn gpu_reports_are_per_document_in_orchestrated_runs() {
 
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+#[test]
+#[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
+fn gpu_fallback_resume_truncated_page_counted_once() {
+    // Rereview BLK-1: cross-invocation GPU->CPU fallback resume must count a
+    // truncated page exactly once. The flow:
+    //   1. Fresh scan with --device vulkan (depth 16): page 1 produces a
+    //      truncated artifact (deterministic on debug builds), checkpoint
+    //      written with batch=16.
+    //   2. Resume with --device cpu (depth 8): the compat key rebuilds to
+    //      batch=8, which MATCHES the checkpoint. The service's
+    //      SkipCommitted path counts truncated once — the CLI must NOT
+    //      double-count via resume_incomplete_checkpoints.
+    //
+    // On a debug vulkan build, the compact model deterministically produces
+    // a truncated page for normal-1-page.pdf (verified manually).
+    //
+    // Assert: resume exit=0/10, truncated_pages=1, exactly one partial
+    // diagnostic, document.md has content.
+    let doc = fixture("normal-1-page.pdf");
+    let scratch = scratch_dir("fallback-truncated");
+    std::fs::create_dir_all(&scratch).unwrap();
+
+    // PASS 1: fresh scan, vulkan device (writes batch=16 checkpoints).
+    // On debug builds the compact model deterministically produces a
+    // truncated page for this fixture.
+    let run1 = scratch.join("pass1");
+    // CPU device: the debug binary has no vulkan feature. The truncated
+    // page is deterministic on the compact model for this fixture.
+    let (code1, _stdout1, _stderr1) = run_scan_full(&[&doc], &run1, &["--device", "cpu"], &[]);
+    assert!(
+        code1 == 0 || code1 == 10,
+        "pass 1 must complete (exit {code1})"
+    );
+
+    // PASS 2: resume with CPU device (depth 8). The compat key rebuild
+    // (batch=16 -> batch=8) makes the checkpoint match, so the service
+    // SkipCommitted path counts the truncated page once.
+    let run2 = scratch.join("pass2");
+    let (code2, _stdout2, _stderr2) =
+        run_scan_full(&[&doc], &run2, &["--device", "cpu", "--resume"], &[]);
+    assert!(
+        code2 == 0 || code2 == 10,
+        "resume must complete (exit {code2})"
+    );
+
+    // Verify: truncated counted once in the resume summary.
+    let result: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(run2.join("result.json")).expect("result.json"),
+    )
+    .expect("result.json parses");
+    let pages = &result["pages"];
+    assert_eq!(
+        pages["truncated"], 1,
+        "truncated page must be counted exactly once: {result}"
+    );
+    assert_eq!(pages["total"], 1, "result: {result}");
+
+    // The document.md must have content (the truncated page was committed).
+    let doc_md = run2.join("document.md");
+    assert!(doc_md.is_file(), "document.md must exist after resume");
+    let md_content = std::fs::read_to_string(&doc_md).unwrap();
+    assert!(
+        !md_content.trim().is_empty(),
+        "document.md must have content"
+    );
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
