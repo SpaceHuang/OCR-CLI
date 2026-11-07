@@ -1,4 +1,4 @@
-//! Gated X1 cross-document orchestration E2E (phase-2 plan §4 X1.4①/③).
+﻿//! Gated X1 cross-document orchestration E2E (phase-2 plan §4 X1.4①/③).
 //!
 //! Runs the compiled `ocrx` binary so the real PDFium owner (with the
 //! SwitchDocument protocol), the real shared inference actor, and the CLI
@@ -595,7 +595,7 @@ fn gpu_fallback_resume_truncated_page_counted_once() {
     // Snapshot checkpoint timestamps before resume — a re-run would change
     // them (content hash can't detect a deterministic re-write).
     let mut pre_resume_checkpoints = std::collections::HashMap::new();
-    for entry in fs::read_dir(&output).unwrap().filter_map(|e| e.ok()) {
+    for entry in fs::read_dir(&output).unwrap().filter_map(Result::ok) {
         let name = entry.file_name().to_string_lossy().to_string();
         if name.ends_with(".checkpoint") {
             let meta = entry.metadata().unwrap();
