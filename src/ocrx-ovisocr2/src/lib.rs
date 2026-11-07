@@ -253,7 +253,7 @@ pub fn strip_think_blocks(input: &str) -> ThinkStrip {
         // that forms a real tag (`\b`: the char after `think` is a word
         // boundary) and ends at the first `>`.
         let mut search = 0;
-        while let Some(rel) = rest[search..].find("<") {
+        while let Some(rel) = rest[search..].find('<') {
             let start = search + rel;
             let after = &rest[start + 1..];
             let (is_open, word) = if let Some(word) = after.strip_prefix("think") {
@@ -265,10 +265,10 @@ pub fn strip_think_blocks(input: &str) -> ThinkStrip {
                 continue;
             };
             // `\b` after `think`: next char must not be alphanumeric or `_`.
-            let boundary = word
+            let boundary = !word
                 .chars()
                 .next()
-                .map_or(true, |c| !(c.is_alphanumeric() || c == '_'));
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
             if !boundary {
                 search = start + 1;
                 continue;

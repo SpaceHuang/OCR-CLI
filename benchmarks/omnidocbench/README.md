@@ -68,7 +68,24 @@ python pdf_validation.py --config configs/custom.yaml'
 
 - **`<think>\n\n</think>` 泄漏**：OvisOCR2 空推理块偶发进入合并 markdown
   （冒烟 3 页中 1 页）。导出脚本确定性剥离并计数
-  （`export-report.json: think_blocks_stripped_total`），产品侧修复待办。
+  （`export-report.json: think_blocks_stripped_total`）。
+  **产品侧已修复**（质量方案 Q3，`strip_think_blocks`，产物层单源剥离；
+  result schema 3 新增 `pages.think_blocks_stripped_total`），导出脚本剥离
+  保留为评测对账的第二实现。
+
+## 复评纪律（质量方案 Q7.1）
+
+1. **每次复评绑定 manifest 冻结**：二进制 rev/SHA、wrapper 版本（llama.cpp
+   pins）、模型 revision、数据集 revision——改任何一项都构成新 manifest，
+   不得与旧轮结果直接对比。
+2. **质量数据必须采自门禁通过的构建**：`fmt --check` + `test --workspace` +
+   `clippy -D warnings` 全绿后才开始扫描（一期教训）。
+3. **里程碑用全量 balanced（~90 min）；终评用四档**。语料级实验只用于
+   迭代（213 页语料 ~11.6 min/轮，`assets/regression/omnidocbench-degeneration-v0.1/`
+   + `degeneration-v0.1/eval-subset.sh`），其结果必须换算为官方同粒度
+   `scripts/omnidocbench-projection.py` 口径后才可外推全集（D-11）。
+4. **确定性复现检查**：同二进制同参数重扫，退化页集合与 page md 必须与
+   前轮逐字节一致（balanced 语料 2026-11-07 已验证 213/213 一致）。
 
 ## 结果
 
