@@ -15,6 +15,26 @@
    - worker 重试 context（`new_context_with_samplers`，链 `penalties → greedy`，链序 D-13）+ `sampled_token_ith(0)` 带 argmax 兜底。
    - wrapper 无关部分已在 feature worktree（0.1.152）全量测试验证后移植（77 tests）。
 
+## 1.1 构建已解决 + 金集漂移实测（2026-11-07 续）
+
+**构建根因链（三层叠加，逐层揭开）**：
+1. cl.exe 不在 PATH——CompilerId 的 PostBuildEvent 用 PATH 搜索定位编译器，
+   缺失时即使编译成功也报 No CMAKE_C_COMPILER；
+2. bash 的 POSIX TMP/TEMP 泄漏给原生 cl（error C1083 空文件名 Invalid argument）；
+3. `.worktrees/<name>/target` 嵌套使 ExternalProject 的 TryCompile 路径超 MAX_PATH
+   （CARGO_TARGET_DIR=C:/t 短路径绕过）。
+另有上游变化：0.1.161 的 vulkan-shaders-gen 新增 find_package(Threads REQUIRED)
+（CHECK_LIBRARY_EXISTS 探测里的 LNK1104 pthread.lib 是良性失败记录，win32 分支仍
+置 Threads_FOUND）。构建环境配方：MSVC bin + Community MSBuild 前置 + Windows TMP。
+
+**金集漂移实测（Q1.3 关键输入）**：0.1.161 二进制 vs 基线 f3b6e068 同机同参金集扫描：
+**38/91 文件内容级漂移**（解码行为改变），样本页（金集 page-0001）新输出含
+"经经" 复读伪影——0.1.161 普通路径存在轻微质量劣化迹象。按 D-13 规则 3：
+Q1.3 落地必须追加 `;decode=<gen>` 代次键 + 新旧不混扫回归；且 Q1.2 GO 裁决
+需把"正常路径漂移"计入收益权衡（逃逸收益 vs 42% 页面输出变化 + 样本劣化）。
+**Q1.2 扫参前新增必过门**：0.1.161 普通路径对语料的整体退化率不得高于基线
+（待一轮语料级对照扫描后裁决）。
+
 ## 2. 阻塞：0.1.161 sys 构建（嵌套 vulkan-shaders-gen configure 失败）
 
 **现象**：`cargo build --release -p ocrx --features vulkan` 在 `llama-cpp-sys-2 0.1.161` 的 build script 失败——llama.cpp 的 `ggml-vulkan` 通过 `ExternalProject_Add` 配置 `vulkan-shaders-gen` 子项目时，`project()` 报 **No CMAKE_C/CXX_COMPILER could be found**。
