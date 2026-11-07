@@ -3152,6 +3152,57 @@ fn scan_document(
                                 u32::try_from(ocrx_core::WINDOW_DEPTH * 2).unwrap_or(2),
                             );
                         }
+                        // BLK-1: redo the resume checkpoint matching with the
+                        // corrected key - the initial matching used the
+                        // GPU-tier key which cannot match the previous
+                        // CPU-fallback run's checkpoints (batch=8). Without
+                        // this, committed pages would be unnecessarily
+                        // re-decoded.
+                        if options.resume {
+                            let rebuilt_ocr = resume_effective_configuration
+                                .as_ref()
+                                .map(|(profile, _device)| {
+                                    make_ocr_compatibility(
+                                        &compatibility,
+                                        profile,
+                                        "cpu",
+                                    )
+                                });
+                            if let Some(ref rebuilt_ocr) = rebuilt_ocr {
+                                for page in &pages {
+                                    let page_u32 = *page as u32;
+                                    if resume_skip_pages.contains(&page_u32) {
+                                        continue;
+                                    }
+                                    let cp_path = output.join(format!(
+                                        "page-{page_u32:04}.checkpoint"
+                                    ));
+                                    let Ok(checkpoint) = read_checkpoint(&cp_path) else {
+                                        continue;
+                                    };
+                                    if checkpoint.resume_action(
+                                        rebuilt_ocr,
+                                        output,
+                                        page_u32,
+                                    ) == CheckpointResumeAction::SkipCommitted
+                                    {
+                                        if let Ok(mut markdown) =
+                                            collect_page_markdowns(output, &[page_u32])
+                                        {
+                                            resume_committed_markdown.append(&mut markdown);
+                                            resume_skip_pages.insert(page_u32);
+                                            if checkpoint.truncated || checkpoint.degenerated {
+                                                resume_incomplete_checkpoints.push(
+                                                    checkpoint.clone(),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                initial_queue
+                                    .retain(|page| !resume_skip_pages.contains(&page.page));
+                            }
+                        }
                     }
                     *slot = Some(SharedRuntime {
                         runtime: loaded_model,
