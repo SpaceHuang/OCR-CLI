@@ -232,8 +232,23 @@ try {
     # BLK-3: resume must use the SAME effective config as the first scan
     # (vulkan -> depth 16 -> batch=16), or the compat key mismatches and
     # window 1 is re-run wholesale, defeating the reuse contract.
-    $page1Md = Join-Path $outputDir "page-0001.md"
-    $page1IdentityBefore = (Get-FileHash -Algorithm SHA256 $page1Md).Hash
+    # BLK-2 (rereview): content hashes cannot prove "not re-run" (the output
+    # is deterministic). Instead, snapshot the LastWriteTime of every CLEAN
+    # window-1 checkpoint (degenerated pages are intentionally re-run on
+    # resume per plan §3.5 — the resume machine retries them).
+    $window1Timestamps = @{}
+    foreach ($page in 1..16) {
+        $cp = Join-Path $outputDir ("page-{0:D4}.checkpoint" -f $page)
+        if (Test-Path $cp) {
+            $cpText = Get-Content $cp -Raw
+            if ($cpText -notmatch "degenerated=true") {
+                $window1Timestamps[$cp] = (Get-Item $cp).LastWriteTimeUtc
+            }
+        }
+    }
+    if ($window1Timestamps.Count -lt 1) {
+        throw "no clean (non-degenerated) window-1 checkpoints found"
+    }
     & $Binary scan $Fixture --output-dir $outputDir --pages 1-20 --pdf-mode ocr --model-profile compact `
         --device vulkan --offline --non-interactive --report json --resume `
         --max-image-tokens 128 --max-output-tokens 128 2>&1 | Out-Null
@@ -245,11 +260,18 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $outputDir "page-0017.checkpoint"))) {
         throw "resume scan did not produce the cancelled window's page 17 checkpoint"
     }
-    # BLK-3 reuse assertion: window 1's artifacts must be untouched by the
-    # resume (a compat-key mismatch would re-run pages 1-16 wholesale).
-    $page1IdentityAfter = (Get-FileHash -Algorithm SHA256 $page1Md).Hash
-    if ($page1IdentityAfter -ne $page1IdentityBefore) {
-        throw "resume re-ran window 1: page-0001.md changed during resume"
+    # BLK-2 (rereview): verify NO clean window-1 checkpoint was rewritten
+    # during the resume — a compat-key-driven re-run would produce a new
+    # LastWriteTime. Degenerated pages (excluded above) are allowed to
+    # change because the resume machine intentionally retries them.
+    foreach ($cp in $window1Timestamps.Keys) {
+        if (-not (Test-Path $cp)) {
+            throw "clean window-1 checkpoint $cp disappeared during resume"
+        }
+        $after = (Get-Item $cp).LastWriteTimeUtc
+        if ($after -ne $window1Timestamps[$cp]) {
+            throw "clean window-1 checkpoint $cp was rewritten during resume (window 1 was re-run)"
+        }
     }
 
     Write-Host "ctrl-c smoke ok: cancelled=130, checkpoint retained, resume completed (code $resumeCode)"

@@ -2283,6 +2283,11 @@ fn with_batch_depth(
         .map(|segment| {
             if segment.starts_with("batch=") {
                 format!("batch={depth}")
+            } else if segment.starts_with("device=") {
+                // BLK-1: the fallback also drops the device to CPU (the 16
+                // tier is a GPU-VRAM decision), so the base key's device
+                // segment must follow.
+                "device=cpu".to_owned()
             } else {
                 segment.to_owned()
             }
@@ -2805,9 +2810,21 @@ fn scan_document(
     } else {
         None
     };
-    let resume_ocr_compatibility = resume_effective_configuration
-        .as_ref()
-        .map(|(profile, device)| make_ocr_compatibility(&compatibility, profile, device));
+    // BLK-1: for doc 2+ in a shared invocation, the resume OCR compat key
+    // must use the shared runtime's ACTUAL profile/device (not the requested
+    // config), so it matches checkpoints written by the fallback path.
+    let resume_ocr_compatibility =
+        resume_effective_configuration
+            .as_ref()
+            .map(|(profile, device)| {
+                let (actual_profile, actual_device) = match env.model_slot {
+                    ModelSlot::Shared(Some(shared)) => {
+                        (shared.profile.as_str(), shared.device.as_str())
+                    }
+                    _ => (profile.as_str(), device.as_str()),
+                };
+                make_ocr_compatibility(&compatibility, actual_profile, actual_device)
+            });
     if options.resume {
         for page in &pages {
             let path = output.join(format!("page-{page:04}.checkpoint"));
