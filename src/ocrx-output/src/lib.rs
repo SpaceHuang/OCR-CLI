@@ -3869,7 +3869,10 @@ mod tests {
             "resume must count truncated exactly once, got {}",
             summary2.truncated_pages
         );
-        assert_eq!(summary2.completed_pages, 1, "resume must skip-commit the page");
+        assert_eq!(
+            summary2.completed_pages, 1,
+            "resume must skip-commit the page"
+        );
         let truncated_diags2: Vec<_> = summary2
             .diagnostics
             .iter()

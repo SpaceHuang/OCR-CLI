@@ -2361,6 +2361,40 @@ struct SharedRuntime {
     gpu_warning: Option<String>,
 }
 
+/// Phase-4 BLK-1: folds resume-incomplete checkpoints into the summary.
+/// Extracted from `scan_document` so the CLI re-matching + summary fold
+/// control flow is unit-testable without a real model (rereview BLK-1).
+/// Each checkpoint contributes at most one diagnostic and at most one
+/// truncated/degenerated count increment.
+fn fold_resume_incomplete_checkpoints(
+    checkpoints: &[ocrx_output::PageCheckpoint],
+    summary: &mut ocrx_output::JobSummary,
+) {
+    for checkpoint in checkpoints {
+        if checkpoint.degenerated {
+            summary.degenerated_pages += 1;
+        }
+        if checkpoint.truncated {
+            summary.truncated_pages += 1;
+        }
+        summary.warnings.extend(checkpoint.warnings.iter().cloned());
+        summary.diagnostics.push(ocrx_output::PageDiagnostic {
+            page: checkpoint.page_number,
+            status: if checkpoint.truncated || checkpoint.degenerated {
+                "partial"
+            } else {
+                "completed"
+            }
+            .to_owned(),
+            stage: "resume".to_owned(),
+            error_code: None,
+            message: None,
+            audit: checkpoint.audit,
+            warnings: checkpoint.warnings.clone(),
+        });
+    }
+}
+
 /// Scans ONE document end-to-end, reporting through `reporter`, and returns
 /// the would-be process exit code instead of exiting: the single-input
 /// caller exits with it directly (byte-identical behavior), while the X1
@@ -3671,29 +3705,7 @@ fn scan_document(
             // their incomplete state must be merged here before any success
             // decision is made (BLK-2). Pages reprocessed this run are not in
             // the skip set, so counting them here cannot double-count.
-            for checkpoint in &resume_incomplete_checkpoints {
-                if checkpoint.degenerated {
-                    summary.degenerated_pages += 1;
-                }
-                if checkpoint.truncated {
-                    summary.truncated_pages += 1;
-                }
-                summary.warnings.extend(checkpoint.warnings.iter().cloned());
-                summary.diagnostics.push(ocrx_output::PageDiagnostic {
-                    page: checkpoint.page_number,
-                    status: if checkpoint.truncated || checkpoint.degenerated {
-                        "partial"
-                    } else {
-                        "completed"
-                    }
-                    .to_owned(),
-                    stage: "resume".to_owned(),
-                    error_code: None,
-                    message: None,
-                    audit: checkpoint.audit,
-                    warnings: checkpoint.warnings.clone(),
-                });
-            }
+            fold_resume_incomplete_checkpoints(&resume_incomplete_checkpoints, &mut summary);
             if let Some(warning) = gpu_report_warning {
                 eprintln!("warning: {warning}");
                 summary.warnings.push(warning);
@@ -4765,8 +4777,8 @@ mod tests {
         ScanOptions, ScanResultFields, ScanSummaryDocument, SegmentRenderer, WorkerScanRenderer,
         aggregate_scan_exit, build_final_ocr_queue, current_platform, doctor_json_report,
         dynamic_fallback_requires_model_assets, effective_depth_after_fallback,
-        final_routing_diagnostics, format_routing_summary, initial_ocr_queue,
-        initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
+        final_routing_diagnostics, fold_resume_incomplete_checkpoints, format_routing_summary,
+        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
         native_candidate_pages, native_only_decision, ocr_queue_after_native_phase,
         output_dir_for_doc, parse_command, parse_injected_failure_page, parse_page_selection,
         parse_scan_args, pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required,
@@ -4964,6 +4976,101 @@ previous: {}",
         assert_eq!(rebuilt.model, "ovisocr2");
         // Depth unchanged -> key verbatim.
         assert_eq!(with_batch_depth(&key, 16).parameters, key.parameters);
+    }
+
+    #[test]
+    fn fold_resume_incomplete_truncated_page_counted_once() {
+        // Rereview BLK-1: after the CLI re-match, a truncated page must be
+        // counted exactly once. The old buggy code double-counted because
+        // the re-match pushed into resume_incomplete_checkpoints AND the
+        // service already counted it — this test exercises the fold
+        // function with a single truncated checkpoint and asserts exactly
+        // one diagnostic and truncated_pages=1.
+        let cp = ocrx_output::PageCheckpoint {
+            page_number: 1,
+            compatibility: ocrx_output::CompatibilityKey {
+                input_sha256: String::new(),
+                model: "ovisocr2".to_owned(),
+                profile: "native".to_owned(),
+                parameters: "batch=8".to_owned(),
+            },
+            complete: true,
+            output_sha256: String::new(),
+            truncated: true,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
+            warnings: vec!["truncated".to_owned()],
+            audit: None,
+        };
+        let mut summary = ocrx_output::JobSummary {
+            selected_pages: 1,
+            completed_pages: 0,
+            failed_pages: 0,
+            truncated_pages: 0,
+            degenerated_pages: 0,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            cancelled: false,
+        };
+        fold_resume_incomplete_checkpoints(&[cp], &mut summary);
+        assert_eq!(
+            summary.truncated_pages, 1,
+            "truncated must be counted exactly once"
+        );
+        assert_eq!(summary.diagnostics.len(), 1, "exactly one diagnostic");
+        assert_eq!(summary.diagnostics[0].page, 1);
+        assert_eq!(summary.diagnostics[0].status, "partial");
+        assert_eq!(summary.diagnostics[0].stage, "resume");
+        // No double-count: running the fold again would be a bug (the
+        // caller must not re-fold the same checkpoints).
+        assert_eq!(summary.degenerated_pages, 0);
+    }
+
+    #[test]
+    fn fold_resume_incomplete_mixed_pages_produce_correct_counts() {
+        // Multiple checkpoints (1 truncated + 1 degenerated + 1 clean) must
+        // produce exactly matching counts and diagnostics — no double-count.
+        let checkpoints: Vec<ocrx_output::PageCheckpoint> = [
+            (true, false, 1u32),
+            (false, true, 2u32),
+            (false, false, 3u32),
+        ]
+        .iter()
+        .map(
+            |&(truncated, degenerated, page)| ocrx_output::PageCheckpoint {
+                page_number: page,
+                compatibility: ocrx_output::CompatibilityKey {
+                    input_sha256: String::new(),
+                    model: "ovisocr2".to_owned(),
+                    profile: "native".to_owned(),
+                    parameters: "batch=8".to_owned(),
+                },
+                complete: true,
+                output_sha256: String::new(),
+                truncated,
+                degenerated,
+                attempts: 1,
+                raw: None,
+                warnings: Vec::new(),
+                audit: None,
+            },
+        )
+        .collect();
+        let mut summary = ocrx_output::JobSummary {
+            selected_pages: 3,
+            completed_pages: 0,
+            failed_pages: 0,
+            truncated_pages: 0,
+            degenerated_pages: 0,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            cancelled: false,
+        };
+        fold_resume_incomplete_checkpoints(&checkpoints, &mut summary);
+        assert_eq!(summary.truncated_pages, 1);
+        assert_eq!(summary.degenerated_pages, 1);
+        assert_eq!(summary.diagnostics.len(), 3);
     }
 
     #[test]
