@@ -598,6 +598,23 @@ pub trait PageArtifactRecognizer<M> {
         self.recognize_artifact(model, page, image)
     }
 
+    /// Q1.2 escape-ladder seam (quality plan §4.1, D-1): recognition for
+    /// degeneration retries (`attempts >= 2` only). The default delegates to
+    /// the plain path so fakes and non-sampling recognizers are unchanged;
+    /// real recognizers override it to decode through the retry sampler
+    /// chain (`repeat_penalty → greedy`). Normal (attempt-1) recognition can
+    /// never reach this method.
+    fn recognize_retry_artifact_cancelled(
+        &mut self,
+        model: &mut M,
+        page: u32,
+        image: &RenderedPage,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> io::Result<PageArtifactResult> {
+        self.recognize_artifact_cancelled(model, page, image, cancellation, progress)
+    }
+
     /// P4.4 window recognition (plan §7.3): decodes the window's pages
     /// concurrently. The default runs them sequentially through
     /// [`Self::recognize_artifact_cancelled`] — numerically identical to
@@ -739,13 +756,27 @@ where
                 }
             };
             let mut page_heartbeat = |event: GenerationProgress| heartbeat(page, event);
-            match self.recognizer.recognize_artifact_cancelled(
-                model,
-                page,
-                &image,
-                cancellation,
-                &mut page_heartbeat,
-            ) {
+            // Q1.2: attempts >= 2 are degeneration retries — recognition
+            // goes through the retry seam so the sampler chain applies only
+            // there; attempt 1 keeps the plain greedy path.
+            let recognized = if attempts >= 2 {
+                self.recognizer.recognize_retry_artifact_cancelled(
+                    model,
+                    page,
+                    &image,
+                    cancellation,
+                    &mut page_heartbeat,
+                )
+            } else {
+                self.recognizer.recognize_artifact_cancelled(
+                    model,
+                    page,
+                    &image,
+                    cancellation,
+                    &mut page_heartbeat,
+                )
+            };
+            match recognized {
                 Ok(artifact) => {
                     if artifact.degenerated && attempts <= DEGENERATION_RETRY_LADDER.len() as u32 {
                         continue;
@@ -3245,6 +3276,7 @@ mod tests {
     struct ScriptedRecognizer {
         script: std::collections::VecDeque<PageArtifactResult>,
         calls: u32,
+        retry_calls: u32,
         on_call: Option<Box<dyn FnMut(u32)>>,
         fail_when_cancelled: Option<CancellationToken>,
     }
@@ -3256,6 +3288,23 @@ mod tests {
             _image: &RenderedPage,
         ) -> std::io::Result<PageArtifactResult> {
             self.calls += 1;
+            self.scripted_next(page)
+        }
+
+        fn recognize_retry_artifact_cancelled(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+            _cancellation: &CancellationToken,
+            _progress: &mut dyn FnMut(GenerationProgress),
+        ) -> std::io::Result<PageArtifactResult> {
+            self.retry_calls += 1;
+            self.scripted_next(page)
+        }
+    }
+    impl ScriptedRecognizer {
+        fn scripted_next(&mut self, page: u32) -> std::io::Result<PageArtifactResult> {
             if let Some(callback) = self.on_call.as_mut() {
                 callback(page);
             }
@@ -3366,6 +3415,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3386,6 +3436,38 @@ mod tests {
     }
 
     #[test]
+    fn degeneration_retries_route_through_the_retry_seam() {
+        // Q1.2: attempt 1 recognition takes the plain path; every
+        // degeneration retry (attempts >= 2) takes the retry seam. With the
+        // default 2-entry ladder, one degenerate + one normal script entry
+        // yields exactly 1 plain call and 1 retry call.
+        let root = test_dir("retry-seam-routing");
+        let _ = fs::remove_dir_all(&root);
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: [degenerate_artifact(1), normal_artifact(1)]
+                .into_iter()
+                .collect(),
+            calls: 0,
+            retry_calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let mut service = ScanService::new(renderer, FakeLoader { loads: 0 }, recognizer);
+        let summary = service
+            .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
+            .unwrap();
+        assert_eq!(summary.completed_pages, 1);
+        assert_eq!(
+            (service.recognizer.calls, service.recognizer.retry_calls),
+            (1, 1)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn scenario_b_all_attempts_degenerate_commits_marked_partial_with_raw() {
         let root = test_dir("scenario-b");
         let _ = fs::remove_dir_all(&root);
@@ -3401,6 +3483,7 @@ mod tests {
             .into_iter()
             .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3440,6 +3523,7 @@ mod tests {
         let recognizer = ScriptedRecognizer {
             script: [truncated_only].into_iter().collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3474,6 +3558,7 @@ mod tests {
             .into_iter()
             .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3491,6 +3576,7 @@ mod tests {
             .into_iter()
             .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3517,6 +3603,7 @@ mod tests {
         let recognizer = ScriptedRecognizer {
             script: std::collections::VecDeque::new(),
             calls: 0,
+            retry_calls: 0,
             on_call: Some(Box::new(move |_| cancel_trigger.request_cancel())),
             fail_when_cancelled: Some(token.clone()),
         };
@@ -3577,6 +3664,7 @@ mod tests {
         let recognizer = ScriptedRecognizer {
             script: (1..=3).map(degenerate_artifact).collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };

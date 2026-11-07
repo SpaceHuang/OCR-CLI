@@ -140,14 +140,46 @@ pub fn write_page_artifacts_with_status_cancelled(
     cancellation: &CancellationToken,
     progress: &mut dyn FnMut(GenerationProgress),
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
+    write_page_artifacts_with_retry_sampling_cancelled(
+        runtime,
+        page,
+        width,
+        height,
+        rgb8,
+        max_output_tokens,
+        output_root,
+        cancellation,
+        progress,
+        None,
+    )
+}
+
+/// Q1.2 variant: `retry_sampling` is `Some` only on degeneration-retry
+/// recognition (attempts >= 2, quality plan §4.1); the request then carries
+/// the ordered `repeat_penalty → greedy` chain spec for the runtime's retry
+/// context. Normal pages pass `None` and stay pure greedy.
+#[allow(clippy::too_many_arguments)]
+pub fn write_page_artifacts_with_retry_sampling_cancelled(
+    runtime: &mut impl Runtime,
+    page: u32,
+    width: u32,
+    height: u32,
+    rgb8: Vec<u8>,
+    max_output_tokens: u32,
+    output_root: impl AsRef<Path>,
+    cancellation: &CancellationToken,
+    progress: &mut dyn FnMut(GenerationProgress),
+    retry_sampling: Option<ocrx_runtime::RetrySampling>,
+) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     // D5.1: an over-cap budget fails the page explicitly; the old silent
     // clamp hid that the requested budget was not in effect.
     let request = try_request(max_output_tokens).map_err(std::io::Error::other)?;
-    let response = runtime.generate_with_progress(
-        InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?,
-        cancellation,
-        progress,
-    )?;
+    let mut inference =
+        InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?;
+    if let Some(retry_sampling) = retry_sampling {
+        inference = inference.with_retry_sampling(retry_sampling);
+    }
+    let response = runtime.generate_with_progress(inference, cancellation, progress)?;
     if cancellation.is_cancelled() {
         return Err(std::io::Error::other("cancelled").into());
     }
@@ -1817,6 +1849,81 @@ mod tests {
         assert_eq!(output.think_blocks_stripped, 1);
         let document = PageDocument::from_json(&output.page_json).unwrap();
         assert!(!document.warnings.contains(&PageWarning::ThinkRemoved));
+    }
+
+    struct RequestCaptureRuntime {
+        seen: std::sync::Mutex<Vec<ocrx_runtime::InferenceRequest>>,
+    }
+    impl Runtime for RequestCaptureRuntime {
+        fn info(&self) -> RuntimeInfo {
+            RuntimeInfo {
+                backend: Backend::Cpu,
+                image_token_limit: 1024,
+            }
+        }
+
+        fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String> {
+            self.seen.lock().unwrap().push(request);
+            Ok(InferenceResponse {
+                raw_output: "body".to_owned(),
+                finish_reason: "eos".to_owned(),
+            })
+        }
+    }
+
+    #[test]
+    fn retry_sampling_option_flows_into_the_inference_request() {
+        // Q1.2: the retry spec lands on the request only when provided;
+        // the plain path keeps None (attempt-1 greedy contract).
+        let root = std::env::temp_dir().join(format!("ocrx-ovis-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let capture = RequestCaptureRuntime {
+            seen: std::sync::Mutex::new(Vec::new()),
+        };
+        let mut capture = capture;
+        {
+            let _ = write_page_artifacts_with_retry_sampling_cancelled(
+                &mut capture,
+                3,
+                10,
+                10,
+                vec![255; 10 * 10 * 3],
+                512,
+                &root,
+                &CancellationToken::new(),
+                &mut |_| {},
+                Some(ocrx_runtime::RetrySampling::new(1_150, 256).unwrap()),
+            )
+            .unwrap();
+        }
+        let seen = capture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            seen[0].retry_sampling,
+            Some(ocrx_runtime::RetrySampling {
+                repeat_penalty_milli: 1_150,
+                penalty_window: 256,
+            })
+        );
+        drop(seen);
+        {
+            let _ = write_page_artifacts_with_status_cancelled(
+                &mut capture,
+                4,
+                10,
+                10,
+                vec![255; 10 * 10 * 3],
+                512,
+                &root,
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        }
+        let seen = capture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[1].retry_sampling, None);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

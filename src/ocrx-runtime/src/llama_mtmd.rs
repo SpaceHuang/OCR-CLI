@@ -6,11 +6,12 @@ use std::time::Instant;
 
 use super::step_profile::{Segment, StepProfile, StepProfiler};
 use super::{
-    Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, Runtime,
-    RuntimeInfo, RuntimeTelemetry,
+    Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, RetrySampling,
+    Runtime, RuntimeInfo, RuntimeTelemetry,
 };
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::{
@@ -457,6 +458,11 @@ fn run_inference_worker(
     // The decode context borrows `model`; both are locals of this thread, so
     // the lifetime is self-contained (plan §4 ownership model).
     let mut context: Option<LlamaContext<'_>> = None;
+    // Q1.2 (quality plan §4.1/D-13): retry requests decode through a
+    // dedicated context whose per-sequence sampler chain is
+    // `repeat_penalty -> greedy` (bound at context init, the 0.1.161
+    // recommended path). Cached per spec; plain requests never touch it.
+    let mut retry_context: Option<(RetrySampling, LlamaContext<'_>)> = None;
     // Windowed context (plan P4.3): one context with n_seq_max slots sized
     // for a full WINDOW_DEPTH window's worst-case budget, reused across
     // windows with a full KV clear per window (deterministic fresh state).
@@ -530,16 +536,67 @@ fn run_inference_worker(
                         }
                     }
                 }
-                let context = context.as_mut().expect("context created or error handled");
-                context.clear_kv_cache();
+                // Q1.2: retry requests bind the sampler chain; the plain
+                // context stays untouched (attempt-1 greedy contract).
+                let sampled = request.retry_sampling.is_some();
+                let page_context: &mut LlamaContext<'_> = if let Some(spec) =
+                    request.retry_sampling
+                {
+                    let needs_rebuild =
+                        retry_context.as_ref().is_none_or(|(cached, _)| *cached != spec);
+                    if needs_rebuild {
+                        let sampler = LlamaSampler::chain_simple(vec![
+                            LlamaSampler::penalties(
+                                model.n_vocab(),
+                                i32::try_from(spec.penalty_window)
+                                    .map_err(|_| "penalty window exceeds token range")
+                                    .unwrap_or(i32::MAX),
+                                spec.repeat_penalty(),
+                                0.0,
+                                0.0,
+                            ),
+                            LlamaSampler::greedy(),
+                        ]);
+                        let params = LlamaContextParams::default()
+                            .with_n_ctx(NonZeroU32::new(load.context_size))
+                            .with_op_offload(load.use_gpu)
+                            .with_offload_kqv(load.use_gpu);
+                        match model.new_context_with_samplers(
+                            &backend,
+                            params,
+                            [(0, sampler)],
+                        ) {
+                            Ok(created) => retry_context = Some((spec, created)),
+                            Err(error) => {
+                                if messages
+                                    .send(WorkerMessage::Generated(Err(error.to_string())))
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    let (_, retry_page_context) =
+                        retry_context.as_mut().expect("retry context built above");
+                    retry_page_context.clear_kv_cache();
+                    retry_page_context
+                } else {
+                    let context =
+                        context.as_mut().expect("context created or error handled");
+                    context.clear_kv_cache();
+                    context
+                };
                 let response = generate_one_page(
                     &model,
                     &mtmd,
-                    context,
+                    page_context,
                     &request,
                     &cancellation,
                     &mut telemetry,
                     &messages,
+                    sampled,
                 );
                 if messages.send(WorkerMessage::Generated(response)).is_err() {
                     return;
@@ -1049,6 +1106,7 @@ fn generate_one_page(
     cancellation: &CancellationToken,
     telemetry: &mut RuntimeTelemetry,
     messages: &Sender<WorkerMessage>,
+    sampled: bool,
 ) -> Result<InferenceResponse, String> {
     if request.width == 0
         || request.height == 0
@@ -1153,6 +1211,13 @@ fn generate_one_page(
         // gathered so far before failing the page, so mid-generation
         // failures still contribute token/timing counts (MINOR 10).
         let next_token = (|| -> Result<LlamaToken, String> {
+            // Q1.2: sampler-bound contexts expose the chain output per
+            // decode; `None` (LLAMA_TOKEN_NULL) falls back to argmax —
+            // verification point V1: the mtmd chunked prompt eval's final
+            // sampled-row index is runtime-verified at the first sweep.
+            if sampled && let Some(token) = context.sampled_token_ith(0) {
+                return Ok(token);
+            }
             let logits = context.get_logits();
             let index = argmax_total_cmp(logits).ok_or_else(|| "empty logits".to_owned())?;
             let token = LlamaToken::new(
