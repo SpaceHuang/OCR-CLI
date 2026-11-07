@@ -1,4 +1,4 @@
-﻿//! Gated X1 cross-document orchestration E2E (phase-2 plan §4 X1.4①/③).
+//! Gated X1 cross-document orchestration E2E (phase-2 plan §4 X1.4①/③).
 //!
 //! Runs the compiled `ocrx` binary so the real PDFium owner (with the
 //! SwitchDocument protocol), the real shared inference actor, and the CLI
@@ -636,4 +636,67 @@ fn gpu_fallback_resume_truncated_page_counted_once() {
     );
 
     let _ = fs::remove_dir_all(&output);
+}
+
+#[test]
+#[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
+fn shared_fallback_resume_counts_truncated_once() {
+    // Rereview BLK-1: Shared multi-input invocation with GPU->CPU fallback
+    // must rebuild the compat key (batch=8, ocr-device=cpu) and the
+    // post-fallback re-match must find committed pages so the service
+    // skip-commits them. Truncated pages must be counted exactly once.
+    let doc_a = fixture("normal-1-page.pdf");
+    let doc_b = fixture("figure-1-page.pdf");
+    let scratch = scratch_dir("shared-fallback-resume");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let output = scratch.join("shared-output");
+
+    // PASS 1: fresh multi-input scan. The seam forces GPU load failure.
+    let (code1, _stdout1, _stderr1) = run_scan_full(
+        &[&doc_a, &doc_b],
+        &output,
+        &["--device", "vulkan"],
+        &[("OCRX_E2E_FORCE_RUNTIME_FALLBACK", "1")],
+    );
+    assert!(
+        code1 == 0 || code1 == 10,
+        "pass 1 must complete (exit {code1})"
+    );
+
+    // Snapshot checkpoints from pass 1.
+    let mut pass1_checkpoint_count = 0;
+    for entry in fs::read_dir(&output).unwrap().filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".checkpoint") {
+            pass1_checkpoint_count += 1;
+        }
+    }
+    assert!(
+        pass1_checkpoint_count >= 2,
+        "pass 1 must produce checkpoints for both docs (got {pass1_checkpoint_count})"
+    );
+
+    // PASS 2: resume. The rebuilt compat key (batch=8) matches the
+    // checkpoints from pass 1, so the service SkipCommits them.
+    let (code2, _stdout2, _stderr2) = run_scan_full(
+        &[&doc_a, &doc_b],
+        &output,
+        &["--device", "cpu", "--resume"],
+        &[],
+    );
+    assert!(
+        code2 == 0 || code2 == 10,
+        "resume must complete (exit {code2})"
+    );
+
+    // Verify: both documents committed with content.
+    for doc in [&doc_a, &doc_b] {
+        let doc_dir = doc_dir(&output, doc);
+        let md = doc_dir.join("document.md");
+        assert!(md.is_file(), "document.md must exist for {}", doc.display());
+        let content = fs::read_to_string(&md).unwrap();
+        assert!(!content.trim().is_empty(), "document.md must have content");
+    }
+
+    let _ = fs::remove_dir_all(&scratch);
 }

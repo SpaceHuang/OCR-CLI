@@ -1946,23 +1946,22 @@ fn load_runtime_with_fallback(
     context_size: u32,
     window_depth: usize,
 ) -> std::io::Result<(LlamaMtmdRuntime, Option<String>, usize)> {
+    // BLK-2 + test seam: when OCRX_E2E_FORCE_RUNTIME_FALLBACK is set, the
+    // GPU attempt always fails, exercising the CPU fallback path
+    // deterministically (rereview BLK-1 regression test).
+    let gpu_effective =
+        gpu && std::env::var("OCRX_E2E_FORCE_RUNTIME_FALLBACK").as_deref() != Ok("1");
     // BLK-2: the CPU path (and the GPU->CPU fallback) always runs the
     // compiled floor depth - the 16 tier is a GPU-VRAM decision only.
-    if !gpu {
+    if !gpu_effective {
         let depth = effective_depth_after_fallback(false, window_depth);
         return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size, depth)
             .map(|runtime| (runtime, None, depth))
             .map_err(std::io::Error::other);
     }
-    match LlamaMtmdRuntime::load(
-        model,
-        mmproj,
-        true,
-        max_image_tokens,
-        context_size,
-        window_depth,
-    ) {
-        Ok(runtime) => Ok((runtime, None, window_depth)),
+    let depth = effective_depth_after_fallback(true, window_depth);
+    match LlamaMtmdRuntime::load(model, mmproj, true, max_image_tokens, context_size, depth) {
+        Ok(runtime) => Ok((runtime, None, depth)),
         Err(gpu_error) => {
             let depth = effective_depth_after_fallback(false, window_depth);
             let cpu_runtime =
