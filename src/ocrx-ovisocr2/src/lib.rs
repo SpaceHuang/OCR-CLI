@@ -194,7 +194,18 @@ fn adapt_and_write(
         )?;
     }
     let markdown = replace_bbox_images(&crop.text, page, boxes.len());
-    validate_markdown_image_links(&markdown, &output_root)?;
+    // Q4: a bad model-emitted image link degrades to a link-level removal
+    // (warning) instead of failing the whole page; page.json blocks were
+    // derived before this and never carried the link.
+    let (markdown, dropped_links) = drop_invalid_markdown_image_links(&markdown, &output_root);
+    let mut warnings = document
+        .warnings
+        .iter()
+        .map(|warning| warning.as_str().to_owned())
+        .collect::<Vec<_>>();
+    if dropped_links > 0 {
+        warnings.push("invalid_image_link_dropped".to_owned());
+    }
     Ok(PageArtifactOutput {
         markdown,
         page_json: document
@@ -202,11 +213,7 @@ fn adapt_and_write(
             .map_err(|error| format!("serialize page: {error:?}"))?,
         truncated,
         degenerated: document.warnings.contains(&PageWarning::Degenerated),
-        warnings: document
-            .warnings
-            .iter()
-            .map(|warning| warning.as_str().to_owned())
-            .collect(),
+        warnings,
         think_blocks_stripped: u32::try_from(think.total()).unwrap_or(u32::MAX),
         raw_output: normalized_raw,
     })
@@ -345,13 +352,91 @@ pub fn strip_think_blocks(input: &str) -> ThinkStrip {
     }
 }
 
-fn validate_markdown_image_links(
+/// A link is dropped when it violates the path contract (prefix outside
+/// `images/page-…` or containing `..` — the path-traversal rejection is kept,
+/// expressed as removal instead of a page failure, quality plan D-4) or when
+/// the referenced artifact was not produced (e.g. a crop that fell outside
+/// the page).
+fn image_link_is_droppable(relative: &str, root: &Path) -> bool {
+    !relative.starts_with("images/page-")
+        || relative.contains("..")
+        || !root.join(relative).is_file()
+}
+
+/// Extracts the `images/…` path (if any) from a scanned construct.
+fn images_path_inside(text: &str) -> Option<(&str, usize, usize)> {
+    let start = text.find("images/")?;
+    let end = text[start..]
+        .find(|character: char| {
+            character.is_whitespace() || character == ')' || character == '"' || character == '>'
+        })
+        .map_or(text.len(), |offset| start + offset);
+    Some((&text[start..end], start, end))
+}
+
+/// Q4 (quality plan §4.4): degrades invalid/missing bbox image links from a
+/// page-level failure to a link-level removal. Returns the cleaned markdown
+/// and the number of dropped links; each drop raises the
+/// `invalid_image_link_dropped` warning at the call site.
+fn drop_invalid_markdown_image_links(
     markdown: &str,
     output_root: impl AsRef<Path>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> (String, usize) {
     let root = output_root.as_ref();
+    let mut dropped = 0;
+
+    // Pass A: `<img …>` tags carrying an images/ path.
+    let mut without_tags = String::with_capacity(markdown.len());
     let mut rest = markdown;
+    while let Some(start) = rest.find("<img") {
+        let Some(tag_end_rel) = rest[start..].find('>') else {
+            break;
+        };
+        without_tags.push_str(&rest[..start]);
+        let tag_end = start + tag_end_rel + 1;
+        let tag = &rest[start..tag_end];
+        match images_path_inside(tag) {
+            Some((relative, _, _)) if image_link_is_droppable(relative, root) => {
+                dropped += 1; // tag removed
+            }
+            _ => without_tags.push_str(tag),
+        }
+        rest = &rest[tag_end..];
+    }
+    without_tags.push_str(rest);
+
+    // Pass B: `![alt](images/…)` markdown constructs.
+    let mut without_markdown_links = String::with_capacity(without_tags.len());
+    let mut rest = without_tags.as_str();
+    while let Some(bang) = rest.find("![") {
+        let Some(paren_rel) = rest[bang..].find("](") else {
+            without_markdown_links.push_str(&rest[..bang + 2]);
+            rest = &rest[bang + 2..];
+            continue;
+        };
+        let path_start = bang + paren_rel + 2;
+        let Some(close_rel) = rest[path_start..].find(')') else {
+            without_markdown_links.push_str(&rest[..path_start]);
+            rest = &rest[path_start..];
+            continue;
+        };
+        let construct_end = path_start + close_rel + 1;
+        let path = &rest[path_start..path_start + close_rel];
+        without_markdown_links.push_str(&rest[..bang]);
+        if path.starts_with("images/") && image_link_is_droppable(path, root) {
+            dropped += 1; // construct removed
+        } else {
+            without_markdown_links.push_str(&rest[bang..construct_end]);
+        }
+        rest = &rest[construct_end..];
+    }
+    without_markdown_links.push_str(rest);
+
+    // Pass C: bare `images/…` tokens that survived both construct forms.
+    let mut output = String::with_capacity(without_markdown_links.len());
+    let mut rest = without_markdown_links.as_str();
     while let Some(start) = rest.find("images/") {
+        output.push_str(&rest[..start]);
         let candidate = &rest[start..];
         let end = candidate
             .find(|character: char| {
@@ -359,15 +444,16 @@ fn validate_markdown_image_links(
             })
             .unwrap_or(candidate.len());
         let relative = &candidate[..end];
-        if !relative.starts_with("images/page-") || relative.contains("..") {
-            return Err(format!("invalid markdown image link: {relative}").into());
-        }
-        if !root.join(relative).is_file() {
-            return Err(format!("markdown image link is missing: {relative}").into());
+        if image_link_is_droppable(relative, root) {
+            dropped += 1; // token removed
+        } else {
+            output.push_str(relative);
         }
         rest = &candidate[end..];
     }
-    Ok(())
+    output.push_str(rest);
+
+    (output, dropped)
 }
 
 fn replace_bbox_images(raw: &str, page: u32, count: usize) -> String {
@@ -1212,21 +1298,92 @@ mod tests {
         );
     }
 
+    // ---- Q4: link-level degradation of invalid bbox image links (quality plan §4.4) ----
+
     #[test]
-    fn markdown_image_links_require_existing_output_artifacts() {
+    fn invalid_and_missing_image_links_are_dropped_not_page_fatal() {
         let root = std::env::temp_dir().join(format!("ocrx-ovis-links-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("images")).unwrap();
-        assert!(
-            validate_markdown_image_links("![figure](images/page-0001-figure-001.png)", &root)
-                .is_err()
+        // Missing file: the whole image construct is dropped, body survives.
+        let (markdown, dropped) = drop_invalid_markdown_image_links(
+            "before ![figure](images/page-0001-figure-001.png) after",
+            &root,
         );
+        assert_eq!(markdown, "before  after");
+        assert_eq!(dropped, 1);
+        // Path traversal: dropped (rejected by removal, never passed through).
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("![x](images/../secret) 正文", &root);
+        assert_eq!(markdown, " 正文");
+        assert_eq!(dropped, 1);
+        // Existing file: link kept byte for byte.
         std::fs::write(root.join("images/page-0001-figure-001.png"), b"png").unwrap();
-        assert!(
-            validate_markdown_image_links("![figure](images/page-0001-figure-001.png)", &root)
-                .is_ok()
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("![figure](images/page-0001-figure-001.png)", &root);
+        assert_eq!(markdown, "![figure](images/page-0001-figure-001.png)");
+        assert_eq!(dropped, 0);
+        // img-tag form with a traversal path is dropped as a whole tag.
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("a <img src=\"images/../evil.png\" /> b", &root);
+        assert_eq!(markdown, "a  b");
+        assert_eq!(dropped, 1);
+        // Mixed links: only the bad one is removed, granularity stays per link.
+        let (markdown, dropped) = drop_invalid_markdown_image_links(
+            "![good](images/page-0001-figure-001.png) ![bad](images/page-9999-figure-009.png)",
+            &root,
         );
-        assert!(validate_markdown_image_links("![x](images/../secret)", &root).is_err());
+        assert_eq!(markdown, "![good](images/page-0001-figure-001.png) ");
+        assert_eq!(dropped, 1);
+        // Prefix violations that are not images/page- links are dropped too.
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("看这个 images/other/stuff.png", &root);
+        assert_eq!(markdown, "看这个 ");
+        assert_eq!(dropped, 1);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn page_with_invalid_model_image_link_commits_with_drop_warning() {
+        struct EvilLinkRuntime;
+        impl Runtime for EvilLinkRuntime {
+            fn info(&self) -> RuntimeInfo {
+                RuntimeInfo {
+                    backend: Backend::Cpu,
+                    image_token_limit: 1024,
+                }
+            }
+
+            fn generate(
+                &mut self,
+                _request: InferenceRequest,
+            ) -> Result<InferenceResponse, String> {
+                Ok(InferenceResponse {
+                    raw_output: "正文\n<img src=\"images/../../evil.png\" />\n完".to_owned(),
+                    finish_reason: "eos".to_owned(),
+                })
+            }
+        }
+        let root = std::env::temp_dir().join(format!("ocrx-ovis-evil-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let output = write_page_artifacts_with_status(
+            &mut EvilLinkRuntime,
+            9,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            &root,
+        )
+        .expect("page must commit despite the invalid link");
+        assert!(!output.markdown.contains("images/../../evil.png"));
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning == "invalid_image_link_dropped")
+        );
+        assert!(output.markdown.contains("正文"));
         let _ = std::fs::remove_dir_all(root);
     }
 
