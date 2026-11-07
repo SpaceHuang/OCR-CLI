@@ -1,0 +1,17 @@
+{
+ "schema_version": 1,
+ "generator": "scripts/build-degeneration-corpus.py",
+ "source_profile": "balanced",
+ "counts": {
+  "degenerated": 213,
+  "truncated_total": 33,
+  "degenerated_truncated_intersection": 5,
+  "pure_truncated": 28,
+  "missing": 1
+ },
+ "files": {
+  "pages.json": "58a620ef2ab0f855a97d46f305d146b69a2af6331f342200cd57c4d580116f17",
+  "mapping-subset.json": "f8454e9fb859484a7f82cc8c1b90286e21ef6b128dd5f08d1b5d65ff851dcccd",
+  "render-audit-join.json": "c887b172c4749ac1d0dfcedb6d37f8801f6579a49f2169e25dbf78b1139dcaf5"
+ }
+}
