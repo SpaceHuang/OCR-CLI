@@ -3796,9 +3796,7 @@ mod tests {
         let script = std::collections::VecDeque::from(vec![PageArtifactResult {
             png: Some(vec![1]),
             markdown: "page 1 truncated content".to_owned(),
-            page_json: format!(
-                r#"{{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}}"#
-            ),
+            page_json: r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}"#.to_owned(),
             truncated: true,
             degenerated: false,
             warnings: vec!["truncated".to_owned()],
@@ -3819,18 +3817,22 @@ mod tests {
             recognizer,
         );
         // keep_pages=true so the page file survives for verification.
+        // BLK-2 (rereview): PASS 1 produces the truncated checkpoint; PASS 2
+        // resumes and must count it exactly once — this is the control flow
+        // the CLI re-matching rides on after a GPU->CPU fallback.
         let summary = service
             .run_with_checkpoints_cancelled(
                 &[1],
                 &root,
                 &degeneration_compatibility(),
-                false, // no resume — fresh scan
-                true,  // keep_pages
+                false,
+                true,
                 &CancellationToken::new(),
             )
             .unwrap();
-        // The service counts the truncated page exactly once.
-        assert_eq!(summary.truncated_pages, 1, "truncated counted once");
+        // PASS 1 counts the truncated page exactly once.
+        assert_eq!(summary.truncated_pages, 1, "pass 1: truncated counted once");
+        assert_eq!(summary.completed_pages, 1);
         let truncated_diags: Vec<_> = summary
             .diagnostics
             .iter()
@@ -3847,6 +3849,39 @@ mod tests {
         assert!(cp_text.contains("truncated=true"));
         // The page-0001.md exists with the truncated content.
         assert!(root.join("page-0001.md").is_file());
+
+        // PASS 2: resume from the same directory. The service's
+        // SkipCommitted path must count truncated exactly once — this is
+        // the per-page resume matching that the CLI re-matching rides on
+        // after a GPU->CPU fallback (BLK-1).
+        let summary2 = service
+            .run_with_checkpoints_cancelled(
+                &[1],
+                &root,
+                &degeneration_compatibility(),
+                true, // resume from the existing checkpoint
+                true, // keep_pages
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            summary2.truncated_pages, 1,
+            "resume must count truncated exactly once, got {}",
+            summary2.truncated_pages
+        );
+        assert_eq!(summary2.completed_pages, 1, "resume must skip-commit the page");
+        let truncated_diags2: Vec<_> = summary2
+            .diagnostics
+            .iter()
+            .filter(|d| d.page == 1 && d.status == "partial")
+            .collect();
+        assert_eq!(
+            truncated_diags2.len(),
+            1,
+            "exactly one partial diagnostic after resume: {:?}",
+            summary2.diagnostics
+        );
+
         let _ = fs::remove_dir_all(&root);
     }
 
