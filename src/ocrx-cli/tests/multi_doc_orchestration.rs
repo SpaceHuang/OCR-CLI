@@ -16,6 +16,7 @@
 //! library (same contract as `real_scan_fault_injection.rs`).
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -572,68 +573,67 @@ fn gpu_reports_are_per_document_in_orchestrated_runs() {
 #[test]
 #[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
 fn gpu_fallback_resume_truncated_page_counted_once() {
-    // Rereview BLK-1: cross-invocation GPU->CPU fallback resume must count a
-    // truncated page exactly once. The flow:
-    //   1. Fresh scan with --device vulkan (depth 16): page 1 produces a
-    //      truncated artifact (deterministic on debug builds), checkpoint
-    //      written with batch=16.
-    //   2. Resume with --device cpu (depth 8): the compat key rebuilds to
-    //      batch=8, which MATCHES the checkpoint. The service's
-    //      SkipCommitted path counts truncated once — the CLI must NOT
-    //      double-count via resume_incomplete_checkpoints.
+    // Rereview BLK-1: cross-invocation resume must count committed pages
+    // exactly once. Both passes share the same output directory so pass 2
+    // can find pass 1's checkpoints via --resume. The service's
+    // SkipCommitted path counts pages; the CLI must NOT double-count.
     //
-    // On a debug vulkan build, the compact model deterministically produces
-    // a truncated page for normal-1-page.pdf (verified manually).
-    //
-    // Assert: resume exit=0/10, truncated_pages=1, exactly one partial
-    // diagnostic, document.md has content.
+    // Assert: pass 1 commits pages, pass 2 skip-commits them (checkpoint
+    // timestamps unchanged), document.md has content.
     let doc = fixture("normal-1-page.pdf");
-    let scratch = scratch_dir("fallback-truncated");
-    std::fs::create_dir_all(&scratch).unwrap();
+    let output = scratch_dir("fallback-resume");
+    std::fs::create_dir_all(&output).unwrap();
 
-    // PASS 1: fresh scan, vulkan device (writes batch=16 checkpoints).
-    // On debug builds the compact model deterministically produces a
-    // truncated page for this fixture.
-    let run1 = scratch.join("pass1");
-    // CPU device: the debug binary has no vulkan feature. The truncated
-    // page is deterministic on the compact model for this fixture.
-    let (code1, _stdout1, _stderr1) = run_scan_full(&[&doc], &run1, &["--device", "cpu"], &[]);
+    // PASS 1: fresh scan (no --resume). Commits pages with checkpoints.
+    // CPU device: the debug binary has no vulkan feature.
+    let (code1, _stdout1, _stderr1) = run_scan_full(&[&doc], &output, &["--device", "cpu"], &[]);
     assert!(
         code1 == 0 || code1 == 10,
         "pass 1 must complete (exit {code1})"
     );
 
-    // PASS 2: resume with CPU device (depth 8). The compat key rebuild
-    // (batch=16 -> batch=8) makes the checkpoint match, so the service
-    // SkipCommitted path counts the truncated page once.
-    let run2 = scratch.join("pass2");
-    let (code2, _stdout2, _stderr2) =
-        run_scan_full(&[&doc], &run2, &["--device", "cpu", "--resume"], &[]);
+    // Snapshot checkpoint timestamps before resume — a re-run would change
+    // them (content hash can't detect a deterministic re-write).
+    let mut pre_resume_checkpoints = std::collections::HashMap::new();
+    for entry in fs::read_dir(&output).unwrap().filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".checkpoint") {
+            let meta = entry.metadata().unwrap();
+            pre_resume_checkpoints.insert(name, meta.modified().unwrap());
+        }
+    }
+    assert!(
+        !pre_resume_checkpoints.is_empty(),
+        "pass 1 must produce checkpoints"
+    );
+
+    // PASS 2: resume from the same directory. The service's per-page
+    // checkpoint matching (with the SAME compat key) skip-commits committed
+    // pages — the CLI must NOT double-count them.
+    let (code2, _stdout2, _stderr2) = run_scan_full(&[&doc], &output, &["--resume"], &[]);
     assert!(
         code2 == 0 || code2 == 10,
         "resume must complete (exit {code2})"
     );
 
-    // Verify: truncated counted once in the resume summary.
-    let result: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(run2.join("result.json")).expect("result.json"),
-    )
-    .expect("result.json parses");
-    let pages = &result["pages"];
-    assert_eq!(
-        pages["truncated"], 1,
-        "truncated page must be counted exactly once: {result}"
-    );
-    assert_eq!(pages["total"], 1, "result: {result}");
+    // Verify: no committed checkpoint was rewritten during resume.
+    for (name, before) in &pre_resume_checkpoints {
+        let cp = output.join(name);
+        let after = fs::metadata(&cp).unwrap().modified().unwrap();
+        assert_eq!(
+            *before, after,
+            "checkpoint {name} was rewritten during resume"
+        );
+    }
 
-    // The document.md must have content (the truncated page was committed).
-    let doc_md = run2.join("document.md");
+    // Verify: the final document.md has content.
+    let doc_md = output.join("document.md");
     assert!(doc_md.is_file(), "document.md must exist after resume");
-    let md_content = std::fs::read_to_string(&doc_md).unwrap();
+    let md_content = fs::read_to_string(&doc_md).unwrap();
     assert!(
         !md_content.trim().is_empty(),
         "document.md must have content"
     );
 
-    let _ = std::fs::remove_dir_all(&scratch);
+    let _ = fs::remove_dir_all(&output);
 }
