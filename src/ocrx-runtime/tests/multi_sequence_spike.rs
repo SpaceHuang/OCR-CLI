@@ -91,7 +91,7 @@ fn render_pages() -> Vec<(u32, u32, Vec<u8>)> {
 /// for that sequence. `eval_chunks(..., logits_last=true)` leaves the logits
 /// row of the last image token readable at the returned position - 1.
 fn encode_sequence(
-    mtmd: &MtmdContext,
+    mtmd: &mut MtmdContext,
     context: &mut LlamaContext<'_>,
     width: u32,
     height: u32,
@@ -141,7 +141,6 @@ fn decode_shared(
     last: &mut [LlamaToken],
     positions: &mut [i32],
 ) -> Vec<Vec<i32>> {
-    let eos = model.token_eos();
     let mut finished = vec![false; last.len()];
     let mut streams: Vec<Vec<i32>> = vec![Vec::new(); last.len()];
     for _step in 0..TOKEN_CAP {
@@ -167,7 +166,7 @@ fn decode_shared(
         for (sequence, index) in logits_index {
             let best = argmax_token(context.get_logits_ith(index));
             let token = LlamaToken::new(best);
-            if token == eos {
+            if model.vocab().is_eog(token) {
                 finished[sequence] = true;
             } else {
                 streams[sequence].push(best);
@@ -182,10 +181,7 @@ fn to_text(model: &LlamaModel, tokens: &[i32]) -> String {
     tokens
         .iter()
         .map(
-            |&id| match model.token_to_piece_bytes(LlamaToken::new(id), 64, false, None) {
-                Ok(piece) => String::from_utf8_lossy(&piece).into_owned(),
-                Err(_) => String::new(),
-            },
+            |&id| String::from_utf8_lossy(&model.vocab().token_to_piece(LlamaToken::new(id), false, None)).into_owned(),
         )
         .collect()
 }
@@ -243,7 +239,7 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
             .with_main_gpu(-1),
     )
     .expect("reference GGUF loads");
-    let mtmd = MtmdContext::init_from_file(
+    let mut mtmd = MtmdContext::init_from_file(
         &mmproj_path.to_string_lossy(),
         &model,
         &MtmdContextParams {
@@ -275,7 +271,7 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
     for (index, (width, height, rgb)) in pages.iter().enumerate() {
         let mut context = make_context();
         let position =
-            encode_sequence(&mtmd, &mut context, *width, *height, rgb, 0).expect("encode");
+            encode_sequence(&mut mtmd, &mut context, *width, *height, rgb, 0).expect("encode");
         let seed = seed_from_last_eval(&context);
         let mut last = vec![LlamaToken::new(seed)];
         let mut positions = vec![position];
@@ -314,7 +310,7 @@ fn p4_1_5_spike_a_batch_divergence_and_spike_b_multi_sequence() {
             let mut seeds = Vec::new();
             for (slot, (width, height, rgb)) in window.iter().enumerate() {
                 positions.push(
-                    encode_sequence(&mtmd, &mut context, *width, *height, rgb, slot as i32)
+                    encode_sequence(&mut mtmd, &mut context, *width, *height, rgb, slot as i32)
                         .expect("batched encode"),
                 );
                 // Sample before the next page's eval overwrites the buffer.

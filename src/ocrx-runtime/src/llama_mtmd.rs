@@ -421,7 +421,7 @@ fn run_inference_worker(
             return;
         }
     };
-    let mtmd = match MtmdContext::init_from_file(
+    let mut mtmd = match MtmdContext::init_from_file(
         &load.mmproj_path.to_string_lossy(),
         &model,
         &MtmdContextParams {
@@ -491,7 +491,7 @@ fn run_inference_worker(
             } => {
                 let (results, window_profile) = generate_window_pages(
                     &model,
-                    &mtmd,
+                    &mut mtmd,
                     &backend,
                     &mut window_context,
                     load.image_tokens,
@@ -590,7 +590,7 @@ fn run_inference_worker(
                 };
                 let response = generate_one_page(
                     &model,
-                    &mtmd,
+                    &mut mtmd,
                     page_context,
                     &request,
                     &cancellation,
@@ -667,7 +667,7 @@ struct WindowSlot {
 #[allow(clippy::type_complexity)] // the slot vector is the window's shape
 fn generate_window_pages<'a>(
     model: &'a LlamaModel,
-    mtmd: &MtmdContext,
+    mtmd: &mut MtmdContext,
     backend: &'a LlamaBackend,
     window_context: &mut Option<(u32, LlamaContext<'a>)>,
     image_tokens: u32,
@@ -707,7 +707,6 @@ fn generate_window_pages<'a>(
     let started = Instant::now();
     let mut profiler = StepProfiler::new();
     profiler.open_window();
-    let eos = model.token_eos();
     let Some((_, context)) = window_context.as_mut() else {
         unreachable!("window context built above");
     };
@@ -889,20 +888,19 @@ fn generate_window_pages<'a>(
             finished: false,
             response: None,
         };
-        if seed_token == eos {
+        if model.vocab().is_eog(seed_token) {
             seed_slot.finished = true;
             seed_slot.response = Some(Ok(InferenceResponse {
                 raw_output: String::new(),
                 finish_reason: "eos".to_owned(),
             }));
         } else {
-            match model.token_to_piece_bytes(seed_token, 64, false, None) {
-                Ok(piece) => seed_slot.output.push_str(&String::from_utf8_lossy(&piece)),
-                Err(error) => {
-                    seed_slot.finished = true;
-                    seed_slot.response = Some(Err(error.to_string()));
-                }
-            }
+            // 0.1.161: token_to_piece infallibly returns the piece bytes.
+            seed_slot
+                .output
+                .push_str(&String::from_utf8_lossy(&model.vocab().token_to_piece(
+                    seed_token, false, None,
+                )));
             if !seed_slot.finished {
                 seed_slot.generated = 1;
                 // A single token cannot satisfy the detector's minimum tail;
@@ -1023,7 +1021,7 @@ fn generate_window_pages<'a>(
                 continue;
             };
             let token = LlamaToken::new(best);
-            if token == eos {
+            if model.vocab().is_eog(token) {
                 slot.finished = true;
                 let output = std::mem::take(&mut slot.output);
                 slot.response = Some(Ok(InferenceResponse {
@@ -1033,7 +1031,8 @@ fn generate_window_pages<'a>(
                 continue;
             }
             profiler.begin(Segment::Detokenize);
-            let piece_result = model.token_to_piece_bytes(token, 64, false, None);
+            let piece_result: Result<Vec<u8>, String> =
+                Ok(model.vocab().token_to_piece(token, false, None));
             profiler.end(Segment::Detokenize);
             match piece_result {
                 Ok(piece) => slot.output.push_str(&String::from_utf8_lossy(&piece)),
@@ -1100,7 +1099,7 @@ fn generate_window_pages<'a>(
 /// early-stop) but writing telemetry into the worker's accumulator.
 fn generate_one_page(
     model: &LlamaModel,
-    mtmd: &MtmdContext,
+    mtmd: &mut MtmdContext,
     context: &mut LlamaContext<'_>,
     request: &InferenceRequest,
     cancellation: &CancellationToken,
@@ -1237,7 +1236,7 @@ fn generate_one_page(
                 return Err(error);
             }
         };
-        if token == model.token_eos() {
+        if model.vocab().is_eog(token) {
             record(
                 telemetry,
                 generated_tokens,
@@ -1251,9 +1250,7 @@ fn generate_one_page(
         }
         let decode_step = (|| -> Result<(), String> {
             output.push_str(&String::from_utf8_lossy(
-                &model
-                    .token_to_piece_bytes(token, 64, false, None)
-                    .map_err(|error| error.to_string())?,
+                &model.vocab().token_to_piece(token, false, None),
             ));
             let mut batch = LlamaBatch::new(1, 1);
             let token_position = position

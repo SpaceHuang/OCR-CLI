@@ -1,0 +1,14 @@
+   Compiling llama-cpp-sys-2 v0.1.161
+error: failed to run custom build command for `llama-cpp-sys-2 v0.1.161`
+
+Caused by:
+  process didn't exit successfully: `D:\Develop\OCR-CLI\.worktrees\q12-sampling\target\release\build\llama-cpp-sys-2-7988309d622cfda6\build-script-build` (exit code: 101)
+  --- stderr
+  running: "\\\\?\\D:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe" "--build" "D:\\Develop\\OCR-CLI\\.worktrees\\q12-sampling\\target\\release\\build\\llama-cpp-sys-2-1f17b6c52fb6e58f\\out\\build" "--target" "install" "--config" "Release" "--parallel" "20"
+
+  thread 'main' (23124) panicked at C:\Users\WIN11\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmake-0.1.58\src\lib.rs:1132:5:
+
+  command did not execute successfully, got: exit code: 1
+
+  build script failed, must exit now
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

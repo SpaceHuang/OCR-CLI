@@ -40,7 +40,7 @@ mod probe {
             model_params = model_params.with_main_gpu(-1);
         }
         let model = LlamaModel::load_from_file(&backend, Path::new(&model_path), &model_params)?;
-        let mtmd = MtmdContext::init_from_file(
+        let mut mtmd = MtmdContext::init_from_file(
             &mmproj_path,
             &model,
             &MtmdContextParams {
@@ -65,7 +65,7 @@ mod probe {
             .with_op_offload(use_gpu)
             .with_offload_kqv(use_gpu);
         let mut ctx = model.new_context(&backend, ctx_params)?;
-        let n_past = chunks.eval_chunks(&mtmd, &ctx, 0, 0, 512, true)?;
+        let n_past = chunks.eval_chunks(&mut mtmd, &mut ctx, 0, 0, 512, true)?;
         let mut output = String::new();
         let mut termination = "max_tokens";
         let max_tokens = std::env::var("OCRX_RUNTIME_MAX_TOKENS")
@@ -87,12 +87,12 @@ mod probe {
                 .max_by(|(_, a), (_, b)| a.total_cmp(b))
                 .ok_or("empty logits")?;
             let token = LlamaToken::new(i32::try_from(index)?);
-            if token == model.token_eos() {
+            if model.vocab().is_eog(token) {
                 termination = "eos";
                 break;
             }
             output.push_str(&String::from_utf8_lossy(
-                &model.token_to_piece_bytes(token, 64, false, None)?,
+                &model.vocab().token_to_piece(token, false, None),
             ));
             if generated % 16 == 0 {
                 eprintln!("runtime_progress generated_tokens={}", generated + 1);
