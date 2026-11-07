@@ -361,6 +361,14 @@ pub struct JobSummary {
     pub cancelled: bool,
 }
 
+/// Degeneration retry ladder (quality plan Q1.4a): the perturbation ratios
+/// walked in order from attempt 2 on, frozen as a data table so the
+/// experiment-adjudicated composition is a single-line change. The default
+/// keeps the baseline behavior (47/50 = 0.94x, then 53/50 = 1.06x); the
+/// attempt cap is one plus the table length (D-7 allows up to
+/// 5 attempts once the Q1.1/Q1.2 experiments freeze a wider composition).
+pub const DEGENERATION_RETRY_LADDER: &[(u32, u32)] = &[(47, 50), (53, 50)];
+
 pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
     let mut warnings = native.warnings;
     warnings.extend(ocr.warnings);
@@ -686,8 +694,11 @@ where
     /// Same failure surface as [`run_with_checkpoints_cancelled`].
     /// Single-stream attempt machine (serial semantics, plan §3.5/§7.3):
     /// `start_attempt` 1 = full serial path (original render first); 2 = a
-    /// batched attempt-1 degeneration retry (perturbed renders from here).
-    /// Stops after attempt 3; a render failure is terminal for the page.
+    /// batched attempt-1 degeneration retry (perturbed renders from here,
+    /// walking [`DEGENERATION_RETRY_LADDER`] in order). The attempt cap is
+    /// `1 + ladder.len()` (quality plan Q1.4a: the ladder composition is
+    /// frozen by experiment data, the table is the single edit point); a
+    /// render failure is terminal for the page.
     fn serial_attempt_outcome(
         &mut self,
         model: &mut M,
@@ -707,7 +718,11 @@ where
             let image = if attempts == 1 {
                 self.renderer.render(page)
             } else {
-                let (numerator, denominator) = if attempts == 2 { (47, 50) } else { (53, 50) };
+                let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
+                let (numerator, denominator) = DEGENERATION_RETRY_LADDER
+                    .get(ladder_index)
+                    .copied()
+                    .unwrap_or((1, 1));
                 self.renderer.render_perturbed(page, numerator, denominator)
             };
             self.commit_recorder.record_render_wait(
@@ -732,7 +747,7 @@ where
                 &mut page_heartbeat,
             ) {
                 Ok(artifact) => {
-                    if artifact.degenerated && attempts < 3 {
+                    if artifact.degenerated && attempts <= DEGENERATION_RETRY_LADDER.len() as u32 {
                         continue;
                     }
                     return SerialOutcome::Terminal(Ok((image, artifact, attempts)));
@@ -1014,8 +1029,8 @@ where
                 };
                 if artifact.degenerated {
                     // Retry budget mirrors the serial machine: the batched
-                    // call was attempt 1, so up to two perturbed retries
-                    // remain (attempts 2/3).
+                    // call was attempt 1, so the ladder table provides the
+                    // remaining perturbed retries (attempts 2..=1+len).
                     match self.serial_attempt_outcome(model, page, 2, cancellation, heartbeat) {
                         SerialOutcome::RenderFailed { cancelled } => {
                             terminal.push(TerminalPage::RenderFailed { page, cancelled });
@@ -1640,8 +1655,8 @@ pub struct PageCheckpoint {
     /// Repetition-degeneration flag (plan §3.3): a degenerated page is
     /// reprocessed on resume even when otherwise reusable.
     pub degenerated: bool,
-    /// Attempts spent by the most recent processing run (1..=3); reset on
-    /// every Reprocess.
+    /// Attempts spent by the most recent processing run (1..=1+len of
+    /// []); reset on every Reprocess.
     pub attempts: u32,
     /// Raw-output sidecar pointer (`page-NNNN.raw`), per requirement §7.4.
     pub raw: Option<String>,
@@ -2687,14 +2702,14 @@ fn temporary_path(path: &Path) -> PathBuf {
 mod tests {
     use super::{
         CancellationToken, CheckpointDisposition, CheckpointResumeAction, CheckpointState,
-        CompatibilityKey, ErrorReport, GenerationProgress, Heartbeat, JobStatus, JobSummary,
-        ModelLoader, OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint,
-        PageDiagnostic, PageIncomplete, PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer,
-        PageStatus, ProgressEvent, ProgressMode, ProgressSnapshot, ProgressStage, RenderAudit,
-        RenderedPage, ReportFormat, Reporter, ResultReport, ResultStatus,
-        RoutingCheckpointMetadata, RoutingCheckpointResult, ScanController, ScanService,
-        atomic_write, classify_recognition_error, format_report, merge_job_summaries,
-        recover_pending_ocr_queue,
+        CompatibilityKey, DEGENERATION_RETRY_LADDER, ErrorReport, GenerationProgress, Heartbeat,
+        JobStatus, JobSummary, ModelLoader, OcrQueuePage, PageArtifactRecognizer,
+        PageArtifactResult, PageCheckpoint, PageDiagnostic, PageIncomplete, PageLifecycle,
+        PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent, ProgressMode,
+        ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat, Reporter,
+        ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
+        ScanController, ScanService, atomic_write, classify_recognition_error, format_report,
+        merge_job_summaries, recover_pending_ocr_queue,
     };
     use std::fs;
 
@@ -3522,21 +3537,118 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    struct LadderProbeRenderer {
+        log: std::rc::Rc<std::cell::RefCell<Vec<(u32, u32, u32)>>>,
+    }
+    impl PageRenderer for LadderProbeRenderer {
+        fn preflight(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+            self.log.borrow_mut().push((page, 1, 1));
+            RenderedPage::new(1, 1, vec![1, 2, 3])
+        }
+        fn render_perturbed(
+            &mut self,
+            page: u32,
+            numerator: u32,
+            denominator: u32,
+        ) -> std::io::Result<RenderedPage> {
+            self.log.borrow_mut().push((page, numerator, denominator));
+            RenderedPage::new(1, 1, vec![4, 5, 6])
+        }
+    }
+
     #[test]
     fn perturbed_retries_use_frozen_scale_ratios() {
+        // Q1.4a mechanism gate: the retry ladder is the frozen data table;
+        // an always-degenerate page must render plain on attempt 1, then
+        // walk the table in order, and commit with attempts = 1 + table
+        // length when it never stops degenerating.
         let root = test_dir("scenario-ratios");
         let _ = fs::remove_dir_all(&root);
-        let renderer = ScriptedRenderer {
-            calls: std::collections::VecDeque::new(),
+        let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let renderer = LadderProbeRenderer {
+            log: std::rc::Rc::clone(&log),
         };
+        // An exhausted script falls back to normal artifacts, so script the
+        // full budget: one degenerate artifact per attempt (3 with the
+        // default ladder); the last degenerate artifact commits.
         let recognizer = ScriptedRecognizer {
-            script: std::collections::VecDeque::new(), // always degenerate
+            script: (1..=3).map(degenerate_artifact).collect(),
             calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
-        let _ = run_scan_with(&root, &[1], renderer, recognizer, false).unwrap();
+        let mut service = ScanService::new(renderer, FakeLoader { loads: 0 }, recognizer);
+        let summary = service
+            .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
+            .unwrap();
+        assert_eq!(summary.degenerated_pages, 1);
+        assert_eq!(
+            *log.borrow(),
+            vec![(1, 1, 1)]
+                .into_iter()
+                .chain(
+                    DEGENERATION_RETRY_LADDER
+                        .iter()
+                        .map(|&(numerator, denominator)| (1, numerator, denominator))
+                )
+                .collect::<Vec<_>>()
+        );
+        let checkpoint = super::read_checkpoint(root.join("page-0001.checkpoint")).unwrap();
+        assert_eq!(
+            checkpoint.attempts,
+            1 + DEGENERATION_RETRY_LADDER.len() as u32
+        );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checkpoint_attempts_field_supports_extended_ladder_and_stays_readable() {
+        // Q1.4b: attempts widens to 1..=N (N = ladder length + 1); a v5
+        // checkpoint written with attempts=5 round-trips, and older files
+        // without the additive attempts line keep defaulting to 1.
+        let directory = test_dir("checkpoint-attempts-5");
+        let _ = fs::remove_dir_all(&directory);
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: degeneration_compatibility(),
+            complete: true,
+            output_sha256: String::new(),
+            truncated: false,
+            degenerated: false,
+            attempts: 5,
+            raw: None,
+            warnings: Vec::new(),
+            think_blocks_stripped: 0,
+            audit: None,
+        };
+        let path = directory.join("page-0001.checkpoint");
+        super::write_checkpoint(&path, &checkpoint).unwrap();
+        assert_eq!(super::read_checkpoint(&path).unwrap().attempts, 5);
+        let legacy = format!(
+            "ocrx-checkpoint-v5
+page=1
+input={}
+model={}
+profile={}
+parameters={}
+complete=true
+output=abc
+truncated=false
+raw=none
+warnings=
+audit=none
+",
+            super::encode_field("input"),
+            super::encode_field("ovisocr2"),
+            super::encode_field("balanced"),
+            super::encode_field("tokens=16384"),
+        );
+        fs::write(&path, legacy).unwrap();
+        assert_eq!(super::read_checkpoint(&path).unwrap().attempts, 1);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
