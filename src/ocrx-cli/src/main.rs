@@ -2281,13 +2281,13 @@ fn with_batch_depth(
         .parameters
         .split(';')
         .map(|segment| {
+            // BLK-1: the fallback also drops the device (base key and
+            // ocr-device) to CPU — the 16 tier is a GPU-VRAM decision.
             if segment.starts_with("batch=") {
                 format!("batch={depth}")
-            } else if segment.starts_with("device=") {
-                // BLK-1: the fallback also drops the device to CPU (the 16
-                // tier is a GPU-VRAM decision), so the base key's device
-                // segment must follow.
-                "device=cpu".to_owned()
+            } else if segment.starts_with("ocr-device=") {
+                // The actual inference device after the fallback.
+                "ocr-device=cpu".to_owned()
             } else {
                 segment.to_owned()
             }
@@ -3159,42 +3159,33 @@ fn scan_document(
                         // this, committed pages would be unnecessarily
                         // re-decoded.
                         if options.resume {
-                            let rebuilt_ocr = resume_effective_configuration
-                                .as_ref()
-                                .map(|(profile, _device)| {
-                                    make_ocr_compatibility(
-                                        &compatibility,
-                                        profile,
-                                        "cpu",
-                                    )
-                                });
+                            let rebuilt_ocr = resume_effective_configuration.as_ref().map(
+                                |(profile, _device)| {
+                                    make_ocr_compatibility(&compatibility, profile, "cpu")
+                                },
+                            );
                             if let Some(ref rebuilt_ocr) = rebuilt_ocr {
                                 for page in &pages {
                                     let page_u32 = *page as u32;
                                     if resume_skip_pages.contains(&page_u32) {
                                         continue;
                                     }
-                                    let cp_path = output.join(format!(
-                                        "page-{page_u32:04}.checkpoint"
-                                    ));
+                                    let cp_path =
+                                        output.join(format!("page-{page_u32:04}.checkpoint"));
                                     let Ok(checkpoint) = read_checkpoint(&cp_path) else {
                                         continue;
                                     };
-                                    if checkpoint.resume_action(
-                                        rebuilt_ocr,
-                                        output,
-                                        page_u32,
-                                    ) == CheckpointResumeAction::SkipCommitted
+                                    if checkpoint.resume_action(rebuilt_ocr, output, page_u32)
+                                        == CheckpointResumeAction::SkipCommitted
                                     {
                                         if let Ok(mut markdown) =
                                             collect_page_markdowns(output, &[page_u32])
                                         {
-                                            resume_committed_markdown.append(&mut markdown);
+                                            native_markdown.append(&mut markdown);
                                             resume_skip_pages.insert(page_u32);
                                             if checkpoint.truncated || checkpoint.degenerated {
-                                                resume_incomplete_checkpoints.push(
-                                                    checkpoint.clone(),
-                                                );
+                                                resume_incomplete_checkpoints
+                                                    .push(checkpoint.clone());
                                             }
                                         }
                                     }
@@ -4904,6 +4895,55 @@ mod tests {
             ocrx_core::WINDOW_DEPTH
         );
         assert_eq!(effective_depth_after_fallback(false, 8), 8);
+    }
+
+    #[test]
+    fn rebuilt_key_matches_the_previous_fallback_run_checkpoints() {
+        // BLK-1: a previous run loaded with GPU->CPU fallback writes
+        // checkpoints with batch=8 + ocr-device=cpu (the base key had
+        // device=vulkan;batch=16 but was rebuilt on fallback). A later
+        // invocation with the same request config must produce a key that
+        // MATCHES those checkpoints — otherwise committed pages re-decode.
+        // What the previous fallback run actually wrote: base device stays
+        // vulkan (it was the REQUESTED device at GPU-tier resolution time),
+        // but batch drops to 8 and ocr-device becomes cpu (the ACTUAL
+        // inference device after the fallback).
+        let previous_run_key = ocrx_output::CompatibilityKey {
+            input_sha256: "abc".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: concat!(
+                "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;",
+                "extractor=pdf-text-v1;platform=windows;dpi=300;tokens=16384;",
+                "max_image_tokens=1024;context_size=20480;device=vulkan;",
+                "batch=8;route=native;ocr-profile=compact;ocr-device=cpu"
+            )
+            .to_owned(),
+        };
+        // The next invocation resolves the GPU tier again (batch=16) and
+        // falls back to CPU, rebuilding to the floor + cpu device.
+        let gpu_tier_key = ocrx_output::CompatibilityKey {
+            input_sha256: "abc".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: concat!(
+                "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;",
+                "extractor=pdf-text-v1;platform=windows;dpi=300;tokens=16384;",
+                "max_image_tokens=1024;context_size=20480;device=vulkan;",
+                "batch=16;route=native;ocr-profile=compact;ocr-device=vulkan"
+            )
+            .to_owned(),
+        };
+        let rebuilt = with_batch_depth(&gpu_tier_key, ocrx_core::WINDOW_DEPTH);
+        // The rebuilt key's OCR form must match the checkpoint's key.
+        assert!(
+            rebuilt.matches_page_compatibility(&previous_run_key),
+            "rebuilt key must match the previous fallback run's checkpoints
+rebuilt: {}
+previous: {}",
+            rebuilt.parameters,
+            previous_run_key.parameters
+        );
     }
 
     #[test]
