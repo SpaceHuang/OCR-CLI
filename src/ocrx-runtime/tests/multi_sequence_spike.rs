@@ -180,9 +180,14 @@ fn decode_shared(
 fn to_text(model: &LlamaModel, tokens: &[i32]) -> String {
     tokens
         .iter()
-        .map(
-            |&id| String::from_utf8_lossy(&model.vocab().token_to_piece(LlamaToken::new(id), false, None)).into_owned(),
-        )
+        .map(|&id| {
+            String::from_utf8_lossy(
+                &model
+                    .vocab()
+                    .token_to_piece(LlamaToken::new(id), false, None),
+            )
+            .into_owned()
+        })
         .collect()
 }
 

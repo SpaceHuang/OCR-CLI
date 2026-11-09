@@ -155,6 +155,13 @@ pub struct InferenceRequest {
     /// Present only on degeneration-retry requests (attempts >= 2, quality
     /// plan Q1.2); `None` keeps the plain greedy decode path untouched.
     pub retry_sampling: Option<RetrySampling>,
+    /// Q1.4c (quality plan §4.1): per-retry MTMD token-grid override. The
+    /// worker decodes the request against a context whose image grid is
+    /// bound to this token count (e.g. 2048) instead of the scan-level
+    /// budget; `None` uses the scan-level context. The scan-level
+    /// compatibility parameters are unaffected (the override is a retry
+    /// ladder rung, not a scan configuration change).
+    pub image_tokens_override: Option<u32>,
 }
 
 impl InferenceRequest {
@@ -184,7 +191,15 @@ impl InferenceRequest {
             image_rgb8,
             max_output_tokens,
             retry_sampling: None,
+            image_tokens_override: None,
         })
+    }
+
+    /// Attaches the per-retry MTMD token-grid override (quality plan Q1.4c).
+    #[must_use]
+    pub fn with_image_tokens_override(mut self, image_tokens: u32) -> Self {
+        self.image_tokens_override = Some(image_tokens);
+        self
     }
 
     /// Attaches the retry sampler chain (quality plan Q1.2); the caller is
@@ -455,6 +470,7 @@ mod tests {
                     image_rgb8: Vec::new(),
                     max_output_tokens: 128,
                     retry_sampling: None,
+                    image_tokens_override: None,
                 })
                 .is_err()
         );

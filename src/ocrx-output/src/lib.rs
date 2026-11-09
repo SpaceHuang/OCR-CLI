@@ -361,13 +361,56 @@ pub struct JobSummary {
     pub cancelled: bool,
 }
 
-/// Degeneration retry ladder (quality plan Q1.4a): the perturbation ratios
-/// walked in order from attempt 2 on, frozen as a data table so the
-/// experiment-adjudicated composition is a single-line change. The default
-/// keeps the baseline behavior (47/50 = 0.94x, then 53/50 = 1.06x); the
-/// attempt cap is one plus the table length (D-7 allows up to
-/// 5 attempts once the Q1.1/Q1.2 experiments freeze a wider composition).
-pub const DEGENERATION_RETRY_LADDER: &[(u32, u32)] = &[(47, 50), (53, 50)];
+/// One degeneration-retry rung (quality plan Q1.4a): the render and decode
+/// variant the attempt uses. `None` fields mean plain; at most one decode
+/// override per rung in the frozen tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DegenerationRetryStep {
+    /// Perturbed render ratio (numerator, denominator); `None` renders plain.
+    pub perturbed: Option<(u32, u32)>,
+    /// MTMD token-grid override for the decode (Q1.4c, e.g. 2048).
+    pub image_tokens: Option<u32>,
+    /// Ordered `repeat_penalty -> greedy` decode chain (Q1.2, D-13).
+    pub sampling: Option<ocrx_runtime::RetrySampling>,
+}
+
+impl DegenerationRetryStep {
+    /// Plain-render + plain-decode perturbation rung (the baseline ladder).
+    #[must_use]
+    pub const fn perturbed(numerator: u32, denominator: u32) -> Self {
+        Self {
+            perturbed: Some((numerator, denominator)),
+            image_tokens: None,
+            sampling: None,
+        }
+    }
+}
+
+/// Degeneration retry ladder (quality plan Q1.4a): the rungs walked in order
+/// from attempt 2 on, frozen as a data table so the experiment-adjudicated
+/// composition is a single-line change. SCRATCH EXPERIMENT COMPOSITION
+/// (Q1.2/Q1.4c adjudication round, docs/develop/q12-sampling-spike-build-record-2026-11-07.md):
+/// plain 1024 -> token-grid 2048 (E1 25% / E2 79% first-try escape) ->
+/// repeat_penalty 1.2x window 64 (category-effective 21% on formula-type
+/// loops) -> perturbation 0.94x -> perturbation 1.06x. Attempt cap = 5 (D-7).
+/// The main-line default remains the baseline two perturbation rungs.
+pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: Some(2048),
+        sampling: None,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: None,
+        sampling: Some(ocrx_runtime::RetrySampling {
+            repeat_penalty_milli: 1_200,
+            penalty_window: 64,
+        }),
+    },
+    DegenerationRetryStep::perturbed(47, 50),
+    DegenerationRetryStep::perturbed(53, 50),
+];
 
 pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
     let mut warnings = native.warnings;
@@ -598,20 +641,22 @@ pub trait PageArtifactRecognizer<M> {
         self.recognize_artifact(model, page, image)
     }
 
-    /// Q1.2 escape-ladder seam (quality plan §4.1, D-1): recognition for
-    /// degeneration retries (`attempts >= 2` only). The default delegates to
-    /// the plain path so fakes and non-sampling recognizers are unchanged;
-    /// real recognizers override it to decode through the retry sampler
-    /// chain (`repeat_penalty → greedy`). Normal (attempt-1) recognition can
-    /// never reach this method.
+    /// Q1.2/Q1.4c escape-ladder seam (quality plan §4.1, D-1): recognition
+    /// for degeneration retries (`attempts >= 2` only), carrying the ladder
+    /// step's decode variants (sampler chain / token grid). The default
+    /// delegates to the plain path so fakes and non-sampling recognizers are
+    /// unchanged; real recognizers override it to execute the step's decode
+    /// variants. Normal (attempt-1) recognition can never reach this method.
     fn recognize_retry_artifact_cancelled(
         &mut self,
         model: &mut M,
         page: u32,
         image: &RenderedPage,
+        step: &DegenerationRetryStep,
         cancellation: &CancellationToken,
         progress: &mut dyn FnMut(GenerationProgress),
     ) -> io::Result<PageArtifactResult> {
+        let _ = step;
         self.recognize_artifact_cancelled(model, page, image, cancellation, progress)
     }
 
@@ -732,15 +777,17 @@ where
             // by the generation allocated here.
             let generation = self.commit_recorder.begin_render(page);
             let render_started = std::time::Instant::now();
-            let image = if attempts == 1 {
-                self.renderer.render(page)
+            let step = if attempts == 1 {
+                None
             } else {
                 let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
-                let (numerator, denominator) = DEGENERATION_RETRY_LADDER
-                    .get(ladder_index)
-                    .copied()
-                    .unwrap_or((1, 1));
-                self.renderer.render_perturbed(page, numerator, denominator)
+                DEGENERATION_RETRY_LADDER.get(ladder_index)
+            };
+            let image = match step.and_then(|rung| rung.perturbed) {
+                Some((numerator, denominator)) => {
+                    self.renderer.render_perturbed(page, numerator, denominator)
+                }
+                None => self.renderer.render(page),
             };
             self.commit_recorder.record_render_wait(
                 page,
@@ -764,6 +811,7 @@ where
                     model,
                     page,
                     &image,
+                    step.unwrap_or(&DegenerationRetryStep::perturbed(1, 1)),
                     cancellation,
                     &mut page_heartbeat,
                 )
@@ -2733,12 +2781,12 @@ fn temporary_path(path: &Path) -> PathBuf {
 mod tests {
     use super::{
         CancellationToken, CheckpointDisposition, CheckpointResumeAction, CheckpointState,
-        CompatibilityKey, DEGENERATION_RETRY_LADDER, ErrorReport, GenerationProgress, Heartbeat,
-        JobStatus, JobSummary, ModelLoader, OcrQueuePage, PageArtifactRecognizer,
-        PageArtifactResult, PageCheckpoint, PageDiagnostic, PageIncomplete, PageLifecycle,
-        PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent, ProgressMode,
-        ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat, Reporter,
-        ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
+        CompatibilityKey, DEGENERATION_RETRY_LADDER, DegenerationRetryStep, ErrorReport,
+        GenerationProgress, Heartbeat, JobStatus, JobSummary, ModelLoader, OcrQueuePage,
+        PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic, PageIncomplete,
+        PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent,
+        ProgressMode, ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat,
+        Reporter, ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
         ScanController, ScanService, atomic_write, classify_recognition_error, format_report,
         merge_job_summaries, recover_pending_ocr_queue,
     };
@@ -3296,6 +3344,7 @@ mod tests {
             _model: &mut u32,
             page: u32,
             _image: &RenderedPage,
+            _step: &DegenerationRetryStep,
             _cancellation: &CancellationToken,
             _progress: &mut dyn FnMut(GenerationProgress),
         ) -> std::io::Result<PageArtifactResult> {
@@ -3479,6 +3528,10 @@ mod tests {
                 degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
             ]
             .into_iter()
             .collect(),
@@ -3490,7 +3543,7 @@ mod tests {
         let summary = run_scan_with(&root, &[104], renderer, recognizer, false).unwrap();
         assert_eq!(summary.degenerated_pages, 1);
         let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 3);
+        assert_eq!(checkpoint.attempts, 5);
         assert!(checkpoint.degenerated);
         assert_eq!(checkpoint.raw.as_deref(), Some("page-0104.raw"));
         assert_eq!(
@@ -3551,6 +3604,8 @@ mod tests {
         };
         let recognizer = ScriptedRecognizer {
             script: [
+                degenerate_artifact(104),
+                degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
@@ -3659,10 +3714,10 @@ mod tests {
             log: std::rc::Rc::clone(&log),
         };
         // An exhausted script falls back to normal artifacts, so script the
-        // full budget: one degenerate artifact per attempt (3 with the
-        // default ladder); the last degenerate artifact commits.
+        // full budget: one degenerate artifact per attempt (5 with the
+        // experiment ladder); the last degenerate artifact commits.
         let recognizer = ScriptedRecognizer {
-            script: (1..=3).map(degenerate_artifact).collect(),
+            script: (1..=5).map(degenerate_artifact).collect(),
             calls: 0,
             retry_calls: 0,
             on_call: None,
@@ -3673,15 +3728,17 @@ mod tests {
             .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
             .unwrap();
         assert_eq!(summary.degenerated_pages, 1);
+        // Every non-perturbed rung renders plain (1,1,1) — e.g. the
+        // token-grid and penalty rungs; perturbed rungs walk their ratios.
+        let expected_rungs = DEGENERATION_RETRY_LADDER
+            .iter()
+            .map(|rung| rung.perturbed.unwrap_or((1, 1)))
+            .map(|(numerator, denominator)| (1, numerator, denominator));
         assert_eq!(
             *log.borrow(),
             vec![(1, 1, 1)]
                 .into_iter()
-                .chain(
-                    DEGENERATION_RETRY_LADDER
-                        .iter()
-                        .map(|&(numerator, denominator)| (1, numerator, denominator))
-                )
+                .chain(expected_rungs)
                 .collect::<Vec<_>>()
         );
         let checkpoint = super::read_checkpoint(root.join("page-0001.checkpoint")).unwrap();

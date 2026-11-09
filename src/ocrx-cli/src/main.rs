@@ -82,13 +82,6 @@ struct ScanOptions {
     keep_pages: bool,
     /// PDF open password (--password). Sensitive: never printed or logged.
     password: Option<String>,
-    /// Q1.2 escape-ladder sampling (quality plan §4.1): repeat penalty in
-    /// milli-units applied ONLY to degeneration retries (attempts >= 2).
-    /// `None` keeps retries plain greedy (pre-Q1.2 behavior).
-    degeneration_repeat_penalty_milli: Option<u32>,
-    /// Q1.2 penalty window (recent tokens penalized); default 64 when a
-    /// penalty is configured.
-    degeneration_penalty_window: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,8 +154,6 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         non_interactive: false,
         keep_pages: false,
         password: None,
-        degeneration_repeat_penalty_milli: None,
-        degeneration_penalty_window: 64,
     };
     let mut index = 1;
     while index < args.len() {
@@ -233,19 +224,6 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             "--context-size" => {
                 index += 1;
                 options.context_size = Some(number_value(args, index, "--context-size")?);
-            }
-            "--degeneration-repeat-penalty-milli" => {
-                index += 1;
-                options.degeneration_repeat_penalty_milli = Some(number_value(
-                    args,
-                    index,
-                    "--degeneration-repeat-penalty-milli",
-                )?);
-            }
-            "--degeneration-penalty-window" => {
-                index += 1;
-                options.degeneration_penalty_window =
-                    number_value(args, index, "--degeneration-penalty-window")?;
             }
             "--progress" => {
                 index += 1;
@@ -2051,10 +2029,6 @@ struct OvisRecognizer {
     step_profile_base: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
     /// T1: PNG encode timing sink; clone of the scan's shared recorder.
     commit_recorder: ocrx_output::commit_profile::CommitRecorder,
-    /// Q1.2 escape-ladder sampling (quality plan §4.1): attached to
-    /// degeneration-retry recognition only (`None` keeps retries greedy,
-    /// which is the pre-Q1.2 behavior).
-    retry_sampling: Option<ocrx_runtime::RetrySampling>,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     fn recognize_artifact(
@@ -2130,11 +2104,13 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         model: &mut LlamaMtmdRuntime,
         page: u32,
         image: &RenderedPage,
+        step: &ocrx_output::DegenerationRetryStep,
         cancellation: &CancellationToken,
         progress: &mut dyn FnMut(GenerationProgress),
     ) -> std::io::Result<PageArtifactResult> {
-        if self.retry_sampling.is_none() {
-            // Pre-Q1.2 behavior: retries decode plain greedy.
+        if step.sampling.is_none() && step.image_tokens.is_none() {
+            // Rungs without decode variants (perturbation-only) keep the
+            // pre-Q1.2 plain decode.
             return self.recognize_artifact_cancelled(model, page, image, cancellation, progress);
         }
         let artifact = ocrx_ovisocr2::write_page_artifacts_with_retry_sampling_cancelled(
@@ -2147,7 +2123,8 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             &self.output,
             cancellation,
             progress,
-            self.retry_sampling,
+            step.sampling,
+            step.image_tokens,
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;
         let snapshot = model.telemetry();
@@ -2635,31 +2612,6 @@ fn scan_document(
     // cumulative telemetry; captured per document after model resolution.
     let telemetry_base = Rc::new(RefCell::new(RuntimeTelemetry::default()));
     let step_profile_base = Rc::new(RefCell::new(None));
-    let retry_sampling = match options
-        .degeneration_repeat_penalty_milli
-        .map(|penalty_milli| {
-            ocrx_runtime::RetrySampling::new(penalty_milli, options.degeneration_penalty_window)
-        })
-        .transpose()
-    {
-        Ok(retry_sampling) => retry_sampling,
-        Err(message) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 2,
-                    kind: "usage".to_owned(),
-                    message,
-                    cause: None,
-                    suggestion: Some(
-                        "pass --degeneration-repeat-penalty-milli within 1000..=2000 and a positive --degeneration-penalty-window".to_owned(),
-                    ),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 2;
-        }
-    };
     let recognizer = OvisRecognizer {
         output: output.to_path_buf(),
         max_tokens: options.max_output_tokens.unwrap_or(16_384),
@@ -2668,7 +2620,6 @@ fn scan_document(
         telemetry_base: Rc::clone(&telemetry_base),
         step_profile_base: Rc::clone(&step_profile_base),
         commit_recorder: commit_recorder.clone(),
-        retry_sampling,
     };
     // Keep compatibility metadata stable without touching model resources.
     // Actual profile/device resolution is deferred until the final OCR queue
@@ -4820,8 +4771,6 @@ mod tests {
                 non_interactive: false,
                 keep_pages: false,
                 password: None,
-                degeneration_repeat_penalty_milli: None,
-                degeneration_penalty_window: 64,
             })
         );
         assert!(parse_scan_args(&["input.pdf", "--model", "other"]).is_err());
@@ -6133,8 +6082,6 @@ mod tests {
                 non_interactive: false,
                 keep_pages: false,
                 password: None,
-                degeneration_repeat_penalty_milli: None,
-                degeneration_penalty_window: 64,
             }))
         );
         assert_eq!(

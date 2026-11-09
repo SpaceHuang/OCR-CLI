@@ -6,12 +6,11 @@ use std::time::Instant;
 
 use super::step_profile::{Segment, StepProfile, StepProfiler};
 use super::{
-    Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, RetrySampling,
-    Runtime, RuntimeInfo, RuntimeTelemetry,
+    Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse,
+    RetrySampling, Runtime, RuntimeInfo, RuntimeTelemetry,
 };
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::context::params::LlamaContextParams;
-use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::{
@@ -21,6 +20,7 @@ use llama_cpp_2::model::{
 use llama_cpp_2::mtmd::{
     MtmdBitmap, MtmdContext, MtmdContextParams, MtmdInputText, mtmd_default_marker,
 };
+use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 
 const PROMPT: &str = "\nExtract all readable content from the image in natural human reading order and output the result as a single Markdown document. For charts or images, represent them using an HTML image tag: <img src=\"images/bbox_{left}_{top}_{right}_{bottom}.jpg\" />, where left, top, right, bottom are bounding box coordinates scaled to [0, 1000). Format formulas as LaTeX. Format tables as HTML: <table>...</table>. Transcribe all other text as standard Markdown.\nPreserve the original text without translation or paraphrasing.";
@@ -463,6 +463,10 @@ fn run_inference_worker(
     // `repeat_penalty -> greedy` (bound at context init, the 0.1.161
     // recommended path). Cached per spec; plain requests never touch it.
     let mut retry_context: Option<(RetrySampling, LlamaContext<'_>)> = None;
+    // Q1.4c: lazy override MTMD contexts keyed by token-grid size (e.g. a
+    // 2048 retry rung decodes through a projector bound to a 2048 grid).
+    // One-time init per distinct size; plain requests never touch these.
+    let mut override_mtmd: Option<(u32, MtmdContext)> = None;
     // Windowed context (plan P4.3): one context with n_seq_max slots sized
     // for a full WINDOW_DEPTH window's worst-case budget, reused across
     // windows with a full KV clear per window (deterministic fresh state).
@@ -539,11 +543,46 @@ fn run_inference_worker(
                 // Q1.2: retry requests bind the sampler chain; the plain
                 // context stays untouched (attempt-1 greedy contract).
                 let sampled = request.retry_sampling.is_some();
-                let page_context: &mut LlamaContext<'_> = if let Some(spec) =
-                    request.retry_sampling
+                // Q1.4c: route the page through the MTMD context bound to the
+                // requested token grid (retry rungs like token-2048); plain
+                // requests keep the scan-level projector context.
+                let page_mtmd: &mut MtmdContext =
+                    if let Some(tokens) = request.image_tokens_override {
+                        let needs_build = override_mtmd
+                            .as_ref()
+                            .is_none_or(|(bound, _)| *bound != tokens);
+                        if needs_build {
+                            match MtmdContext::init_from_file(
+                                &load.mmproj_path.to_string_lossy(),
+                                &model,
+                                &MtmdContextParams {
+                                    use_gpu: load.use_gpu,
+                                    image_min_tokens: tokens as i32,
+                                    image_max_tokens: tokens as i32,
+                                    ..Default::default()
+                                },
+                            ) {
+                                Ok(created) => override_mtmd = Some((tokens, created)),
+                                Err(error) => {
+                                    if messages
+                                        .send(WorkerMessage::Generated(Err(error.to_string())))
+                                        .is_err()
+                                    {
+                                        return;
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                        &mut override_mtmd.as_mut().expect("override mtmd built above").1
+                    } else {
+                        &mut mtmd
+                    };
+                let page_context: &mut LlamaContext<'_> = if let Some(spec) = request.retry_sampling
                 {
-                    let needs_rebuild =
-                        retry_context.as_ref().is_none_or(|(cached, _)| *cached != spec);
+                    let needs_rebuild = retry_context
+                        .as_ref()
+                        .is_none_or(|(cached, _)| *cached != spec);
                     if needs_rebuild {
                         let sampler = LlamaSampler::chain_simple(vec![
                             LlamaSampler::penalties(
@@ -561,11 +600,7 @@ fn run_inference_worker(
                             .with_n_ctx(NonZeroU32::new(load.context_size))
                             .with_op_offload(load.use_gpu)
                             .with_offload_kqv(load.use_gpu);
-                        match model.new_context_with_samplers(
-                            &backend,
-                            params,
-                            [(0, sampler)],
-                        ) {
+                        match model.new_context_with_samplers(&backend, params, [(0, sampler)]) {
                             Ok(created) => retry_context = Some((spec, created)),
                             Err(error) => {
                                 if messages
@@ -583,14 +618,13 @@ fn run_inference_worker(
                     retry_page_context.clear_kv_cache();
                     retry_page_context
                 } else {
-                    let context =
-                        context.as_mut().expect("context created or error handled");
+                    let context = context.as_mut().expect("context created or error handled");
                     context.clear_kv_cache();
                     context
                 };
                 let response = generate_one_page(
                     &model,
-                    &mut mtmd,
+                    page_mtmd,
                     page_context,
                     &request,
                     &cancellation,
@@ -896,11 +930,9 @@ fn generate_window_pages<'a>(
             }));
         } else {
             // 0.1.161: token_to_piece infallibly returns the piece bytes.
-            seed_slot
-                .output
-                .push_str(&String::from_utf8_lossy(&model.vocab().token_to_piece(
-                    seed_token, false, None,
-                )));
+            seed_slot.output.push_str(&String::from_utf8_lossy(
+                &model.vocab().token_to_piece(seed_token, false, None),
+            ));
             if !seed_slot.finished {
                 seed_slot.generated = 1;
                 // A single token cannot satisfy the detector's minimum tail;

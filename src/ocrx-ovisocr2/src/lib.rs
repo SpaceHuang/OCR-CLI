@@ -151,6 +151,7 @@ pub fn write_page_artifacts_with_status_cancelled(
         cancellation,
         progress,
         None,
+        None,
     )
 }
 
@@ -170,6 +171,7 @@ pub fn write_page_artifacts_with_retry_sampling_cancelled(
     cancellation: &CancellationToken,
     progress: &mut dyn FnMut(GenerationProgress),
     retry_sampling: Option<ocrx_runtime::RetrySampling>,
+    image_tokens_override: Option<u32>,
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     // D5.1: an over-cap budget fails the page explicitly; the old silent
     // clamp hid that the requested budget was not in effect.
@@ -178,6 +180,9 @@ pub fn write_page_artifacts_with_retry_sampling_cancelled(
         InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?;
     if let Some(retry_sampling) = retry_sampling {
         inference = inference.with_retry_sampling(retry_sampling);
+    }
+    if let Some(image_tokens) = image_tokens_override {
+        inference = inference.with_image_tokens_override(image_tokens);
     }
     let response = runtime.generate_with_progress(inference, cancellation, progress)?;
     if cancellation.is_cancelled() {
@@ -1893,6 +1898,7 @@ mod tests {
                 &CancellationToken::new(),
                 &mut |_| {},
                 Some(ocrx_runtime::RetrySampling::new(1_150, 256).unwrap()),
+                Some(2048),
             )
             .unwrap();
         }
@@ -1905,6 +1911,7 @@ mod tests {
                 penalty_window: 256,
             })
         );
+        assert_eq!(seen[0].image_tokens_override, Some(2048));
         drop(seen);
         {
             let _ = write_page_artifacts_with_status_cancelled(
