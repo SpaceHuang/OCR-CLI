@@ -31,16 +31,20 @@ def decode(value: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--benchmark-root", type=Path, default=Path("benchmarks/omnidocbench"))
+    parser.add_argument("--scan", default="scans/column-split",
+                        help="scan root of the column-split bands (default scans/column-split)")
+    parser.add_argument("--label", default="column-split",
+                        help="output label (predictions dir suffix / report name)")
     args = parser.parse_args()
     root = args.benchmark_root
 
     manifest = json.loads(
         (root / "degeneration-v0.1/column-split/manifest.json").read_text(encoding="utf-8")
     )
-    scan = root / "scans/column-split"
+    scan = root / args.scan
     scan_dirs = {d.name.rsplit("-", 1)[0]: d for d in scan.iterdir() if d.is_dir()}
 
-    out = root / "degeneration-v0.1/column-split"
+    out = root / "degeneration-v0.1" / f"column-split-{args.label}" if args.label != "column-split" else root / "degeneration-v0.1/column-split"
     predictions = out / "predictions"
     predictions.mkdir(parents=True, exist_ok=True)
 
