@@ -20,9 +20,11 @@ use ocrx_core::{PageClassification, QualityTier};
 use ocrx_output::{PageRenderer, RenderAudit, RenderedPage};
 use ocrx_pdf::{PdfiumRenderer, RenderOptions, fit_pixel_budget};
 
-/// Frozen prefetch depth (plan §6.2: K=2, internal constant, no CLI knob).
-/// After answering page N the owner keeps pages N+1..=N+K ready.
-const PREFETCH_DEPTH: u32 = 2;
+/// Prefetch depth floor (plan §6.2 froze K=2 for the serial-era pipeline).
+/// Phase-4 W2 unfreezes it: the owner prefetches a FULL window ahead (the
+/// VRAM-tiered window depth), hiding the next window's render burst inside
+/// the current window's decode. The floor keeps tiny-window calls honest.
+const PREFETCH_DEPTH_FLOOR: u32 = 2;
 /// Synchronous request timeout: a real PDFium page op is well under a second;
 /// this only has to catch a deadlocked native call, so it stays generous.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
@@ -113,6 +115,11 @@ enum PdfRequest {
     SwitchDocument {
         input: PathBuf,
     },
+    /// Phase-4 BLK-2: retier the rolling prefetch lookahead after a
+    /// GPU->CPU fallback (the 16 tier is a GPU-VRAM decision only).
+    SetPrefetchDepth {
+        depth: u32,
+    },
 }
 
 enum PdfResponse {
@@ -137,6 +144,10 @@ struct OwnerState<E: PdfiumExecutor> {
     /// T1: measured render work time (µs) of each prefetched page, carried
     /// to the response when the cached entry is consumed.
     prefetch_us: BTreeMap<u32, u64>,
+    /// Phase-4 W2: prefetch lookahead in pages (the VRAM-tiered window
+    /// depth). K=2 was the serial-era floor; a full-window lookahead hides
+    /// the next window's render burst inside the current window's decode.
+    prefetch_depth: u32,
 }
 
 impl<E: PdfiumExecutor> OwnerState<E> {
@@ -164,7 +175,9 @@ impl<E: PdfiumExecutor> OwnerState<E> {
     /// so one bad page never poisons the window.
     fn top_up_prefetch(&mut self, page: u32) {
         self.next_prefetch = self.next_prefetch.max(page.saturating_add(1));
-        let top_exclusive = page.saturating_add(PREFETCH_DEPTH).saturating_add(1);
+        let top_exclusive = page
+            .saturating_add(self.prefetch_depth.max(PREFETCH_DEPTH_FLOOR))
+            .saturating_add(1);
         while self.next_prefetch < top_exclusive {
             let prefetch_page = self.next_prefetch;
             self.next_prefetch += 1;
@@ -278,9 +291,11 @@ impl PdfiumOwnerHandle {
         input: PathBuf,
         options: RenderOptions,
         password: Option<String>,
+        prefetch_depth: u32,
     ) -> Self {
         Self::spawn_with_timeout(
             REQUEST_TIMEOUT,
+            prefetch_depth,
             Box::new(move || {
                 let mut renderer = PdfiumRenderer::new(library_dir);
                 if let Some(password) = password.as_deref() {
@@ -297,6 +312,7 @@ impl PdfiumOwnerHandle {
 
     fn spawn_with_timeout(
         timeout: Duration,
+        prefetch_depth: u32,
         make_executor: Box<dyn FnOnce() -> Box<dyn PdfiumExecutor> + Send>,
     ) -> Self {
         let (requests_tx, requests_rx) = std::sync::mpsc::channel::<PdfRequest>();
@@ -310,6 +326,7 @@ impl PdfiumOwnerHandle {
                     cache: BTreeMap::new(),
                     next_prefetch: 1,
                     prefetch_us: BTreeMap::new(),
+                    prefetch_depth,
                 };
                 for request in requests_rx {
                     let mut pending_prefetch: Option<u32> = None;
@@ -360,6 +377,12 @@ impl PdfiumOwnerHandle {
                             PdfResponse::Switched(
                                 state.executor.switch_document(&input.to_string_lossy()),
                             )
+                        }
+                        PdfRequest::SetPrefetchDepth { depth } => {
+                            // BLK-2: a GPU->CPU fallback drops the 16 tier to
+                            // the floor; the rolling lookahead follows.
+                            state.prefetch_depth = depth.max(PREFETCH_DEPTH_FLOOR);
+                            PdfResponse::Switched(Ok(()))
                         }
                     };
                     if responses_tx.send(response).is_err() {
@@ -416,6 +439,12 @@ impl PdfiumOwnerHandle {
     /// The structured failure when the owner is poisoned, if it is.
     pub(crate) fn poisoned(&self) -> Option<String> {
         self.poison.clone()
+    }
+
+    /// Phase-4 BLK-2: retiers the rolling prefetch lookahead after a
+    /// GPU->CPU fallback (the 16 tier is a GPU-VRAM decision only).
+    pub(crate) fn set_prefetch_depth(&mut self, depth: u32) {
+        let _ = self.request(PdfRequest::SetPrefetchDepth { depth });
     }
 
     /// Switches the active document (X1, BLK-2 §3-2/3-4). `Ok(())` means the
@@ -669,6 +698,7 @@ mod tests {
             let calls = Arc::clone(&self.calls);
             let handle = PdfiumOwnerHandle::spawn_with_timeout(
                 Duration::from_secs(5),
+                2,
                 Box::new(move || Box::new(self) as Box<dyn PdfiumExecutor>),
             );
             (handle, calls)
@@ -839,11 +869,56 @@ mod tests {
     }
 
     #[test]
+    fn full_window_prefetch_hides_the_next_window_render() {
+        // Phase-4 W2: with K = window depth, requesting page 1 prefetches the
+        // whole remaining window (pages 2..=K+1); the subsequent requests are
+        // pure cache hits. FakeExecutor's 6-page ceiling bounds the asserts.
+        let (executor, calls) = FakeExecutor::new();
+        let handle = PdfiumOwnerHandle::spawn_with_timeout(
+            Duration::from_secs(5),
+            6,
+            Box::new(move || Box::new(executor) as Box<dyn PdfiumExecutor>),
+        );
+        let mut handle = handle;
+        let first = handle.render_via(PdfRequest::Render { page: 1 }).unwrap();
+        assert_eq!(page_marker(&first), 11);
+        // Wait for the K=6 top-up: pages 2..=6 rendered on the owner thread.
+        for _ in 0..200 {
+            if calls.load(Ordering::SeqCst) >= 6 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            calls.load(Ordering::SeqCst) >= 6,
+            "K=6 prefetch must render pages 2..=6 (observed calls={})",
+            calls.load(Ordering::SeqCst)
+        );
+        // Pages 2..=6 were prefetched (calls >= 6 covers page 1 + 2..=6), so
+        // consuming them must serve the prefetched values: page 2 is the
+        // fake's injected failure carried as a value, 3..=6 carry the right
+        // doc-tagged markers. The K-ahead window ROLLS (each answer tops up
+        // K more pages beyond it), so background executor calls keep
+        // growing for future pages - that is the design, not a leak.
+        assert!(handle.render_via(PdfRequest::Render { page: 2 }).is_err());
+        for page in 3..=6 {
+            let rendered = handle.render_via(PdfRequest::Render { page }).unwrap();
+            assert_eq!(page_marker(&rendered), 10 + page.min(9));
+        }
+        assert!(
+            calls.load(Ordering::SeqCst) >= 6,
+            "rolling prefetch must keep rendering ahead"
+        );
+        assert!(handle.poisoned().is_none());
+    }
+
+    #[test]
     fn request_timeout_poisons_the_owner_fail_loud() {
         let (mut executor, _calls) = FakeExecutor::new();
         executor.render_delay = Duration::from_millis(300);
         let mut handle = PdfiumOwnerHandle::spawn_with_timeout(
             Duration::from_millis(20),
+            2,
             Box::new(move || Box::new(executor) as Box<dyn PdfiumExecutor>),
         );
         assert!(handle.render_via(PdfRequest::Render { page: 1 }).is_err());
@@ -861,6 +936,7 @@ mod tests {
         executor.panic_on_render = true;
         let mut handle = PdfiumOwnerHandle::spawn_with_timeout(
             Duration::from_secs(5),
+            2,
             Box::new(move || Box::new(executor) as Box<dyn PdfiumExecutor>),
         );
         let error = handle
