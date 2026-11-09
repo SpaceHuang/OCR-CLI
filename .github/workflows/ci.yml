@@ -1,0 +1,55 @@
+name: CI
+
+# Quality gate for pull requests (branch protection requires these checks to
+# merge). Runs the two shipping platforms (Windows x64, macOS arm64) so code
+# cannot land on main that only builds on the developer's machine.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo fmt --check
+        run: cargo fmt --check --all
+
+  check:
+    name: check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Toolchain comes from rust-toolchain.toml (pinned 1.97.1, minimal
+      # profile, rustfmt + clippy); rustup installs it on first cargo call.
+      - uses: Swatinem/rust-cache@v2
+
+      # llama-cpp-sys-2 runs bindgen, which needs libclang. GitHub Windows
+      # runners ship LLVM at this path; macOS resolves it via Xcode CLT.
+      - name: locate libclang (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content $env:GITHUB_ENV 'LIBCLANG_PATH=C:\Program Files\LLVM\bin'
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # Unit + integration tests self-skip when pdfium / GGUF models are
+      # absent (documented contract), so this stays green without runtime
+      # artifacts. Model-gated E2E tests are #[ignore]d.
+      - name: test
+        run: cargo test --workspace --locked
