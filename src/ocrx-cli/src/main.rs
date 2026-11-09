@@ -4931,8 +4931,16 @@ mod tests {
     #[test]
     fn output_dir_for_doc_is_deterministic_and_collision_free_for_same_stems() {
         let root = Path::new("root");
-        let a = Path::new(r"D:\docs\guide.pdf");
-        let b = Path::new(r"D:\other\guide.pdf");
+        // Fixtures must use the host's native separator style: on unix a
+        // backslash path is a single component, so file_stem would swallow
+        // the directory part and break the name assertions below.
+        #[cfg(target_os = "windows")]
+        let (a, b) = (
+            Path::new(r"D:\docs\guide.pdf"),
+            Path::new(r"D:\other\guide.pdf"),
+        );
+        #[cfg(not(target_os = "windows"))]
+        let (a, b) = (Path::new("/docs/guide.pdf"), Path::new("/other/guide.pdf"));
         let dir_a = output_dir_for_doc(root, a);
         let dir_b = output_dir_for_doc(root, b);
         assert_eq!(
