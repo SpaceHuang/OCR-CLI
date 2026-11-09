@@ -174,7 +174,6 @@ pub fn write_page_artifacts_column_split_cancelled(
     progress: &mut dyn FnMut(GenerationProgress),
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     let bands = detect_column_bands(width, height, &rgb8).unwrap_or_else(|| vec![(0, width)]);
-    eprintln!("DBG bands: {:?}", bands);
     let bytes_per_row = width as usize * 3;
     let mut merged_text = String::new();
     let mut merged_raw = String::new();
@@ -183,7 +182,7 @@ pub fn write_page_artifacts_column_split_cancelled(
     let mut warnings: Vec<String> = Vec::new();
     let mut think_blocks_stripped = 0_u32;
     let request = try_request(max_output_tokens).map_err(std::io::Error::other)?;
-    for (index, (x0, x1)) in bands.iter().copied().enumerate() {
+    for (x0, x1) in bands.iter().copied() {
         if cancellation.is_cancelled() {
             return Err(std::io::Error::other("cancelled").into());
         }
@@ -214,10 +213,6 @@ pub fn write_page_artifacts_column_split_cancelled(
         }
         // Bands carry no figure crops of their own: bbox tags are dropped.
         let band_markdown = replace_bbox_images(&crop.text, page, 0);
-        eprintln!(
-            "DBG band {index}: raw={:?} crop={:?} md={:?}",
-            response.raw_output, crop.text, band_markdown
-        );
         if !band_markdown.trim().is_empty() {
             if !merged_text.is_empty() {
                 merged_text.push_str(
@@ -228,7 +223,6 @@ pub fn write_page_artifacts_column_split_cancelled(
             }
             merged_text.push_str(&band_markdown);
         }
-        let _ = index;
     }
     let crop = DegenerateTailCrop {
         text: merged_text.clone(),
@@ -247,7 +241,6 @@ pub fn write_page_artifacts_column_split_cancelled(
         .map_err(|error| format!("adapter: {error:?}"))?;
     let (markdown, dropped_links) =
         drop_invalid_markdown_image_links(&replace_bbox_images(&crop.text, page, 0), &output_root);
-    let mut warnings = warnings;
     if dropped_links > 0 {
         warnings.push("invalid_image_link_dropped".to_owned());
     }
@@ -407,7 +400,7 @@ pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(
     let row_lo = (height as usize * 5 / 100 / stride_y) * stride_y;
     let row_hi = (height as usize * 95 / 100 / stride_y) * stride_y;
     let mut ink = vec![0.0_f32; columns];
-    for cx in 0..columns {
+    for (cx, ink_slot) in ink.iter_mut().enumerate() {
         let x = cx * stride_x;
         let mut dark = 0_usize;
         let mut sampled = 0_usize;
@@ -423,7 +416,7 @@ pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(
             sampled += 1;
             y += stride_y;
         }
-        ink[cx] = dark as f32 / sampled.max(1) as f32;
+        *ink_slot = dark as f32 / sampled.max(1) as f32;
     }
     let smoothed: Vec<f32> = (0..columns)
         .map(|i| {
@@ -436,15 +429,16 @@ pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(
     let band_hi = columns * 92 / 100;
     let median = {
         let mut band = smoothed[band_lo..band_hi].to_vec();
-        band.sort_by(|a, b| a.total_cmp(b));
+        band.sort_by(f32::total_cmp);
         band[band.len() / 2]
     };
     let threshold = (median * 0.45).max(0.015);
     // Interior near-empty runs = valley candidates.
     let mut runs: Vec<(usize, usize)> = Vec::new();
     let mut run_start: Option<usize> = None;
-    for i in band_lo..band_hi {
-        if smoothed[i] <= threshold {
+    for (i, value) in smoothed[band_lo..band_hi].iter().enumerate() {
+        let i = band_lo + i;
+        if *value <= threshold {
             if run_start.is_none() {
                 run_start = Some(i);
             }
@@ -456,13 +450,12 @@ pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(
         runs.push((start, band_hi));
     }
     if runs.len() < 3 {
-        eprintln!("DBG detect: runs={runs:?} threshold={threshold} median={median}");
         return None;
     }
     let min_col = columns * 12 / 100;
     let mut cuts: Vec<usize> = Vec::new();
-    for (start, end) in runs[1..runs.len() - 1].iter() {
-        let center = (start + end) / 2;
+    for &(start, end) in &runs[1..runs.len() - 1] {
+        let center = usize::midpoint(start, end);
         let _ = (start, end);
         let mut bounds = vec![band_lo];
         bounds.extend_from_slice(&cuts);
