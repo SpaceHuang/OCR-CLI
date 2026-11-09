@@ -1946,22 +1946,30 @@ fn load_runtime_with_fallback(
     context_size: u32,
     window_depth: usize,
 ) -> std::io::Result<(LlamaMtmdRuntime, Option<String>, usize)> {
-    // BLK-2 + test seam: when OCRX_E2E_FORCE_RUNTIME_FALLBACK is set, the GPU
-    // load ATTEMPT ITSELF fails deterministically. The injection sits at the
+    // BLK-2: the CPU path always runs the compiled floor depth (the 16 tier
+    // is a GPU-VRAM decision only), loads exactly once, and can never report
+    // a GPU fallback (rereview BLK-3: a failed explicit-CPU load used to be
+    // retried with identical parameters and, on second success, misreported
+    // as "gpu init failed; fallback to cpu").
+    if !gpu {
+        let depth = effective_depth_after_fallback(false, window_depth);
+        return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size, depth)
+            .map(|runtime| (runtime, None, depth))
+            .map_err(std::io::Error::other);
+    }
+    // Test seam: when OCRX_E2E_FORCE_RUNTIME_FALLBACK is set, the GPU load
+    // ATTEMPT ITSELF fails deterministically. The injection sits at the
     // failure point so the code below flows through the real
     // Err(gpu_error) -> CPU load -> Some(warning) branch exactly as it would
     // for a real GPU init failure (rereview BLK-1: skipping ahead to the CPU
     // branch would bypass the warning, the compat-key rebuild, the prefetch
     // retier, and the resume re-match).
-    // BLK-2: the CPU path (and the GPU->CPU fallback) always runs the
-    // compiled floor depth - the 16 tier is a GPU-VRAM decision only.
     let depth = effective_depth_after_fallback(true, window_depth);
-    let gpu_attempt =
-        if gpu && std::env::var("OCRX_E2E_FORCE_RUNTIME_FALLBACK").as_deref() == Ok("1") {
-            Err("test seam: forced GPU load failure".to_owned())
-        } else {
-            LlamaMtmdRuntime::load(model, mmproj, gpu, max_image_tokens, context_size, depth)
-        };
+    let gpu_attempt = if std::env::var("OCRX_E2E_FORCE_RUNTIME_FALLBACK").as_deref() == Ok("1") {
+        Err("test seam: forced GPU load failure".to_owned())
+    } else {
+        LlamaMtmdRuntime::load(model, mmproj, true, max_image_tokens, context_size, depth)
+    };
     match gpu_attempt {
         Ok(runtime) => Ok((runtime, None, depth)),
         Err(gpu_error) => {
@@ -2484,11 +2492,6 @@ fn scan_document(
         ))),
     };
 
-    // BLK-4: prime the first window's renders - they overlap the model's
-    // verify+load (5.3 s) instead of the first window's critical path.
-    pdfium_owner_handle
-        .borrow_mut()
-        .prime_prefetch(u32::try_from(env.window_depth).unwrap_or(2));
     let page_count = match pdfium_owner_handle.borrow_mut().page_count() {
         Ok(count) => count,
         Err(error) => {
@@ -3079,12 +3082,24 @@ fn scan_document(
             .fallback_reason
             .clone()
             .unwrap_or_else(|| "native_validation_failed".to_owned());
+        // Rereview BLK-2: a COMPLETED checkpoint is a reusable final OCR
+        // result. Overwriting it with a pending marker before the actual
+        // runtime configuration is known (and the corrected-key re-match has
+        // run) would destroy exactly the record that --resume reuse depends
+        // on: with `--pdf-mode auto` + GPU->CPU fallback, the early match
+        // uses the GPU-guess key and misses the previous run's CPU-keyed
+        // checkpoints, so this pending write - not the matching - is what
+        // forced the re-recognition. Leave a completed checkpoint on disk;
+        // the service's per-page matching (and the post-fallback re-match)
+        // decides reuse vs reprocess with the ACTUAL key. A pending or
+        // unreadable checkpoint keeps the normal pending write.
+        let checkpoint_path = output.join(format!("page-{:04}.checkpoint", fallback.page));
+        if read_checkpoint(&checkpoint_path).is_ok_and(|checkpoint| checkpoint.complete) {
+            continue;
+        }
         let checkpoint =
             ocrx_output::pending_ocr_checkpoint(fallback.page, compatibility.clone(), reason);
-        if let Err(error) = ocrx_output::write_checkpoint(
-            output.join(format!("page-{:04}.checkpoint", fallback.page)),
-            &checkpoint,
-        ) {
+        if let Err(error) = ocrx_output::write_checkpoint(checkpoint_path, &checkpoint) {
             reporter.error(
                 &ErrorReport {
                     code: 5,
@@ -3489,8 +3504,13 @@ fn scan_document(
                 );
                 // BLK-2: unify depth + compat key with the ACTUAL runtime
                 // (a GPU->CPU fallback drops the 16 tier to the floor).
+                // Rereview BLK-4: the rebuild is keyed on the FALLBACK itself,
+                // never on whether the depth value changed - on a <12 GiB GPU
+                // the depth is already the floor (8 -> 8), but the inference
+                // device still switched to CPU, so `ocr-device` must follow
+                // or the checkpoint misrecords the device that actually ran.
                 let fallback_to_cpu = gpu_fallback_warning.is_some();
-                if fallback_to_cpu && effective_depth != env.window_depth {
+                if fallback_to_cpu {
                     compatibility = with_batch_depth(&compatibility, effective_depth);
                     ocr_compatibility = make_ocr_compatibility(&compatibility, &profile, "cpu");
                 }
@@ -4235,10 +4255,6 @@ fn run_scan_multi(options: ScanOptions) -> ! {
         u32::try_from(window_depth * 2).unwrap_or(2),
     )));
 
-    // BLK-4: prime the first window's renders (overlaps model load).
-    owner
-        .borrow_mut()
-        .prime_prefetch(u32::try_from(window_depth).unwrap_or(2));
     let mut model_slot = ModelSlot::Shared(None);
     let mut documents: Vec<ScanSummaryDocument> = Vec::new();
     let mut cancelled = false;
@@ -4779,16 +4795,17 @@ mod tests {
         aggregate_scan_exit, build_final_ocr_queue, current_platform, doctor_json_report,
         dynamic_fallback_requires_model_assets, effective_depth_after_fallback,
         final_routing_diagnostics, fold_resume_incomplete_checkpoints, format_routing_summary,
-        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure, native_candidate_outcome,
-        native_candidate_pages, native_only_decision, ocr_queue_after_native_phase,
-        output_dir_for_doc, parse_command, parse_injected_failure_page, parse_page_selection,
-        parse_scan_args, pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required,
-        resolve_config, resolve_scan_inputs, restrict_ocr_queue_to_pages, route_native_validation,
-        routing_counts, routing_counts_for_mode, routing_diagnostic_json,
-        routing_diagnostic_with_processing, run_native_first_phase, scan_summary_json,
-        service_pages_from_ocr_queue, should_initialize_ocr_runtime,
-        try_routing_diagnostic_with_processing, validate_text_mode_classifications,
-        with_batch_depth, with_ocr_runtime, write_routing_checkpoint_sidecars,
+        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure,
+        load_runtime_with_fallback, native_candidate_outcome, native_candidate_pages,
+        native_only_decision, ocr_queue_after_native_phase, output_dir_for_doc, parse_command,
+        parse_injected_failure_page, parse_page_selection, parse_scan_args,
+        pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required, resolve_config,
+        resolve_scan_inputs, restrict_ocr_queue_to_pages, route_native_validation, routing_counts,
+        routing_counts_for_mode, routing_diagnostic_json, routing_diagnostic_with_processing,
+        run_native_first_phase, scan_summary_json, service_pages_from_ocr_queue,
+        should_initialize_ocr_runtime, try_routing_diagnostic_with_processing,
+        validate_text_mode_classifications, with_batch_depth, with_ocr_runtime,
+        write_routing_checkpoint_sidecars,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
@@ -4977,6 +4994,92 @@ previous: {}",
         assert_eq!(rebuilt.model, "ovisocr2");
         // Depth unchanged -> key verbatim.
         assert_eq!(with_batch_depth(&key, 16).parameters, key.parameters);
+    }
+
+    #[test]
+    fn low_vram_percall_fallback_rewrites_ocr_device_at_unchanged_depth() {
+        // Rereview BLK-4: on a <12 GiB GPU the fallback is depth 8 -> 8, so a
+        // rebuild gated on a depth CHANGE never fired and the checkpoint kept
+        // ocr-device=vulkan although the actual runtime ran on CPU. The
+        // rebuild is keyed on the fallback itself: the depth stays the floor
+        // and only the device segment follows the real inference device.
+        let requested_key = ocrx_output::CompatibilityKey {
+            input_sha256: "abc".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: concat!(
+                "pdf-mode=auto;quality-tier=l2;platform=windows;dpi=300;",
+                "device=vulkan;batch=8;route=native;ocr-profile=compact;ocr-device=vulkan"
+            )
+            .to_owned(),
+        };
+        // effective_depth_after_fallback(false, 8) == 8: the rebuild runs at
+        // the SAME depth and must still flip ocr-device to cpu.
+        let rebuilt = with_batch_depth(&requested_key, ocrx_core::WINDOW_DEPTH);
+        assert_eq!(
+            rebuilt.parameters,
+            concat!(
+                "pdf-mode=auto;quality-tier=l2;platform=windows;dpi=300;",
+                "device=vulkan;batch=8;route=native;ocr-profile=compact;ocr-device=cpu"
+            )
+        );
+    }
+
+    #[test]
+    fn explicit_cpu_load_failure_is_single_attempt_not_gpu_fallback() {
+        // Rereview BLK-3: an explicit CPU request loads CPU exactly ONCE. A
+        // failed load must surface as its own error - never wrapped in
+        // "gpu load failed ...; cpu fallback failed ..." (both attempts would
+        // be the same CPU load) and never misreported through the
+        // "gpu init failed; fallback to cpu" warning path (there was no GPU).
+        let error = load_runtime_with_fallback(
+            &PathBuf::from("nonexistent-model.gguf"),
+            &PathBuf::from("nonexistent-mmproj.gguf"),
+            false,
+            1024,
+            20_480,
+            ocrx_core::WINDOW_DEPTH,
+        )
+        .expect_err("a nonexistent model must fail to load");
+        let text = error.to_string();
+        assert!(
+            !text.contains("gpu load failed"),
+            "explicit CPU load error must not be framed as a GPU attempt: {text}"
+        );
+        assert!(
+            !text.contains("cpu fallback failed"),
+            "explicit CPU load must not retry with identical parameters: {text}"
+        );
+        assert!(
+            !text.contains("fallback to cpu"),
+            "explicit CPU load must not produce a GPU-fallback warning: {text}"
+        );
+    }
+
+    #[test]
+    fn gpu_load_failure_reports_both_attempts_in_the_combined_error() {
+        // The GPU branch contract, documented from the other side: when the
+        // GPU attempt fails, the CPU fallback attempt runs; if BOTH fail the
+        // caller sees the combined error naming both attempts. (A nonexistent
+        // model fails both loads without needing a real GPU or model.)
+        let error = load_runtime_with_fallback(
+            &PathBuf::from("nonexistent-model.gguf"),
+            &PathBuf::from("nonexistent-mmproj.gguf"),
+            true,
+            1024,
+            20_480,
+            ocrx_core::WINDOW_DEPTH,
+        )
+        .expect_err("both GPU and CPU loads must fail for a nonexistent model");
+        let text = error.to_string();
+        assert!(
+            text.contains("gpu load failed"),
+            "combined error must name the GPU attempt: {text}"
+        );
+        assert!(
+            text.contains("cpu fallback failed"),
+            "combined error must name the CPU fallback attempt: {text}"
+        );
     }
 
     #[test]

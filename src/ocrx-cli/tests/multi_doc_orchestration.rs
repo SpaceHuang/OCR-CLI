@@ -638,6 +638,95 @@ fn resume_reuses_committed_pages_without_fallback() {
 
 #[test]
 #[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
+fn fallback_auto_resume_reuses_native_fallback_page() {
+    // Rereview BLK-2: with --pdf-mode auto, a native-validation-failed page
+    // must not lose its completed OCR checkpoint to a pending overwrite
+    // before the post-fallback compat-key rebuild. Both invocations request
+    // the GPU and fall back to CPU (seam); pass 2 adds --resume. The
+    // auto-fallback page's completed checkpoint (batch=8;ocr-device=cpu)
+    // cannot match the early GPU-guess key (OCR checkpoints match strictly),
+    // so WITHOUT the completed-checkpoint guard the native phase overwrote
+    // it with a pending marker and the page was re-recognized on every
+    // fallback resume.
+    //
+    // Assert: the completed checkpoint's mtime is unchanged across resume
+    // (no pending overwrite, no re-commit) and the page is counted as
+    // completed - reused, not re-recognized.
+    //
+    // Capability gate: same W1.4 exit-6 skip as
+    // `shared_fallback_resume_counts_truncated_once`.
+    let doc = fixture("native-plus-tiny-fallback.pdf");
+    let output = scratch_dir("fallback-auto-resume");
+    std::fs::create_dir_all(&output).unwrap();
+    let scan_args = ["--pdf-mode", "auto", "--device", "vulkan"];
+    let seam_env = [("OCRX_E2E_FORCE_RUNTIME_FALLBACK", "1")];
+
+    // PASS 1: fresh scan; page 2 fails native validation and is OCR'd.
+    let (code1, _stdout1, stderr1) = run_scan_full(&[&doc], &output, &scan_args, &seam_env);
+    if code1 == 6 && stderr1.contains("requested device is unavailable") {
+        eprintln!(
+            "skip: this binary/hardware cannot attempt vulkan, so the \
+             GPU->CPU fallback scenario cannot run here"
+        );
+        let _ = fs::remove_dir_all(&output);
+        return;
+    }
+    assert!(
+        code1 == 0 || code1 == 10,
+        "pass 1 must complete with the fallback (exit {code1})"
+    );
+
+    // Premise: page 2 committed a COMPLETED OCR checkpoint (this is the
+    // record the pending overwrite used to destroy).
+    let ocr_checkpoint = output.join("page-0002.checkpoint");
+    let checkpoint_text = fs::read_to_string(&ocr_checkpoint).unwrap();
+    assert!(
+        checkpoint_text.contains("complete=true"),
+        "pass 1 must commit page 2 as a completed OCR checkpoint:\n{checkpoint_text}"
+    );
+    let before = fs::metadata(&ocr_checkpoint).unwrap().modified().unwrap();
+
+    // PASS 2: resume under the SAME request + forced GPU failure.
+    let mut resume_args = scan_args.to_vec();
+    resume_args.push("--resume");
+    let (code2, _stdout2, _stderr2) = run_scan_full(&[&doc], &output, &resume_args, &seam_env);
+    assert!(
+        code2 == 0,
+        "pass 2 resume must complete successfully (exit {code2})"
+    );
+
+    // Reuse evidence: the completed OCR checkpoint was neither overwritten
+    // with a pending marker nor re-committed.
+    let after = fs::metadata(&ocr_checkpoint).unwrap().modified().unwrap();
+    assert_eq!(
+        before, after,
+        "page-0002.checkpoint was rewritten during resume (pending overwrite or re-recognition?)"
+    );
+
+    let result: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(output.join("result.json")).unwrap())
+            .unwrap_or_else(|error| panic!("result.json: {error}"));
+    assert_eq!(
+        result["pages"]["completed"], 2,
+        "both pages must be completed - page 2 reused, not re-recognized"
+    );
+    assert_eq!(result["pages"]["truncated"], 0);
+    assert_eq!(result["pages"]["failed"], 0);
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|diagnostic| diagnostic["status"] != "partial"),
+        "a reused page must not produce partial diagnostics: {:?}",
+        result["diagnostics"]
+    );
+
+    let _ = fs::remove_dir_all(&output);
+}
+
+#[test]
+#[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
 fn shared_fallback_resume_counts_truncated_once() {
     // Rereview BLK-1/BLK-2: the shared multi-input orchestrator must survive
     // a GPU->CPU runtime fallback on BOTH invocations and count a truncated

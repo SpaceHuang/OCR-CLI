@@ -120,11 +120,6 @@ enum PdfRequest {
     SetPrefetchDepth {
         depth: u32,
     },
-    /// Phase-4 BLK-4: proactively render pages 1..=pages (overlaps the
-    /// model's verify+load).
-    PrimePrefetch {
-        pages: u32,
-    },
 }
 
 enum PdfResponse {
@@ -389,26 +384,6 @@ impl PdfiumOwnerHandle {
                             state.prefetch_depth = depth.max(PREFETCH_DEPTH_FLOOR);
                             PdfResponse::Switched(Ok(()))
                         }
-                        PdfRequest::PrimePrefetch { pages } => {
-                            // BLK-4: render pages 1..=pages proactively - they
-                            // overlap the model's verify+load on the inference
-                            // thread instead of the first window's critical
-                            // path. Errors are cached as values like any
-                            // prefetch.
-                            while state.next_prefetch <= pages {
-                                let prime_page = state.next_prefetch;
-                                state.next_prefetch += 1;
-                                let started = std::time::Instant::now();
-                                let rendered = state.render_direct(prime_page, 1, 1);
-                                if rendered.is_ok() {
-                                    state
-                                        .prefetch_us
-                                        .insert(prime_page, started.elapsed().as_micros() as u64);
-                                }
-                                state.cache.insert(prime_page, rendered);
-                            }
-                            PdfResponse::Switched(Ok(()))
-                        }
                     };
                     if responses_tx.send(response).is_err() {
                         break; // handle dropped: exit (plan §6.2 Drop contract)
@@ -470,13 +445,6 @@ impl PdfiumOwnerHandle {
     /// GPU->CPU fallback (the 16 tier is a GPU-VRAM decision only).
     pub(crate) fn set_prefetch_depth(&mut self, depth: u32) {
         let _ = self.request(PdfRequest::SetPrefetchDepth { depth });
-    }
-
-    /// Phase-4 BLK-4: primes the prefetch window for pages 1..=pages at
-    /// spawn/switch time - the renders then overlap the model's verify+load
-    /// instead of landing on the first window's critical path.
-    pub(crate) fn prime_prefetch(&mut self, pages: u32) {
-        let _ = self.request(PdfRequest::PrimePrefetch { pages });
     }
 
     /// Switches the active document (X1, BLK-2 §3-2/3-4). `Ok(())` means the
