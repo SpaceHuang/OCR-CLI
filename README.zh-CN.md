@@ -1,5 +1,8 @@
 # OCR-CLI（`ocrx`）
 
+[![CI](https://github.com/SpaceHuang/OCR-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/SpaceHuang/OCR-CLI/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SpaceHuang/OCR-CLI)](https://github.com/SpaceHuang/OCR-CLI/releases)
+
 OCR-CLI 是一款本地 Rust 命令行工具，用于通过 OvisOCR2 从 PDF 文档中提取结构化内容。它设计为本地运行，将文档数据保留在主机上，并生成面向 Markdown 格式的 OCR 产物，适合人类或自动化流程进行后续处理。
 
 > **状态：开发预览版**
