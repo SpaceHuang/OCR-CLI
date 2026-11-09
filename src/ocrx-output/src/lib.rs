@@ -372,6 +372,10 @@ pub struct DegenerationRetryStep {
     pub image_tokens: Option<u32>,
     /// Ordered `repeat_penalty -> greedy` decode chain (Q1.2, D-13).
     pub sampling: Option<ocrx_runtime::RetrySampling>,
+    /// Q1.1c candidate C (D-10): whitespace-valley column-split pass - the
+    /// page is re-decoded per detected column band and the band markdowns
+    /// merge in reading order. The heaviest rung: final position only.
+    pub column_split: bool,
 }
 
 impl DegenerationRetryStep {
@@ -382,6 +386,7 @@ impl DegenerationRetryStep {
             perturbed: Some((numerator, denominator)),
             image_tokens: None,
             sampling: None,
+            column_split: false,
         }
     }
 }
@@ -403,6 +408,7 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
         perturbed: None,
         image_tokens: Some(2048),
         sampling: None,
+        column_split: false,
     },
     DegenerationRetryStep {
         perturbed: None,
@@ -411,6 +417,13 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
             repeat_penalty_milli: 1_200,
             penalty_window: 64,
         }),
+        column_split: false,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: None,
+        sampling: None,
+        column_split: true,
     },
 ];
 
@@ -3545,7 +3558,7 @@ mod tests {
         let summary = run_scan_with(&root, &[104], renderer, recognizer, false).unwrap();
         assert_eq!(summary.degenerated_pages, 1);
         let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 3);
+        assert_eq!(checkpoint.attempts, 4);
         assert!(checkpoint.degenerated);
         assert_eq!(checkpoint.raw.as_deref(), Some("page-0104.raw"));
         assert_eq!(
@@ -3609,6 +3622,7 @@ mod tests {
                 degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
+                degenerate_artifact(104),
             ]
             .into_iter()
             .collect(),
@@ -3626,6 +3640,7 @@ mod tests {
             script: [
                 degenerate_artifact(104),
                 degenerate_artifact(104),
+                degenerate_artifact(104),
                 normal_artifact(104),
             ]
             .into_iter()
@@ -3638,7 +3653,7 @@ mod tests {
         let summary = run_scan_with(&root, &[104], renderer, recognizer, true).unwrap();
         assert_eq!(summary.degenerated_pages, 0);
         let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 3);
+        assert_eq!(checkpoint.attempts, 4);
         assert!(!checkpoint.degenerated);
         let document = fs::read_to_string(root.join("document.md")).unwrap();
         assert!(!document.contains('⚠'));
@@ -3714,10 +3729,10 @@ mod tests {
             log: std::rc::Rc::clone(&log),
         };
         // An exhausted script falls back to normal artifacts, so script the
-        // full budget: one degenerate artifact per attempt (3 with the
+        // full budget: one degenerate artifact per attempt (4 with the
         // experiment ladder); the last degenerate artifact commits.
         let recognizer = ScriptedRecognizer {
-            script: (1..=3).map(degenerate_artifact).collect(),
+            script: (1..=4).map(degenerate_artifact).collect(),
             calls: 0,
             retry_calls: 0,
             on_call: None,
