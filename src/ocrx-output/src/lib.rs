@@ -389,11 +389,15 @@ impl DegenerationRetryStep {
 /// Degeneration retry ladder (quality plan Q1.4a): the rungs walked in order
 /// from attempt 2 on, frozen as a data table so the experiment-adjudicated
 /// composition is a single-line change. SCRATCH EXPERIMENT COMPOSITION
-/// (Q1.2/Q1.4c adjudication round, docs/develop/q12-sampling-spike-build-record-2026-11-07.md):
-/// plain 1024 -> token-grid 2048 (E1 25% / E2 79% first-try escape) ->
-/// repeat_penalty 1.2x window 64 (category-effective 21% on formula-type
-/// loops) -> perturbation 0.94x -> perturbation 1.06x. Attempt cap = 5 (D-7).
-/// The main-line default remains the baseline two perturbation rungs.
+/// (Q1.2/Q1.4c adjudication, docs/develop/q12-sampling-spike-build-record-2026-11-07.md §4.2/§5):
+/// plain 1024 -> token-grid 2048 (46 corpus escapes, quality text 0.89) ->
+/// repeat_penalty 1.2x window 64 (2 corpus escapes; 21% standalone marginal
+/// on formula-type loops). Perturbation rungs are EXCLUDED by data: 0
+/// escapes both as the baseline ladder (0/213) and as composed-ladder tail
+/// rungs (0/228 decodes) - dropping the tail cuts worst-case retry cost 40%
+/// with zero outcome change (the 114 residual pages escape on none of the
+/// perturbation decodes). Attempt cap = 3. The main-line default remains the
+/// baseline two perturbation rungs until Q1.3 lands this composition.
 pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
     DegenerationRetryStep {
         perturbed: None,
@@ -408,8 +412,6 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
             penalty_window: 64,
         }),
     },
-    DegenerationRetryStep::perturbed(47, 50),
-    DegenerationRetryStep::perturbed(53, 50),
 ];
 
 pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
@@ -3543,7 +3545,7 @@ mod tests {
         let summary = run_scan_with(&root, &[104], renderer, recognizer, false).unwrap();
         assert_eq!(summary.degenerated_pages, 1);
         let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 5);
+        assert_eq!(checkpoint.attempts, 3);
         assert!(checkpoint.degenerated);
         assert_eq!(checkpoint.raw.as_deref(), Some("page-0104.raw"));
         assert_eq!(
@@ -3604,8 +3606,6 @@ mod tests {
         };
         let recognizer = ScriptedRecognizer {
             script: [
-                degenerate_artifact(104),
-                degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
@@ -3714,10 +3714,10 @@ mod tests {
             log: std::rc::Rc::clone(&log),
         };
         // An exhausted script falls back to normal artifacts, so script the
-        // full budget: one degenerate artifact per attempt (5 with the
+        // full budget: one degenerate artifact per attempt (3 with the
         // experiment ladder); the last degenerate artifact commits.
         let recognizer = ScriptedRecognizer {
-            script: (1..=5).map(degenerate_artifact).collect(),
+            script: (1..=3).map(degenerate_artifact).collect(),
             calls: 0,
             retry_calls: 0,
             on_call: None,

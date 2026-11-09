@@ -584,7 +584,7 @@ fn run_inference_worker(
                         .as_ref()
                         .is_none_or(|(cached, _)| *cached != spec);
                     if needs_rebuild {
-                        let sampler = LlamaSampler::chain_simple(vec![
+                        let retry_chain = LlamaSampler::chain_simple(vec![
                             LlamaSampler::penalties(
                                 model.n_vocab(),
                                 i32::try_from(spec.penalty_window)
@@ -600,7 +600,8 @@ fn run_inference_worker(
                             .with_n_ctx(NonZeroU32::new(load.context_size))
                             .with_op_offload(load.use_gpu)
                             .with_offload_kqv(load.use_gpu);
-                        match model.new_context_with_samplers(&backend, params, [(0, sampler)]) {
+                        match model.new_context_with_samplers(&backend, params, [(0, retry_chain)])
+                        {
                             Ok(created) => retry_context = Some((spec, created)),
                             Err(error) => {
                                 if messages
@@ -1070,7 +1071,7 @@ fn generate_window_pages<'a>(
                 Ok(piece) => slot.output.push_str(&String::from_utf8_lossy(&piece)),
                 Err(error) => {
                     slot.finished = true;
-                    slot.response = Some(Err(error.to_string()));
+                    slot.response = Some(Err(error.clone()));
                     continue;
                 }
             }
@@ -1129,6 +1130,7 @@ fn generate_window_pages<'a>(
 /// One page generation: the former per-call body, unchanged in behavior
 /// (M8/M9 cancellation checkpoints, m14 telemetry-on-cancel, repetition
 /// early-stop) but writing telemetry into the worker's accumulator.
+#[allow(clippy::too_many_arguments)] // mirrors the page loop's parameter set
 fn generate_one_page(
     model: &LlamaModel,
     mtmd: &mut MtmdContext,
