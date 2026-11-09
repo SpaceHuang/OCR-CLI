@@ -1,0 +1,170 @@
+name: Release
+
+# Builds the distributable archives with the existing packaging scripts on
+# both shipping platforms (Windows x64, macOS arm64).
+#
+# - tag push `v*`     -> package + create a GitHub Release with the archives
+# - workflow_dispatch -> package only; artifacts land on the run page for a
+#                        dry-run without publishing anything
+#
+# PDFium binaries are fetched from the frozen baseline (bblanchon/pdfium-binaries
+# chromium/7961, see docs/develop/pdfium-*-release-baseline-*.md) and verified
+# against the pinned archive SHA-256 before packaging. Model weights are never
+# bundled; the packaging scripts enforce that.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            pdfium_asset: pdfium-win-x64.tgz
+            # docs/develop/pdfium-windows-release-baseline-2026-08-11.md §2
+            pdfium_sha256: 88276459349b291c41f10422dad0210f007c04d919c8fa56472b6b7c6406adf4
+            artifact_glob: 'dist/ocrx-*.zip'
+          - os: macos-latest
+            pdfium_asset: pdfium-mac-arm64.tgz
+            # docs/develop/pdfium-macos-release-baseline-2026-08-02.md
+            pdfium_sha256: 1193a771e0bd934530afa3df73a0d44551d8f4078442e290054e6dd38ded960f
+            artifact_glob: 'dist/ocrx-*.tar.gz'
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Full history so the tag-ancestry guard can resolve merge-base.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: Swatinem/rust-cache@v2
+
+      # A release tag must sit on main history: branch protection forbids
+      # direct pushes to main, so this blocks tags cut from stray commits.
+      - name: guard - tag commit must be on main
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $GITHUB_REF_NAME does not point at a commit on main; refusing to build a release from it"
+            exit 1
+          fi
+
+      # Tag pushes must match the workspace version (single source of truth
+      # in [workspace.package]); manual runs package the workspace version.
+      - name: resolve version
+        shell: bash
+        run: |
+          WORKSPACE_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="ocrx") | .version')
+          if [ -z "$WORKSPACE_VERSION" ]; then
+            echo "::error::could not read workspace version via cargo metadata"
+            exit 1
+          fi
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$WORKSPACE_VERSION" ]; then
+              echo "::error::tag version v$TAG_VERSION does not match Cargo.toml workspace version $WORKSPACE_VERSION"
+              exit 1
+            fi
+            VERSION="$TAG_VERSION"
+          else
+            VERSION="$WORKSPACE_VERSION"
+          fi
+          echo "OCRX_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "packaging ocrx $VERSION"
+
+      # llama-cpp-sys-2 runs bindgen, which needs libclang (Windows runners
+      # ship LLVM here; macOS resolves it via Xcode CLT).
+      - name: locate libclang (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content $env:GITHUB_ENV 'LIBCLANG_PATH=C:\Program Files\LLVM\bin'
+
+      # Fetch the frozen-baseline PDFium artifact and verify its archive
+      # SHA-256 before anything consumes it. Extracted layout matches what
+      # the packaging scripts expect (bin/pdfium.dll resp. lib/libpdfium.dylib
+      # plus licenses/ next to it).
+      - name: fetch pinned pdfium
+        shell: bash
+        env:
+          PDFIUM_ASSET: ${{ matrix.pdfium_asset }}
+          PDFIUM_SHA256: ${{ matrix.pdfium_sha256 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/pdfium"
+          cd "$RUNNER_TEMP/pdfium"
+          curl --fail --location --proto-default https --proto-redir https --retry 2 \
+            -o "$PDFIUM_ASSET" \
+            "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7961/$PDFIUM_ASSET"
+          if command -v sha256sum >/dev/null 2>&1; then
+            actual=$(sha256sum "$PDFIUM_ASSET" | awk '{print $1}')
+          else
+            actual=$(shasum -a 256 "$PDFIUM_ASSET" | awk '{print $1}')
+          fi
+          if [ "$actual" != "$PDFIUM_SHA256" ]; then
+            echo "::error::pdfium archive sha256 mismatch (got $actual, want $PDFIUM_SHA256); a new baseline entry is required"
+            exit 1
+          fi
+          tar -xzf "$PDFIUM_ASSET"
+
+      - name: record pdfium path (macos)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "OCRX_PDFIUM_LIBRARY=$RUNNER_TEMP/pdfium/lib/libpdfium.dylib" >> "$GITHUB_ENV"
+
+      - name: record pdfium path (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content $env:GITHUB_ENV "OCRX_PDFIUM_LIBRARY=$env:RUNNER_TEMP\pdfium\bin\pdfium.dll"
+
+      - name: package (macos)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/package-macos-arm64.sh
+
+      # CPU baseline (no -GpuPackages): the script verifies the pinned
+      # pdfium.dll sha256, PE machine type, VC CRT, license set, and writes
+      # SHA256SUMS. GPU variants can be added later by installing the
+      # respective SDK and passing -GpuPackages.
+      - name: package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/package-windows-x64.ps1
+
+      - name: upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: package
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ocrx-*
+          generate_release_notes: true

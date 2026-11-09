@@ -1,5 +1,8 @@
 # OCR-CLI (`ocrx`)
 
+[![CI](https://github.com/SpaceHuang/OCR-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/SpaceHuang/OCR-CLI/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SpaceHuang/OCR-CLI)](https://github.com/SpaceHuang/OCR-CLI/releases)
+
 OCR-CLI is a local Rust command-line tool for extracting structured content from PDF documents with OvisOCR2. It is designed to run locally, keep document data on the host, and produce Markdown-oriented OCR artifacts suitable for further processing by humans or automation.
 
 > **Status: development preview**
