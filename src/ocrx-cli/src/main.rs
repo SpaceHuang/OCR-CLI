@@ -1946,21 +1946,23 @@ fn load_runtime_with_fallback(
     context_size: u32,
     window_depth: usize,
 ) -> std::io::Result<(LlamaMtmdRuntime, Option<String>, usize)> {
-    // BLK-2 + test seam: when OCRX_E2E_FORCE_RUNTIME_FALLBACK is set, the
-    // GPU attempt always fails, exercising the CPU fallback path
-    // deterministically (rereview BLK-1 regression test).
-    let gpu_effective =
-        gpu && std::env::var("OCRX_E2E_FORCE_RUNTIME_FALLBACK").as_deref() != Ok("1");
+    // BLK-2 + test seam: when OCRX_E2E_FORCE_RUNTIME_FALLBACK is set, the GPU
+    // load ATTEMPT ITSELF fails deterministically. The injection sits at the
+    // failure point so the code below flows through the real
+    // Err(gpu_error) -> CPU load -> Some(warning) branch exactly as it would
+    // for a real GPU init failure (rereview BLK-1: skipping ahead to the CPU
+    // branch would bypass the warning, the compat-key rebuild, the prefetch
+    // retier, and the resume re-match).
     // BLK-2: the CPU path (and the GPU->CPU fallback) always runs the
     // compiled floor depth - the 16 tier is a GPU-VRAM decision only.
-    if !gpu_effective {
-        let depth = effective_depth_after_fallback(false, window_depth);
-        return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size, depth)
-            .map(|runtime| (runtime, None, depth))
-            .map_err(std::io::Error::other);
-    }
     let depth = effective_depth_after_fallback(true, window_depth);
-    match LlamaMtmdRuntime::load(model, mmproj, true, max_image_tokens, context_size, depth) {
+    let gpu_attempt =
+        if gpu && std::env::var("OCRX_E2E_FORCE_RUNTIME_FALLBACK").as_deref() == Ok("1") {
+            Err("test seam: forced GPU load failure".to_owned())
+        } else {
+            LlamaMtmdRuntime::load(model, mmproj, gpu, max_image_tokens, context_size, depth)
+        };
+    match gpu_attempt {
         Ok(runtime) => Ok((runtime, None, depth)),
         Err(gpu_error) => {
             let depth = effective_depth_after_fallback(false, window_depth);

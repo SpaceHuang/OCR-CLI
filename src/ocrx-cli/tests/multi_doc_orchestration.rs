@@ -572,12 +572,10 @@ fn gpu_reports_are_per_document_in_orchestrated_runs() {
 
 #[test]
 #[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
-fn gpu_fallback_resume_truncated_page_counted_once() {
-    // Rereview BLK-1: cross-invocation resume must count committed pages
-    // exactly once. Both passes share the same output directory so pass 2
-    // can find pass 1's checkpoints via --resume. The service's
-    // SkipCommitted path counts pages; the CLI must NOT double-count.
-    //
+fn resume_reuses_committed_pages_without_fallback() {
+    // Non-fallback baseline for `shared_fallback_resume_counts_truncated_once`:
+    // a plain single-document `--device cpu` resume must reuse the committed
+    // pages (skip-commit, no re-recognition) without any compat-key rebuild.
     // Assert: pass 1 commits pages, pass 2 skip-commits them (checkpoint
     // timestamps unchanged), document.md has content.
     let doc = fixture("normal-1-page.pdf");
@@ -641,61 +639,181 @@ fn gpu_fallback_resume_truncated_page_counted_once() {
 #[test]
 #[ignore = "set OCRX_E2E_MODEL=1 with installed compact assets and PDFium"]
 fn shared_fallback_resume_counts_truncated_once() {
-    // Rereview BLK-1: Shared multi-input invocation with GPU->CPU fallback
-    // must rebuild the compat key (batch=8, ocr-device=cpu) and the
-    // post-fallback re-match must find committed pages so the service
-    // skip-commits them. Truncated pages must be counted exactly once.
-    let doc_a = fixture("normal-1-page.pdf");
-    let doc_b = fixture("figure-1-page.pdf");
+    // Rereview BLK-1/BLK-2: the shared multi-input orchestrator must survive
+    // a GPU->CPU runtime fallback on BOTH invocations and count a truncated
+    // page exactly once on resume. The seam makes the GPU load ATTEMPT
+    // itself fail, so each pass flows through the real
+    // Err(gpu_error) -> CPU load -> Some(warning) branch: the compat key is
+    // rebuilt (batch floor + ocr-device=cpu), the resume checkpoint matching
+    // re-runs, and pass 2 skip-commits pass 1's pages instead of
+    // re-recognizing them.
+    //
+    // Truncation premise: --max-output-tokens 128 on the dense fixture cuts
+    // the single page at the token budget, committing a truncated=true
+    // checkpoint in pass 1.
+    //
+    // Capability gate: a binary that cannot attempt vulkan (feature compiled
+    // out, no ICD/driver) rejects the device request with exit 6 before the
+    // runtime (W1.4). That environment cannot exercise the fallback, so the
+    // test reports the skip and returns instead of failing.
     let scratch = scratch_dir("shared-fallback-resume");
     std::fs::create_dir_all(&scratch).unwrap();
+    let dense = fixture("dense-text-for-max-tokens.pdf");
+    // Two documents so the invocation is genuinely orchestrated (Shared
+    // slot); distinct stems give distinct <stem>-<hash8> directories.
+    let doc_a = scratch.join("dense-a.pdf");
+    let doc_b = scratch.join("dense-b.pdf");
+    fs::copy(&dense, &doc_a).unwrap();
+    fs::copy(&dense, &doc_b).unwrap();
     let output = scratch.join("shared-output");
+    let seam_env = [("OCRX_E2E_FORCE_RUNTIME_FALLBACK", "1")];
+    let scan_args = ["--device", "vulkan", "--max-output-tokens", "128"];
 
-    // PASS 1: fresh multi-input scan. The seam forces GPU load failure.
-    let (code1, _stdout1, _stderr1) = run_scan_full(
-        &[&doc_a, &doc_b],
-        &output,
-        &["--device", "vulkan"],
-        &[("OCRX_E2E_FORCE_RUNTIME_FALLBACK", "1")],
-    );
-    assert!(
-        code1 == 0 || code1 == 10,
-        "pass 1 must complete (exit {code1})"
-    );
-
-    // Snapshot checkpoints from pass 1.
-    let mut pass1_checkpoint_count = 0;
-    for entry in fs::read_dir(&output).unwrap().filter_map(Result::ok) {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.ends_with(".checkpoint") {
-            pass1_checkpoint_count += 1;
-        }
+    // PASS 1: fresh orchestrated scan; the forced GPU failure falls back to
+    // CPU and commits truncated checkpoints under each doc directory.
+    let (code1, _stdout1, stderr1) =
+        run_scan_full(&[&doc_a, &doc_b], &output, &scan_args, &seam_env);
+    if code1 == 6 && stderr1.contains("requested device is unavailable") {
+        // W1.4 rejected the device request before the runtime: this binary
+        // cannot attempt vulkan (feature compiled out, no ICD/driver), so the
+        // GPU->CPU fallback cannot run here. Report the skip, don't fail.
+        eprintln!(
+            "skip: this binary/hardware cannot attempt vulkan, so the \
+             GPU->CPU fallback scenario cannot run here"
+        );
+        let _ = fs::remove_dir_all(&scratch);
+        return;
     }
     assert!(
-        pass1_checkpoint_count >= 2,
-        "pass 1 must produce checkpoints for both docs (got {pass1_checkpoint_count})"
+        code1 == 0 || code1 == 10,
+        "pass 1 must complete with the fallback (exit {code1})"
     );
 
-    // PASS 2: resume. The rebuilt compat key (batch=8) matches the
-    // checkpoints from pass 1, so the service SkipCommits them.
-    let (code2, _stdout2, _stderr2) = run_scan_full(
-        &[&doc_a, &doc_b],
-        &output,
-        &["--device", "cpu", "--resume"],
-        &[],
-    );
+    // Premise + reuse evidence: each doc directory holds a truncated=true
+    // checkpoint; snapshot the checkpoint mtimes — pass 2 must not rewrite
+    // them (a re-recognition would commit and bump the mtime).
+    let mut pass1_mtimes = std::collections::BTreeMap::new();
+    for doc in [&doc_a, &doc_b] {
+        let dir = doc_dir(&output, doc);
+        let mut truncated_seen = false;
+        let mut checkpoint_count = 0;
+        for entry in fs::read_dir(&dir).unwrap().filter_map(Result::ok) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".checkpoint") {
+                continue;
+            }
+            checkpoint_count += 1;
+            let content = fs::read_to_string(entry.path()).unwrap();
+            truncated_seen |= content.contains("truncated=true");
+            pass1_mtimes.insert(entry.path(), entry.metadata().unwrap().modified().unwrap());
+        }
+        assert!(
+            checkpoint_count >= 1,
+            "pass 1 must commit checkpoints for {}",
+            doc.display()
+        );
+        assert!(
+            truncated_seen,
+            "the dense page must commit a truncated=true checkpoint for {}",
+            doc.display()
+        );
+    }
+
+    // PASS 2: the SAME request (--device vulkan + forced GPU failure) with
+    // --resume. The post-fallback compat-key rebuild must align with pass 1's
+    // checkpoints so they are skip-committed, and the CLI must count the
+    // truncated page exactly once.
+    let mut resume_args = scan_args.to_vec();
+    resume_args.push("--resume");
+    let (code2, _stdout2, _stderr2) =
+        run_scan_full(&[&doc_a, &doc_b], &output, &resume_args, &seam_env);
     assert!(
         code2 == 0 || code2 == 10,
-        "resume must complete (exit {code2})"
+        "pass 2 resume must complete (exit {code2})"
     );
 
-    // Verify: both documents committed with content.
+    // Reuse evidence: no committed checkpoint was rewritten during resume.
+    for (path, before) in &pass1_mtimes {
+        let after = fs::metadata(path).unwrap().modified().unwrap();
+        assert_eq!(
+            *before,
+            after,
+            "checkpoint {} was rewritten during resume (page re-recognized?)",
+            path.display()
+        );
+    }
+
+    // Per-document results. Universal invariants for both documents: the
+    // truncated page is counted exactly once, the diagnostics list exactly
+    // one partial entry for page 1, and the merged document.md has content.
     for doc in [&doc_a, &doc_b] {
-        let doc_dir = doc_dir(&output, doc);
-        let md = doc_dir.join("document.md");
-        assert!(md.is_file(), "document.md must exist for {}", doc.display());
-        let content = fs::read_to_string(&md).unwrap();
-        assert!(!content.trim().is_empty(), "document.md must have content");
+        let dir = doc_dir(&output, doc);
+        let result: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("result.json")).unwrap())
+                .unwrap_or_else(|error| panic!("result.json for {}: {error}", doc.display()));
+        assert_eq!(
+            result["status"],
+            "partial",
+            "truncated page keeps partial status for {}",
+            doc.display()
+        );
+        assert_eq!(
+            result["pages"]["truncated"],
+            1,
+            "truncated page must be counted exactly once for {}",
+            doc.display()
+        );
+        let partials = result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|diagnostic| diagnostic["status"] == "partial")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            partials.len(),
+            1,
+            "exactly one partial diagnostic for {}: {:?}",
+            doc.display(),
+            partials
+        );
+        assert_eq!(partials[0]["page"], 1, "partial diagnostic targets page 1");
+        let md = fs::read_to_string(dir.join("document.md")).unwrap();
+        assert!(
+            !md.trim().is_empty(),
+            "document.md must be merged for {}",
+            doc.display()
+        );
+    }
+
+    // Backend label semantics (M-10): the document whose runtime actually ran
+    // in this invocation reports the ACTUAL fallback device (cpu) and carries
+    // the real fallback branch's warning. The other document's pages were all
+    // resume-reused before any runtime work, so it performed no OCR here and
+    // keeps the requested-device label (the same metadata its individual-scan
+    // counterpart produces); the pages' provenance lives in their checkpoints
+    // (ocr-device=cpu), not in this invocation's backend label.
+    for (doc, expected_backend, expect_fallback_warning) in
+        [(&doc_a, "cpu", true), (&doc_b, "vulkan", false)]
+    {
+        let dir = doc_dir(&output, doc);
+        let result: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("result.json")).unwrap())
+                .unwrap_or_else(|error| panic!("result.json for {}: {error}", doc.display()));
+        assert_eq!(
+            result["backend"],
+            expected_backend,
+            "backend label for {}",
+            doc.display()
+        );
+        let warnings = result["warnings"].as_array().unwrap();
+        assert_eq!(
+            warnings.iter().any(|warning| warning
+                .as_str()
+                .is_some_and(|text| text.starts_with("gpu init failed; fallback to cpu"))),
+            expect_fallback_warning,
+            "fallback warning presence for {}",
+            doc.display()
+        );
     }
 
     let _ = fs::remove_dir_all(&scratch);
