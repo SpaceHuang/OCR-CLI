@@ -61,7 +61,14 @@ When invoking the bundled binary from this Skill directory, set:
   OCRX_PDFIUM_LIBRARY=<absolute-path-to-this-dir>/lib/libpdfium.dylib
 EOF
 (cd "$STAGE" && otool -L bin/ocrx >/dev/null)
-(cd "$STAGE" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS)
+# Hash manifest mirrors the Windows packager's `sha256sum -c` layout and
+# excludes SHA256SUMS itself. The sums are written to a temp file outside
+# the stage first: redirecting straight into "$STAGE/SHA256SUMS" creates
+# the file before `find` runs, which books a self-referential entry
+# holding the hash of an empty file.
+SUMS_TMP="$OUT_DIR/.SHA256SUMS.tmp"
+(cd "$STAGE" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > "$SUMS_TMP")
+mv "$SUMS_TMP" "$STAGE/SHA256SUMS"
 rm -f "$ARCHIVE"
 tar -czf "$ARCHIVE" -C "$OUT_DIR" ocrx
 echo "$ARCHIVE"
