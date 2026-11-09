@@ -313,12 +313,17 @@ mod tests {
         profiler.end(Segment::BatchBuild);
         profiler.count_step();
         profiler.count_token();
-        profiler.close_window(Duration::from_millis(10));
+        // The window total is synthetic (close_window only books the value),
+        // while encode_us measures a real 2ms sleep. It must dominate the
+        // sleep generously: on loaded shared CI runners a 2ms sleep can
+        // overshoot far past its request (macos-latest overran a 10ms
+        // window and broke the invariant below).
+        profiler.close_window(Duration::from_millis(500));
         let profile = profiler.snapshot();
         assert_eq!(profile.windows, 1);
         assert_eq!(profile.steps, 1);
         assert_eq!(profile.tokens, 1);
-        assert_eq!(profile.window_total_us, 10_000);
+        assert_eq!(profile.window_total_us, 500_000);
         assert!(
             profile.encode_us >= 1_000,
             "encode bucket must record sleep"
@@ -342,7 +347,7 @@ mod tests {
         profiler.open_window();
         profiler.close_window(Duration::from_millis(5));
         assert_eq!(profiler.snapshot().windows, 2);
-        assert_eq!(profiler.snapshot().window_total_us, 15_000);
+        assert_eq!(profiler.snapshot().window_total_us, 505_000);
     }
 
     #[test]
