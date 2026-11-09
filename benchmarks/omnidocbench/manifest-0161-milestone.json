@@ -1,0 +1,61 @@
+{
+ "schema_version": 1,
+ "set_id": "omnidocbench-0161-milestone",
+ "purpose": "Identity record for the Q7.2 milestone run (Overall 84.92 all / 81.58 en / 86.83 zh). Experimental 4-rung ladder [2048 -> penalty -> 0.94x -> 1.06x]; column-split NOT in ladder for this run (added later, measured separately on the 54-page newspaper residual: +0.27).",
+ "benchmark": {
+  "name": "OmniDocBench",
+  "version": "v1.6 (main branch, 2026-10-29)",
+  "dataset_revision": "aa1ee96d106dbe53d0ae59474d75c6e6d9b53fec",
+  "gt_pages": 1651,
+  "eval_toolkit_version": "1.6.0",
+  "eval_docker_image": "ghcr.io/zeng-weijun/omnidocbench-eval:repro-ubuntu2204",
+  "eval_match_method": "quick_match",
+  "official_eval_note": "reviewer independently recomputed Overall 84.922157 from the archived metric_result JSONs on this branch; matches the reported summary."
+ },
+ "pipeline": {
+  "source_repo": "scratch/q12-sampling-escape",
+  "source_commit": "90b0b5b (composed degeneration retry ladder - 2048 + penalty rungs)",
+  "binary_note": "Binary bytes NOT retained (rebuilt over by later rungs); identity = source commit + build recipe: cargo build --release -p ocrx --features vulkan, toolchain rustc stable-x86_64, MSVC 14.44, target dir C:/t. Re-link is not byte-reproducible (PE COFF timestamp). Baseline-manifest-grade sha256 therefore unavailable for this run; the final-ladder verification run (manifest-0161-final.json) carries a complete binary sha256.",
+  "wrapper_pins": {
+   "llama-cpp-2": "0.1.161",
+   "llama-cpp-sys-2": "0.1.161"
+  },
+  "backend": "vulkan",
+  "gpu": "RTX 4090D 24GB",
+  "model": "ATH-MaaS/OvisOCR2",
+  "gguf_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+  "profile": "balanced (Q5_K_M)",
+  "ladder": [
+   "plain 1024",
+   "token-grid 2048",
+   "repeat_penalty 1.2x window 64",
+   "perturbed 0.94x",
+   "perturbed 1.06x"
+  ],
+  "attempt_cap": 5,
+  "scan_root": "scans/0161-full-balanced",
+  "predictions_root": "predictions/0161-full-balanced",
+  "scan_ledger": {
+   "pages": 1651,
+   "degenerated": 122,
+   "truncated": 34,
+   "incomplete": 0
+  }
+ },
+ "results": {
+  "overall_all": 84.92,
+  "overall_en": 81.58,
+  "overall_zh": 86.83,
+  "components_all": {
+   "text_1minus_edit": 0.8864,
+   "formula_CDM": 0.9203,
+   "table_TEDS": 0.741
+  },
+  "artifacts": [
+   "reports/omnidocbench-0161-balanced-all_quick_match_metric_result.json",
+   "reports/omnidocbench-0161-balanced-en_quick_match_metric_result.json",
+   "reports/omnidocbench-0161-balanced-zh_quick_match_metric_result.json",
+   "+ run_summary / runtime_environment / stage_execution / per-page detail JSONs (same naming)"
+  ]
+ }
+}
