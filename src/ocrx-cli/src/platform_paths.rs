@@ -197,11 +197,6 @@ mod tests {
     fn home_dir_prefers_home_then_userprofile_then_drive_pair() {
         // Precedence is platform-dependent (Windows: USERPROFILE first, see
         // MINOR 2); assert both orders through the pure helper.
-        let (first, second) = if cfg!(target_os = "windows") {
-            ("C:\\Users\\a", "/Users/a")
-        } else {
-            ("/Users/a", "C:\\Users\\a")
-        };
         assert_eq!(
             home_dir_from_env(Some("/Users/a"), None, None, None).unwrap(),
             PathBuf::from("/Users/a")
@@ -211,17 +206,23 @@ mod tests {
             home_dir_from_env(None, Some("C:\\Users\\a"), None, None).unwrap(),
             PathBuf::from("C:\\Users\\a")
         );
-        // The platform-primary variable wins when both are set.
+        // The platform-primary variable wins when both are set (Windows:
+        // USERPROFILE, elsewhere HOME).
         assert_eq!(
             home_dir_from_env(Some("/Users/a"), Some("C:\\Users\\a"), None, None).unwrap(),
-            PathBuf::from(first)
-        );
-        assert_eq!(
-            home_dir_from_env(Some(second), Some("C:\\Users\\a"), None, None).unwrap(),
             PathBuf::from(if cfg!(target_os = "windows") {
                 "C:\\Users\\a"
             } else {
                 "/Users/a"
+            })
+        );
+        // ...and it still wins regardless of which style of value it carries.
+        assert_eq!(
+            home_dir_from_env(Some("C:\\Users\\a"), Some("/Users/a"), None, None).unwrap(),
+            PathBuf::from(if cfg!(target_os = "windows") {
+                "/Users/a"
+            } else {
+                "C:\\Users\\a"
             })
         );
         // HOMEDRIVE + HOMEPATH fallback, tolerating leading backslash.
@@ -270,10 +271,13 @@ mod tests {
             ),
             PathBuf::from("C:\\Users\\a\\AppData\\Local")
         );
-        // Windows with no LOCALAPPDATA falls back to per-user .ocrx under home.
+        // Windows with no LOCALAPPDATA falls back to per-user .ocrx under
+        // home. Expected is built with Path::join so the assertion is
+        // separator-neutral: the helper joins with the host separator, so a
+        // Windows-style fixture string renders differently on macOS hosts.
         assert_eq!(
             cache_root_from_env(None, None, Some("C:\\Users\\a"), Platform::Windows),
-            PathBuf::from("C:\\Users\\a\\.ocrx")
+            PathBuf::from("C:\\Users\\a").join(".ocrx")
         );
     }
 
