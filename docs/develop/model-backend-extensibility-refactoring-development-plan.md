@@ -1,6 +1,6 @@
 # OCR-CLI 模型后端可扩展架构重构详细开发方案
 
-**文档状态：** 待实施（修订 v7，2026-11-11——新增 §5.8 多模型接入缺口评估（以 OvisOCR3/Xiaomi-OCR-0/MiniCPM-OCR 为用例：P0 规范中间层/网格能力声明/AWQ 政策，P1 prompt 身份/采样映射/块类型扩展/评估归一化）；v6 §3.4 phase-4/质量轮六项实测模式回灌；v5 迁移基线 main `9e0dc29` + pins 0.1.161；v2，2026-11-03——迁移输入基线推进到 main `9e0dc29`（2026-11-11），自 v2（2026-11-03，main `a02d459`）以来的增量全部并入：① 吞吐优化二期/三期/四期落地与收官（批深解冻至 8 + VRAM 分层 16、跨文档编排 X1、插桩通道 T1、S0/BS/P1/P2/P3 no-go、CUDA 集成 NO-GO、滚动预取、PNG 编码出关键路径）；② 质量优化轮全部落地（组合退化阶梯/decode 代次键/strip_think_blocks/链接降级/纯截断重试，Overall 77.99 → 87.85）；③ wrapper pins 修订 0.1.152/0.1.153 → 0.1.161/0.1.161（质量方案 D-2/Q1.3）；原 2026-10-31 范围协调注记的修订要求已并入正文）  
+**文档状态：** 待实施（修订 v7.1，2026-11-11——OvisOCR3/OXR 调研补入 §5.8（OvisOCR3 同构升级候选 GGUF 已有；OXR 需核实 llama.cpp 可运行性）；v7 新增 §5.8 多模型接入缺口评估（以 OvisOCR3/Xiaomi-OCR-0/MiniCPM-OCR 为用例：P0 规范中间层/网格能力声明/AWQ 政策，P1 prompt 身份/采样映射/块类型扩展/评估归一化）；v6 §3.4 phase-4/质量轮六项实测模式回灌；v5 迁移基线 main `9e0dc29` + pins 0.1.161；v2，2026-11-03——迁移输入基线推进到 main `9e0dc29`（2026-11-11），自 v2（2026-11-03，main `a02d459`）以来的增量全部并入：① 吞吐优化二期/三期/四期落地与收官（批深解冻至 8 + VRAM 分层 16、跨文档编排 X1、插桩通道 T1、S0/BS/P1/P2/P3 no-go、CUDA 集成 NO-GO、滚动预取、PNG 编码出关键路径）；② 质量优化轮全部落地（组合退化阶梯/decode 代次键/strip_think_blocks/链接降级/纯截断重试，Overall 77.99 → 87.85）；③ wrapper pins 修订 0.1.152/0.1.153 → 0.1.161/0.1.161（质量方案 D-2/Q1.3）；原 2026-10-31 范围协调注记的修订要求已并入正文）  
 **迁移输入基线（v5 更新 2026-11-11，main `9e0dc29`；v2 基线为 2026-11-03 main `a02d459`，v2→v5 增量见文档状态）：** 吞吐优化方案（`docs/develop/scan-throughput-optimization-development-plan.md`）的 P3（PdfiumOwner 渲染/解码重叠）与 P4（多页合批：P4.1 推理线程 actor、P4.3 窗口解码、P4.4 窗口化扫描编排）已合并进 main；复读退化方案（`docs/develop/repetition-degeneration-detection-recovery-development-plan.md`）已先行合并。本计划按其头部协调注记完成两处冻结范围修订：§2.1 的"多页串行复用"保留项已改为"以已具备合批能力的 `ocrx-runtime` 为迁移输入（批深、窗口协议以 P4 落地形态为准）"；§2.2 的"不引入并发 OCR"已限定为"本重构不新增扫描层并发语义，但须迁移/保留 runtime 已落地的合批能力"。窗口协议冻结值见 `docs/develop/batched-inference-2026-11-02.md`（默认批深 N=4、机制 A 窗口原子提交、`;batch=N` 兼容键、可选窗口方法最小接口面）。本重构以该落地形态为迁移输入，不回退、不重设计窗口协议。  
 **实施范围：** 仅重构现有 OvisOCR2 路径，不接入第二模型  
 **目标读者：** 直接承担本仓库 Rust、CLI、模型资产、扫描流程和质量回归改造的开发与测试人员  
@@ -656,7 +656,7 @@ BackendExecution / WindowFailed / AdapterDecode / Cancelled
 
 调研事实（2026-11-11）：Xiaomi-OCR-0（0.8B，Qwen3.5-0.8B 底座——与 OvisOCR2 同底座，KIE/VQA 能力，
 HF/GitHub 开源）；MiniCPM-OCR 1.0（1.3B，MiniCPM-V 架构，官方量化为 **AWQ W4A16**，另有 qwen3_5 底座 Jev 变体，
-印章/表格/公式/KIE）；OvisOCR3 与 OXR 未查到公开发布，接入前需单独调研。
+印章/表格/公式/KIE）；OvisOCR3 与 OXR 已调研（2026-11-11 补）：**OvisOCR3**（ATH-MaaS，2026-10-20 发布）：0.8B，Qwen3.5-0.8B 底座（与 OvisOCR2 同底座同量化家族），统一 checkpoint 覆盖文档解析/OCR/KIE/图表描述，OmniDocBench **96.74**，社区 GGUF 已有（prithivMLmods/ATH-MaaS-OvisOCR3-GGUF），技术报告 arXiv 2610.33066——接入路径与我们管线完全同构（MTMD + GGUF + mmproj），属**升级候选**而非新家族；**OXR**（SoMarkAI，"Optical Everything Recognition"）：1.3B，输出 Agent-Friendly Markdown/JSON（含表格/公式/版面坐标），自称 olmOCR-Bench/OmniDocBench/DocParsingBench 三榜第一；需单独核实其 llama.cpp 可运行性与输出 schema（无 mmproj 信息）。对缺口清单的修正：P0-1（量化格式）对 OvisOCR3 直接消解（GGUF 已有）；P0-2/P0-3（规范中间层/网格能力）对两者仍然成立（各模型输出 schema 与网格语义不同）；OXR 的版面坐标输出与我们 bbox 语义相近但格式待核实。
 
 以"接入这批模型"审 v6 架构，缺口按优先级：
 
