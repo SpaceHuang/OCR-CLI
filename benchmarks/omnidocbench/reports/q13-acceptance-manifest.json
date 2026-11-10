@@ -1,0 +1,52 @@
+{
+ "schema_version": 1,
+ "set_id": "q13-acceptance-evidence",
+ "source_repo": "feature/q13-sampling-landing",
+ "source_head": "c3a1d31..f20ebad (landing branch tip)",
+ "ocrx_binary": "C:/t/release/ocrx.exe",
+ "ocrx_binary_sha256": "04306fe7e5ff214cc75a90d2cc0777055fe9fe584fc686b770a13538e045ff6b",
+ "wrapper_pins": {
+  "llama-cpp-2": "0.1.161",
+  "llama-cpp-sys-2": "0.1.161"
+ },
+ "model_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+ "profile_scan_command": "ocrx scan pdfs -o scans/<name> --model ovisocr2 --model-profile <p> --dpi 300 --non-interactive",
+ "scan_ledgers": {
+  "q13-landing-full-balanced": {
+   "profile": "balanced",
+   "run": "O-3 merge-candidate acceptance",
+   "pages": 1651,
+   "degenerated": 115,
+   "truncated": 7,
+   "incomplete": 0,
+   "decode2_key_checkpoints": 1651
+  },
+  "q13-final-compact": {
+   "profile": "compact",
+   "run": "O-4 final eval",
+   "pages": 1651,
+   "degenerated": 105,
+   "truncated": 7,
+   "incomplete": 0,
+   "decode2_key_checkpoints": 1651
+  },
+  "q13-final-quality": {
+   "profile": "quality",
+   "run": "O-4 final eval",
+   "pages": 1651,
+   "degenerated": 110,
+   "truncated": 11,
+   "incomplete": 0,
+   "decode2_key_checkpoints": 1651
+  },
+  "q13-final-reference": {
+   "profile": "reference",
+   "run": "O-4 final eval",
+   "pages": 1651,
+   "degenerated": 118,
+   "truncated": 7,
+   "incomplete": 0,
+   "decode2_key_checkpoints": 1651
+  }
+ }
+}

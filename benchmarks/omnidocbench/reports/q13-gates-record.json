@@ -1,0 +1,10 @@
+{
+ "schema_version": 1,
+ "gate_record": "q13 landing branch workspace gates (rerun for O-3/O-4 evidence)",
+ "source_head": "9e0dc29ddbfc27721f670321b43c6623ae81466e",
+ "date": "2026-11-11",
+ "workspace_test_suites_ok": 27,
+ "fmt_check": "pass",
+ "clippy_deny_warnings": "pass",
+ "binary_sha256": "04306fe7e5ff214cc75a90d2cc0777055fe9fe584fc686b770a13538e045ff6b"
+}
