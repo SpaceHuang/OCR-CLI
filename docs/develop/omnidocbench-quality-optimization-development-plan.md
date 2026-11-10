@@ -295,7 +295,7 @@ balanced (Q5_K_M) 全集 Overall = **77.99**（复算 77.9909，与官方一致�
 |---|---|---|---|
 | O-1 | Q1.3 落地：0.1.161 pins 修订 v2 计划 §2.2 + `;decode=<gen>` 代次键 + 新旧不混扫回归 | **已完成**（landing 分支 c3a1d31：DECODE_GENERATION=2 入兼容参数，旧代次失配即 Reprocess；v2 计划 §2.2 修订随合 main 提交） | feature/q13-sampling-landing |
 | O-2 | Q1.5/D-14：`truncated` 进阶梯（串行+批量触发）+ 场景 C 重写（4 档行走，resume 口径不变） | **已完成**（landing 分支） | 同上 |
-| O-3 | 对实际合并候选重跑全仓门禁 + 全量 balanced 验收（BLK-3） | **进行中**：合并候选（q13 landing 分支，decode 键 + Q1.5 + O-5 已入）全仓门禁 27 套件绿；Q1.3 金集代次自一致 91/91 逐字节（双扫 2026-11-10）；全量 balanced 复评排队 | landing 分支 |
+| O-3 | 对实际合并候选重跑全仓门禁 + 全量 balanced 验收（BLK-3） | **已完成（2026-11-10）：Overall 87.8527（超实验栈 +1.88、超 GO 线 +2.85，基线 +9.86）；截断 38→7（Q1.5 收益兑现）；decode=2 代次键全覆盖 1651 checkpoint；契约验收全过。官方产物已归档** | landing 分支 |
 | O-4 | 四档终评 | 未开始 | O-3 之后 |
 | O-5 | 切栏档类型门控产品化 | **已完成**（`--column-split-retry on|off`，默认 on；公式密集集建议 off 已写入帮助与方案） | 同上 |
 
