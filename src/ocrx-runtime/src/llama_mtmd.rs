@@ -194,6 +194,7 @@ impl LlamaMtmdRuntime {
         use_gpu: bool,
         image_tokens: u32,
         context_size: u32,
+        window_depth: usize,
     ) -> Result<Self, String> {
         let payload = WorkerLoad {
             model_path: model_path.as_ref().to_path_buf(),
@@ -201,6 +202,7 @@ impl LlamaMtmdRuntime {
             use_gpu,
             image_tokens,
             context_size,
+            window_depth,
         };
         let (requests_tx, requests_rx) = std::sync::mpsc::channel::<WorkerRequest>();
         let (messages_tx, messages_rx) = std::sync::mpsc::channel::<WorkerMessage>();
@@ -376,6 +378,9 @@ struct WorkerLoad {
     use_gpu: bool,
     image_tokens: u32,
     context_size: u32,
+    /// Phase-4 W1: VRAM-tiered window depth (16 on >=12 GiB GPUs, else 8).
+    /// Reserves the window context capacity at load time.
+    window_depth: usize,
 }
 
 /// The inference thread: sole owner of the llama.cpp stack. The decode
@@ -490,6 +495,7 @@ fn run_inference_worker(
                     &mut window_context,
                     load.image_tokens,
                     load.use_gpu,
+                    load.window_depth,
                     &requests,
                     &cancellation,
                     &mut telemetry,
@@ -567,8 +573,12 @@ fn page_context_budget(image_tokens: u32, request: &InferenceRequest) -> u32 {
 /// first request's budget. Equal-budget windows get budget x depth exactly;
 /// mixed-budget windows over-provision the low-budget slots, which keeps
 /// every page inside its own context for the whole window.
-fn window_context_capacity(image_tokens: u32, requests: &[InferenceRequest]) -> u32 {
-    let depth = requests.len().max(super::WINDOW_DEPTH) as u64;
+fn window_context_capacity(
+    image_tokens: u32,
+    requests: &[InferenceRequest],
+    window_depth: usize,
+) -> u32 {
+    let depth = requests.len().max(window_depth) as u64;
     let max_budget = requests
         .iter()
         .map(|request| u64::from(page_context_budget(image_tokens, request)))
@@ -615,6 +625,7 @@ fn generate_window_pages<'a>(
     window_context: &mut Option<(u32, LlamaContext<'a>)>,
     image_tokens: u32,
     use_gpu: bool,
+    window_depth: usize,
     requests: &[InferenceRequest],
     cancellation: &CancellationToken,
     telemetry: &mut RuntimeTelemetry,
@@ -623,10 +634,11 @@ fn generate_window_pages<'a>(
     if requests.is_empty() {
         return (Vec::new(), StepProfile::default());
     }
-    // Size the window context for the worst case of a full WINDOW_DEPTH
-    // window (tail windows reuse it with fewer live slots).
-    let depth = requests.len().max(super::WINDOW_DEPTH);
-    let n_ctx = window_context_capacity(image_tokens, requests);
+    // Size the window context for the worst case of a full-depth window
+    // (tail windows reuse it with fewer live slots). Phase-4 W1: the depth
+    // is VRAM-tiered at load time (16 on >=12 GiB GPUs, else 8).
+    let depth = requests.len().max(window_depth);
+    let n_ctx = window_context_capacity(image_tokens, requests, window_depth);
     let needs_rebuild = window_context
         .as_ref()
         .is_none_or(|(capacity, _)| *capacity < n_ctx);
@@ -1497,7 +1509,11 @@ mod tests {
         let image_tokens = 1024_u32;
         let low_budget = image_tokens + 64 + 1;
         let high_budget = image_tokens + 64 + 8192;
-        let capacity = super::window_context_capacity(image_tokens, &[low.clone(), high.clone()]);
+        let capacity = super::window_context_capacity(
+            image_tokens,
+            &[low.clone(), high.clone()],
+            depth as usize,
+        );
         // max budget x slots: >= the sum of both slots' budgets.
         assert!(
             capacity >= low_budget + high_budget,
@@ -1514,17 +1530,24 @@ mod tests {
         // Every window reserves full WINDOW_DEPTH slots so the context is
         // reused across compositions without reallocation: a smaller window
         // provisions exactly like a full one.
-        let equal = super::window_context_capacity(image_tokens, &[high.clone(), high.clone()]);
+        let equal = super::window_context_capacity(
+            image_tokens,
+            &[high.clone(), high.clone()],
+            depth as usize,
+        );
         assert_eq!(equal, high_budget * depth);
-        let tail = super::window_context_capacity(image_tokens, &[high]);
+        let tail = super::window_context_capacity(image_tokens, &[high], depth as usize);
         assert_eq!(tail, high_budget * depth);
-        // Stage C (depth 8) budget bound: the reference profile's worst-case
-        // window context stays inside the model's 262,144 training window.
+        // Phase-4 W1 (per-sequence bound): the RESERVATION spans depth slots,
+        // but RoPE positions are per sequence - actual positions never exceed
+        // one page's budget (image tokens + 64 + max output), which is
+        // depth-independent and stays inside the 262,144 training window.
+        // (The depth-16 probe measured n_ctx_seq 17,664 and similarity
+        // 1.000000 vs the depth-8 reference.)
         let reference_budget = 1024_u32 + 64 + 16_384;
         assert!(
-            u64::from(reference_budget * depth) <= 262_144,
-            "depth {depth} window context {} exceeds the training window",
-            reference_budget * depth,
+            reference_budget <= 262_144,
+            "per-sequence budget {reference_budget} exceeds the training window"
         );
         let _ = low;
     }
@@ -1539,6 +1562,7 @@ mod tests {
             false,
             1024,
             20_480,
+            8,
         )
         .unwrap_err();
         assert!(!error.is_empty());
@@ -1626,6 +1650,7 @@ mod tests {
             false,
             1024,
             20_480,
+            8,
         )
         .expect("reference profile loads on the actor");
         assert_eq!(runtime.info().backend, Backend::Cpu);
@@ -1721,6 +1746,7 @@ mod tests {
             false,
             1024,
             20_480,
+            8,
         )
         .expect("reference profile loads on the actor");
         let image = vec![200_u8; 64 * 64 * 3];
