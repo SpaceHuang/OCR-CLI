@@ -872,7 +872,12 @@ where
             };
             match recognized {
                 Ok(artifact) => {
-                    if artifact.degenerated && attempts <= DEGENERATION_RETRY_LADDER.len() as u32 {
+                    // Q1.5/D-14: pure truncation enters the ladder too — Q5.1
+                    // showed 24/28 truncated pages are long-period loops
+                    // evading the detector; the ladder rungs (2048/penalty/
+                    // column-split) are the only re-read chance they get.
+                    let ladder_worthy = artifact.degenerated || artifact.truncated;
+                    if ladder_worthy && attempts <= DEGENERATION_RETRY_LADDER.len() as u32 {
                         continue;
                     }
                     return SerialOutcome::Terminal(Ok((image, artifact, attempts)));
@@ -1169,10 +1174,9 @@ where
                         continue;
                     }
                 };
-                if artifact.degenerated {
-                    // Retry budget mirrors the serial machine: the batched
-                    // call was attempt 1, so the ladder table provides the
-                    // remaining perturbed retries (attempts 2..=1+len).
+                if artifact.degenerated || artifact.truncated {
+                    // Q1.5/D-14: truncated window pages retry through the
+                    // ladder exactly like degenerated ones.
                     match self.serial_attempt_outcome(model, page, 2, cancellation, heartbeat) {
                         SerialOutcome::RenderFailed { cancelled } => {
                             terminal.push(TerminalPage::RenderFailed { page, cancelled });
@@ -3632,6 +3636,7 @@ mod tests {
         let recognizer = ScriptedRecognizer {
             script,
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3959,7 +3964,10 @@ mod tests {
         // exactly one diagnostic for the page.
         let root = test_dir("shared-fallback-truncated-once");
         let _ = fs::remove_dir_all(&root);
-        let script = std::collections::VecDeque::from(vec![PageArtifactResult {
+        // Q1.5/D-14: the truncated page walks the full 4-rung ladder before
+        // committing truncated — the once-only PAGE count is what this test
+        // guards (per-attempt artifacts are not page counts).
+        let script = std::collections::VecDeque::from((1..=4).map(|_| PageArtifactResult {
             png: Some(vec![1]),
             think_blocks_stripped: 0,
             markdown: "page 1 truncated content".to_owned(),
@@ -3968,10 +3976,11 @@ mod tests {
             degenerated: false,
             warnings: vec!["truncated".to_owned()],
             raw_output: String::new(),
-        }]);
+        }).collect::<Vec<_>>());
         let recognizer = ScriptedRecognizer {
             script,
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -4247,7 +4256,11 @@ mod tests {
     }
 
     #[test]
-    fn scenario_c_pure_truncation_never_retries_and_resumes_as_committed() {
+    fn scenario_c_pure_truncation_retries_through_ladder_then_resumes_committed() {
+        // Q1.5/D-14 (v1.5.2): pure truncation ENTERS the ladder — Q5.1 showed
+        // 24/28 truncated pages are long-period loops evading the detector.
+        // Resume disposition unchanged: the committed truncated page stays
+        // reusable (SkipCommitted) on resume.
         let root = test_dir("scenario-c");
         let _ = fs::remove_dir_all(&root);
         let truncated_only = PageArtifactResult {
@@ -4259,7 +4272,14 @@ mod tests {
             calls: std::collections::VecDeque::new(),
         };
         let recognizer = ScriptedRecognizer {
-            script: [truncated_only].into_iter().collect(),
+            script: [
+                truncated_only.clone(),
+                truncated_only.clone(),
+                truncated_only.clone(),
+                truncated_only,
+            ]
+            .into_iter()
+            .collect(),
             calls: 0,
             retry_calls: 0,
             on_call: None,
@@ -4269,7 +4289,7 @@ mod tests {
         assert_eq!(summary.truncated_pages, 1);
         assert_eq!(summary.degenerated_pages, 0);
         let checkpoint = super::read_checkpoint(root.join("page-0005.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 1);
+        assert_eq!(checkpoint.attempts, 4);
         assert_eq!(checkpoint.raw, None);
         assert_eq!(
             checkpoint.resume_action(&degeneration_compatibility(), &root, 5),

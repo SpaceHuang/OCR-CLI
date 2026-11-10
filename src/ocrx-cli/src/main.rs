@@ -82,6 +82,9 @@ struct ScanOptions {
     keep_pages: bool,
     /// PDF open password (--password). Sensitive: never printed or logged.
     password: Option<String>,
+    /// Q1.1c/D-10 (O-5): enable the column-split retry rung. Default on;
+    /// formula-dense document sets measured harmful - pass --column-split-retry off.
+    column_split_retry: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +157,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         non_interactive: false,
         keep_pages: false,
         password: None,
+        column_split_retry: true,
     };
     let mut index = 1;
     while index < args.len() {
@@ -2082,6 +2086,11 @@ struct OvisRecognizer {
     step_profile_base: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
     /// T1: PNG encode timing sink; clone of the scan's shared recorder.
     commit_recorder: ocrx_output::commit_profile::CommitRecorder,
+    /// Q1.1c/D-10 type gate (O-5): the column-split rung engages only when
+    /// enabled. Default on (newspaper-class residual empirically positive);
+    /// formula-dense document sets (academic/exam) measured HARMFUL
+    /// (text 0.18 -> 0.13, formulas cut cross-band) - pass off for those.
+    column_split_enabled: bool,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     /// Phase-4 W3: donates the production encoder - the scan service's
@@ -2161,6 +2170,11 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         cancellation: &CancellationToken,
         progress: &mut dyn FnMut(GenerationProgress),
     ) -> std::io::Result<PageArtifactResult> {
+        if step.column_split && !self.column_split_enabled {
+            // O-5 type gate: disabled for this scan - the rung is skipped
+            // (the page commits from the penalty rung's last state).
+            return self.recognize_artifact_cancelled(model, page, image, cancellation, progress);
+        }
         if step.column_split {
             // Q1.1c final rung: whitespace-valley column bands, one plain
             // decode per band, band markdowns merged in reading order.
@@ -2188,7 +2202,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
                 .write_to(&mut png, ImageFormat::Png)
                 .map_err(std::io::Error::other)?;
             return Ok(PageArtifactResult {
-                png: png.into_inner(),
+                png: Some(png.into_inner()),
                 markdown: artifact.markdown,
                 page_json: artifact.page_json,
                 truncated: artifact.truncated,
@@ -2230,7 +2244,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             .write_to(&mut png, ImageFormat::Png)
             .map_err(std::io::Error::other)?;
         Ok(PageArtifactResult {
-            png: png.into_inner(),
+            png: Some(png.into_inner()),
             markdown: artifact.markdown,
             page_json: artifact.page_json,
             truncated: artifact.truncated,
@@ -2854,6 +2868,7 @@ fn scan_document(
         telemetry_base: Rc::clone(&telemetry_base),
         step_profile_base: Rc::clone(&step_profile_base),
         commit_recorder: commit_recorder.clone(),
+        column_split_enabled: options.column_split_retry,
     };
     // Phase-4 W3: extract the donated PNG encoder before the recognizer
     // moves into the scan service.
@@ -2902,7 +2917,7 @@ fn scan_document(
         // share one key). Checkpoints written before this field exist no
         // longer match and are reprocessed instead of resumed.
         parameters: format!(
-            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};batch={};route=native",
+            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};batch={};route=native;decode={}",
             ocrx_output::pdf_compatibility_parameters(
                 &options.pdf_mode,
                 &options.quality_tier,
@@ -2914,7 +2929,8 @@ fn scan_document(
             options.max_image_tokens.unwrap_or(1024),
             options.context_size.unwrap_or(20_480),
             options.device,
-            window_depth
+            window_depth,
+            ocrx_runtime::DECODE_GENERATION
         ),
     };
     let mut initial_queue = if options.resume {
@@ -5391,6 +5407,7 @@ previous: {}",
                 non_interactive: false,
                 keep_pages: false,
                 password: None,
+                column_split_retry: true,
             })
         );
         assert!(parse_scan_args(&["input.pdf", "--model", "other"]).is_err());
@@ -6702,6 +6719,7 @@ previous: {}",
                 non_interactive: false,
                 keep_pages: false,
                 password: None,
+                column_split_retry: true,
             }))
         );
         assert_eq!(
