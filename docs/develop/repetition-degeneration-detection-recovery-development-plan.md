@@ -74,7 +74,7 @@ ocrx-runtime::LlamaMtmdRuntime::generate_with_progress        纯贪心 argmax �
 
 ### 2.3 行为基线
 
-- 对金集 30 页与仓库内全部现有 fixture：page.json、document.md、result.json 中除本文明确新增的字段外逐字节不变；新增字段在这些页面上取“无退化”缺省值（机械比对规则见 §5.3）。
+- 对金集 30 页与仓库内全部现有 fixture：page.json、document.md、result.json 中除本文明确新增的字段外逐字节不变；新增字段在这些页面上取“无退化”缺省值（机械比对规则见 §5.3）（**代次内门禁**——跨解码代次按上方 v1.5.1 代次注记处置，不适用零差异）；
 - `PageDocument::SCHEMA_VERSION` 保持 1；`result.json` 的 `schema_version` 保持 3；checkpoint 保持 v5。所有变更均为加法（见 §3.3 兼容性矩阵）。
 - 退出码表（`ErrorKind`）不变。
 - 裁剪操作必须幂等：对已裁剪文本再次裁剪**不新增任何删除、不新增任何警告**（第二次调用的检测标志自然为 false，§5.1 单测覆盖），保证“入口裁剪一次 + 独立路径二次进入”不会二次删内容。
