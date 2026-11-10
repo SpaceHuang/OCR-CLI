@@ -1,6 +1,6 @@
 # OCR-CLI 模型后端可扩展架构重构详细开发方案
 
-**文档状态：** 待实施（修订 v6，2026-11-11——新增 §3.4：phase-4/质量轮六项实测模式回灌为契约级修订（执行变体入请求、重试策略归扫描应用、请求↔页面非对应、响应无栅格、解码代次平台身份、协议归一化单源）；v5 迁移基线推进（main `9e0dc29`）+ pins 0.1.161；v2，2026-11-03——迁移输入基线推进到 main `9e0dc29`（2026-11-11），自 v2（2026-11-03，main `a02d459`）以来的增量全部并入：① 吞吐优化二期/三期/四期落地与收官（批深解冻至 8 + VRAM 分层 16、跨文档编排 X1、插桩通道 T1、S0/BS/P1/P2/P3 no-go、CUDA 集成 NO-GO、滚动预取、PNG 编码出关键路径）；② 质量优化轮全部落地（组合退化阶梯/decode 代次键/strip_think_blocks/链接降级/纯截断重试，Overall 77.99 → 87.85）；③ wrapper pins 修订 0.1.152/0.1.153 → 0.1.161/0.1.161（质量方案 D-2/Q1.3）；原 2026-10-31 范围协调注记的修订要求已并入正文）  
+**文档状态：** 待实施（修订 v7，2026-11-11——新增 §5.8 多模型接入缺口评估（以 OvisOCR3/Xiaomi-OCR-0/MiniCPM-OCR 为用例：P0 规范中间层/网格能力声明/AWQ 政策，P1 prompt 身份/采样映射/块类型扩展/评估归一化）；v6 §3.4 phase-4/质量轮六项实测模式回灌；v5 迁移基线 main `9e0dc29` + pins 0.1.161；v2，2026-11-03——迁移输入基线推进到 main `9e0dc29`（2026-11-11），自 v2（2026-11-03，main `a02d459`）以来的增量全部并入：① 吞吐优化二期/三期/四期落地与收官（批深解冻至 8 + VRAM 分层 16、跨文档编排 X1、插桩通道 T1、S0/BS/P1/P2/P3 no-go、CUDA 集成 NO-GO、滚动预取、PNG 编码出关键路径）；② 质量优化轮全部落地（组合退化阶梯/decode 代次键/strip_think_blocks/链接降级/纯截断重试，Overall 77.99 → 87.85）；③ wrapper pins 修订 0.1.152/0.1.153 → 0.1.161/0.1.161（质量方案 D-2/Q1.3）；原 2026-10-31 范围协调注记的修订要求已并入正文）  
 **迁移输入基线（v5 更新 2026-11-11，main `9e0dc29`；v2 基线为 2026-11-03 main `a02d459`，v2→v5 增量见文档状态）：** 吞吐优化方案（`docs/develop/scan-throughput-optimization-development-plan.md`）的 P3（PdfiumOwner 渲染/解码重叠）与 P4（多页合批：P4.1 推理线程 actor、P4.3 窗口解码、P4.4 窗口化扫描编排）已合并进 main；复读退化方案（`docs/develop/repetition-degeneration-detection-recovery-development-plan.md`）已先行合并。本计划按其头部协调注记完成两处冻结范围修订：§2.1 的"多页串行复用"保留项已改为"以已具备合批能力的 `ocrx-runtime` 为迁移输入（批深、窗口协议以 P4 落地形态为准）"；§2.2 的"不引入并发 OCR"已限定为"本重构不新增扫描层并发语义，但须迁移/保留 runtime 已落地的合批能力"。窗口协议冻结值见 `docs/develop/batched-inference-2026-11-02.md`（默认批深 N=4、机制 A 窗口原子提交、`;batch=N` 兼容键、可选窗口方法最小接口面）。本重构以该落地形态为迁移输入，不回退、不重设计窗口协议。  
 **实施范围：** 仅重构现有 OvisOCR2 路径，不接入第二模型  
 **目标读者：** 直接承担本仓库 Rust、CLI、模型资产、扫描流程和质量回归改造的开发与测试人员  
@@ -651,6 +651,45 @@ BackendExecution / WindowFailed / AdapterDecode / Cancelled
 错误消息可以补充结构化 cause，但 stdout/stderr 通道、JSON 外层 schema 和敏感信息脱敏规则不能改变。密码、prompt 内容、token、授权信息和代理凭据不写入报告。
 
 ---
+
+### 5.8 多模型接入缺口评估（v7 新增，2026-11-11——以 OvisOCR3/Xiaomi-OCR-0/MiniCPM-OCR 1.0 为验收用例审架构）
+
+调研事实（2026-11-11）：Xiaomi-OCR-0（0.8B，Qwen3.5-0.8B 底座——与 OvisOCR2 同底座，KIE/VQA 能力，
+HF/GitHub 开源）；MiniCPM-OCR 1.0（1.3B，MiniCPM-V 架构，官方量化为 **AWQ W4A16**，另有 qwen3_5 底座 Jev 变体，
+印章/表格/公式/KIE）；OvisOCR3 与 OXR 未查到公开发布，接入前需单独调研。
+
+以"接入这批模型"审 v6 架构，缺口按优先级：
+
+**P0（阻断接入，v2 范围内须解决）**
+
+1. **量化格式单一**：runtime 仅消费 GGUF+mmproj；MiniCPM-OCR 官方量化为 AWQ W4A16。决策点：
+   manifest 强制 GGUF（要求上游/社区转换）或引入非 llama.cpp runtime（此前裁决 not-now，需重新裁决）。
+2. **规范中间层未形式化**：现行"通用响应"实为 Ovis 形状 markdown 的隐式契约（bbox_{l,t,r,b} [0,1000) 缩放、
+   `<think>` 泄漏、HTML 表格约定）。每个新模型的协议约定不同——须定义形式化规范中间层：
+   `ProtocolAdapter` 输出**规范几何（归一化坐标）+ 规范块类型**的中间表示，`OcrPageParser` 消费规范表示而非
+   Ovis 形状文本；否则每个新模型都会 fork parser。v2 的 T007 系列任务须按此细化。
+3. **token 网格契约 Ovis 专属**：`image_tokens_override` 假设 min==max 的 MTMD 网格绑定；MiniCPM-V 为
+   per-image 切片预算机制。§3.4 第 1 条的执行变体须改写为 **adapter 声明的网格能力**（声明支持的预算语义枚举），
+   请求引用能力而非硬编码语义。
+
+**P1（接入会痛，v2 范围内一并解决）**
+
+4. **prompt schema 身份全局化**：现行 `prompt_schema_version=1` 为全局值——须改为 per-adapter 身份
+   （每模型自有 prompt + 版本号），执行身份（§5.1）与 checkpoint 兼容串随动。
+5. **采样链跨 runtime 映射**：`RetrySampling` 规格基于 llama.cpp sampler API；跨 runtime 需映射层
+   （单 llama.cpp 期内无成本，新增 runtime 时生效）。
+6. **规范块类型可扩展**：MiniCPM 的印章识别是新块类型——规范块 schema 须允许 adapter 注册新块类型或
+   声明降级为 markdown 的规则，避免 parser 逐模型枚举。
+7. **评估导出的模型归一化**：评测导出（think 剥离/链接处理）是 Ovis 特有补救——各 adapter 须自带
+   导出归一化钩子，评测管线不复制模型专属逻辑。
+
+**P2（v6 架构已覆盖，列出为验证点）**
+
+8. 多模型 manifest 注册（§5.2 设计本为此设）；9. 非合批 runtime 走 `submit_window` 默认逐个串行实现；
+10. 阶梯策略按模型数据驱动（无 `<think>` 泄漏的模型无需相应档位）；11. 静态注册扩至多 adapter。
+
+**范围裁定**：KIE/VQA 是结构化抽取任务，不是"页→Markdown"——推理平台的通用 TaskRequest 可承载，
+但扫描应用无此管线；属独立立项，v2 仅须确认平台不阻断（本节已核）。OvisOCR3/OXR 待调研后补本节。
 
 ## 6. 重构后的业务逻辑
 
