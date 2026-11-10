@@ -1,0 +1,872 @@
+{
+ "schema_version": 1,
+ "task": "Q1.1 corpus escape-rate evaluation",
+ "scan": "scans\\degeneration-v0.1-composed",
+ "label": "composed",
+ "n_corpus": 213,
+ "escaped": 99,
+ "still_degenerated": 114,
+ "missing": 0,
+ "pending": 0,
+ "escape_rate": 0.4648,
+ "adjudication": {
+  "q1_ladder_landing_line": 0.3,
+  "q1_2_sampling_landing_line": 0.5,
+  "passes_q1_ladder_line": true
+ },
+ "attempts_distribution": {
+  "1": 51,
+  "2": 46,
+  "5": 114,
+  "3": 2
+ },
+ "escape_rate_by_source_category": {
+  "book": {
+   "escaped": 11,
+   "corpus": 19
+  },
+  "academic_literature": {
+   "escaped": 26,
+   "corpus": 41
+  },
+  "exam_paper": {
+   "escaped": 17,
+   "corpus": 29
+  },
+  "colorful_textbook": {
+   "escaped": 1,
+   "corpus": 6
+  },
+  "magazine": {
+   "escaped": 1,
+   "corpus": 2
+  },
+  "newspaper": {
+   "escaped": 38,
+   "corpus": 92
+  },
+  "note": {
+   "escaped": 2,
+   "corpus": 2
+  },
+  "historical_document": {
+   "escaped": 1,
+   "corpus": 1
+  },
+  "PPT2PDF": {
+   "escaped": 2,
+   "corpus": 9
+  }
+ },
+ "escaped_pages": [
+  {
+   "stem": "book_en_5.Advanced.Modern.Algebra.-.J.Rotman.2003_page_887",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "book_en_国外数学教材-An Excursion through Elementary Mathematics（初等数学漫游）-An excursion through elementary mathematics, Vol.3 (Caminha Muniz Neto A)_0100",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0092",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0119",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0451",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-hup.777.pdf_8",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.jcp.2010.12.006.pdf_5",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.jcrimjus.2010.04.003.pdf_8",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.msec.2003.09.055.pdf_1",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.physletb.2004.11.060.pdf_2",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1995_Solutions_1995s_page_002",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1996_Solutions_1996s_page_003",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_001",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_002",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_003",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2000_Problems_2000_page_001",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2000_Solutions_2000s_page_001",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2001_Solutions_2001s_page_002",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2002_Solutions_2002s_page_002",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2009_Solutions_2009s_page_001",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2010_Solutions_2010s_page_005",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2011_Solutions_2011s_page_002",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2015_Solutions_2015s_page_005",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "english"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1836",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "colorful_textbook",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_2360",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_3458",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_349",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_482",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "exam_paper",
+   "language": "en_ch_mixed"
+  },
+  {
+   "stem": "magazine_TheEconomist.2024.02.24_page_076",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "magazine",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_02912feb79994ae24665509d964ad9ce_1",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_17f81b80831d8d58564b9c8e3cf79261_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_2140e879cd0d3c1b5ba2ea1e3a75aab6_1",
+   "truncated": true,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_4cec63ef5a813c5a49dd8e577f3180e7_1",
+   "truncated": true,
+   "attempts": "3",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_5d4b8e73eacbc6ecac0d7b1396fd01d7_1",
+   "truncated": true,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_6d2b5f833fe20785bc395f757524cb05_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_6fa919bfb48695bc785d9f326e3cdd36_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_74fc3b01b2cc4a7e6ca0f1af2b998187_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_8076765115f6c402e81c6bfb48139bc2_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_9eafddb83b0f7f99c42ff364b080e2c1_1",
+   "truncated": true,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_a9c9e3816aa5cb6866d02c10273dc665_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_b95d1d8eb0d756cc94a5d8b5db3cf69b_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_c0794b9574ba55a589418fa1ae160b9a_1",
+   "truncated": true,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_c8e8e00e1b1a70aa44afd1fbdaf59430_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_c9147e07a59fdd1194da22f2ec07dd1c_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_015",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_032",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_d6cd76e5afe881630173bd4921531a4b_1",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_Daily Mail_2022-08-01@magazinesclubnew_page_009",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_e6083de4647ef28434cb6a598b073ae4_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_e6ddb0246224fb8bd8788e6cc7839021_1",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_e81b9b3561d4d4e865ff6713782fd432_1",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "newspaper_NY Daily News_August 1@magazinesclubnew_page_007",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_018",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Guardian UK_0801@magazinesclubnew_page_051",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Guardian UK_0801@magazinesclubnew_page_061",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Times UK_0801@magazinesclubnew_page_020",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Times UK_0801@magazinesclubnew_page_031",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Times UK_0801@magazinesclubnew_page_083",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_004",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_003",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_033",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_TheGuardianUS-2025-1-8@magazinesclubnew_page_033",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_009",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "newspaper_USAToday-2025-01-08@magazinesclubnew_page_012",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "newspaper",
+   "language": "english"
+  },
+  {
+   "stem": "notes_1ba14cb325bc448f7201b20502ecf2b5_14",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "note",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "notes_f7f010b78016aeebd76e56d9283eb67f_5",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "note",
+   "language": "english"
+  },
+  {
+   "stem": "page-1ce383cc-63a3-43c9-b6f2-7498a952b65c",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-213e6a57-ba81-4afb-8184-2e1cf2a7664d",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-27a46d41-49b5-4562-a546-6cbbafd23a81",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "page-38fc7c6b-80ed-46be-bb53-29986a63ad3e",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-39f38730-0ae6-4cfe-8b99-c65d06d09544",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-3ecc67a1-9b19-4fb9-b74d-acbb73db5c53",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "historical_document",
+   "language": "traditional_chinese"
+  },
+  {
+   "stem": "page-49746735-505c-442d-b3f6-c55b1bf9e48b",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-50ffe5d2-cd27-449a-a813-d4a8c44b12ea",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-7050793e-109f-4066-be91-107f94b617b9",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-91b20bf2-3ad5-41f4-b739-4cc4b18ab1eb",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "page-9390721f-e06c-47ea-8b21-0f27c72df7b7",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-9d14b692-a01c-45bd-9726-929bd3c4b726",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "book",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "page-aae359c6-5e6e-4e18-9187-2e9d55b6e9bd",
+   "truncated": true,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "page-af9aded3-1faf-4d12-ad5f-28a66d0a9114",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "book",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "page-b2cc5729-a6b2-49ba-af62-788bf069b617",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "english"
+  },
+  {
+   "stem": "page-d5c82c0e-2a7d-4573-9dce-bff939504367",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-dad0f4e5-290f-496f-bbdd-099ad75c6ff0",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "page-f3e750d8-8201-4a22-9419-9776798b7a32",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "scihub_ijcac.2012040101.pdf_5",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "scihub_j.jmb.2003.10.009.pdf_4",
+   "truncated": false,
+   "attempts": "3",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "scihub_jneurosci.16-15-04625.1996.pdf_2",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "scihub_s00586-010-1656-7.pdf_3",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "academic_literature",
+   "language": "english"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_1090",
+   "truncated": false,
+   "attempts": "2",
+   "source_category": "PPT2PDF",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_1225",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "PPT2PDF",
+   "language": "simplified_chinese"
+  },
+  {
+   "stem": "yanbaor2_yanbaoPPT_5877",
+   "truncated": false,
+   "attempts": "1",
+   "source_category": "book",
+   "language": "simplified_chinese"
+  }
+ ],
+ "still_degenerated_pages": [
+  "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_001",
+  "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_004",
+  "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006",
+  "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149",
+  "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328",
+  "docstructbench_dianzishu_zhongwenzaixian-o.O-61523162.pdf_276",
+  "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3",
+  "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2",
+  "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5",
+  "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2",
+  "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6",
+  "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2",
+  "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2",
+  "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2",
+  "eastmoney_c2abc680754ea4676c752cb3bda24323046ece560f8b23ce66b705887c9bcf9b.pdf_16",
+  "eastmoney_ea59610b9b1a8f0df46f7a89da1116cbf256c772e1148f26017991e28c8bca21.pdf_18",
+  "jiaocai_jiaocai_en_310",
+  "jiaocaineedrop_2017.pdf_0",
+  "jiaocaineedrop_jiaocai_needrop_en_1349",
+  "jiaocaineedrop_jiaocai_needrop_en_1358",
+  "jiaocaineedrop_jiaocai_needrop_en_1417",
+  "jiaocaineedrop_jiaocai_needrop_en_1478",
+  "jiaocaineedrop_jiaocai_needrop_en_1898",
+  "jiaocaineedrop_jiaocai_needrop_en_194",
+  "jiaocaineedrop_jiaocai_needrop_en_2211",
+  "jiaocaineedrop_jiaocai_needrop_en_2839",
+  "jiaocaineedrop_jiaocai_needrop_en_3713",
+  "jiaocaineedrop_jiaocai_needrop_en_620",
+  "jiaocaineedrop_jiaocai_needrop_en_922",
+  "newspaper_019d4d5296ba8f1c21277d72fb0cf0db_1",
+  "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1",
+  "newspaper_028a1dd5500fbd774e4d85df3c460c4d_1",
+  "newspaper_06b975dbc47dc2dc2a3a1468293f6a2c_1",
+  "newspaper_0b86dae4d8f328a0e79d9ac394000dec_1",
+  "newspaper_0ce88e1e131aef7a59d0533be36870de_1",
+  "newspaper_0cfb8a42b5d4194d8c73dba0cdf6256c_1",
+  "newspaper_14b9d21f7fed39fb42849e9cde233930_1",
+  "newspaper_26f4ed67a5e8922e7d42b35d317ebf4b_1",
+  "newspaper_2a645bfcbcd473423581cd9f1ceb778e_1",
+  "newspaper_2c69e142b52dbb30cac2cb11d3eb25e5_1",
+  "newspaper_2de954934f60ac538c5bd5dc40833a61_1",
+  "newspaper_35352f94db65d19e097395380498ec15_1",
+  "newspaper_354720d92a632709eb8e61795b191390_1",
+  "newspaper_35bdaa11dec104ccbdc9e19ac8527d21_1",
+  "newspaper_401c73055b88a62c479edd3d490cea8a_1",
+  "newspaper_41a09cb64841567c220d8cac3c1cc193_1",
+  "newspaper_4790b51e8fa793743699647c09a93ccb_1",
+  "newspaper_4b4ad1f6cba28a4844d7ffa9306223a4_1",
+  "newspaper_571a946262006cd89199b67353c408b8_1",
+  "newspaper_5a8b7563a3262beecbecd7ddd3ef8827_1",
+  "newspaper_5aedf678eff04d8ebac3692d54103e19_1",
+  "newspaper_5bba361b0a5ca11745edbef140e2a431_1",
+  "newspaper_5c4e17f22cdc19d414a3c521f631c899_1",
+  "newspaper_5e8bcc55b922fd521a667c6ef01027d5_1",
+  "newspaper_635e4e6a64cf2ccfb2560f9b6dfe24b5_1",
+  "newspaper_73fc8720a9b2798307ba43a8b8e47b5e_1",
+  "newspaper_75bb60c3be9959e1be400d6b8281fea1_1",
+  "newspaper_7746db2ad2ea24c827eac60244375bbf_1",
+  "newspaper_95f2062735b213b3d7d471a48d5ec71b_1",
+  "newspaper_9729b78cbf9f2820b9f257fff7e3171b_1",
+  "newspaper_9bb9e05d38b370251a4b0a8d070d1d55_1",
+  "newspaper_a105e3b0ddb10be6a596f76407c79180_1",
+  "newspaper_a15057349a86850e55b084c235fa2f22_1",
+  "newspaper_a7666484ee01a811247e52f784164cbb_1",
+  "newspaper_b615618f3cdb0f2c13ffb5865dea799c_1",
+  "newspaper_bd75af5f4791aa56ef05ce2443e8a7e0_1",
+  "newspaper_c3c88b76543e2caf044c9f7689f23ec9_1",
+  "newspaper_c9e9b3e7b8a5f5a5b59304a9924c41b9_1",
+  "newspaper_d1716a12000a38e1e4c0bf66309558db_1",
+  "newspaper_d84e38031cf03d3fd4649910cf0ecce1_1",
+  "newspaper_Daily Star 2025-1-8@magazinesclubnew_page_060",
+  "newspaper_dd99f17cad0992a54fdf424b1c5e86ee_1",
+  "newspaper_e567840b2e327602422573ccdc1c4275_1",
+  "newspaper_e62730aaeb9b509119e0c3699ac18201_1",
+  "newspaper_e7246d706077d2064a6e667dfc73925e_1",
+  "newspaper_eb569707cf5621d4c71d5898216cdb17_1",
+  "newspaper_ef5c785d9cc21ccf6b73d143f231b5c5_1",
+  "newspaper_f36d00fe3544ae72725aac9dc7f19aa8_1",
+  "newspaper_fe2c8b45b2a086cd75984640bb3080e1_1",
+  "newspaper_The Guardian UK_0801@magazinesclubnew_page_052",
+  "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_009",
+  "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025",
+  "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_042",
+  "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7",
+  "page-141c2c16-4b50-4c3b-a64b-3e2fd8bb4002",
+  "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8",
+  "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96",
+  "page-56023e3d-ae9b-486d-b7bb-419624d18356",
+  "page-69c15957-4d6d-485c-a244-04a1a8d29d37",
+  "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41",
+  "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983",
+  "page-b13fef06-6ae9-4b2d-a948-0340e03f97ce",
+  "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46",
+  "page-b342f5e6-cc5a-4920-b1b5-83f96bc476d8",
+  "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6",
+  "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4",
+  "page-d5e0cd38-ac0f-422c-b6d5-c8f001720491",
+  "page-dca64e05-1ce6-49ee-857a-9b5d05a87357",
+  "page-e6c5454d-90ad-495c-85db-a416b7cd6452",
+  "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010",
+  "PPT_session 10_page_022",
+  "PPT_session 10_page_023",
+  "PPT_session 10_page_028",
+  "scihub_bloodadvances.2019030924.pdf_3",
+  "scihub_ijop.12033.pdf_5",
+  "scihub_j.1528-1167.2008.01552.x.pdf_3",
+  "scihub_j.cbpb.2019.110324.pdf_6",
+  "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8",
+  "yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3",
+  "yanbaopptmerge_yanbaoPPT_4330",
+  "yanbaopptmerge_yanbaoPPT_4570",
+  "yanbaopptmerge_yanbaoPPT_5070",
+  "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27",
+  "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14"
+ ]
+}

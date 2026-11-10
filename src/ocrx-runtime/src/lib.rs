@@ -103,6 +103,48 @@ pub struct RuntimeInfo {
     pub image_token_limit: u32,
 }
 
+/// Escape-ladder sampling for degeneration retries only (quality plan Q1.2,
+/// D-1/D-13): an ordered sampler chain `repeat_penalty → greedy` — the
+/// penalty modifies logits FIRST, greedy makes the final pick; implemented
+/// the other way around the penalty never takes effect. The chain is
+/// deterministic (no random source), so a retry scan stays byte-reproducible
+/// under identical inputs. Normal pages never carry this (pure greedy).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetrySampling {
+    /// Repeat penalty in milli-units (1150 = 1.15x), mirroring the
+    /// `temperature_milli` style so the request stays `Eq`-able and the
+    /// sweep grid is expressed in exact integers.
+    pub repeat_penalty_milli: u32,
+    pub penalty_window: u32,
+}
+
+impl RetrySampling {
+    /// Builds a validated retry-sampling spec.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the penalty is outside `1000..=2000` milli
+    /// (1.0x..=2.0x) or the window is zero.
+    pub fn new(repeat_penalty_milli: u32, penalty_window: u32) -> Result<Self, String> {
+        if !(1000..=2000).contains(&repeat_penalty_milli) {
+            return Err("retry repeat_penalty must be within 1000..=2000 milli".to_owned());
+        }
+        if penalty_window == 0 {
+            return Err("retry penalty_window must be >= 1".to_owned());
+        }
+        Ok(Self {
+            repeat_penalty_milli,
+            penalty_window,
+        })
+    }
+
+    /// The penalty as the f32 factor llama.cpp consumes.
+    #[must_use]
+    pub fn repeat_penalty(&self) -> f32 {
+        self.repeat_penalty_milli as f32 / 1000.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceRequest {
     pub page: u32,
@@ -110,6 +152,16 @@ pub struct InferenceRequest {
     pub height: u32,
     pub image_rgb8: Vec<u8>,
     pub max_output_tokens: u32,
+    /// Present only on degeneration-retry requests (attempts >= 2, quality
+    /// plan Q1.2); `None` keeps the plain greedy decode path untouched.
+    pub retry_sampling: Option<RetrySampling>,
+    /// Q1.4c (quality plan §4.1): per-retry MTMD token-grid override. The
+    /// worker decodes the request against a context whose image grid is
+    /// bound to this token count (e.g. 2048) instead of the scan-level
+    /// budget; `None` uses the scan-level context. The scan-level
+    /// compatibility parameters are unaffected (the override is a retry
+    /// ladder rung, not a scan configuration change).
+    pub image_tokens_override: Option<u32>,
 }
 
 impl InferenceRequest {
@@ -138,7 +190,24 @@ impl InferenceRequest {
             height,
             image_rgb8,
             max_output_tokens,
+            retry_sampling: None,
+            image_tokens_override: None,
         })
+    }
+
+    /// Attaches the per-retry MTMD token-grid override (quality plan Q1.4c).
+    #[must_use]
+    pub fn with_image_tokens_override(mut self, image_tokens: u32) -> Self {
+        self.image_tokens_override = Some(image_tokens);
+        self
+    }
+
+    /// Attaches the retry sampler chain (quality plan Q1.2); the caller is
+    /// the degeneration-retry path only.
+    #[must_use]
+    pub fn with_retry_sampling(mut self, retry_sampling: RetrySampling) -> Self {
+        self.retry_sampling = Some(retry_sampling);
+        self
     }
 }
 
@@ -361,6 +430,30 @@ mod tests {
     }
 
     #[test]
+    fn retry_sampling_validates_penalty_and_window() {
+        // Q1.2: the ordered chain repeat_penalty -> greedy is deterministic;
+        // validation keeps the sweep grid honest.
+        assert!(RetrySampling::new(1_100, 64).is_ok());
+        assert!(RetrySampling::new(1_000, 1).is_ok());
+        assert!(RetrySampling::new(2_000, 256).is_ok());
+        assert!(RetrySampling::new(900, 64).is_err());
+        assert!(RetrySampling::new(2_500, 64).is_err());
+        assert!(RetrySampling::new(1_100, 0).is_err());
+        let spec = RetrySampling::new(1_150, 256).unwrap();
+        assert!((spec.repeat_penalty() - 1.15).abs() < 1e-6);
+        let request = InferenceRequest::new(1, 1, 1, vec![1, 2, 3], 8).unwrap();
+        assert_eq!(request.retry_sampling, None);
+        let request = request.with_retry_sampling(RetrySampling::new(1_200, 256).unwrap());
+        assert_eq!(
+            request.retry_sampling,
+            Some(RetrySampling {
+                repeat_penalty_milli: 1_200,
+                penalty_window: 256,
+            })
+        );
+    }
+
+    #[test]
     fn fake_runtime_has_deterministic_inference_contract() {
         let mut runtime = FakeRuntime;
         let response = runtime
@@ -376,6 +469,8 @@ mod tests {
                     height: 1,
                     image_rgb8: Vec::new(),
                     max_output_tokens: 128,
+                    retry_sampling: None,
+                    image_tokens_override: None,
                 })
                 .is_err()
         );

@@ -140,14 +140,153 @@ pub fn write_page_artifacts_with_status_cancelled(
     cancellation: &CancellationToken,
     progress: &mut dyn FnMut(GenerationProgress),
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
+    write_page_artifacts_with_retry_sampling_cancelled(
+        runtime,
+        page,
+        width,
+        height,
+        rgb8,
+        max_output_tokens,
+        output_root,
+        cancellation,
+        progress,
+        None,
+        None,
+    )
+}
+
+/// Q1.1c column-split retry pass (quality plan §4.1, D-10): detects column
+/// bands on the rendered page (whitespace-valley projection), decodes each
+/// band through the plain greedy path, and merges the band markdowns in
+/// left-to-right order into one artifact. Degeneration is honest at page
+/// level: ANY band degenerated marks the page degenerated. Detection
+/// failure falls back to a single full-width band.
+#[allow(clippy::too_many_arguments)]
+pub fn write_page_artifacts_column_split_cancelled(
+    runtime: &mut impl Runtime,
+    page: u32,
+    width: u32,
+    height: u32,
+    rgb8: Vec<u8>,
+    max_output_tokens: u32,
+    output_root: impl AsRef<Path>,
+    cancellation: &CancellationToken,
+    progress: &mut dyn FnMut(GenerationProgress),
+) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
+    let bands = detect_column_bands(width, height, &rgb8).unwrap_or_else(|| vec![(0, width)]);
+    let bytes_per_row = width as usize * 3;
+    let mut merged_text = String::new();
+    let mut merged_raw = String::new();
+    let mut degenerated = false;
+    let mut truncated = false;
+    let mut warnings: Vec<String> = Vec::new();
+    let mut think_blocks_stripped = 0_u32;
+    let request = try_request(max_output_tokens).map_err(std::io::Error::other)?;
+    for (x0, x1) in bands.iter().copied() {
+        if cancellation.is_cancelled() {
+            return Err(std::io::Error::other("cancelled").into());
+        }
+        let band_width = (x1 - x0) as usize;
+        let mut band_rgb8 = Vec::with_capacity(band_width * height as usize * 3);
+        for row in 0..height as usize {
+            let start = row * bytes_per_row + x0 as usize * 3;
+            band_rgb8.extend_from_slice(&rgb8[start..start + band_width * 3]);
+        }
+        let response = runtime.generate_with_progress(
+            InferenceRequest::new(page, x1 - x0, height, band_rgb8, request.max_output_tokens)?,
+            cancellation,
+            progress,
+        )?;
+        if response.finish_reason == "max_tokens" {
+            truncated = true;
+        }
+        let normalized = normalize_line_endings(&response.raw_output);
+        merged_raw.push_str(&normalized);
+        let think = strip_think_blocks(&normalized);
+        think_blocks_stripped += u32::try_from(think.total()).unwrap_or(u32::MAX);
+        let crop = degenerate_tail_crop(&think.text);
+        if crop.degenerated || response.finish_reason == "repetition_loop" {
+            degenerated = true;
+        }
+        if crop.repetition_removed {
+            warnings.push("repetition_removed".to_owned());
+        }
+        // Bands carry no figure crops of their own: bbox tags are dropped.
+        let band_markdown = replace_bbox_images(&crop.text, page, 0);
+        if !band_markdown.trim().is_empty() {
+            if !merged_text.is_empty() {
+                merged_text.push_str(
+                    "
+
+",
+                );
+            }
+            merged_text.push_str(&band_markdown);
+        }
+    }
+    let crop = DegenerateTailCrop {
+        text: merged_text.clone(),
+        degenerated,
+        repetition_removed: warnings
+            .iter()
+            .any(|warning| warning == "repetition_removed"),
+    };
+    let think = ThinkStrip {
+        text: String::new(),
+        nonempty: 0,
+        empty: 0,
+        strays: 0,
+    };
+    let document = adapt_cropped_response(page, &crop.text, "eos", &crop, &think)
+        .map_err(|error| format!("adapter: {error:?}"))?;
+    let (markdown, dropped_links) =
+        drop_invalid_markdown_image_links(&replace_bbox_images(&crop.text, page, 0), &output_root);
+    if dropped_links > 0 {
+        warnings.push("invalid_image_link_dropped".to_owned());
+    }
+    Ok(PageArtifactOutput {
+        markdown,
+        page_json: document
+            .to_json()
+            .map_err(|error| format!("serialize page: {error:?}"))?,
+        truncated,
+        degenerated,
+        warnings,
+        think_blocks_stripped,
+        raw_output: merged_raw,
+    })
+}
+
+/// Q1.2 variant: `retry_sampling` is `Some` only on degeneration-retry
+/// recognition (attempts >= 2, quality plan §4.1); the request then carries
+/// the ordered `repeat_penalty → greedy` chain spec for the runtime's retry
+/// context. Normal pages pass `None` and stay pure greedy.
+#[allow(clippy::too_many_arguments)]
+pub fn write_page_artifacts_with_retry_sampling_cancelled(
+    runtime: &mut impl Runtime,
+    page: u32,
+    width: u32,
+    height: u32,
+    rgb8: Vec<u8>,
+    max_output_tokens: u32,
+    output_root: impl AsRef<Path>,
+    cancellation: &CancellationToken,
+    progress: &mut dyn FnMut(GenerationProgress),
+    retry_sampling: Option<ocrx_runtime::RetrySampling>,
+    image_tokens_override: Option<u32>,
+) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     // D5.1: an over-cap budget fails the page explicitly; the old silent
     // clamp hid that the requested budget was not in effect.
     let request = try_request(max_output_tokens).map_err(std::io::Error::other)?;
-    let response = runtime.generate_with_progress(
-        InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?,
-        cancellation,
-        progress,
-    )?;
+    let mut inference =
+        InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?;
+    if let Some(retry_sampling) = retry_sampling {
+        inference = inference.with_retry_sampling(retry_sampling);
+    }
+    if let Some(image_tokens) = image_tokens_override {
+        inference = inference.with_image_tokens_override(image_tokens);
+    }
+    let response = runtime.generate_with_progress(inference, cancellation, progress)?;
     if cancellation.is_cancelled() {
         return Err(std::io::Error::other("cancelled").into());
     }
@@ -242,6 +381,105 @@ impl ThinkStrip {
     pub fn total(&self) -> usize {
         self.nonempty + self.empty + self.strays
     }
+}
+
+/// Q1.1c candidate C (quality plan §4.1, D-10): column-band detection by
+/// vertical whitespace-valley projection on the rendered page - the classic
+/// layout-analysis pass, no model and no prompt change. Returns x bounds in
+/// pixels for 2..=4 columns left to right, or `None` when no reliable
+/// valley set exists (callers fall back to a single full-width band).
+pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(u32, u32)>> {
+    if width == 0 || height == 0 || rgb8.len() != width as usize * height as usize * 3 {
+        return None;
+    }
+    // Downscale by horizontal stride sampling to ~900 analysis columns.
+    let target_w = 900_u32;
+    let stride_x = (width / target_w).max(1) as usize;
+    let stride_y = ((height / width * target_w).max(1) / 2).max(1) as usize;
+    let columns = (width as usize / stride_x).max(1);
+    let row_lo = (height as usize * 5 / 100 / stride_y) * stride_y;
+    let row_hi = (height as usize * 95 / 100 / stride_y) * stride_y;
+    let mut ink = vec![0.0_f32; columns];
+    for (cx, ink_slot) in ink.iter_mut().enumerate() {
+        let x = cx * stride_x;
+        let mut dark = 0_usize;
+        let mut sampled = 0_usize;
+        let mut y = row_lo;
+        while y < row_hi {
+            let base = (y * width as usize + x) * 3;
+            let luminance = u32::from(rgb8[base]) * 299
+                + u32::from(rgb8[base + 1]) * 587
+                + u32::from(rgb8[base + 2]) * 114;
+            if luminance < 48_000 {
+                dark += 1;
+            }
+            sampled += 1;
+            y += stride_y;
+        }
+        *ink_slot = dark as f32 / sampled.max(1) as f32;
+    }
+    let smoothed: Vec<f32> = (0..columns)
+        .map(|i| {
+            let lo = i.saturating_sub(3);
+            let hi = (i + 4).min(columns);
+            ink[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
+        })
+        .collect();
+    let band_lo = columns * 8 / 100;
+    let band_hi = columns * 92 / 100;
+    let median = {
+        let mut band = smoothed[band_lo..band_hi].to_vec();
+        band.sort_by(f32::total_cmp);
+        band[band.len() / 2]
+    };
+    let threshold = (median * 0.45).max(0.015);
+    // Interior near-empty runs = valley candidates.
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    for (i, value) in smoothed[band_lo..band_hi].iter().enumerate() {
+        let i = band_lo + i;
+        if *value <= threshold {
+            if run_start.is_none() {
+                run_start = Some(i);
+            }
+        } else if let Some(start) = run_start.take() {
+            runs.push((start, i));
+        }
+    }
+    if let Some(start) = run_start.take() {
+        runs.push((start, band_hi));
+    }
+    if runs.len() < 3 {
+        return None;
+    }
+    let min_col = columns * 12 / 100;
+    let mut cuts: Vec<usize> = Vec::new();
+    for &(start, end) in &runs[1..runs.len() - 1] {
+        let center = usize::midpoint(start, end);
+        let _ = (start, end);
+        let mut bounds = vec![band_lo];
+        bounds.extend_from_slice(&cuts);
+        bounds.push(band_hi);
+        let fits = bounds
+            .windows(2)
+            .all(|pair| center >= pair[0] + min_col && pair[1] >= center + min_col);
+        if fits {
+            cuts.push(center);
+        }
+    }
+    if cuts.len() + 1 < 2 {
+        return None;
+    }
+    let mut bands = Vec::new();
+    let stride_x = stride_x as u32;
+    let mut left = band_lo as u32 * stride_x;
+    for cut in &cuts {
+        let right = *cut as u32 * stride_x;
+        bands.push((left, right));
+        left = right;
+    }
+    bands.push((left, width));
+    Some(bands)
 }
 
 /// Strips leaked `<think>` reasoning blocks from a raw model output. Runs
@@ -1817,6 +2055,262 @@ mod tests {
         assert_eq!(output.think_blocks_stripped, 1);
         let document = PageDocument::from_json(&output.page_json).unwrap();
         assert!(!document.warnings.contains(&PageWarning::ThinkRemoved));
+    }
+
+    struct RequestCaptureRuntime {
+        seen: std::sync::Mutex<Vec<ocrx_runtime::InferenceRequest>>,
+    }
+    impl Runtime for RequestCaptureRuntime {
+        fn info(&self) -> RuntimeInfo {
+            RuntimeInfo {
+                backend: Backend::Cpu,
+                image_token_limit: 1024,
+            }
+        }
+
+        fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String> {
+            self.seen.lock().unwrap().push(request);
+            Ok(InferenceResponse {
+                raw_output: "body".to_owned(),
+                finish_reason: "eos".to_owned(),
+            })
+        }
+    }
+
+    #[test]
+    fn detect_column_bands_finds_two_columns_on_synthetic_page() {
+        // Synthetic 600x200 page: white, with black text-like stripes in
+        // x=60..240 and x=360..540, empty gutter in between.
+        let width = 600_u32;
+        let height = 200_u32;
+        let mut rgb8 = vec![255_u8; (width * height * 3) as usize];
+        for stripe_x in 60..240 {
+            for y in (10..190).step_by(6) {
+                for dy in 0..3 {
+                    let base = ((y + dy) * width as usize + stripe_x as usize) * 3;
+                    rgb8[base] = 20;
+                    rgb8[base + 1] = 20;
+                    rgb8[base + 2] = 20;
+                }
+            }
+        }
+        for stripe_x in 360..540 {
+            for y in (10..190).step_by(6) {
+                for dy in 0..3 {
+                    let base = ((y + dy) * width as usize + stripe_x as usize) * 3;
+                    rgb8[base] = 20;
+                    rgb8[base + 1] = 20;
+                    rgb8[base + 2] = 20;
+                }
+            }
+        }
+        let bands = detect_column_bands(width, height, &rgb8).expect("two columns detected");
+        assert_eq!(bands.len(), 2, "bands: {bands:?}");
+        assert!(bands[0].0 <= 60);
+        assert!(bands[0].1 >= 240 && bands[0].1 <= 360);
+        assert!(bands[1].0 >= 240 && bands[1].0 <= 360);
+        assert!(bands[1].1 >= 540);
+    }
+
+    #[test]
+    fn detect_column_bands_returns_none_for_uniform_page() {
+        let width = 600_u32;
+        let height = 200_u32;
+        let rgb8 = vec![255_u8; (width * height * 3) as usize];
+        assert_eq!(detect_column_bands(width, height, &rgb8), None);
+    }
+
+    struct MultiBandRuntime {
+        responses: std::sync::Mutex<Vec<String>>,
+    }
+    impl Runtime for MultiBandRuntime {
+        fn info(&self) -> RuntimeInfo {
+            RuntimeInfo {
+                backend: Backend::Cpu,
+                image_token_limit: 1024,
+            }
+        }
+
+        fn generate(&mut self, _request: InferenceRequest) -> Result<InferenceResponse, String> {
+            let mut queue = self.responses.lock().unwrap();
+            let raw = if queue.is_empty() {
+                "band default".to_owned()
+            } else {
+                queue.remove(0)
+            };
+            Ok(InferenceResponse {
+                raw_output: raw,
+                finish_reason: "eos".to_owned(),
+            })
+        }
+    }
+
+    #[test]
+    fn column_split_merges_band_markdown_in_order_and_flags_any_band_loop() {
+        let width = 600_u32;
+        let height = 60_u32;
+        // Two ink stripes so two bands are detected; content irrelevant.
+        let mut rgb8 = vec![255_u8; (width * height * 3) as usize];
+        for stripe_x in 60..240 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        for stripe_x in 360..540 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        let runtime = MultiBandRuntime {
+            responses: std::sync::Mutex::new(vec![
+                "左栏内容".to_owned(),
+                "右栏 <think>
+
+</think>内容"
+                    .to_owned(),
+            ]),
+        };
+        let mut runtime = runtime;
+        let root = std::env::temp_dir().join(format!("ocrx-ovis-colsplit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let output = write_page_artifacts_column_split_cancelled(
+            &mut runtime,
+            5,
+            width,
+            height,
+            rgb8,
+            512,
+            &root,
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .expect("column-split artifacts");
+        assert!(
+            output.markdown.contains("左栏内容") && output.markdown.contains("右栏 内容"),
+            "merged: {}",
+            output.markdown
+        );
+        assert!(
+            output.markdown.find("左栏内容").unwrap() < output.markdown.find("右栏 内容").unwrap(),
+            "band order is left-to-right"
+        );
+        // The right band's empty think block is stripped silently (counted).
+        assert_eq!(output.think_blocks_stripped, 1);
+        assert!(!output.degenerated);
+        // Two band decodes hit the runtime.
+        assert_eq!(runtime.responses.lock().unwrap().len(), 0);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn column_split_marks_page_degenerated_when_any_band_loops() {
+        let width = 600_u32;
+        let height = 60_u32;
+        let mut rgb8 = vec![255_u8; (width * height * 3) as usize];
+        for stripe_x in 60..240 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        for stripe_x in 360..540 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        let period = "循环片段".repeat(4);
+        let runtime = MultiBandRuntime {
+            responses: std::sync::Mutex::new(vec![
+                "左栏干净".to_owned(),
+                format!("右栏{period}{period}{period}"),
+            ]),
+        };
+        let mut runtime = runtime;
+        let root =
+            std::env::temp_dir().join(format!("ocrx-ovis-colsplit-loop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let output = write_page_artifacts_column_split_cancelled(
+            &mut runtime,
+            6,
+            width,
+            height,
+            rgb8,
+            512,
+            &root,
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .expect("column-split artifacts");
+        assert!(output.degenerated, "any band loop marks the page");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn retry_sampling_option_flows_into_the_inference_request() {
+        // Q1.2: the retry spec lands on the request only when provided;
+        // the plain path keeps None (attempt-1 greedy contract).
+        let root = std::env::temp_dir().join(format!("ocrx-ovis-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let capture = RequestCaptureRuntime {
+            seen: std::sync::Mutex::new(Vec::new()),
+        };
+        let mut capture = capture;
+        {
+            let _ = write_page_artifacts_with_retry_sampling_cancelled(
+                &mut capture,
+                3,
+                10,
+                10,
+                vec![255; 10 * 10 * 3],
+                512,
+                &root,
+                &CancellationToken::new(),
+                &mut |_| {},
+                Some(ocrx_runtime::RetrySampling::new(1_150, 256).unwrap()),
+                Some(2048),
+            )
+            .unwrap();
+        }
+        let seen = capture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            seen[0].retry_sampling,
+            Some(ocrx_runtime::RetrySampling {
+                repeat_penalty_milli: 1_150,
+                penalty_window: 256,
+            })
+        );
+        assert_eq!(seen[0].image_tokens_override, Some(2048));
+        drop(seen);
+        {
+            let _ = write_page_artifacts_with_status_cancelled(
+                &mut capture,
+                4,
+                10,
+                10,
+                vec![255; 10 * 10 * 3],
+                512,
+                &root,
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        }
+        let seen = capture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[1].retry_sampling, None);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

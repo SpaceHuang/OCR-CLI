@@ -2152,6 +2152,95 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
         })
     }
 
+    fn recognize_retry_artifact_cancelled(
+        &mut self,
+        model: &mut LlamaMtmdRuntime,
+        page: u32,
+        image: &RenderedPage,
+        step: &ocrx_output::DegenerationRetryStep,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> std::io::Result<PageArtifactResult> {
+        if step.column_split {
+            // Q1.1c final rung: whitespace-valley column bands, one plain
+            // decode per band, band markdowns merged in reading order.
+            let artifact = ocrx_ovisocr2::write_page_artifacts_column_split_cancelled(
+                model,
+                page,
+                image.width,
+                image.height,
+                image.rgb8.clone(),
+                self.max_tokens,
+                &self.output,
+                cancellation,
+                progress,
+            )
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+            let snapshot = model.telemetry();
+            let base = *self.telemetry_base.borrow();
+            *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
+            let profile_snapshot = model.step_profile();
+            let profile_base = self.step_profile_base.borrow().unwrap_or_default();
+            *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
+            let mut png = Cursor::new(Vec::new());
+            image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
+                .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
+                .write_to(&mut png, ImageFormat::Png)
+                .map_err(std::io::Error::other)?;
+            return Ok(PageArtifactResult {
+                png: png.into_inner(),
+                markdown: artifact.markdown,
+                page_json: artifact.page_json,
+                truncated: artifact.truncated,
+                degenerated: artifact.degenerated,
+                warnings: artifact.warnings,
+                think_blocks_stripped: artifact.think_blocks_stripped,
+                raw_output: artifact.raw_output,
+            });
+        }
+        if step.sampling.is_none() && step.image_tokens.is_none() {
+            // Rungs without decode variants (perturbation-only) keep the
+            // pre-Q1.2 plain decode.
+            return self.recognize_artifact_cancelled(model, page, image, cancellation, progress);
+        }
+        let artifact = ocrx_ovisocr2::write_page_artifacts_with_retry_sampling_cancelled(
+            model,
+            page,
+            image.width,
+            image.height,
+            image.rgb8.clone(),
+            self.max_tokens,
+            &self.output,
+            cancellation,
+            progress,
+            step.sampling,
+            step.image_tokens,
+        )
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let snapshot = model.telemetry();
+        let base = *self.telemetry_base.borrow();
+        *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
+        let profile_snapshot = model.step_profile();
+        let profile_base = self.step_profile_base.borrow().unwrap_or_default();
+        *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
+        // Retry-committed pages need the same page raster as the plain path.
+        let mut png = Cursor::new(Vec::new());
+        image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
+            .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
+            .write_to(&mut png, ImageFormat::Png)
+            .map_err(std::io::Error::other)?;
+        Ok(PageArtifactResult {
+            png: png.into_inner(),
+            markdown: artifact.markdown,
+            page_json: artifact.page_json,
+            truncated: artifact.truncated,
+            degenerated: artifact.degenerated,
+            warnings: artifact.warnings,
+            think_blocks_stripped: artifact.think_blocks_stripped,
+            raw_output: artifact.raw_output,
+        })
+    }
+
     fn recognize_window_cancelled(
         &mut self,
         model: &mut LlamaMtmdRuntime,
