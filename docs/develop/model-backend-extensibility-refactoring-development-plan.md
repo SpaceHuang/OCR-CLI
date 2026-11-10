@@ -1,7 +1,7 @@
 # OCR-CLI 模型后端可扩展架构重构详细开发方案
 
-**文档状态：** 待实施（修订 v2，2026-11-03——按已合并的吞吐优化 P3/P4 与复读退化方案更新迁移输入；原 2026-10-31 范围协调注记的修订要求已并入正文）  
-**迁移输入基线（2026-11-03，main `a02d459`）：** 吞吐优化方案（`docs/develop/scan-throughput-optimization-development-plan.md`）的 P3（PdfiumOwner 渲染/解码重叠）与 P4（多页合批：P4.1 推理线程 actor、P4.3 窗口解码、P4.4 窗口化扫描编排）已合并进 main；复读退化方案（`docs/develop/repetition-degeneration-detection-recovery-development-plan.md`）已先行合并。本计划按其头部协调注记完成两处冻结范围修订：§2.1 的"多页串行复用"保留项已改为"以已具备合批能力的 `ocrx-runtime` 为迁移输入（批深、窗口协议以 P4 落地形态为准）"；§2.2 的"不引入并发 OCR"已限定为"本重构不新增扫描层并发语义，但须迁移/保留 runtime 已落地的合批能力"。窗口协议冻结值见 `docs/develop/batched-inference-2026-11-02.md`（默认批深 N=4、机制 A 窗口原子提交、`;batch=N` 兼容键、可选窗口方法最小接口面）。本重构以该落地形态为迁移输入，不回退、不重设计窗口协议。  
+**文档状态：** 待实施（修订 v4，2026-11-10——wrapper pins 修订为 0.1.161/0.1.161（§2.2，质量方案 D-2/Q1.3，里程碑 GO 依据实测），其余迁移输入不变；v3，2026-11-06——按已合并的吞吐优化二期（批深 8、跨文档编排 X1、插桩通道 T1）与三期裁决（引擎对比 NO-GO）更新迁移输入；v2 所依据的 P3/P4 与复读退化输入全部继续有效）  
+**迁移输入基线（2026-11-06，main `5c989ce`）：** v2 基线（2026-11-03，`a02d459`）之后，main 又合并了吞吐优化二期并完成三期裁决，本计划已按其落地形态全面更新：① 批深解冻 4→8（`docs/develop/window-depth-8-2026-11-04.md`；`WINDOW_DEPTH = 8` 与完整解冻/重冻历史注释见 `ocrx-core/src/lib.rs`；兼容键现为 `;batch=8`，旧 `;batch=4` checkpoint 自然失效、`--resume` 整体重扫为已交付的预期行为，且无匹配兼容键时 stderr 输出原因说明）；② 跨文档编排 X1 已合并（`docs/develop/cross-doc-orchestration-2026-11-04.md` 及其设计冻结稿：多输入位置参数、`--output-dir` 多输入必填、`resolve_scan_inputs` 目录展开/去重、文档 FIFO、`PdfRequest::SwitchDocument`、`ModelSlot::Shared` 每调用恰好一次 verify+load、`<stem>-<hash8>` 输出目录、`scan-summary.json`、退出码聚合；混窗 X2 与常驻进程 B2 已裁决不做）；③ 可选插桩通道已合并（`OCRX_STEP_PROFILE` 同开关驱动：runtime `StepProfile`、output `CommitProfile`/`commit-profile.json`，均为 env-gated、disabled 全 no-op）；④ 三期已收官（`docs/develop/phase3-fallback-verdict-2026-11-05.md`：S0/BS 与 P1/P2/P3 杠杆全部 no-go；引擎对比裁决 CUDA 集成 NO-GO、vLLM/LMDeploy 降级 not-now，Vulkan 保持主力，见 `docs/test/reports/llamacpp-cuda-vs-vulkan-bench-2026-11-05.md`；wrapper pins 已修订为 0.1.161/0.1.161（质量方案 Q1.3：0.1.161 升级的性能论据缺席但质量论据成立——sampler API + 实测 +12.8 公式分量点；见 omnidocbench-quality-optimization-development-plan.md D-2/D-15））。窗口协议机制（按页序填充、不动态回填、机制 A 窗口原子提交、`;batch=N` 兼容键、可选窗口方法最小接口面）仍见 `docs/develop/batched-inference-2026-11-02.md`，默认批深以 ① 的解冻报告为准。本重构以该落地形态为迁移输入，不回退、不重设计窗口协议与跨文档编排。llama-cpp 版本、Ovis 四 profile 固定资产、v5 checkpoint 格式、result schema 3、doctor schema 2、`ocr-markdown-v1` prompt 自 v2 基线以来均未变化。  
 **实施范围：** 仅重构现有 OvisOCR2 路径，不接入第二模型  
 **目标读者：** 直接承担本仓库 Rust、CLI、模型资产、扫描流程和质量回归改造的开发与测试人员  
 **方案性质：** 本文独立给出目标架构、业务规则、代码组织、契约、迁移方式、修改清单、验收方法和执行任务；实施时不需要借助其他设计文档才能理解本方案
@@ -15,32 +15,39 @@
 当前工作区包含 `ocrx-cli`、`ocrx-core`、`ocrx-models`、`ocrx-runtime`、`ocrx-ovisocr2`、`ocrx-pdf`、`ocrx-output` 和 `ocrx-skill`。与本次重构有关的实际调用链是：
 
 ```text
-ocrx-cli::run_scan
+ocrx-cli::run_scan / run_scan_multi（跨文档编排，X1 已落地）
+  ├─ 多输入解析：位置参数可多份且选项可交错、--output-dir 多输入必填、
+  │    resolve_scan_inputs 目录展开（排序 *.pdf）/canonical 去重/缺失 exit 2
+  ├─ 单文档 scan_document 保持历史 run_scan 形态；多文档由 run_scan_multi 编排：
+  │    唯一 owner、文档 FIFO、共享 ModelSlot（每调用恰好一次 verify+load）、
+  │    每文档 <stem>-<hash8> 输出目录与 scan-summary.json、退出码聚合（130 > 3 > 10 > 0）
   ├─ 直接读取 PDF、分类页面、计算 native/empty/OCR 队列
   ├─ 直接选择 OvisOCR2 profile 和 CPU/GPU
   ├─ 直接生成 OvisOCR2 manifest、解析缓存路径、下载并校验 model/mmproj
-  ├─ 直接创建 LlamaMtmdRuntime（内含 P4.1 推理线程 actor 与 P4.3 窗口解码）
-  ├─ 通过 ocrx-output::ScanService 按窗口（P4.4，默认批深 4）渲染和识别
-  │    └─ CLI 内的 OvisRecognizer
+  ├─ 直接创建 LlamaMtmdRuntime（内含 P4.1 推理线程 actor 与 P4.3 窗口解码；
+  │    OCRX_STEP_PROFILE 插桩 StepProfile）
+  ├─ 通过 ocrx-output::ScanService 按窗口（P4.4，默认批深 8）渲染和识别
+  │    └─ CLI 内的 OvisRecognizer（CommitProfile 的 png_encode 采集点）
   │         └─ ocrx-ovisocr2 调用 Runtime（含 generate_window）、解析文本、裁剪 bbox、写图片与 raw sidecar
-  ├─ 通过 CLI 内 pdfium_owner.rs 实现 P3 渲染/解码重叠（PdfiumOwner 线程 + 预取）
-  ├─ 直接处理 checkpoint、续扫、路由 sidecar、报告和退出码
-  └─ 直接合并 Markdown 并生成 result.json
+  ├─ 通过 CLI 内 pdfium_owner.rs 实现 P3 渲染/解码重叠（PdfiumOwner 线程 + 预取，
+  │    含跨文档 SwitchDocument：清预取缓存并重置 next_prefetch）
+  ├─ 直接处理 checkpoint、续扫（无匹配兼容键时 stderr 说明后整体重扫）、路由 sidecar、报告和退出码
+  └─ 直接合并 Markdown 并生成 result.json（多文档编排另写 scan-summary.json）
 ```
 
 当前各位置的关键职责和耦合如下：
 
 | 当前位置 | 当前实际职责 | 必须解决的问题 |
 |---|---|---|
-| `src/ocrx-cli/src/main.rs` | 一个约 5400 行的主文件同时承担参数解析、模型管理、设备诊断、PDF 计划、页面处理、runtime 生命周期、续扫、遥测和报告（另有 `pdfium_owner.rs` 约 770 行承载 P3 渲染/解码重叠） | 换模型或 runtime 会改动扫描业务；模型管理命令与 scan 重复实现资产逻辑；无法独立复用扫描应用 |
-| `src/ocrx-core/src/lib.rs` | PDF/页面领域类型、取消、哈希、`ModelId`、llama.cpp 兼容常量、窗口批深/批级错误常量（`WINDOW_DEPTH`/`BATCH_ERROR_PREFIX`）、错误码混放 | 通用技术原语、扫描领域和推理身份没有边界；`ModelId` 是只接受 `ovisocr2` 的枚举 |
+| `src/ocrx-cli/src/main.rs` | 一个约 6400 行的主文件同时承担参数解析（含多输入位置参数与目录展开）、模型管理、设备诊断、PDF 计划、页面处理、跨文档编排（`run_scan_multi`/`scan_document`/`ModelSlot`/`scan-summary.json`/退出码聚合）、runtime 生命周期、续扫、遥测和报告（另有 `pdfium_owner.rs` 约 1000 行承载 P3 渲染/解码重叠与跨文档 `SwitchDocument` 协议） | 换模型或 runtime 会改动扫描业务；模型管理命令与 scan 重复实现资产逻辑；跨文档编排与扫描业务一起困在 CLI；无法独立复用扫描应用 |
+| `src/ocrx-core/src/lib.rs` | PDF/页面领域类型、取消（含父子 token 链）、哈希、`ModelId`、llama.cpp 兼容常量、窗口批深/批级错误常量（`WINDOW_DEPTH = 8`，含完整解冻/重冻历史注释；`BATCH_ERROR_PREFIX`）、错误码混放 | 通用技术原语、扫描领域和推理身份没有边界；`ModelId` 是只接受 `ovisocr2` 的枚举 |
 | `src/ocrx-models/src/lib.rs` | Ovis 固定哈希/URL、两个固定资产、缓存、下载、安装、校验、设备/profile 推荐 | manifest 固定为 `model_sha256 + mmproj_sha256`，无法表达具名角色、可选组件和通用绑定；设备和模型管理混在一起 |
-| `src/ocrx-runtime/src/lib.rs` | `Runtime` trait（含 P4.3 可选窗口方法 `generate_window`）、设备枚举、fake/`LoopFakeRuntime`、遥测 | `InferenceRequest` 含扫描页码却没有业务 prompt；接口不是通用模型任务契约 |
+| `src/ocrx-runtime/src/lib.rs` | `Runtime` trait（含 P4.3 可选窗口方法 `generate_window`）、设备枚举、fake/`LoopFakeRuntime`、遥测、可选 `OCRX_STEP_PROFILE` 插桩（`step_profile.rs`，`StepProfile`/`delta_from` 逐文档增量） | `InferenceRequest` 含扫描页码却没有业务 prompt；接口不是通用模型任务契约 |
 | `src/ocrx-runtime/src/llama_mtmd.rs` | llama.cpp/MTMD 加载、P4.1 推理线程 actor、图像编码、逐 token 与多槽位窗口生成 | OCR prompt 被硬编码在 backend 内，backend 因此知道扫描业务意图 |
 | `src/ocrx-ovisocr2/src/lib.rs` | 调 runtime（含窗口提交转发）、解释 Ovis 文本、解析公式/表格/bbox、截断、复读退化解析、裁剪 PNG、替换图片链接、生成页 JSON | 模型协议、扫描业务解析和文件输出耦合；该 crate 直接依赖 runtime 和 PDF |
-| `src/ocrx-output/src/lib.rs` | 输出、checkpoint、页面生命周期、扫描服务、P4.4 窗口编排与机制 A 原子提交、复读退化重试状态机、渲染/识别抽象、OCR 队列 | output crate 反向拥有扫描编排（含窗口编排与提交原子性）；兼容身份是字符串拼接，缺少资产、runtime、adapter、prompt 的结构化身份 |
+| `src/ocrx-output/src/lib.rs` | 输出、checkpoint、页面生命周期、扫描服务、P4.4 窗口编排与机制 A 原子提交、复读退化重试状态机、渲染/识别抽象（含外部持模型窗口循环入口 `run_pages_with_model`，X1 共享槽使用）、OCR 队列、可选 `CommitProfile`/`CommitRecorder` 插桩（`commit_profile.rs`） | output crate 反向拥有扫描编排（含窗口编排与提交原子性）；兼容身份是字符串拼接，缺少资产、runtime、adapter、prompt 的结构化身份 |
 | `src/ocrx-pdf/src/lib.rs` | PDFium、分类、native 提取、渲染、bbox，同时还包含质量清单、评分、发布门禁和报告 | PDF 基础设施拥有质量评估业务，评估无法作为独立顶层能力复用扫描或推理 API |
-| `scripts/` 与 `assets/regression/` | 样本、真值、预测、评分、质量门禁和报告 | 能力已经存在，重构应迁移/包装并保持格式与评分语义，不能另造一套评估体系 |
+| `scripts/` 与 `assets/regression/` | 样本、真值、预测、评分、质量门禁和报告；二期新增 `build-multidoc-fixtures.py`、`measure-multidoc-baseline.py`、`windows-native-cancel-smoke.ps1`（并更新 `windows-ctrl-c-smoke.ps1` 至批深 8 契约）；另有未跟踪的进行中评估资产（`benchmarks/omnidocbench/` 与三个 omnidocbench 脚本、`assets/regression/symbol-coverage-v0.1/`、`docs/explain/`） | 能力已经存在，重构应迁移/包装并保持格式与评分语义，不能另造一套评估体系；进行中资产不得被重构破坏 |
 
 ### 1.2 重构结论
 
@@ -60,25 +67,28 @@ ocrx-cli::run_scan
 
 ### 2.1 必须实现的目标
 
-- 在不增加第二模型的情况下，建立可扩展的模型资产、协议 adapter、runtime backend 和兼容绑定机制。
+- 在不增加第二模型的情况下，建立可扩展的模型资产、协议 adapter、runtime backend 和兼容绑定机制；模型的选择、信息、安装、校验与删除全部收敛到独立推理管理 API（ModelCatalog + ModelManager），未来新增模型只扩 catalog/binding/adapter 内容，不改扫描与 CLI 结构。
 - 模型 `list/info/recommend/install/verify/remove` 与 `doctor` 全部通过独立推理管理 API 完成，不创建扫描任务，也不需要 PDF。
 - 扫描应用只依赖 `ocrx-inference-api`；业务 prompt 从扫描应用发出，页码在扫描应用保留，通用推理请求不包含页码。
 - OvisOCR2 的四个 profile、固定 revision、URL、哈希、文件大小、缓存共享方式、图像预算、prompt、生成参数和页面解释规则保持不变。
-- 保留 native-first、auto 模式 native 校验失败转 OCR、text 模式失败、empty 页、按需加载模型、单 job 单次加载、GPU 初始化失败回退 CPU、取消、失败继续、checkpoint 续扫和原子提交语义。
-- 以已具备合批能力的 `ocrx-runtime` 为迁移输入，原样保留 P4 落地形态的多页窗口推理语义：固定批深 `WINDOW_DEPTH = 4`、按页序填充窗口、不做动态回填、窗口上下文按 Σ(各页图像 token + 提示 + 输出上限) 动态计算、批级失败整窗批深回退 1 重提、机制 A 窗口原子提交（取消的在飞窗口零提交、恢复整窗重扫）、相同（输入、批组合、批深）下输出逐字节可复现。多请求能力收敛为推理 API 的可选窗口方法（最小接口面），不重设计窗口协议。
+- 保留 native-first、auto 模式 native 校验失败转 OCR、text 模式失败、empty 页、按需加载模型、单次调用单次加载（多文档编排下 `ModelSlot::Shared` 每调用恰好一次 verify+load 并跨文档复用；单输入保持历史 PerCall 形态）、GPU 初始化失败回退 CPU、取消、失败继续、checkpoint 续扫（无匹配兼容键时 stderr 说明原因后整体重扫）和原子提交语义。
+- 以已具备合批能力的 `ocrx-runtime` 为迁移输入，原样保留 P4 落地形态的多页窗口推理语义：固定批深 `WINDOW_DEPTH = 8`（2026-11-04 二期阶段 C 解冻并重冻，见 `window-depth-8-2026-11-04.md`）、按页序填充窗口、不做动态回填、窗口上下文按 Σ(各页图像 token + 提示 + 输出上限) 动态计算、批级失败整窗批深回退 1 重提、机制 A 窗口原子提交（取消的在飞窗口零提交、恢复整窗重扫）、相同（输入、批组合、批深）下输出逐字节可复现。多请求能力收敛为推理 API 的可选窗口方法（最小接口面），不重设计窗口协议。
+- 保留跨文档编排（X1）已落地行为：多输入位置参数（选项可交错）、多输入必填 `--output-dir`、`resolve_scan_inputs` 目录展开（排序 `*.pdf`，不递归）/canonical 去重/缺失或目录无 PDF 报用法错误、文档 FIFO 编排、`PdfRequest::SwitchDocument`（清预取缓存并重置 `next_prefetch`，文档级错误为 Err 值跳过、owner 超时/断连维持 fail-loud）、机制 A 与 checkpoint 逐文档独立（窗口按文档组成，不混窗）、取消=整调用 130（已提交文档保留）、`<stem>-<hash8>` 输出目录、`scan-summary.json`（schema_version 1，写失败降级 warning）、退出码聚合 130 > 文档级失败 3 > 部分 10 > 0、`--password` 调用级；单输入路径历史形态零改动（缺失文件仍为页数失败 exit 3）。
 - 保留复读退化方案已落地的行为：`repetition_loop` 终止原因、attempts 1..=3 状态机、attempt 1 随窗口批处理而退化页以扰动输入单独按批深 1 重试、`degenerated` checkpoint 字段与合并文档不完整标记、`page-NNNN.raw` 原始输出 sidecar。
+- 保留可选插桩通道：`OCRX_STEP_PROFILE` 同开关驱动的 runtime `StepProfile`（含 `delta_from` 逐文档增量）与 output `CommitProfile`/`CommitRecorder`（逐页 render_wait/owner_render/png_encode/commit_write + 终态 totals + finalize，generation 键控，`schema_version: 1` 黄金串），`commit-profile.json`/`step-profile.json` 每文档一份，取消/失败零写盘，disabled 全 no-op；插桩随各自所有者迁移，黄金串与语义不变。
 - 保留 P3 渲染/解码重叠：PdfiumOwner 线程所有权、预取协议和扰动渲染转发随渲染路径迁入扫描应用，语义不变。
-- 保持 `document.md`、页 Markdown/JSON、图片命名、`result.json` 的对外 schema、CLI 参数、stdout/stderr 分工和退出码兼容。
+- 保持 `document.md`、页 Markdown/JSON、图片命名、`result.json` 与 `scan-summary.json` 的对外 schema、CLI 参数（含多输入位置参数与 `--output-dir` 语义）、stdout/stderr 分工和退出码兼容。
 - 将 checkpoint 兼容身份升级为结构化、可审计身份；对旧 v5 checkpoint 采取安全且明确的迁移行为。
 - 默认开发测试完全可使用 fake runtime、受控本地资产和仓库内 fixture 完成，不下载模型、不访问外网、不要求 GPU。
 
 ### 2.2 明确不做的事项
 
 - 不增加 Qwen3.8 或任何第二模型，不验证 Qwen 的 GGUF、mmproj、chat template 或 llama.cpp 兼容性。
-- 不升级当前 `llama-cpp-2 = 0.1.152`、`llama-cpp-sys-2 = 0.1.153` 和上游提交 `9e3b928`。
+- **pins 已修订（2026-11-10，质量方案 D-2/D-15/Q1.3）**：`llama-cpp-2 = 0.1.161`、`llama-cpp-sys-2 = 0.1.161`。原冻结（0.1.152/0.1.153）在质量优化方案执行期间按其裁决路径解除：per-sequence sampler API 为退化重试采样链的唯一载体，里程碑/终验实测 Overall 87.85（超 GO 线 +2.85），正常页跨代次漂移按解码代次契约处置（`;decode=2` 兼容键，旧代次 checkpoint 一律 Reprocess）。迁移以 0.1.161 落地形态为输入；上游提交基点相应更新（S0 审计认定的 0.1.161 对）。
 - 不实现动态模型注册、第三方插件加载、任意脚本执行或模型热插拔。
 - 不改变 PDF 分类算法、native 文本校验算法、OCR 质量阈值和评分公式。
-- 本重构不新增扫描层并发语义：不引入分布式任务、异步服务进程或新的网络服务；runtime 已落地的窗口合批（P4）按原语义迁移保留，不重设计、不改变默认批深，也不新增用户批深旋钮。
+- 本重构不新增扫描层并发语义：不引入分布式任务、异步服务进程或新的网络服务；runtime 已落地的窗口合批（P4，默认批深 8）与跨文档 FIFO 编排（X1，串行非并发）按原语义迁移保留，不重设计、不改变默认批深，也不新增用户批深旋钮；混窗（X2）与常驻进程（B2）均已裁决不做，本重构不重新打开。
+- 不重开已裁决关闭的引擎与吞吐议题：三期已裁决 backend sampling（BS）与 P1/P2/P3 杠杆 no-go，引擎对比已裁决 CUDA 集成 NO-GO、vLLM/LMDeploy 降级 not-now（`docs/develop/phase3-fallback-verdict-2026-11-05.md`，数据归档于 `docs/test/reports/`）；本重构不据此调整 runtime 选型、设备优先级或 wrapper pins。
 - 不重写既有 Python 评分器，不伪造真值，不重新生成历史预测来掩盖行为差异。
 - 不把真实模型下载、真实 GPU、外部 CI、外部模型评测或 Qwen 冒烟设为本机开发和测试的前置门禁。
 
@@ -88,7 +98,7 @@ ocrx-cli::run_scan
 - 固定社区 revision 为 `8a22290a0c42dbcf84739d6d4c2763f877494ae0`；现有四个主模型和共享 mmproj 的 SHA-256、字节数、URL 逐项迁移，不能在重构时重新从网络“发现”元数据。
 - 现有缓存布局继续使用：主模型位于 `<cache_root>/ocrx/models/ovisocr2/<revision>/<profile>/model.gguf`，共享视觉资产位于 `<cache_root>/ocrx/models/ovisocr2/<revision>/mmproj.gguf`。重构不能迫使用户重复下载已校验资产。
 - 默认输出 token 上限 16384（参数范围 128–16384，复读退化方案 D5.2 冻结值），图像 token 默认 1024，context 默认 20480，DPI 默认 300，模型像素预算 `2880 × 2880`，贪心解码、thinking 关闭。
-- 多页窗口推理参数冻结为 P4 落地值：默认批深 `WINDOW_DEPTH = 4`（`batched-inference-2026-11-02.md` §④ 终版冻结），批深参与 checkpoint 兼容身份，跨批深不互恢复；单流路径沿用 `context_size`（默认 20480），窗口上下文独立创建。
+- 多页窗口推理参数冻结为当前落地值：默认批深 `WINDOW_DEPTH = 8`（P4 首冻 N=4；2026-11-04 二期阶段 C 解冻并重冻 N=8，见 `window-depth-8-2026-11-04.md` 与 `ocrx-core` 冻结历史注释），批深参与 checkpoint 兼容身份（兼容键现值 `;batch=8`），跨批深不互恢复；单流路径沿用 `context_size`（默认 20480），窗口上下文独立创建。
 - OCR prompt 必须从 backend 原样移动到扫描应用，版本固定为 `ocr-markdown-v1`。其完整文本为：
 
 ```text
@@ -172,7 +182,7 @@ ocrx-eval → ocrx-scan / ocrx-inference-api / ocrx-core
 - `ModelManager` 是无 PDF 的管理服务，负责目录和资产。
 - `DeviceManager` 是无 PDF 的设备服务，负责编译能力、硬件探测、选择和诊断。
 - `InferenceService::prepare` 返回一个已经绑定模型、adapter 和 runtime 的 `InferenceSession`。
-- `InferenceSession` 在一次扫描 job 中只创建一次，连续处理多个 `TaskRequest`；每次请求都不携带 PDF 或页面上下文。窗口合批是 session 的可选批量入口：`submit_window` 一次提交一批请求，默认实现逐个串行 `submit`（数值等价单流），真实 backend 覆盖为多槽位连续合批；多请求能力收敛为 runtime 内部实现细节 + 最小接口面（`batched-inference-2026-11-02.md` §⑤）。
+- `InferenceSession` 在一次扫描调用中只创建一次（跨文档编排下全部文档共享同一 session，对应现 `ModelSlot::Shared` 每调用一次 verify+load 的语义），连续处理多个 `TaskRequest`；每次请求都不携带 PDF 或页面上下文。窗口合批是 session 的可选批量入口：`submit_window` 一次提交一批请求，默认实现逐个串行 `submit`（数值等价单流），真实 backend 覆盖为多槽位连续合批；多请求能力收敛为 runtime 内部实现细节 + 最小接口面（`batched-inference-2026-11-02.md` §⑤）。
 - `ScanApplication` 持有的是 `dyn InferenceService` 或泛型 API trait，不知道 session 内是 llama.cpp 还是 fake。
 - `ProtocolAdapter` 只负责文本/图像如何进入模型协议以及通用响应如何解码；`OcrPageParser` 只负责把通用文本变成扫描领域页面，二者不是同一个对象。
 
@@ -241,6 +251,7 @@ src/
 │       ├── backend.rs              # RuntimeBackend 通用实现辅助
 │       ├── llama_mtmd.rs           # 只执行 EncodedTask（P4.1 actor 与多槽位窗口解码保留为内部实现），不含 OCR prompt/page
 │       ├── fake.rs                 # 可编程 fake，不再用页码生成响应；含复读退化响应队列（现 LoopFakeRuntime 语义）
+│       ├── step_profile.rs         # 保留现有 OCRX_STEP_PROFILE 插桩（StepProfile/delta_from 语义与导出不变）
 │       ├── capability.rs           # 编译后端与实际 backend 信息
 │       └── bin/mtmd-generate-probe.rs
 ├── ocrx-ovisocr2/
@@ -267,8 +278,9 @@ src/
 │       │   ├── parser.rs           # Ovis 文本到 PageDocument 的业务解析
 │       │   ├── markdown.rs         # bbox 占位符替换与链接校验
 │       │   └── artifacts.rs        # 页 PNG、bbox 裁剪、raw sidecar 和 PageArtifactResult
-│       ├── window.rs               # P4.4 窗口编排：固定批深填充/排水、批级失败批深回退 1、机制 A 原子提交
-│       ├── render.rs               # PdfScanRenderer/WorkerScanRenderer/PdfiumOwner 线程与预取（P3）
+│       ├── window.rs               # P4.4 窗口编排：固定批深 8 填充/排水、批级失败批深回退 1、机制 A 原子提交
+│       ├── multi_doc.rs            # 跨文档编排（X1）：文档 FIFO、共享 session、SwitchDocument、退出码聚合、scan-summary
+│       ├── render.rs               # PdfScanRenderer/WorkerScanRenderer/PdfiumOwner 线程与预取（P3，含 SwitchDocument 协议）
 │       ├── resume.rs               # 恢复计划、pending OCR 恢复
 │       ├── state.rs                # 页面生命周期、队列、进度、attempts 状态机与失败策略
 │       ├── compatibility.rs        # 从扫描配置构造身份；匹配规则归 output
@@ -287,6 +299,7 @@ src/
 │       ├── lib.rs
 │       ├── checkpoint.rs           # v6 读写、v5 安全读取、resume 判定
 │       ├── artifact.rs             # 原子页提交、哈希、render audit
+│       ├── commit_profile.rs       # 保留现有 CommitProfile/CommitRecorder 插桩（schema_version:1 黄金串不变）
 │       ├── document.rs             # 页排序、Markdown 合并与清理
 │       ├── path.rs                 # 输出路径保护
 │       └── report.rs               # 通用 Reporter/ErrorReport/ResultReport
@@ -314,7 +327,7 @@ src/
 | `ocrx-runtime` | backend 执行（含窗口合批内部实现）和 fake | 模型安装、业务 prompt、业务文本解析 |
 | `ocrx-ovisocr2` | Ovis 模型协议适配 | OCR prompt 内容、PageDocument、bbox 裁剪、Markdown 链接 |
 | `ocrx-inference` | 静态绑定、设备管理、session 组合和遥测 | 扫描编排、模型评分 |
-| `ocrx-scan` | 完整扫描应用、窗口编排、OCR prompt 和业务解析 | 具体资产路径、llama.cpp 类型、模型质量评分 |
+| `ocrx-scan` | 完整扫描应用、窗口编排、跨文档编排、OCR prompt 和业务解析 | 具体资产路径、llama.cpp 类型、模型质量评分 |
 | `ocrx-pdf` | PDF 事实获取和图像处理 | 质量真值、checkpoint、推理 |
 | `ocrx-output` | 持久化、checkpoint 和通用输出 | 页面计划、识别、模型加载 |
 | `ocrx-eval` | 样本、真值、评分、评估执行与报告 | 扫描内部实现、runtime 内部实现 |
@@ -581,6 +594,8 @@ pub trait InferenceService {
 
 ### 5.6 模型与设备管理 API
 
+模型与版本的管理边界如下：catalog 是模型与 profile 的唯一事实源，`--model`/`--profile`（沿用 CLI > 环境 > 用户配置 > 默认值的既有优先级链）只是 catalog 解析的输入，不存在绕过 catalog 的第二选择入口；`source_revision` 是 builtin manifest 数据的一部分，不是用户旋钮——本重构不提供 `--revision`，同一模型多 revision 并存的未来需求走 catalog resolve 的 revision 维度扩展（缓存布局 `<model>/<revision>/` 与 checkpoint 身份已按 revision 隔离，届时无需改持久化层）。catalog 当前只内置 `ovisocr2`，因此管理 API 的对外行为仍是单模型；接入第二模型（T108）只新增 builtin 数据、adapter、binding 与扫描侧解释策略注册，管理 API、缓存布局、checkpoint 身份与 CLI 结构零改动。
+
 `ModelManager` 至少提供：
 
 - `list()`：列出 catalog 中模型，不触碰 PDF。
@@ -610,7 +625,7 @@ DeviceUnavailable / RuntimeInitialization / InvalidTask /
 BackendExecution / WindowFailed / AdapterDecode / Cancelled
 ```
 
-扫描错误至少区分 PDF 输入、PDF 路由、native 提取、渲染、模型准备、推理、响应解析、产物完整性、输出和取消。CLI 统一把结构化错误映射为现有退出码：用法 2、输入 3、模型 4、下载 5、runtime 6、解析 7、完整性 8、输出 9、部分完成 10、取消 130。现有个别命令分支的历史退出码如有差异，以既有 CLI golden 为准保留，不能在重构中顺便“修正”为另一套行为。
+扫描错误至少区分 PDF 输入、PDF 路由、native 提取、渲染、模型准备、推理、响应解析、产物完整性、输出和取消。CLI 统一把结构化错误映射为现有退出码：用法 2、输入 3、模型 4、下载 5、runtime 6、解析 7、完整性 8、输出 9、部分完成 10、取消 130。现有个别命令分支的历史退出码如有差异，以既有 CLI golden 为准保留，不能在重构中顺便“修正”为另一套行为。多文档编排的退出码聚合保持现有 severity 阶梯：130 > 文档级失败 3 > 部分 10 > 0（`scan-summary.json` 记录每文档 status 与 exit_code）。
 
 错误消息可以补充结构化 cause，但 stdout/stderr 通道、JSON 外层 schema 和敏感信息脱敏规则不能改变。密码、prompt 内容、token、授权信息和代理凭据不写入报告。
 
@@ -628,9 +643,9 @@ CLI 启动后只创建一个生产组合上下文：
 4. 注册 Ovis adapter 以及 `ovisocr2 + llama.cpp + 固定版本` 的兼容 binding；其中 `llama.cpp` 是本次新定义的内部 RuntimeId，不是对现有 result.json 展示字符串的照抄。
 5. 创建 `InferenceServiceImpl`。
 6. 用 `dyn InferenceService`、PDF 基础设施和输出存储创建 `ScanApplication`。
-7. `scan` 调用扫描应用；`model` 调用模型管理；`doctor` 调用设备和模型管理；`skill` 继续走原模块。
+7. scan 调用扫描应用（单/多输入统一入口；跨文档编排属扫描应用职责，CLI 不再自行编排文档）；model 调用模型管理；doctor 调用设备和模型管理；skill 继续走原模块。
 
-未知模型仍在参数/配置解析阶段被拒绝；当前 catalog 只有 Ovis，因此不会意外接受第二模型。
+未知模型仍在参数/配置解析阶段被拒绝；当前 catalog 只有 Ovis，因此不会意外接受第二模型。模型/profile 选择沿用既有 CLI 参数与配置优先级链，进入扫描应用前必须经 catalog 解析为结构化 `ModelId`/`ProfileId`。
 
 ### 6.2 模型管理和 doctor 流程
 
@@ -660,7 +675,7 @@ CLI doctor
 #### 第一步：输入和输出预检
 
 1. 安装 Ctrl+C handler，第一次请求协作取消，第二次强制退出 130。
-2. 解析输入、输出目录、页范围、PDF 模式、质量级别、模型/profile/device、渲染和生成参数。
+2. 解析输入（位置参数可多份且选项可交错；多输入必填 `--output-dir`）、输出目录、页范围、PDF 模式、质量级别、模型/profile/device、渲染和生成参数；目录输入由 `resolve_scan_inputs` 展开（排序 `*.pdf`、不递归、canonical 去重，目录无 PDF 或路径缺失报用法错误 exit 2；纯单文件路径不触发该解析，缺失文件仍为页数失败 exit 3）。
 3. 用 PDFium 读取页数；不存在、非 PDF、损坏、加密和动态库错误仍在模型处理前报告。
 4. 校验页范围、`--resume` 与 `--overwrite` 互斥、数值范围、输出路径与输入/模型缓存/工作目录不重叠。
 5. 显式请求不可用设备时仍按当前行为报错，即使最终可能是 native-only；auto 不在此处提前加载 runtime。
@@ -700,7 +715,7 @@ CLI doctor
 #### 第六步：窗口化 OCR
 
 1. 若已取消，停止取新页。
-2. 按冻结策略组装窗口：固定批深 `WINDOW_DEPTH = 4`、按页序填充、不做动态回填（窗口不满按实际页数运行）；恢复时已复用页在窗口前逐页排水，不改变在飞窗口的批组合。
+2. 按冻结策略组装窗口：固定批深 `WINDOW_DEPTH = 8`、按页序填充、不做动态回填（窗口不满按实际页数运行）；恢复时已复用页在窗口前逐页排水，不改变在飞窗口的批组合。窗口按文档独立组成，不跨文档混窗（X2 已裁决不做）。
 3. 对窗口内每页渲染 RGB8，保持 DPI、PdfiumOwner 线程与预取（P3）、worker 分段、像素缩放和 render audit 不变；扫描应用取得 `ocr-markdown-v1` prompt，构造只含 prompt、图像和生成参数的 `TaskRequest`；页码留在扫描局部变量。
 4. 一次 `submit_window` 提交整窗（attempt 1 全窗批处理）；进度回调携带槽位序号，扫描 callback 映射页码后再交给 Reporter，通用进度事件本身不含页码。
 5. adapter 编码各任务，backend 按槽位解码生成；每个解码秒至少发一次进度，阻塞图像编码开始时发一次事件。窗口解析规则：单页失败只占该槽位条目；批级失败（`WindowFailed`）整窗以批深 1（等价单流）重提；退化页按 attempts 状态机以扰动输入单独按批深 1 重试。
@@ -717,6 +732,7 @@ CLI doctor
 4. 无可合并页时删除陈旧 `document.md`，不输出伪造成功文档。
 5. 写每页 routing sidecar 和 `result.json`，模型字段从实际 `InferenceIdentity` 生成，backend 使用实际执行值，GPU→CPU 回退后必须报告 CPU。
 6. 保持文本/JSON stdout、进度 stderr、routing summary、warnings、diagnostics、图片计数和退出码行为。
+7. 多输入时以上 1–6 按文档逐份执行（文档 FIFO、共享同一 session，对应现 `ModelSlot::Shared`），每文档独立窗口、机制 A、checkpoint 与产物目录（`<output-root>/<doc-stem>-<hash8>/`）；全部文档结束后由扫描应用输出 `scan-summary.json`（schema_version 1：`mode/inputs/output_root/documents[{input,output_dir,status,exit_code}]/elapsed_ms`，写失败降级 warning）并按 130 > 文档级失败 3 > 部分 10 > 0 聚合退出码；扫描中取消=整调用 130，已提交文档保留。
 
 ### 6.4 模型协议与 OCR 业务解释的分界实例
 
@@ -741,7 +757,7 @@ TaskResponse.text
   → PdfPageDocument / checkpoint / document.md
 ```
 
-后续接入另一 OCR/VLM 时，需要变化的是内置 manifest、协议 adapter、兼容 binding 及必要的扫描响应解释策略；PDF 路由、页面队列、取消、checkpoint 和合并机制不因模型名称而改变。
+后续接入另一 OCR/VLM 时，需要变化的是内置 manifest、协议 adapter、兼容 binding 及扫描侧响应解释策略；PDF 路由、页面队列、取消、checkpoint 和合并机制不因模型名称而改变。其中“哪个模型使用哪套 prompt 与页面解析器”必须是显式的扫描侧策略注册（按 `ModelId` 键控，当前仅 `ovisocr2 → ocr-markdown-v1 + ovis-page-v1`），归 scan 所有（如 `compatibility.rs`/`ocr/mod.rs`），不进入推理 API——prompt 内容与页面解析是扫描业务，不是模型协议。checkpoint 的 OCR 身份已携带 prompt/parser 版本，切换模型或策略版本即自然重处理 OCR 页，native/empty 结果不受影响。
 
 ---
 
@@ -766,7 +782,7 @@ ocr = null 或 {
   prompt_schema_version = 1,
   dpi,
   max_image_tokens, max_output_tokens, context_size,
-  batch_depth = 4,
+  batch_depth = 8,
   pixel_width_budget = 2880, pixel_height_budget = 2880,
   page_parser_version = "ovis-page-v1"
 }
@@ -805,7 +821,7 @@ render_audit
 
 写入仍使用临时文件、flush/sync、原子 rename；complete 只能在窗口内全部页到达终态后、且该页 Markdown、JSON、图片、raw sidecar 和 render audit 成功后写入（机制 A：取消的在飞窗口零提交，恢复整窗重扫）。
 
-v5 读取和迁移规则必须保守（v5 现状：checkpoint 已含 `degenerated`/`attempts`/`raw` 字段，兼容串为 `pdf-mode;quality-tier;classifier;extractor;platform;dpi;tokens;max_image_tokens;context_size;device;batch;route=native` 加可选 `;ocr-profile=`/`;ocr-device=`/`;pending-ocr=true` 后缀）：
+v5 读取和迁移规则必须保守（v5 现状：checkpoint 已含 `degenerated`/`attempts`/`raw` 字段，兼容串为 `pdf-mode;quality-tier;classifier;extractor;platform;dpi;tokens;max_image_tokens;context_size;device;batch;route=native` 加可选 `;ocr-profile=`/`;ocr-device=`/`;pending-ocr=true` 后缀；`batch` 现值 8——2026-11-04 二期阶段 C 已把 4 解冻为 8，旧 `;batch=4` checkpoint 自然失效并整体重扫，该行为变化已发生且为预期，v5→v6 迁移规则不受影响）：
 
 - v5 文件可以解析，不能仅因版本旧而崩溃。
 - 旧 `complete: bool` 和 compatibility 参数中的 `;pending-ocr=true` 后缀按固定规则映射：`complete=true` 且无 pending 后缀对应 v6 `status=complete`；`complete=false` 且有 pending 后缀对应 v6 `status=pending_ocr`；`complete=false` 且无 pending 后缀表示未完成但不是可恢复的 pending OCR，进入 reprocess；`complete=true` 却带 pending 后缀属于矛盾状态，按无效数据处理并进入 reprocess，不能映射为 complete。
@@ -905,6 +921,7 @@ v5 读取和迁移规则必须保守（v5 现状：checkpoint 已含 `degenerate
 - 将字符串错误改为结构化错误，但保留 CLI 可识别的设备初始化类别；批级窗口失败映射为 `WindowFailed`，替代现 `BATCH_ERROR_PREFIX` 字符串协议。
 - fake 改成可编程响应队列，可检查接收到的 prompt/图像/参数并模拟 EOS、max_tokens、`repetition_loop`（现 `LoopFakeRuntime` 语义）、backend error、批级窗口错误和 cancel；不再返回 `page {request.page}`。
 - runtime factory 返回实际 backend 和 runtime identity；不接触模型 catalog 或安装。
+- 保留 `step_profile.rs` 插桩模块（`OCRX_STEP_PROFILE` 开关、`StepProfile`/`delta_from` 导出与黄金行为不变）；插桩是 backend 内部诊断设施，不进入公共 API。
 
 ### 8.7 `ocrx-ovisocr2`：只保留协议 adapter
 
@@ -925,7 +942,8 @@ v5 读取和迁移规则必须保守（v5 现状：checkpoint 已含 `degenerate
 
 ### 8.9 `ocrx-output`：去掉扫描编排，升级持久化身份
 
-- 移出 `ScanService`、`ModelLoader`、`PageRecognizer`、`PageArtifactRecognizer`、OCR 队列和页面计划逻辑到 scan；P4.4 窗口编排（窗口组装/恢复页排水/槽位解析/批级失败批深回退 1/机制 A 窗口原子提交）与复读退化重试状态机随 `ScanService` 与识别抽象（含 `recognize_window_cancelled`）一并迁到 scan。
+- 移出 `ScanService`、`ModelLoader`、`PageRecognizer`、`PageArtifactRecognizer`、OCR 队列和页面计划逻辑到 scan；P4.4 窗口编排（窗口组装/恢复页排水/槽位解析/批级失败批深回退 1/机制 A 窗口原子提交）与复读退化重试状态机随 `ScanService` 与识别抽象（含 `recognize_window_cancelled` 与外部持模型窗口循环入口 `run_pages_with_model`，X1 共享槽使用）一并迁到 scan。
+- 保留 `commit_profile.rs` 插桩（`CommitProfile`/`CommitRecorder`、`schema_version: 1` 黄金串、generation 键控、env 开关、取消/失败零写盘）；记录调用点在扫描/识别/提交路径上，经共享 recorder sink 传递，output 不因此反向依赖 scan。
 - 保留 `PageLifecycle` 或移到 scan/state；output 只关心持久化状态，不决定下一页走哪条路线，也不决定窗口怎么组装。
 - 用 `ScanCompatibility` 替换 `CompatibilityKey` 和字符串 `parameters`。
 - 新写 v6，按第 7 节读取 v5；保留 complete/output hash/truncated/degenerated/attempts/raw sidecar/warnings/audit 和 pending 状态。
@@ -935,8 +953,9 @@ v5 读取和迁移规则必须保守（v5 现状：checkpoint 已含 `degenerate
 ### 8.10 `ocrx-scan`：形成真正的扫描应用
 
 - 从 CLI 迁移 `run_scan` 的业务部分，对外提供不调用 `std::process::exit` 的 `ScanApplication::run`。
-- 从 CLI 迁移分类队列、native-first、fallback、pending 恢复、最终 OCR 计划、renderer（含 P3 `pdfium_owner.rs` 的 PdfiumOwner 线程所有权、预取协议和扰动渲染转发）、recognizer、路由 sidecar、结果汇总和遥测。
-- 在 `window.rs` 实现窗口编排：固定批深 `WINDOW_DEPTH`（常量来自 inference API）、按页序填充、不做动态回填、恢复页排水、批级失败（`WindowFailed`）整窗批深回退 1、机制 A 窗口原子提交；窗口策略是扫描编排语义，不进入推理 API 请求类型。
+- 从 CLI 迁移分类队列、native-first、fallback、pending 恢复、最终 OCR 计划、renderer（含 P3 `pdfium_owner.rs` 的 PdfiumOwner 线程所有权、预取协议、扰动渲染转发和跨文档 `SwitchDocument` 协议：清预取缓存、重置 `next_prefetch`、文档级错误为 Err 值不中毒 owner）、recognizer、路由 sidecar、结果汇总和遥测。
+- 在 `window.rs` 实现窗口编排：固定批深 `WINDOW_DEPTH`（常量来自 inference API，现值 8）、按页序填充、不做动态回填、恢复页排水、批级失败（`WindowFailed`）整窗批深回退 1、机制 A 窗口原子提交；窗口策略是扫描编排语义，不进入推理 API 请求类型；窗口按文档独立组成。
+- 在 `multi_doc.rs` 实现跨文档编排（X1）：文档 FIFO、全部文档共享一次 prepare/session、`SwitchDocument` 调度边界、逐文档机制 A 与 checkpoint、取消=整调用、退出码聚合（130 > 3 > 10 > 0）与 `scan-summary.json` 生成（含 `<stem>-<hash8>` 输出目录解析）；单输入路径保持历史形态。
 - 从 runtime 迁移完整 prompt 到 `ocr/prompt.rs`。
 - 从 `ocrx-ovisocr2` 迁移页解析、bbox 裁剪、Markdown 替换和链接验证到 `ocr/`。
 - 定义 `ScanRequest/ScanOutcome/ScanEvent`，由 CLI 将事件映射为现有 Reporter；扫描库不直接打印终端，也不自行安装进程级 signal handler。
@@ -962,7 +981,7 @@ v5 读取和迁移规则必须保守（v5 现状：checkpoint 已含 `degenerate
 ### 8.13 `ocrx-cli`：收缩为入口和展示
 
 - `main.rs` 只保留参数到 command 的分发和组合上下文调用。
-- 删除 `run_scan` 及其辅助业务函数，删除 `OvisRecognizer`、`PreloadedLoader`、`PdfScanRenderer`、`WorkerScanRenderer`、`pdfium_owner`（迁至 scan 渲染路径）、`load_runtime_with_fallback`、模型安装实现和资产路径拼接。
+- 删除 `run_scan`/`run_scan_multi`/`scan_document`/`resolve_scan_inputs` 及其辅助业务函数（迁至 scan），删除 `OvisRecognizer`、`PreloadedLoader`、`ModelSlot`、`PdfScanRenderer`、`WorkerScanRenderer`、`pdfium_owner`（迁至 scan 渲染路径）、`scan-summary.json` 拼装、`load_runtime_with_fallback`、模型安装实现和资产路径拼接。
 - 删除对 `ocrx-runtime`、`ocrx-models`、`ocrx-ovisocr2`、`ocrx-pdf` 的直接依赖；CLI 通过 `ocrx-inference` 组合，通过 `ocrx-scan` 执行。
 - 保留参数、help、默认模型 `ovisocr2`、配置优先级、输出格式、doctor 展示、退出码和 skill 命令。
 - 将 `serialize_scan_result` 改为基于 scan outcome 的展示序列化，字段和顺序 golden 不变。
@@ -974,6 +993,8 @@ v5 读取和迁移规则必须保守（v5 现状：checkpoint 已含 `degenerate
 - 新增 inference API 合约测试、静态绑定测试、多角色资产测试、扫描应用 fake 端到端测试和架构依赖检查。
 - 新增 `scripts/validate-architecture-boundaries.py`，只用 Python 标准库读取 Cargo manifest 和源码，检查禁止依赖与禁止类型名；本机可直接运行。
 - `scripts/bootstrap-check.sh` 增加架构检查和 Python 单元测试，但不增加网络、真实模型或 GPU 命令。
+- 二期新增的脚本与测试一并保持：`scripts/build-multidoc-fixtures.py`、`measure-multidoc-baseline.py`、`windows-native-cancel-smoke.ps1` 随仓库保留；`windows-ctrl-c-smoke.ps1` 的批深 8 契约（window 1 = 页 1–8、取消锚点 page-0008、机制 A 证据页 9–12）不得回退；CLI 的 `multi_doc_orchestration.rs`、`multi_input_contract.rs` 测试随对应实现迁移，不允许删除。
+- 工作区中未跟踪的进行中评估资产（`benchmarks/omnidocbench/` 基线工具与 `scripts/build-omnidocbench-pdfs.py`、`export-omnidocbench-predictions.py`、`run-omnidocbench-eval.py`，`assets/regression/symbol-coverage-v0.1/`，`docs/explain/`）按 T001 基线保护：重构不移动、不改名、不破坏其读取的输出路径与 schema 约定；其中 OmniDocBench 基线（OmniDocBench v1.6，1,651 页）明确用于本重构前后的质量对照。
 - README 中的用户命令保持有效；仅在开发说明需要时更新 crate 职责，不改变支持第二模型的宣传。
 - 清理所有描述旧行为的注释，例如“Ovis adapter 写页产物”“runtime 请求含页码”“output 提供扫描服务”“core 固定 runtime adapter”。
 
@@ -1014,7 +1035,9 @@ cargo run --locked -p ocrx -- model info
 | 安装 | fake transport、离线、许可证、磁盘、幂等、失败回滚、临时文件清理、receipt | 无网络；失败不暴露半套可用资产 |
 | 删除 | 删一个 profile 不删仍被引用的 mmproj，最后一个才回收 | 文件存在性逐项断言 |
 | runtime | fake 可编程响应、取消、截断、backend 错误、session 多次 submit | 无真实模型；加载次数与调用次数明确 |
-| 窗口合批 | 固定批深填充/不动态回填、恢复页排水、批级失败批深回退 1、机制 A 窗口原子提交、取消窗口零提交、同输入同批深自一致逐字节、跨批深不互恢复 | fake 与受控测试证明，行为与 P4.4 门禁语义一致；无真实模型 |
+| 窗口合批 | 固定批深 8 填充/不动态回填、恢复页排水、批级失败批深回退 1、机制 A 窗口原子提交、取消窗口零提交、同输入同批深自一致逐字节、跨批深不互恢复、无匹配兼容键时 resume 提示 | fake 与受控测试证明，行为与 P4.4 门禁语义一致；无真实模型 |
+| 跨文档编排 | 多输入解析/目录展开去重/exit 2、`--output-dir` 必填、`SwitchDocument` 预取重置与 Err 值跳过、逐文档机制 A 与 checkpoint、取消=整调用 130、退出码聚合 130>3>10>0、`scan-summary` golden、单输入零改动、每调用一次 verify+load | `multi_doc_orchestration`/`multi_input_contract` 测试随迁并通过；编排扫描与逐个调用页产物逐字节一致 |
+| 插桩 | `OCRX_STEP_PROFILE` 开启时 StepProfile/CommitProfile 各段非空、黄金串、generation 键控、取消/失败零写盘、disabled no-op、`delta_from` 增量隔离 | 现有插桩测试随迁并通过，黄金串不变 |
 | binding | 正确三元组通过，runtime/sys/adapter/角色任一不符失败 | 错误类别为 IncompatibleBinding |
 | native/empty | 不准备模型、不创建 session、产物无整页伪造 PNG | fake 计数为 0，产物 golden 不变 |
 | OCR | prompt 从 scan 到 fake、文本解析、公式/表格/bbox、PNG 和链接 | 页 JSON/Markdown/PNG golden 不变 |
@@ -1035,6 +1058,7 @@ cargo run --locked -p ocrx -- model info
 - native-only 扫描中模型安装和 runtime 加载调用均为 0。
 - 多页 OCR 中 prepare/load 为 1；窗口提交次数与窗口组装策略一致，attempt 1 批处理请求数加上批深 1 回退与扰动重试请求数等于实际需处理页数。
 - 同一输入以相同批深连跑两遍，页产物逐字节相同（P4 自一致性语义在重构后保持）。
+- 多文档编排扫描与各文档逐个单独扫描的 `document.md`/页产物逐字节一致（X1 内容等价口径）；`scan-summary.json` 字段、每文档 status/exit_code 与退出码聚合符合基线。
 - 所有 CLI 命令的 stdout/stderr 和退出码符合现有 golden。
 
 ### 9.4 非门禁的本机可选验证
@@ -1047,6 +1071,8 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 ```
 
 可选观察项包括真实模型加载、RGB 图像生成、EOS/max_tokens、多页复用、CPU/GPU、取消和资源采样。它们不是 Qwen 接入证明，也不是本次单模型架构重构的默认交付前提。
+
+本机若已构建 OmniDocBench 基线（`benchmarks/omnidocbench/`，含数据集与 Docker 评测环境），可在重构前后各跑一次同一 predictions 导出（`export-omnidocbench-predictions.py`）与官方评分（`run-omnidocbench-eval.py`），作为跨重构的质量对照；缺 Docker、数据集或模型资产时记录未执行原因，不列为门禁。
 
 ---
 
@@ -1068,6 +1094,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - T036/T037 的新协议 adapter 只依赖 inference API；旧 Ovis 页解析和产物函数在原 crate 中暂时原样保留，T037 采用“复制到 scan、保留旧实现”的方式，不让 adapter crate 反向依赖 scan。旧导出和旧依赖由 T087 最终删除。
 - T044–T051 新增 v6 与扫描状态类型时，暂时保留 output 的旧 `CompatibilityKey`、v5 写入和 `ScanService`/loader/recognizer 导出。T051 同样采用“复制到 scan、保留旧实现”，不得提前要求 output 只剩持久化职责；旧实现由 T088 最终删除。
 - CLI 的 probe、模型管理、doctor 等旧调用在各自命令切换前保留过渡委托；T069–T073 运行 golden 时，旧 scan 路径仍可通过上述兼容层编译。T074/T077 之后才允许删除旧扫描调用。
+- 旧 `run_scan_multi`/`scan_document`/`ModelSlot`/`scan-summary` 编排同样随旧 scan 路径保留到 T074/T077；过渡期内不得让新 scan 的跨文档编排与旧 CLI 编排并存两条生产路径，`aggregate_scan_exit` 等 golden 在切换前后保持一致。
 - 评估函数迁移也采用 copy-first：T079–T082 可暂留 PDF re-export，T083 切换完全部调用方后删除，避免阶段 H 中间状态破坏 workspace 构建。
 - 过渡兼容层不是目标架构的一部分，不得让新 `ocrx-scan`、新推理 API 或新生产组合根调用它。T086–T088 删除后，§3.2 的最终禁止依赖必须在没有任何例外的情况下成立。
 - T037、T051、T073、T077、T083、T088 均必须执行 `cargo check --workspace`，以实际编译证明兼容层的保留或删除时机正确。
@@ -1084,6 +1111,8 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 | native-only 因新 prepare 流程提前加载模型 | fake 计数测试和最终队列后 prepare |
 | GPU 回退后身份仍显示 GPU | identity 使用实际 backend，回退专项测试 |
 | CLI 迁移丢失历史错误码/输出通道 | 子进程 golden 不变，错误集中映射但保留历史分支 |
+| 跨文档编排迁移破坏单输入兼容或聚合语义 | 单输入路径历史形态 golden（X1 ②）、`multi_input_contract`/`multi_doc_orchestration` 测试随迁、编排与逐个调用逐字节对照、退出码聚合 golden |
+| 插桩迁移改变测量口径或黄金串 | CommitProfile/StepProfile 黄金串测试随迁，env 开关与取消/失败零写盘语义不变 |
 | 大迁移同时破坏评分能力 | 评估函数纯移动、同输入数值对比、脚本格式不改 |
 | 真实外部条件阻塞开发 | 默认全部 fake/本地测试，真实模型和 GPU 仅可选非门禁 |
 
@@ -1097,7 +1126,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - 生产环境仍只注册 OvisOCR2，版本、资产、prompt、生成参数和 PDF 行为未改变。
 - 扫描应用只依赖推理 API；推理平台没有 PDF/扫描/output/eval 依赖；OCR 页面解析只在扫描应用。
 - 模型管理和 doctor 可独立运行，scan 与模型管理复用相同资产和设备实现。
-- native/empty/OCR、fallback、按需加载、单 session 多页窗口合批（P4 冻结语义不回退：默认批深 4、机制 A 原子提交、自一致确定性）、复读退化处理、GPU 回退、取消、失败继续、续扫和最终合并均通过测试。
+- native/empty/OCR、fallback、按需加载、单 session 多页窗口合批（P4 冻结语义不回退：默认批深 8、机制 A 原子提交、自一致确定性）、跨文档编排（X1 语义不回退：文档 FIFO、每调用一次加载、`scan-summary.json`、退出码聚合）、可选插桩通道（StepProfile/CommitProfile 黄金串不变）、复读退化处理、GPU 回退、取消、失败继续、续扫和最终合并均通过测试。
 - v6 checkpoint 保存完整身份，v5 迁移符合安全规则，不跨模型/prompt/runtime 复用 OCR。
 - 现有 CLI、页产物、doctor、result 和质量报告契约保持兼容。
 - 第 9.1 节本机门禁全部通过，且没有通过忽略、删除或放宽既有测试来换取通过。
@@ -1118,13 +1147,13 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 A：基线与契约冻结
 
-- [ ] T001（无依赖）记录当前工作区状态和已有未提交修改，建立只修改本重构所需文件的清单；完成判定：不会覆盖或回滚用户已有修改，基线记录可供后续对照。
+- [ ] T001（无依赖）记录当前工作区状态和已有未提交修改，建立只修改本重构所需文件的清单；完成判定：不会覆盖或回滚用户已有修改，基线记录可供后续对照；工作区未跟踪的进行中工作（`benchmarks/omnidocbench/`、三个 omnidocbench 脚本、`assets/regression/symbol-coverage-v0.1/`、`docs/explain/`）只记录不改动。
 - [ ] T002（T001）运行 `cargo build --workspace` 和 `cargo test --workspace`，保存通过/失败清单；完成判定：每个既有失败被区分为重构前问题或环境问题，不把既有失败误记为重构回归。
-- [ ] T003（T001）运行现有 CLI doctor/model/参数错误及扫描失败分支 golden，逐分支记录 stdout、stderr 和退出码特例；完成判定：清单显式包含 routing sidecar 提交失败为 `code:5, kind:"output"` 的历史行为，后续展示测试有明确期望值且不得顺手统一为 9。
+- [ ] T003（T001）运行现有 CLI doctor/model/参数错误及扫描失败分支 golden，逐分支记录 stdout、stderr 和退出码特例；完成判定：清单显式包含 routing sidecar 提交失败为 `code:5, kind:"output"` 的历史行为，后续展示测试有明确期望值且不得顺手统一为 9；清单同时覆盖多输入解析错误（路径缺失/目录无 PDF 的用法错误 exit 2）与单输入缺失文件（exit 3）的历史差异，以及 `--resume` 无匹配兼容键时的 stderr 提示。
 - [ ] T004（T001）用本地 fixture 记录 native-only、empty、auto fallback、OCR fake 的页面计划和产物 golden；完成判定：每类至少有一个可重复输入和预期输出，缺 PDFium 的项目明确标为环境未执行而非失败。
 - [ ] T005（T001）逐项核对 Ovis 四 profile 的 revision、URL、模型文件名、共享 mmproj、SHA-256、字节数及展示元数据；完成判定：形成内置 manifest 字段清单，display_name=OvisOCR2、family=Ovis 和四档 quantization 映射明确，所有值与当前代码一致且无需网络。
 - [ ] T006（T001）冻结完整 `ocr-markdown-v1` prompt、MTMD 图像在 prompt 前的顺序和生成默认值；完成判定：有字节级预期字符串和参数清单，包括开头换行。
-- [ ] T007（T001）盘点 v5 checkpoint、result schema 3、doctor schema 2、routing sidecar 和质量报告字段；完成判定：每种格式都有字段级兼容/迁移决定，明确 runtime=`{RuntimeId}@{wrapper_version}`=`llama.cpp@0.1.152`、prompt_schema_version=数值 1、native/empty 忽略 dpi/批深、v5 状态映射（含 `degenerated`/`attempts`/`raw` 字段与 `platform`/`batch` 等兼容串参数、`;pending-ocr=true` 后缀），无“实施时再定”的字段。
+- [ ] T007（T001）盘点 v5 checkpoint、result schema 3、doctor schema 2、`scan-summary.json`、routing sidecar 和质量报告字段；完成判定：每种格式都有字段级兼容/迁移决定，明确 runtime=`{RuntimeId}@{wrapper_version}`=`llama.cpp@0.1.152`、prompt_schema_version=数值 1、native/empty 忽略 dpi/批深、v5 状态映射（含 `degenerated`/`attempts`/`raw` 字段与 `platform`/`batch` 等兼容串参数、`;pending-ocr=true` 后缀、batch 现值 8 及 4→8 解冻的既有行为），无“实施时再定”的字段。
 - [ ] T008（T001）盘点 `ocrx-pdf` 中质量清单、指标、门禁与 `scripts/`/`assets/regression/` 的对应关系；完成判定：每个待迁移 Rust 函数都有目标模块和现有测试/脚本验证方式。
 
 ### 阶段 B：工作区骨架、技术原语和公共 API
@@ -1180,7 +1209,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [ ] T048（T046）迁移原子页提交、native 提交、产物 hash 和 render audit；完成判定：complete checkpoint 最后写，引用图片缺失或篡改不可复用，无整页 PNG 的 native 行为不变。
 - [ ] T049（T046）迁移 pending 队列恢复并按 route 去重；完成判定：排序稳定、输入不兼容不恢复、同一页不会被 native 和 OCR 重复收集。
 - [ ] T050（T009）将 output 的取消/进度/哈希切换到 primitives；完成判定：无重复实现，现有 output 测试通过，对外 legacy re-export 可暂留并由 T086 统一删除。
-- [ ] T051（T044、T048）把 ScanService（含 P4.4 窗口编排与机制 A 原子提交）、loader、recognizer（含 `recognize_window_cancelled`）和 OCR 队列复制到 scan 新模块，暂不删除 output 旧实现和旧导出；完成判定：新 scan 不调用 output 旧扫描类型，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T088 删除。
+- [ ] T051（T044、T048）把 ScanService（含 P4.4 窗口编排与机制 A 原子提交、`run_pages_with_model` 外部持模型窗口入口）、loader、recognizer（含 `recognize_window_cancelled`）和 OCR 队列复制到 scan 新模块，暂不删除 output 旧实现和旧导出；完成判定：新 scan 不调用 output 旧扫描类型，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T088 删除。
 
 ### 阶段 F：扫描应用迁移
 
@@ -1190,15 +1219,15 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [ ] T055（T045、T047、T052）实现扫描恢复计划；完成判定：v6/v5、完整复用、pending、重处理和 selected pages 限制测试通过；OCR 回退专项证明 v6 按实际 backend 而非请求设备匹配——请求 GPU 但回退 CPU 所写的 checkpoint 在实际仍为 CPU 时即使请求设备不同也复用，实际 GPU→CPU 变化时重处理。
 - [ ] T056（T052、T055）迁移 native-first、text 失败、auto fallback 和 empty 提交；完成判定：native/empty 路径不调用 prepare，产物 golden 与 T004 一致。
 - [ ] T057（T056）实现最终 OCR 队列合并和按需 prepare；完成判定：队列为 0 时模型/设备 prepare 为 0，非 0 时只 prepare 一次。
-- [ ] T058（T052）迁移 PDFium 与 worker renderer、PdfiumOwner 线程所有权、预取协议和扰动渲染转发（P3）、像素缩放和 render audit；完成判定：DPI、分段、尺寸校验、2880² 预算、scale ratio、预取与故障注入测试保持，PDFium 入口安全不变式不回退。
+- [ ] T058（T052）迁移 PDFium 与 worker renderer、PdfiumOwner 线程所有权、预取协议、扰动渲染转发（P3）、跨文档 `SwitchDocument` 协议（清预取缓存、重置 `next_prefetch`、文档级 Err 值不中毒 owner）、像素缩放和 render audit；完成判定：DPI、分段、尺寸校验、2880² 预算、scale ratio、预取与故障注入测试保持，PDFium 入口安全不变式不回退，SwitchDocument 既有单测（同一线程、预取重置、Err 值跳过、poison fail-loud）随迁通过。
 - [ ] T059（T006、T052）在 `ocr/prompt.rs` 写入完整 `ocr-markdown-v1` prompt 和构造器；完成判定：T006 字节 golden 通过，扫描生成的 TaskRequest prompt 与冻结文本一致。
 - [ ] T060（T037、T059）迁移 Ovis 文本到 PageDocument 的解析；完成判定：公式、表格、bbox、CRLF、重复尾部、空输出、EOS/stop/max_tokens golden 全通过。
 - [ ] T061（T037、T060）迁移 bbox 裁剪、整页 PNG、图片替换和链接校验；完成判定：文件命名、数量、路径逃逸拒绝和缺失链接错误与现状一致。
 - [ ] T062（T017、T058、T059、T060、T061）实现单页 OCR 流程；完成判定：fake 收到无页码任务，scan 用局部页码生成产物，截断和解析警告正确映射。
-- [ ] T063（T062）实现多页窗口化编排（固定批深填充/恢复页排水、attempt 1 批处理、批级失败批深回退 1、机制 A 窗口原子提交、退化页扰动重试）、失败继续、取消停止和进度槽位→页码映射；完成判定：prepare/load 一次，窗口提交与页数关系准确，取消的在飞窗口零提交且恢复整窗重扫，后续已提交页保留，同批深自一致。
+- [ ] T063（T062）实现多页窗口化编排（固定批深填充/恢复页排水、attempt 1 批处理、批级失败批深回退 1、机制 A 窗口原子提交、退化页扰动重试）与跨文档编排（文档 FIFO、共享 session、`SwitchDocument`、退出码聚合、`scan-summary.json`）、失败继续、取消停止和进度槽位→页码映射；完成判定：prepare/load 每调用一次（多文档共享同一 session），窗口提交与页数关系准确，取消的在飞窗口零提交且恢复整窗重扫，后续已提交页保留，同批深自一致，多文档编排与逐个调用产物一致且 `scan-summary`/退出码聚合正确。
 - [ ] T064（T045、T062、T063）把实际 InferenceIdentity 写入 OCR v6 checkpoint；完成判定：GPU 回退、模型资产、prompt/parser/render/generation 任一变化均按规则处理。
 - [ ] T065（T048、T049、T056、T063）实现跨路线产物收集和 document.md 汇总；完成判定：只收集已验证页，排序/去重、空结果 stale 清理和 keep-pages 行为与基线一致。
-- [ ] T066（T052、T065）迁移 routing sidecar、ScanOutcome 和 result 所需字段；完成判定：模型 identity、实际 backend、页计数、warnings、diagnostics、images 和 routing 数据完整。
+- [ ] T066（T052、T065）迁移 routing sidecar、ScanOutcome 和 result 与 `scan-summary` 所需字段；完成判定：模型 identity、实际 backend、页计数、warnings、diagnostics、images 和 routing 数据完整，`scan-summary.json` 字段与每文档 status/exit_code 与基线一致。
 - [ ] T067（T052、T063）迁移扫描遥测与可选 GPU 报告映射；完成判定：累计值不双算，报告写失败只 warning，实际 CPU 回退不生成误导 GPU 数据。
 - [ ] T068（T052、T057）实现模型准备失败后的 pending 状态和部分结果；完成判定：native/empty 已提交结果保留，OCR 页可续扫，错误和结果输出与原分支一致。
 
@@ -1209,7 +1238,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [ ] T071（T069）将 `model list/info/recommend` 切换到 ModelManager；完成判定：无 PDF/scan 对象，输出与 T003 golden 一致。
 - [ ] T072（T069、T070）将 `model install/verify/remove` 切换到 ModelManager；完成判定：CLI 无 URL/hash/cache 拼接，交互和错误码 golden 通过。
 - [ ] T073（T043、T069）将 doctor 切换到 DeviceManager/ModelManager DTO；完成判定：文本、schema 2 JSON、缓存 escaping 和 skill_installed 合并与基线一致，旧 scan 经兼容层仍编译且 `cargo check --workspace` 返回 0。
-- [ ] T074（T052、T069）将 scan 命令切换到 `ScanApplication::run`；完成判定：CLI 不再包含 run_scan orchestrator，fake 与本机 fixture 结果符合基线。
+- [ ] T074（T052、T069）将 scan 命令（单/多输入）切换到 `ScanApplication::run`；完成判定：CLI 不再包含 `run_scan`/`run_scan_multi`/`scan_document` orchestrator，单输入与多输入 fake 及本机 fixture 结果符合基线。
 - [ ] T075（T066、T074）实现扫描事件到 Reporter、result schema 3 和退出码映射；完成判定：stdout/stderr、字段顺序、错误对象、partial/cancel 代码与 T003/T004 一致，逐字段 golden 明确验证 runtime=`llama.cpp@0.1.152`、adapter_version=`0.1.0`、prompt_schema_version=数值 1、四档 quantization 及 `pages.degenerated` 计数。
 - [ ] T076（T074）保留 Ctrl+C 两次信号策略并连接扫描取消；完成判定：handler 在慢阶段前安装，token 类型全链一致，第二次仍强制 130。
 - [ ] T077（T069、T074）删除 CLI 对 runtime/models/ovis/pdf/image 的直接依赖和旧辅助类型；完成判定：Cargo manifest 与源码均无旧 import，CLI 仅保留组合/展示/交互/skill 职责，`cargo check --workspace` 证明后续兼容层已没有 CLI 消费方。
@@ -1240,7 +1269,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [ ] T096（T085、T089、T090）运行 Python 单元测试、架构检查和 release 脚本测试；完成判定：三个命令均返回 0，测试未访问外网。
 - [ ] T097（T078、T094）运行 doctor/model/version 本机命令并比较 golden；完成判定：T003 所有适用输出和退出码一致，JSON 可解析且 stdout 行数正确。
 - [ ] T098（T004、T068、T078、T094）执行 native-only/empty 的本机端到端对比；完成判定：模型准备和加载为 0，页产物、document、result 和续扫与基线一致。
-- [ ] T099（T004、T062、T063、T064、T094）执行 fake OCR 多页端到端对比；完成判定：一次 prepare、窗口化 submit（attempt 1 批处理 + 批深 1 回退/扰动重试覆盖全部页），页产物、路由、失败继续、取消、机制 A 提交和报告符合基线。
+- [ ] T099（T004、T062、T063、T064、T094）执行 fake OCR 多页端到端对比；完成判定：一次 prepare、窗口化 submit（attempt 1 批处理 + 批深 1 回退/扰动重试覆盖全部页），页产物、路由、失败继续、取消、机制 A 提交和报告符合基线；多文档编排端到端（fake）另验 `scan-summary.json`、退出码聚合、逐文档独立 resume 与“编排 vs 逐个调用”产物一致。
 - [ ] T100（T047、T055、T064、T094）执行 checkpoint 专项验收；完成判定：v6 全身份匹配、v5 OCR 重做、pending 恢复、跨 prompt/runtime/model/批深不复用、v5 `degenerated` 不复用、取消窗口零提交后整窗重扫和产物篡改拒绝均有实际测试证据；另行保留 GPU→CPU 回退 checkpoint 的测试记录，证明请求设备不同但实际 CPU 相同可复用、实际 backend 不同必须重处理，不得将该语义变化当回归修回 v5 的请求设备匹配。
 - [ ] T101（T041、T064、T067、T094）执行设备与身份专项验收；完成判定：显式设备失败、auto 选择、GPU 初始化回退、实际 backend 报告和 checkpoint 身份均通过 fake/受控测试。
 - [ ] T102（T084、T085、T096）执行质量模块专项验收；完成判定：两种评估入口可调用，报告身份完整，固定样例数值与历史一致。
@@ -1252,4 +1281,4 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 - [ ] T106（T105；仅在已有真实 Ovis 资产和 PDFium 时可选）运行真实 Ovis 故障注入和多页冒烟；完成判定：记录加载、生成、取消和续扫结果；环境不足时记录未执行原因，不反向阻塞 T105。
 - [ ] T107（T105；仅在已有对应硬件时可选）分别观察 CPU/GPU、资源和 GPU→CPU 回退；完成判定：形成本机观察记录，不把单一硬件结果宣传为通用支持证明。
-- [ ] T108（T105；后续独立变更，不在本次实施）另行评估并接入新 OCR/VLM；完成判定：先冻结新模型资产/runtime/adapter 兼容性和质量范围，再复用本方案扩展点；本任务不是 Qwen 兼容承诺，也不是当前重构验收项。
+- [ ] T108（T105；后续独立变更，不在本次实施）另行评估并接入新 OCR/VLM；完成判定：先冻结新模型资产/runtime/adapter 兼容性和质量范围，再按“新增 builtin manifest + adapter + binding + 扫描侧解释策略注册”路径接入，管理 API、缓存布局、checkpoint 身份与 CLI 结构零改动；本任务不是 Qwen 兼容承诺，也不是当前重构验收项。
