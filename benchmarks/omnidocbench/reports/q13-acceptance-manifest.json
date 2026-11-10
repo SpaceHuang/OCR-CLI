@@ -48,5 +48,50 @@
    "incomplete": 0,
    "decode2_key_checkpoints": 1651
   }
+ },
+ "source_commits": {
+  "code_effective_commit": "c3a1d31 (feat(q13): landing - all functional code; every later commit to 9e0dc29 is docs/artifact-only)",
+  "source_head_at_scan_time": "a27e8f7 (O-3) / 9e0dc29 predecessor state (O-4; docs-only commits between)",
+  "landing_tip_at_evidence_commit": "9e0dc29",
+  "docs_only_between": "c3a1d31..9e0dc29"
+ },
+ "dataset_revision": "aa1ee96d106dbe53d0ae59474d75c6e6d9b53fec (OmniDocBench v1.6, 1651 gt pages)",
+ "ladder_config": {
+  "type": "DegenerationRetryStep table (src/ocrx-output/src/lib.rs DEGENERATION_RETRY_LADDER)",
+  "rungs": [
+   "plain 1024 (attempt 1)",
+   "token-grid 2048",
+   "repeat_penalty 1.2x window 64 (ordered chain repeat_penalty -> greedy)",
+   "column-split (whitespace-valley bands, one plain decode per band, merge in band order)"
+  ],
+  "attempt_cap": 4,
+  "truncated_pages_enter_ladder": true,
+  "entry_triggers": [
+   "degenerated",
+   "truncated (Q1.5/D-14)"
+  ]
+ },
+ "export_eval_environment": {
+  "export_command": "scripts/export-omnidocbench-predictions.py --scans scans/<name> --mapping pdfs/mapping.json --out predictions/<name>",
+  "eval_command": "scripts/run-omnidocbench-eval.py --gt dataset/OmniDocBench.json --predictions predictions/<name> --name omnidocbench-<run> --workers 8",
+  "eval_docker_image": "ghcr.io/zeng-weijun/omnidocbench-eval:repro-ubuntu2204",
+  "eval_toolkit_version": "1.6.0",
+  "eval_match_method": "quick_match",
+  "workers": 8,
+  "export_evidence_files": [
+   "reports/<scan>-export... see predictions export-report.json copies in this repo: reports/omnidocbench-q13-*-all + per-scan export-report.json archived under benchmarks/omnidocbench/reports/"
+  ],
+  "archived_export_reports": [
+   "benchmarks/omnidocbench/reports/ (export-report.json + scan-summary.json per scan, committed)"
+  ],
+  "archived_scan_summaries": [
+   "benchmarks/omnidocbench/reports/scan-summary.json copies per scan (committed)"
+  ]
+ },
+ "claims_evidence_map": {
+  "truncated_38_to_7": "scan_ledgers: baseline truncated=38 (benchmarks baseline manifest scans) vs q13-landing-full-balanced truncated=7 (this file) + export-report.json per-page flags",
+  "decode2_coverage_1651": "scan_ledgers decode2_key_checkpoints=1651 per scan (recomputable from checkpoints: parameters field contains ;decode=2)",
+  "think_zero": "export-report.json think_blocks_stripped_total=0 (committed copies)",
+  "recognition_failed_zero": "scan-summary.json / export-report.json missing=[] + incomplete=0 in scan_ledgers"
  }
 }

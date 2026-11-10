@@ -87,3 +87,16 @@ en 切分：公式 CDM 0.7624 → **0.9173**——**en 公式落差正式消除*
 - 选档结论维持：balanced 仍是质量/速度最优推荐（87.85 为四档最高）。
 - 官方产物：`reports/omnidocbench-q13-final-{compact,quality,reference}_quick_match_metric_result.json`（balanced 见 O-3）。
 - **方案开放项全部关闭**（§7A O-1~O-5）。剩余为 v2 重构（已 GO：pins 修订落 main `7e945c3`）与已论证的 v2 战略方向。
+
+
+## 10. 证据追溯索引（v1.5.3，评审 BLK 解除补充）
+
+O-3/O-4 验收数字的可追溯证据链（全部在本分支归档）：
+
+| 声明 | 证据载体 |
+|---|---|
+| 运行身份（源码 commit/二进制 SHA/pins/参数） | `benchmarks/omnidocbench/reports/q13-acceptance-manifest.json`（source_commits: code_effective=c3a1d31, docs-only→9e0dc29；二进制 SHA 04306fe7；dataset revision；阶梯配置；export/eval 环境与命令） |
+| 截断 38→7 / decode=2 覆盖 1651 / incomplete 0 | `q13-acceptance-manifest.json` scan_ledgers（自 checkpoint 复算）+ 四份 `export-report.json` + 四份 `scan-summary.json`（已归档，官方导出器产出） |
+| think_blocks_stripped_total = 0 | 同上 export-report.json（每页与总量字段） |
+| 门禁（27 套件/fmt/clippy） | `benchmarks/omnidocbench/reports/q13-gates-record.json`（source_head 9e0dc29 + 二进制 SHA） |
+| 官方评分复算 | `omnidocbench-q13-landing-all` / `-q13-final-{compact,quality,reference}_quick_match_metric_result.json`（已归档） |
