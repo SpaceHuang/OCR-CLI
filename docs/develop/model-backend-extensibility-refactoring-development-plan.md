@@ -1394,10 +1394,10 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 E：结构化 checkpoint 与输出持久化
 
-- [ ] T044（T014、T015）在 output 新增 `ScanCompatibility` 和 route/native/OCR/批深/解码代次字段，暂时保留旧 `CompatibilityKey`；完成判定：新身份不用字符串前缀或参数位置判断语义，OCR 可保存完整 InferenceIdentity（含透传的 `batch_depth`/`decode_generation` 与 `display`——后者存储但标记报告专用）、prompt/parser/render 版本，旧 CLI 仍可使用旧类型编译。
-- [ ] T045（T044）实现 native/empty/OCR 匹配函数；完成判定：native/empty 忽略 dpi、批深及全部 OCR-only 改动，OCR 对 dpi、批深、解码代次和任一资产/runtime/adapter/backend/prompt/render 执行字段改动失效，`display` 展示元数据变化（RBLK-7）不影响复用，route 不交叉匹配。
-- [ ] T046（T045）实现 v6 checkpoint 确定性读写和状态字段，暂时保留旧 v5 写入入口；完成判定：complete/pending_ocr、output hash、truncated、degenerated、attempts（写入 1..=4、读取兼容更宽值如 5）、raw sidecar、`think_blocks_stripped`、warnings、audit 全部 round-trip，complete 写入发生在窗口全部页终态之后（机制 A），旧 CLI 的 v5 读写测试仍通过。
-- [ ] T047（T046）实现 v5 读取和安全迁移；完成判定：`complete=true` 且无 pending 后缀映射为 `status=complete`，`complete=false` 且有 `;pending-ocr=true` 映射为 `status=pending_ocr`，其他 false 状态为 reprocess，`complete=true` 与 pending 后缀的矛盾组合按无效/reprocess；兼容 native/empty 可复用，v5 OCR complete 必重处理，v5 `degenerated=true` 不复用，v5 `batch=N` 映射 `batch_depth` 且值不同即不兼容，v5 `decode=<gen>`/`think_blocks_stripped` 按保守策略处置且缺字段解析不失败，v4 不崩溃且不直接复用。
+- [x] T044（T014、T015）在 output 新增 `ScanCompatibility` 和 route/native/OCR/批深/解码代次字段，暂时保留旧 `CompatibilityKey`；完成判定：新身份不用字符串前缀或参数位置判断语义，OCR 可保存完整 InferenceIdentity（含透传的 `batch_depth`/`decode_generation` 与 `display`——后者存储但标记报告专用）、prompt/parser/render 版本，旧 CLI 仍可使用旧类型编译。
+- [x] T045（T044）实现 native/empty/OCR 匹配函数；完成判定：native/empty 忽略 dpi、批深及全部 OCR-only 改动，OCR 对 dpi、批深、解码代次和任一资产/runtime/adapter/backend/prompt/render 执行字段改动失效，`display` 展示元数据变化（RBLK-7）不影响复用，route 不交叉匹配。
+- [x] T046（T045）实现 v6 checkpoint 确定性读写和状态字段，暂时保留旧 v5 写入入口；完成判定：complete/pending_ocr、output hash、truncated、degenerated、attempts（写入 1..=4、读取兼容更宽值如 5）、raw sidecar、`think_blocks_stripped`、warnings、audit 全部 round-trip，complete 写入发生在窗口全部页终态之后（机制 A），旧 CLI 的 v5 读写测试仍通过。
+- [x] T047（T046）实现 v5 读取和安全迁移；完成判定：`complete=true` 且无 pending 后缀映射为 `status=complete`，`complete=false` 且有 `;pending-ocr=true` 映射为 `status=pending_ocr`，其他 false 状态为 reprocess，`complete=true` 与 pending 后缀的矛盾组合按无效/reprocess；兼容 native/empty 可复用，v5 OCR complete 必重处理，v5 `degenerated=true` 不复用，v5 `batch=N` 映射 `batch_depth` 且值不同即不兼容，v5 `decode=<gen>`/`think_blocks_stripped` 按保守策略处置且缺字段解析不失败，v4 不崩溃且不直接复用。
 - [ ] T048（T046）迁移原子页提交、native 提交、产物 hash 和 render audit；完成判定：complete checkpoint 最后写，引用图片缺失或篡改不可复用，无整页 PNG 的 native 行为不变。
 - [ ] T049（T046）迁移 pending 队列恢复并按 route 去重；完成判定：排序稳定、输入不兼容不恢复、同一页不会被 native 和 OCR 重复收集。
 - [ ] T050（T009）将 output 的取消/进度/哈希切换到 primitives；完成判定：无重复实现，现有 output 测试通过，对外 legacy re-export 可暂留并由 T086 统一删除。

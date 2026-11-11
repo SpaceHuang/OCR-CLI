@@ -289,6 +289,14 @@ use std::path::{Path, PathBuf};
 // type-incompatible duplicate.
 pub use ocrx_core::{CancellationToken, GenerationProgress};
 
+pub mod compatibility;
+pub use compatibility::{ocr_final_compare, ocr_pre_compare, OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute};
+
+pub mod checkpoint_v6;
+pub use checkpoint_v6::{
+    read_any, write_v6, CheckpointFile, V5Disposition, V6Checkpoint, V6Status,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
     Running,

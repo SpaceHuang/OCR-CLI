@@ -795,7 +795,11 @@ name = "ocrx-output"
 version = "0.1.0"
 dependencies = [
  "ocrx-core",
+ "ocrx-inference-api",
+ "ocrx-primitives",
  "ocrx-runtime",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
