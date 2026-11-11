@@ -405,9 +405,6 @@ fn parse_v5_pdf_identity(
 
 #[cfg(test)]
 mod tests {
-   }
-
-
     use super::*;
     use crate::compatibility::{PdfIdentity, ScanRoute};
     use ocrx_inference_api::InferenceIdentity;
