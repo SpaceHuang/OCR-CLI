@@ -1363,18 +1363,18 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 C：模型目录、资产与安装管理
 
-- [ ] T019（T013）把 Ovis 四 profile 固定数据迁移到 `ocrx-models/builtin/ovisocr2.rs`，旧 `community_*` 函数可暂时委托新实现；完成判定：T005 清单逐项相等，旧常量不再成为第二份事实源，旧函数签名在 T086 前保持不变且旧 CLI 仍编译。
-- [ ] T020（T019）实现静态 `ModelCatalog` 的 list/info/resolve；完成判定：只列出 `ovisocr2`，profile 去重排序，未知模型/profile 返回结构化错误。
-- [ ] T021（T013、T019）实现具名资产生成的缓存路径和现有 Ovis 布局映射；完成判定：新旧 Ovis 路径逐字一致，绝对路径和 `..` 逃逸测试通过。
-- [ ] T022（T021）迁移默认缓存根和 legacy 缓存探测/迁移；完成判定：Windows/macOS/temp fallback、旧布局、篡改文件不迁移等现有测试全部通过。
-- [ ] T023（T021）实现本地安装状态检测与全资产大小/hash 校验；完成判定：缺任一必需角色、错误大小或错误 hash 均失败，无 receipt 的合法旧安装可通过。
-- [ ] T024（T018、T021）实现 `Transport` 与 HTTPS-only curl 生产实现；完成判定：offline 在创建进程前失败，HTTP/file/降级重定向被拒绝，测试不访问网络。
-- [ ] T025（T023、T024）实现 fake transport 和受控本地小文件安装 fixture；完成判定：可模拟字节、网络失败和错误 hash，所有测试输入都在临时目录生成。
-- [ ] T026（T025）实现 revision 范围安装锁、`.part`、备份和资产组提交；完成判定：主模型与共享资产在同一事务中，锁覆盖全部目标，异常路径清理临时文件。
-- [ ] T027（T026）实现失败回滚、幂等安装、磁盘与许可证策略；完成判定：任一步失败不暴露半套有效状态，已验证重复安装无网络且成功。
-- [ ] T028（T027）实现最后提交的 `install-receipt.json`；完成判定：receipt 含完整来源和资产身份，损坏 receipt 不会绕过实际文件 hash 校验。
-- [ ] T029（T023）实现 profile 删除与共享资产引用检查；完成判定：删一个 Ovis profile 保留仍共享 mmproj，最后一个 profile 删除后回收 mmproj 和空目录。
-- [ ] T030（T018、T020、T023、T026、T028、T029）实现 `ModelManagerImpl` 全部方法并将设备探测职责移到推理设备服务；完成判定：list/info/recommend/install/verify/remove 均可无 PDF 独立测试（verify 的绑定校验经注入的 fake `BindingVerifier` 驱动，RBLK-9），新生产路径不调用旧 `community_*` 或旧 `recommend_device`；旧 `community_*` 仅作为未迁移 CLI 的过渡委托保留到 T086，旧 `recommend_device` 自含保留现有实现到 T086，`ocrx-models` 不得为委托它而依赖 `ocrx-inference`（架构检查断言 models → inference-api 合法、models → inference 禁止）。
+- [x] T019（T013）把 Ovis 四 profile 固定数据迁移到 `ocrx-models/builtin/ovisocr2.rs`，旧 `community_*` 函数可暂时委托新实现；完成判定：T005 清单逐项相等，旧常量不再成为第二份事实源，旧函数签名在 T086 前保持不变且旧 CLI 仍编译。
+- [x] T020（T019）实现静态 `ModelCatalog` 的 list/info/resolve；完成判定：只列出 `ovisocr2`，profile 去重排序，未知模型/profile 返回结构化错误。
+- [x] T021（T013、T019）实现具名资产生成的缓存路径和现有 Ovis 布局映射；完成判定：新旧 Ovis 路径逐字一致，绝对路径和 `..` 逃逸测试通过。
+- [x] T022（T021）迁移默认缓存根和 legacy 缓存探测/迁移；完成判定：Windows/macOS/temp fallback、旧布局、篡改文件不迁移等现有测试全部通过。
+- [x] T023（T021）实现本地安装状态检测与全资产大小/hash 校验；完成判定：缺任一必需角色、错误大小或错误 hash 均失败，无 receipt 的合法旧安装可通过。
+- [x] T024（T018、T021）实现 `Transport` 与 HTTPS-only curl 生产实现；完成判定：offline 在创建进程前失败，HTTP/file/降级重定向被拒绝，测试不访问网络。
+- [x] T025（T023、T024）实现 fake transport 和受控本地小文件安装 fixture；完成判定：可模拟字节、网络失败和错误 hash，所有测试输入都在临时目录生成。
+- [x] T026（T025）实现 revision 范围安装锁、`.part`、备份和资产组提交；完成判定：主模型与共享资产在同一事务中，锁覆盖全部目标，异常路径清理临时文件。
+- [x] T027（T026）实现失败回滚、幂等安装、磁盘与许可证策略；完成判定：任一步失败不暴露半套有效状态，已验证重复安装无网络且成功。
+- [x] T028（T027）实现最后提交的 `install-receipt.json`；完成判定：receipt 含完整来源和资产身份，损坏 receipt 不会绕过实际文件 hash 校验。
+- [x] T029（T023）实现 profile 删除与共享资产引用检查；完成判定：删一个 Ovis profile 保留仍共享 mmproj，最后一个 profile 删除后回收 mmproj 和空目录。
+- [x] T030（T018、T020、T023、T026、T028、T029）实现 `ModelManagerImpl` 全部方法并将设备探测职责移到推理设备服务；完成判定：list/info/recommend/install/verify/remove 均可无 PDF 独立测试（verify 的绑定校验经注入的 fake `BindingVerifier` 驱动，RBLK-9），新生产路径不调用旧 `community_*` 或旧 `recommend_device`；旧 `community_*` 仅作为未迁移 CLI 的过渡委托保留到 T086，旧 `recommend_device` 自含保留现有实现到 T086，`ocrx-models` 不得为委托它而依赖 `ocrx-inference`（架构检查断言 models → inference-api 合法、models → inference 禁止）。
 
 ### 阶段 D：runtime、Ovis adapter 与推理组合
 

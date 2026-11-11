@@ -35,8 +35,9 @@ pub use identity::{
     RuntimeTelemetry, StaticInferenceIdentity, StepProfile, STEP_PROFILE_ENV,
 };
 pub use management::{
-    BindingVerifier, DeviceDiagnostics, DeviceManager, ModelDetail, ModelManager, ModelSummary,
-    ProfileRecommendation, ProfileSummary, RemoveReport, ResourceSnapshot,
+    BindingVerifier, DeviceDiagnostics, DeviceManager, InstallPlan, InstallPlanItem,
+    InstallReceipt, ModelDetail, ModelManager, ModelSummary, ProfileRecommendation,
+    ProfileSummary, RemoveReport, ResourceSnapshot,
 };
 pub use service::{InferenceService, InferenceSession, PrepareRequest, PreparedInference};
 pub use task::{
