@@ -54,3 +54,48 @@
 - 测试命令基线：`cargo test --workspace --locked`（全绿）；clippy 逐 crate `-D warnings`。
 - Python 补丁脚本临时目录：`C:/Users/WIN11/AppData/Local/Temp/zcode-work/`。
 - pdfium.dll 已复制进 worktree `vendor/pdfium/bin`（测试需要）。
+
+
+## 阶段 F 进展（滚动）
+
+- 已完成：T055（resume.rs 两阶段协议）、T059（prompt.rs 冻结字节）、T060/T061/T062（ocr/artifacts.rs
+  SessionRecognizer + assemble：TaskResponse 双文本→crop→bbox PNG→链接降级；column-split 冻结合并；
+  adapter 增加 think_removed 警告通道）、T063 核心（window.rs run_pages_with_session + window_tests 5 项：
+  深度=身份、渲染失败诊断、取消零提交、阶梯逃逸、批级失败回退深度 1）、T064（compatibility.rs 构造器，
+  batch/decode 只从身份读）。
+- output 侧新增：checkpoint_v6 的 commit_page_v6/commit_native_page_v6/commit_pending_ocr_v6/
+  artifacts_intact；write_render_audit/cleanup_full_page_images 已 pub。
+- scan/state.rs 的 RenderAudit 改为 re-export ocrx_output::RenderAudit（单一类型）。
+- scan 测试基座：test_support.rs（identity/side/pdf/v6_ocr/v5 fixtures）；window_tests.rs（FakeSession
+  共享核心 + FakeRenderer）。
+
+## 剩余工作（下一步清单）
+
+1. **T052–T054/T056–T058/T065–T068**：ScanApplication 主体（lib.rs ScanRequest/ScanOutcome/ScanEvent；
+   输入预检 port main.rs parse_page_selection/validate_numeric_options/resolve_output_dir/
+   validate_scan_output_policy；页面计划用 ocrx_pdf::classify_pages + state 队列；native-first（port
+   main.rs run_native_first_phase 语义，native 页经 output::commit_native_page_v6）；渲染器迁移（main.rs
+   PdfWorkerScheduler/WorkerScanRenderer 1564–1856 行 + pdfium_owner.rs 整文件 → scan/render.rs，实现
+   window::PageRenderer）；resume 恢复 pending 队列；document.md 合并（output::collect_page_markdowns/
+   merge_markdown 已 pub）；routing sidecar + result 字段（port main.rs serialize_scan_result 4609–4683
+   行，model 对象从 InferenceIdentity.display 派生，runtime=llama.cpp@0.1.161）；telemetry 映射；
+   prepare 失败 pending 保留。
+2. **T063 跨文档**：multi_doc.rs——文档 FIFO、共享 session 一次 prepare、scan-summary.json
+   （schema_version 1，main.rs 4255 形态）、退出码聚合 130>3>10>0、`<stem>-<hash8>` 目录。
+3. **T069–T078（阶段 G）**：CLI compose.rs 组合根（顺序见 §6.1/RBLK-9）；main.rs 切 model/doctor/scan
+   命令到新 manager/device/ScanApplication；保留 golden；T077 删旧依赖。
+4. **T079–T085（阶段 H）**：ocrx-eval crate（pdf 质量模块复制 + 双入口 + 同参重扫原语）。
+5. **T086–T105（阶段 I）**：删除兼容层（core ModelId/RUNTIME_COMPATIBILITY、models 旧 API、runtime 旧
+   Runtime/fake 包装、ovisocr2 旧业务、output 旧 ScanService/CompatibilityKey、CLI 旧编排）、
+   validate-architecture-boundaries.py、bootstrap-check.sh、全门禁。
+6. 计划文档勾选同步（T048/T049/T050/T051/T055/T059–T064 已标；T063 待全部窗口/跨文档测试后标）。
+
+## 关键技术备忘（续）
+
+- window loop 的 resume 分支：`resume_side(compatibility)` 从 OCR 身份派生 ScanOcrSide；statik=None（loop
+  在 prepare 后跑，终比较用 session identity）。
+- FakeSession 模式：Rc<Core> 共享核心 + Clone handle；image id = `page-{N}` 作为 fake 页标识。
+- 临时目录 tag 必须按测试唯一（并行竞争教训）。
+- adapter decode 警告：nonempty>0 → warnings=["think_removed"]；scan assemble 用它复现 ThinkRemoved
+  页面警告（page_json golden 关键）。
+- scan 不得依赖 ocrx-runtime/ocrx-models/ocrx-inference/ocrx-ovisocr2（T089 架构脚本会查）。
