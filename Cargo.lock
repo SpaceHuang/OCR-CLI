@@ -752,6 +752,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocrx-eval"
+version = "0.1.0"
+
+[[package]]
+name = "ocrx-inference"
+version = "0.1.0"
+
+[[package]]
+name = "ocrx-inference-api"
+version = "0.1.0"
+dependencies = [
+ "ocrx-primitives",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ocrx-models"
 version = "0.1.0"
 dependencies = [
@@ -787,6 +804,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocrx-primitives"
+version = "0.1.0"
+
+[[package]]
 name = "ocrx-runtime"
 version = "0.1.0"
 dependencies = [
@@ -796,6 +817,10 @@ dependencies = [
  "ocrx-models",
  "ocrx-pdf",
 ]
+
+[[package]]
+name = "ocrx-scan"
+version = "0.1.0"
 
 [[package]]
 name = "ocrx-skill"

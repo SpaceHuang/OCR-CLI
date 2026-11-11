@@ -1350,16 +1350,16 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 B：工作区骨架、技术原语和公共 API
 
-- [ ] T009（T002、T003、T004、T005、T006、T007、T008）在根 `Cargo.toml` 注册五个新 crate 并创建最小 package；完成判定：workspace metadata 能解析，新 crate 尚无业务反向依赖。
-- [ ] T010（T009）实现 `ocrx-primitives` 的取消与进度类型并移动相关测试；完成判定：第一次/第二次取消和进度字段测试通过，类型不含 OCR/PDF 概念。
-- [ ] T011（T009）将 SHA-256 流式和内存实现移动到 `ocrx-primitives`；完成判定：NIST 向量、分块和文件哈希测试通过，core/models/output 可改用同一实现。
-- [ ] T012（T009）在 `ocrx-inference-api/id.rs` 实现模型、profile、adapter、runtime、backend、资产角色值类型及校验；完成判定：非法空值/重复角色有测试，当前 catalog 不需要核心枚举。
-- [ ] T013（T012）实现资产 manifest v2、作用域、来源和绑定 DTO；完成判定：多必需/可选角色、重复角色、非法 hash、非法路径均有单元测试。
-- [ ] T014（T012）实现 `InferenceIdentity` 及确定性序列化；完成判定：资产顺序固定，模型、runtime（wrapper/sys/upstream 三值冻结为 0.1.161/0.1.161/`d81235049384534c167caea52b85a694f6103d14`）、adapter、实际 backend、`decode_generation`（平台产生，当前 2）、`display` 展示元数据（RBLK-5：display_name/family/quantization 自已解析 manifest；RBLK-7：序列化保存但标注报告专用，匹配函数不得消费）和逐资产 hash 均可序列化比较。
-- [ ] T015（T010、T012）实现 `TaskRequest/TaskResponse/ImageInput/GenerationParams/RetrySampling/DecodeEcho/Usage/FinishReason/StepProfile`；完成判定：公共请求无页码/PDF/output 字段，RGB8 和 token 非法输入、`retry_sampling` 越界（penalty 出 1000..=2000 milli、window 0）测试通过；`TaskResponse` 双文本（`text`/`raw_text`）、`think_blocks_stripped` 与 `decode_echo` 字段齐全且有合约断言；`StepProfile` 为与 `RuntimeTelemetry` 同类的公共诊断 DTO（`delta_from` 语义随类型迁移，字段名与基线黄金串一致）。
-- [ ] T016（T015）实现 `ProtocolAdapter/RuntimeBackend/EncodedTask/BackendOutput` 扩展契约；完成判定：EncodedTask 能表达图像在 prompt 前并透传执行变体（`image_tokens_override`/`retry_sampling`），`BackendOutput.decode_echo` 由 backend 填充、adapter decode 原样透传进 `TaskResponse`（RBLK-1 通道），且不包含 Ovis PageDocument、bbox 或 Markdown 类型。
-- [ ] T017（T010、T014、T015）实现 `InferenceService/InferenceSession/PrepareRequest/InstallInteraction`；完成判定：trait 对象可用于 fake，session 支持同一实例多次 submit 和累计 telemetry，身份携带实际 `batch_depth`/`decode_generation`（fake 提供受控值），扫描侧消费只经身份字段；`decode_generation()` 静态查询 prepare 前可用且不触发加载（RBLK-2 预比较通道）；`static_identity()` 只读查询返回 `StaticInferenceIdentity`（RBLK-4：`auto` 按冻结内存规则解析为具体档位、含逐资产元数据与 runtime/adapter 绑定值，测试断言该查询不校验资产文件、不安装、不创建 runtime；RBLK-7：结构不含 `display`，并有一条测试断言“静态身份 ∪ 实际 backend/批深 = 执行身份 − display”的字段完备性）；`InferenceSession::step_profile()` 返回 `Option<StepProfile>` 累计快照（RBLK-3 通道，env 关闭为 None）。
-- [ ] T018（T013、T014）实现 `ModelManager/DeviceManager` DTO、结构化错误与 `BindingVerifier` 端口（RBLK-9：inference-api 定义 trait，输入 manifest 输出结构化绑定错误，纯数据比较语义）；完成判定：所有管理和推理失败都有明确类别，CLI 可映射到既有退出码而无需解析任意字符串，端口可被 fake 实现。
+- [x] T009（T002、T003、T004、T005、T006、T007、T008）在根 `Cargo.toml` 注册五个新 crate 并创建最小 package；完成判定：workspace metadata 能解析，新 crate 尚无业务反向依赖。
+- [x] T010（T009）实现 `ocrx-primitives` 的取消与进度类型并移动相关测试；完成判定：第一次/第二次取消和进度字段测试通过，类型不含 OCR/PDF 概念。
+- [x] T011（T009）将 SHA-256 流式和内存实现移动到 `ocrx-primitives`；完成判定：NIST 向量、分块和文件哈希测试通过，core/models/output 可改用同一实现。
+- [x] T012（T009）在 `ocrx-inference-api/id.rs` 实现模型、profile、adapter、runtime、backend、资产角色值类型及校验；完成判定：非法空值/重复角色有测试，当前 catalog 不需要核心枚举。
+- [x] T013（T012）实现资产 manifest v2、作用域、来源和绑定 DTO；完成判定：多必需/可选角色、重复角色、非法 hash、非法路径均有单元测试。
+- [x] T014（T012）实现 `InferenceIdentity` 及确定性序列化；完成判定：资产顺序固定，模型、runtime（wrapper/sys/upstream 三值冻结为 0.1.161/0.1.161/`d81235049384534c167caea52b85a694f6103d14`）、adapter、实际 backend、`decode_generation`（平台产生，当前 2）、`display` 展示元数据（RBLK-5：display_name/family/quantization 自已解析 manifest；RBLK-7：序列化保存但标注报告专用，匹配函数不得消费）和逐资产 hash 均可序列化比较。
+- [x] T015（T010、T012）实现 `TaskRequest/TaskResponse/ImageInput/GenerationParams/RetrySampling/DecodeEcho/Usage/FinishReason/StepProfile`；完成判定：公共请求无页码/PDF/output 字段，RGB8 和 token 非法输入、`retry_sampling` 越界（penalty 出 1000..=2000 milli、window 0）测试通过；`TaskResponse` 双文本（`text`/`raw_text`）、`think_blocks_stripped` 与 `decode_echo` 字段齐全且有合约断言；`StepProfile` 为与 `RuntimeTelemetry` 同类的公共诊断 DTO（`delta_from` 语义随类型迁移，字段名与基线黄金串一致）。
+- [x] T016（T015）实现 `ProtocolAdapter/RuntimeBackend/EncodedTask/BackendOutput` 扩展契约；完成判定：EncodedTask 能表达图像在 prompt 前并透传执行变体（`image_tokens_override`/`retry_sampling`），`BackendOutput.decode_echo` 由 backend 填充、adapter decode 原样透传进 `TaskResponse`（RBLK-1 通道），且不包含 Ovis PageDocument、bbox 或 Markdown 类型。
+- [x] T017（T010、T014、T015）实现 `InferenceService/InferenceSession/PrepareRequest/InstallInteraction`；完成判定：trait 对象可用于 fake，session 支持同一实例多次 submit 和累计 telemetry，身份携带实际 `batch_depth`/`decode_generation`（fake 提供受控值），扫描侧消费只经身份字段；`decode_generation()` 静态查询 prepare 前可用且不触发加载（RBLK-2 预比较通道）；`static_identity()` 只读查询返回 `StaticInferenceIdentity`（RBLK-4：`auto` 按冻结内存规则解析为具体档位、含逐资产元数据与 runtime/adapter 绑定值，测试断言该查询不校验资产文件、不安装、不创建 runtime；RBLK-7：结构不含 `display`，并有一条测试断言“静态身份 ∪ 实际 backend/批深 = 执行身份 − display”的字段完备性）；`InferenceSession::step_profile()` 返回 `Option<StepProfile>` 累计快照（RBLK-3 通道，env 关闭为 None）。
+- [x] T018（T013、T014）实现 `ModelManager/DeviceManager` DTO、结构化错误与 `BindingVerifier` 端口（RBLK-9：inference-api 定义 trait，输入 manifest 输出结构化绑定错误，纯数据比较语义）；完成判定：所有管理和推理失败都有明确类别，CLI 可映射到既有退出码而无需解析任意字符串，端口可被 fake 实现。
 
 ### 阶段 C：模型目录、资产与安装管理
 

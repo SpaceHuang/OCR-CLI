@@ -1,0 +1,46 @@
+//! Public inference platform contract.
+//!
+//! This crate is the stable, PDF-free boundary between the inference
+//! platform and its consumers (the scan application, the CLI, the evaluation
+//! module). It owns the common DTOs, identity types, service/session traits,
+//! management traits, structured errors, and the internal adapter/backend
+//! extension contract.
+//!
+//! Boundary rules (refactoring plan §3.2): this crate must never depend on
+//! `ocrx-core`, `ocrx-pdf`, `ocrx-output`, `ocrx-scan`, `ocrx-eval`, the CLI,
+//! or any concrete model/runtime/adapter implementation. No type here may
+//! carry page numbers, PDF paths, scan output directories, or OCR parsing.
+
+pub mod asset;
+pub mod backend;
+pub mod error;
+pub mod id;
+pub mod identity;
+pub mod management;
+pub mod service;
+pub mod task;
+
+pub use asset::{
+    AdapterRequirement, AssetDescriptor, AssetProvenance, AssetScope, BindingRequirement,
+    DownloadProposal, InstallPolicy, InstallInteraction, ModelManifest,
+};
+pub use backend::{
+    BackendHandle, BackendOutput, EncodedTask, ImagePlacement, NativeFinishReason,
+    ProtocolAdapter, RuntimeBackend, RuntimeFactory, RuntimeLoadRequest,
+};
+pub use error::InferenceError;
+pub use id::{AdapterId, AssetRole, BackendId, ModelId, ProfileId, RuntimeId};
+pub use identity::{
+    AdapterIdentity, AssetIdentity, ModelDisplayMeta, ModelIdentity, RuntimeIdentity,
+    RuntimeTelemetry, StaticInferenceIdentity, StepProfile, STEP_PROFILE_ENV,
+};
+pub use management::{
+    BindingVerifier, DeviceDiagnostics, DeviceManager, ModelDetail, ModelManager, ModelSummary,
+    ProfileRecommendation, ProfileSummary, RemoveReport, ResourceSnapshot,
+};
+pub use service::{InferenceService, InferenceSession, PrepareRequest, PreparedInference};
+pub use task::{
+    DecodeEcho, FinishReason, GenerationParams, ImageInput, TaskRequest, TaskResponse,
+    TokenUsage, DECODE_GENERATION, RetrySampling, SUPPORTED_IMAGE_TOKEN_GRIDS, WINDOW_DEPTH,
+    WINDOW_DEPTH_HIGH_VRAM, window_depth_for_vram,
+};
