@@ -1339,14 +1339,14 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 A：基线与契约冻结
 
-- [ ] T001（无依赖）记录当前工作区状态和已有未提交修改，建立只修改本重构所需文件的清单；完成判定：不会覆盖或回滚用户已有修改，基线记录可供后续对照。
-- [ ] T002（T001）运行 `cargo build --workspace` 和 `cargo test --workspace`，保存通过/失败清单；完成判定：每个既有失败被区分为重构前问题或环境问题，不把既有失败误记为重构回归。
-- [ ] T003（T001）运行现有 CLI doctor/model/参数错误及扫描失败分支 golden，逐分支记录 stdout、stderr 和退出码特例；覆盖单输入与多输入编排分支（多输入缺 `--output-dir`、目录无 PDF、坏文档跳过、`scan-summary.json` 形状、`--report json` 聚合 stdout、退出码聚合 130>3>10>0）；完成判定：清单显式包含 routing sidecar 提交失败为 `code:5, kind:"output"` 的历史行为与单输入缺失文件的页数失败 exit 3，后续展示测试有明确期望值且不得顺手统一为 9。
-- [ ] T004（T001）用本地 fixture 记录 native-only、empty、auto fallback、OCR fake 的页面计划和产物 golden；完成判定：每类至少有一个可重复输入和预期输出，缺 PDFium 的项目明确标为环境未执行而非失败。
-- [ ] T005（T001）逐项核对 Ovis 四 profile 的 revision、URL、模型文件名、共享 mmproj、SHA-256、字节数及展示元数据；完成判定：形成内置 manifest 字段清单，display_name=OvisOCR2、family=Ovis 和四档 quantization 映射明确，所有值与当前代码一致且无需网络。
-- [ ] T006（T001）冻结完整 `ocr-markdown-v1` prompt、MTMD 图像在 prompt 前的顺序和生成默认值；完成判定：有字节级预期字符串和参数清单，包括开头换行。
-- [ ] T007（T001）盘点 v5 checkpoint、result schema 3、doctor schema 2、`scan-summary.json`、routing sidecar 和质量报告字段；完成判定：每种格式都有字段级兼容/迁移决定，明确 runtime=`{RuntimeId}@{wrapper_version}`=`llama.cpp@0.1.161`、prompt_schema_version=数值 1、native/empty 忽略 dpi/批深、v5 状态映射（含 `degenerated`/`attempts`/`raw`/`think_blocks_stripped` 字段与 `platform`/`batch`/`decode=<gen>` 等兼容串参数、`;pending-ocr=true` 后缀，`decode` 与 `think_blocks_stripped` 的显式处置——不参与 v5 OCR 复用判定且缺省解析不得失败）、result `pages.think_blocks_stripped_total` 聚合口径，无“实施时再定”的字段。
-- [ ] T008（T001）盘点 `ocrx-pdf` 中质量清单、指标、门禁与 `scripts/`/`assets/regression/` 的对应关系；完成判定：每个待迁移 Rust 函数都有目标模块和现有测试/脚本验证方式。
+- [x] T001（无依赖）记录当前工作区状态和已有未提交修改，建立只修改本重构所需文件的清单；完成判定：不会覆盖或回滚用户已有修改，基线记录可供后续对照。
+- [x] T002（T001）运行 `cargo build --workspace` 和 `cargo test --workspace`，保存通过/失败清单；完成判定：每个既有失败被区分为重构前问题或环境问题，不把既有失败误记为重构回归。
+- [x] T003（T001）运行现有 CLI doctor/model/参数错误及扫描失败分支 golden，逐分支记录 stdout、stderr 和退出码特例；覆盖单输入与多输入编排分支（多输入缺 `--output-dir`、目录无 PDF、坏文档跳过、`scan-summary.json` 形状、`--report json` 聚合 stdout、退出码聚合 130>3>10>0）；完成判定：清单显式包含 routing sidecar 提交失败为 `code:5, kind:"output"` 的历史行为与单输入缺失文件的页数失败 exit 3，后续展示测试有明确期望值且不得顺手统一为 9。
+- [x] T004（T001）用本地 fixture 记录 native-only、empty、auto fallback、OCR fake 的页面计划和产物 golden；完成判定：每类至少有一个可重复输入和预期输出，缺 PDFium 的项目明确标为环境未执行而非失败。
+- [x] T005（T001）逐项核对 Ovis 四 profile 的 revision、URL、模型文件名、共享 mmproj、SHA-256、字节数及展示元数据；完成判定：形成内置 manifest 字段清单，display_name=OvisOCR2、family=Ovis 和四档 quantization 映射明确，所有值与当前代码一致且无需网络。
+- [x] T006（T001）冻结完整 `ocr-markdown-v1` prompt、MTMD 图像在 prompt 前的顺序和生成默认值；完成判定：有字节级预期字符串和参数清单，包括开头换行。
+- [x] T007（T001）盘点 v5 checkpoint、result schema 3、doctor schema 2、`scan-summary.json`、routing sidecar 和质量报告字段；完成判定：每种格式都有字段级兼容/迁移决定，明确 runtime=`{RuntimeId}@{wrapper_version}`=`llama.cpp@0.1.161`、prompt_schema_version=数值 1、native/empty 忽略 dpi/批深、v5 状态映射（含 `degenerated`/`attempts`/`raw`/`think_blocks_stripped` 字段与 `platform`/`batch`/`decode=<gen>` 等兼容串参数、`;pending-ocr=true` 后缀，`decode` 与 `think_blocks_stripped` 的显式处置——不参与 v5 OCR 复用判定且缺省解析不得失败）、result `pages.think_blocks_stripped_total` 聚合口径，无“实施时再定”的字段。
+- [x] T008（T001）盘点 `ocrx-pdf` 中质量清单、指标、门禁与 `scripts/`/`assets/regression/` 的对应关系；完成判定：每个待迁移 Rust 函数都有目标模块和现有测试/脚本验证方式。
 
 ### 阶段 B：工作区骨架、技术原语和公共 API
 
