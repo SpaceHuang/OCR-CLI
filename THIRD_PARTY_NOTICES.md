@@ -17,7 +17,7 @@ OCR-CLI uses OvisOCR2 as its only formally supported OCR model for v0.1.
 
 The GGUF model and `mmproj` files are not part of the OCR-CLI source-code license. Users and distributors must retain the upstream model metadata and comply with the terms of the exact model revision being used. Model files must not be redistributed with an OCR-CLI release unless their provenance, license, and redistribution status have been reviewed for that release.
 
-OvisOCR2 is based on the Qwen model family. See the [Qwen organization](https://huggingface.co/Qwen) and the specific upstream base-model card for the license and terms applicable to the relevant model lineage.
+The OvisOCR2 manifest identifies [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) as its base-model lineage. Verify the model card and terms for the exact model revision before redistribution.
 
 ## llama.cpp and libmtmd
 
@@ -46,7 +46,8 @@ OCR-CLI uses PDFium for PDF rendering through the [`pdfium-render`](https://crat
 - Project: [Chromium PDFium](https://github.com/chromium/pdfium)
 - License: [PDFium `LICENSE`](https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/2028/LICENSE)
 - Chromium third-party license guidance: [Chromium open-source licenses](https://www.chromium.org/chromium-projects/)
-- Rust wrapper: [`pdfium-render`](https://crates.io/crates/pdfium-render)
+- Rust wrapper: [`pdfium-render`](https://github.com/ajrcarey/pdfium-render) (crate version `0.9.3`)
+- Recorded binary packaging source: [`bblanchon/pdfium-binaries`](https://github.com/bblanchon/pdfium-binaries); the repository's macOS baseline records the `chromium/7961` arm64 artifact. Windows packaging documentation records the same source project. Confirm the exact artifact and its bundled notices for each release.
 
 PDFium redistribution requires preserving the applicable copyright notices, license conditions, and disclaimers in source and binary distributions. Because PDFium is connected to the Chromium dependency tree, a release containing `libpdfium.dylib` must be accompanied by the complete notices applicable to the exact PDFium build and revision. The binary revision and SHA-256 must be recorded in the release artifacts.
 
@@ -56,11 +57,11 @@ OCR-CLI is built with Cargo. Direct dependencies are declared in the workspace a
 
 - [`image`](https://crates.io/crates/image)
 - [`ctrlc`](https://crates.io/crates/ctrlc)
-- [`pdfium-render`](https://crates.io/crates/pdfium-render)
+- [`pdfium-render`](https://github.com/ajrcarey/pdfium-render)
 - [`llama-cpp-2`](https://crates.io/crates/llama-cpp-2)
 - [`llama-cpp-sys-2`](https://crates.io/crates/llama-cpp-sys-2)
 
-Each crate and its transitive dependencies retain their own license terms. The authoritative dependency versions for a build are pinned in [`Cargo.lock`](Cargo.lock). A release process must generate or review a complete Cargo dependency license inventory, including transitive dependencies, and include that inventory with the release artifacts.
+Each crate and its transitive dependencies retain their own license terms. The authoritative dependency versions for a build are pinned in [`Cargo.lock`](Cargo.lock). This list is not a complete dependency inventory. A release process must generate or review a complete Cargo dependency license inventory, including transitive dependencies, and include that inventory with the release artifacts.
 
 ## Release checklist
 
