@@ -11,6 +11,10 @@ use ocrx_inference_api::RetrySampling;
 use ocrx_primitives::CancellationToken;
 use std::io;
 
+// The render audit is an output-persistence type (checkpoint fragment);
+// the scan consumes it by value.
+pub use ocrx_output::RenderAudit;
+
 /// One degeneration-retry rung (quality plan Q1.4a): the render and decode
 /// variant the attempt uses. `None` fields mean plain; at most one decode
 /// override per rung in the frozen tables.
@@ -279,37 +283,6 @@ pub struct RenderedPage {
     /// PNG bytes encoded for THIS render, so a degenerated retry's bytes
     /// can never be the first attempt's (phase-4 W3 semantics).
     pub generation: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RenderAudit {
-    pub original_width: u32,
-    pub original_height: u32,
-    pub rendered_width: u32,
-    pub rendered_height: u32,
-    pub model_width: u32,
-    pub model_height: u32,
-    pub scaled: bool,
-    pub scale_ratio_numerator: u64,
-    pub scale_ratio_denominator: u64,
-}
-
-impl RenderAudit {
-    #[must_use]
-    pub fn as_checkpoint_fragment(self) -> String {
-        format!(
-            "original={}x{};rendered={}x{};model={}x{};scaled={};ratio={}/{}",
-            self.original_width,
-            self.original_height,
-            self.rendered_width,
-            self.rendered_height,
-            self.model_width,
-            self.model_height,
-            self.scaled,
-            self.scale_ratio_numerator,
-            self.scale_ratio_denominator
-        )
-    }
 }
 
 impl RenderedPage {
