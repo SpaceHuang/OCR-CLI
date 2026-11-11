@@ -12,9 +12,9 @@ mod llama {
 
     use ocrx_inference_api::identity::RuntimeTelemetry;
     use ocrx_inference_api::{
-        BackendHandle, BackendId, BackendOutput, DecodeEcho, EncodedTask, GenerationParams,
-        ImagePlacement, InferenceError, NativeFinishReason, RetrySampling, RuntimeBackend,
-        RuntimeFactory, RuntimeIdentity, RuntimeLoadRequest, TokenUsage,
+        BackendHandle, BackendOutput, DecodeEcho, EncodedTask, ImagePlacement, InferenceError,
+        NativeFinishReason, RetrySampling, RuntimeBackend, RuntimeFactory, RuntimeIdentity,
+        RuntimeLoadRequest, TokenUsage,
     };
     use ocrx_primitives::{CancellationToken, GenerationProgress};
 
@@ -257,8 +257,8 @@ mod llama {
     mod tests {
         use super::*;
 
-        fn params() -> GenerationParams {
-            GenerationParams {
+        fn params() -> ocrx_inference_api::GenerationParams {
+            ocrx_inference_api::GenerationParams {
                 max_output_tokens: 32,
                 temperature_milli: 0,
                 thinking: false,
@@ -331,7 +331,7 @@ mod llama {
             assert!(encoded_to_worker_task(placed, 0).is_ok());
             // Non-frozen generation (thinking/temperature) is rejected.
             let mut hot = task("p");
-            hot.generation = GenerationParams {
+            hot.generation = ocrx_inference_api::GenerationParams {
                 max_output_tokens: 32,
                 temperature_milli: 700,
                 thinking: false,

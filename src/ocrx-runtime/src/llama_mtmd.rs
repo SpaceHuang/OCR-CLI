@@ -1433,7 +1433,6 @@ impl Runtime for LlamaMtmdRuntime {
         progress: &mut dyn FnMut(GenerationProgress),
     ) -> Result<InferenceResponse, String> {
         // The frozen prompt rides only in this legacy bridge (T087 deletes it).
-        let page = request.page;
         let task = legacy_task(0, &request);
         self.generate_task(task, cancellation, &mut |_slot, event| {
             progress(event)

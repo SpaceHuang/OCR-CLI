@@ -1,5 +1,7 @@
 //! OvisOCR2 adapter boundary. Prompt and MTMD implementation follows runtime freeze.
 
+pub mod adapter;
+
 use ocrx_core::{
     CancellationToken, ModelId, NormalizedBbox, PageBlock, PageDocument, PageWarning, Termination,
 };
@@ -812,7 +814,7 @@ pub fn parse_page(
 
 /// Normalizes CRLF and lone CR to LF so parsed documents are stable across
 /// platforms regardless of the input's line-ending convention.
-fn normalize_line_endings(input: &str) -> String {
+pub(crate) fn normalize_line_endings(input: &str) -> String {
     input.replace("\r\n", "\n").replace('\r', "\n")
 }
 
