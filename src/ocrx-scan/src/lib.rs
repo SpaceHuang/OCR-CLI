@@ -5,3 +5,12 @@
 pub mod ladder;
 pub mod ocr;
 pub mod state;
+pub mod window;
+pub mod compatibility;
+pub mod resume;
+pub mod render;
+pub mod multi_doc;
+pub mod report;
+pub mod telemetry;
+pub mod plan;
+pub mod native;

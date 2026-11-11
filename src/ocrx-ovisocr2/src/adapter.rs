@@ -99,6 +99,14 @@ impl ProtocolAdapter for OvisProtocolAdapter {
         let normalized_raw = normalize_line_endings(&output.text);
         let think = crate::strip_think_blocks(&normalized_raw);
         let stripped_count = u32::try_from(think.total()).unwrap_or(u32::MAX);
+        // `think_removed` rides the structured warning channel so the scan's
+        // page-document build reproduces the baseline ThinkRemoved warning
+        // (the adapter is the single source that knows nonempty vs stray).
+        let warnings = if think.nonempty > 0 {
+            vec!["think_removed".to_owned()]
+        } else {
+            Vec::new()
+        };
         Ok(TaskResponse {
             // Downstream (md/page.json/bbox) consumes the cleaned text only.
             text: think.text,
@@ -110,9 +118,7 @@ impl ProtocolAdapter for OvisProtocolAdapter {
             // RBLK-1: the echo comes from the backend output, never from a
             // request copy and never defaulted.
             decode_echo: output.decode_echo,
-            // `think_removed` is surfaced by the count field; the adapter
-            // adds no warnings of its own.
-            warnings: Vec::new(),
+            warnings,
         })
     }
 }

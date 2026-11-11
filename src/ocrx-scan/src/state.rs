@@ -472,8 +472,9 @@ mod tests {
         let merged = merge_ocr_queue(&initial, &fallback);
         let pages: Vec<u32> = merged.iter().map(|page| page.page).collect();
         assert_eq!(pages, [1, 2, 3]);
-        // The initial (non-fallback) entry keeps its None reason.
-        assert_eq!(merged[2].fallback_reason, None);
+        // A None initial reason is filled by the fallback's reason (the
+        // legacy merge semantics: fallbacks complete, never override).
+        assert_eq!(merged[2].fallback_reason.as_deref(), Some("late reason"));
         // Fallback-only entries carry their reason.
         assert_eq!(merged[1].fallback_reason.as_deref(), Some("low coverage"));
 

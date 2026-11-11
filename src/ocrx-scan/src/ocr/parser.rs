@@ -206,7 +206,7 @@ pub(crate) fn parse_page_with_termination(
     )
 }
 
-fn build_page_document(
+pub(crate) fn build_page_document(
     page_number: u32,
     normalized: &str,
     finish_reason: &str,

@@ -4,6 +4,7 @@
 pub mod artifacts;
 pub mod markdown;
 pub mod parser;
+pub mod prompt;
 
 /// Frozen output token cap (D5.2): the manifest safety limit.
 pub const MAX_OUTPUT_TOKENS: u32 = 16_384;

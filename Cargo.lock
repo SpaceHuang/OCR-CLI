@@ -845,8 +845,10 @@ dependencies = [
 name = "ocrx-scan"
 version = "0.1.0"
 dependencies = [
+ "image",
  "ocrx-core",
  "ocrx-inference-api",
+ "ocrx-pdf",
  "ocrx-primitives",
 ]
 
