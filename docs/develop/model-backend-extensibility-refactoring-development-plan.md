@@ -1398,9 +1398,9 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T045（T044）实现 native/empty/OCR 匹配函数；完成判定：native/empty 忽略 dpi、批深及全部 OCR-only 改动，OCR 对 dpi、批深、解码代次和任一资产/runtime/adapter/backend/prompt/render 执行字段改动失效，`display` 展示元数据变化（RBLK-7）不影响复用，route 不交叉匹配。
 - [x] T046（T045）实现 v6 checkpoint 确定性读写和状态字段，暂时保留旧 v5 写入入口；完成判定：complete/pending_ocr、output hash、truncated、degenerated、attempts（写入 1..=4、读取兼容更宽值如 5）、raw sidecar、`think_blocks_stripped`、warnings、audit 全部 round-trip，complete 写入发生在窗口全部页终态之后（机制 A），旧 CLI 的 v5 读写测试仍通过。
 - [x] T047（T046）实现 v5 读取和安全迁移；完成判定：`complete=true` 且无 pending 后缀映射为 `status=complete`，`complete=false` 且有 `;pending-ocr=true` 映射为 `status=pending_ocr`，其他 false 状态为 reprocess，`complete=true` 与 pending 后缀的矛盾组合按无效/reprocess；兼容 native/empty 可复用，v5 OCR complete 必重处理，v5 `degenerated=true` 不复用，v5 `batch=N` 映射 `batch_depth` 且值不同即不兼容，v5 `decode=<gen>`/`think_blocks_stripped` 按保守策略处置且缺字段解析不失败，v4 不崩溃且不直接复用。
-- [ ] T048（T046）迁移原子页提交、native 提交、产物 hash 和 render audit；完成判定：complete checkpoint 最后写，引用图片缺失或篡改不可复用，无整页 PNG 的 native 行为不变。
-- [ ] T049（T046）迁移 pending 队列恢复并按 route 去重；完成判定：排序稳定、输入不兼容不恢复、同一页不会被 native 和 OCR 重复收集。
-- [ ] T050（T009）将 output 的取消/进度/哈希切换到 primitives；完成判定：无重复实现，现有 output 测试通过，对外 legacy re-export 可暂留并由 T086 统一删除。
+- [x] T048（T046）迁移原子页提交、native 提交、产物 hash 和 render audit；完成判定：complete checkpoint 最后写，引用图片缺失或篡改不可复用，无整页 PNG 的 native 行为不变。
+- [x] T049（T046）迁移 pending 队列恢复并按 route 去重；完成判定：排序稳定、输入不兼容不恢复、同一页不会被 native 和 OCR 重复收集。
+- [x] T050（T009）将 output 的取消/进度/哈希切换到 primitives；完成判定：无重复实现，现有 output 测试通过，对外 legacy re-export 可暂留并由 T086 统一删除。
 - [ ] T051（T044、T048）把 ScanService（含 P4.4 窗口编排、机制 A 原子提交与外部持模型窗口循环入口 `run_pages_with_model`，X1 共享槽使用）、loader、recognizer（含 `recognize_window_cancelled`）和 OCR 队列复制到 scan 新模块，暂不删除 output 旧实现和旧导出；完成判定：新 scan 不调用 output 旧扫描类型，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T088 删除。
 
 ### 阶段 F：扫描应用迁移

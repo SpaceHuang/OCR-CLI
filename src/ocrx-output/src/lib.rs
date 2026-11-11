@@ -285,9 +285,9 @@ use std::path::{Path, PathBuf};
 
 // Single cancellation source of truth (W3.1): the SIGINT token created by the
 // CLI must be passable to the runtime's token-generation loop, so the trait
-// below shares `ocrx_core::CancellationToken` instead of keeping a private,
+// below shares `ocrx_primitives::CancellationToken` instead of keeping a private,
 // type-incompatible duplicate.
-pub use ocrx_core::{CancellationToken, GenerationProgress};
+pub use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 pub mod compatibility;
 pub use compatibility::{ocr_final_compare, ocr_pre_compare, OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute};
