@@ -140,12 +140,15 @@ pub fn write_v6(path: impl AsRef<Path>, checkpoint: &V6Checkpoint) -> std::io::R
 pub fn read_any(path: impl AsRef<Path>) -> std::io::Result<CheckpointFile> {
     let content = std::fs::read_to_string(path)?;
     match content.lines().next() {
-        Some("ocrx-checkpoint-v6") => Ok(read_v6_content(&content).unwrap_or_else(|_| {
-            // Malformed v6: never a crash, never a destroy — reprocess.
-            CheckpointFile::LegacyUnsupported {
-                page_hint: page_hint(&content),
-            }
-        })),
+        Some("ocrx-checkpoint-v6") => Ok(read_v6_content(&content).map_or_else(
+            |_| {
+                // Malformed v6: never a crash, never a destroy — reprocess.
+                CheckpointFile::LegacyUnsupported {
+                    page_hint: page_hint(&content),
+                }
+            },
+            CheckpointFile::V6,
+        )),
         Some("ocrx-checkpoint-v5") => Ok(CheckpointFile::V5(read_v5_content(&content))),
         Some("ocrx-checkpoint-v4") | Some(_) => Ok(CheckpointFile::LegacyUnsupported {
             page_hint: page_hint(&content),
