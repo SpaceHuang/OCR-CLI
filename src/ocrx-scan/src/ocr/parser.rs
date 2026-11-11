@@ -148,7 +148,6 @@ pub fn strip_think_blocks(input: &str) -> ThinkStrip {
 /// expressed as removal instead of a page failure, quality plan D-4) or when
 /// the referenced artifact was not produced (e.g. a crop that fell outside
 /// the page).
-
 pub fn adapt_cropped_response(
     page_number: u32,
     cropped: &str,

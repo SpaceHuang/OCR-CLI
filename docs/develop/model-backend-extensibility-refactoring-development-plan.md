@@ -1385,12 +1385,12 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T035（T015、T016）实现可编程 `FakeRuntimeBackend` 并暂时保留旧 fake 包装；完成判定：新 fake 可捕获请求并排队返回 EOS、max_tokens、`repetition_loop`（现 `LoopFakeRuntime` 语义）、批级窗口错误、错误和取消，`BackendOutput.decode_echo` 可编程且与请求变体独立（供 T042 证明回执来自 backend 而非请求拷贝），`raw_text`/`think_blocks_stripped` 输出可编程，不再用页码构造文本，旧 fake 的既有测试在迁移完成前仍通过。
 - [x] T036（T016）实现本身只依赖 inference API 的 `OvisProtocolAdapter` 新模块；完成判定：图像顺序、prompt、generation、finish、`<think>` 剥离 golden（完整块/散落标签/静默空剥离）、`raw_text` 为剥离/裁剪前规范化原始输出、`think_blocks_stripped` 计数测试通过，新模块无 core/runtime/pdf/image 依赖；旧业务模块及其依赖可暂时保留到 T087，但新 adapter 不得调用旧模块。
 - [ ] T037（T036）把 Ovis 页解析、bbox、Markdown 和图片代码复制到预定 scan 模块，暂不删除 adapter crate 的旧实现和旧导出；完成判定：新旧 parser/artifact 单元测试均通过，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T087 删除。
-- [ ] T038（T014、T019、T034、T036）实现静态兼容 binding registry 及其 `BindingVerifier` 端口实现（RBLK-9）；完成判定：正确三元组通过，runtime/sys/upstream/adapter/资产角色任一不符均返回 IncompatibleBinding（upstream 冻结值 `d81235049384534c167caea52b85a694f6103d14` 参与校验），端口实现供 prepare 与注入 `ModelManagerImpl` 共用。
-- [ ] T039（T018、T034）迁移系统 probe 和编译能力交集到 `ocrx-inference`；完成判定：Metal/CUDA/Vulkan 编译与硬件取交集，auto 优先级和显式设备错误测试通过。
-- [ ] T040（T030、T038、T039）实现 `InferenceServiceImpl::prepare` 的资产就绪和绑定路径；完成判定：只准备一次，缺资产走统一安装，离线/无效 hash/绑定失败不会创建 session。
-- [ ] T041（T040）实现 runtime 加载及 GPU 初始化失败回退 CPU；完成判定：显式不可用设备仍直接失败，加载阶段 GPU 失败回退并 warning，identity 和报告 backend 为实际 CPU，实际批深按回退重选规则（16→8）写入身份。
-- [ ] T042（T035、T036、T040）实现 session 的 encode → generate → decode 和多次 submit；完成判定：fake 连续请求共享一次加载，响应和累计 telemetry 不重复累加；`decode_echo` 端到端来自 `BackendOutput`（fake 编程回执 ≠ 请求变体时响应回执仍等于 backend 值，RBLK-1）；`step_profile()` 经 session 返回 backend 快照且 env 关闭为 `None`（RBLK-3）。
-- [ ] T043（T039、T041）迁移 doctor 支撑和可选 GPU 采样；完成判定：无 OCR 不启动采样，GPU→CPU 后停止并无意义 VRAM 数据，doctor 所需 DTO 完整。
+- [x] T038（T014、T019、T034、T036）实现静态兼容 binding registry 及其 `BindingVerifier` 端口实现（RBLK-9）；完成判定：正确三元组通过，runtime/sys/upstream/adapter/资产角色任一不符均返回 IncompatibleBinding（upstream 冻结值 `d81235049384534c167caea52b85a694f6103d14` 参与校验），端口实现供 prepare 与注入 `ModelManagerImpl` 共用。
+- [x] T039（T018、T034）迁移系统 probe 和编译能力交集到 `ocrx-inference`；完成判定：Metal/CUDA/Vulkan 编译与硬件取交集，auto 优先级和显式设备错误测试通过。
+- [x] T040（T030、T038、T039）实现 `InferenceServiceImpl::prepare` 的资产就绪和绑定路径；完成判定：只准备一次，缺资产走统一安装，离线/无效 hash/绑定失败不会创建 session。
+- [x] T041（T040）实现 runtime 加载及 GPU 初始化失败回退 CPU；完成判定：显式不可用设备仍直接失败，加载阶段 GPU 失败回退并 warning，identity 和报告 backend 为实际 CPU，实际批深按回退重选规则（16→8）写入身份。
+- [x] T042（T035、T036、T040）实现 session 的 encode → generate → decode 和多次 submit；完成判定：fake 连续请求共享一次加载，响应和累计 telemetry 不重复累加；`decode_echo` 端到端来自 `BackendOutput`（fake 编程回执 ≠ 请求变体时响应回执仍等于 backend 值，RBLK-1）；`step_profile()` 经 session 返回 backend 快照且 env 关闭为 `None`（RBLK-3）。
+- [x] T043（T039、T041）迁移 doctor 支撑和可选 GPU 采样；完成判定：无 OCR 不启动采样，GPU→CPU 后停止并无意义 VRAM 数据，doctor 所需 DTO 完整。
 
 ### 阶段 E：结构化 checkpoint 与输出持久化
 

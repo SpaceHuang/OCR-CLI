@@ -759,6 +759,16 @@ version = "0.1.0"
 [[package]]
 name = "ocrx-inference"
 version = "0.1.0"
+dependencies = [
+ "ocrx-inference-api",
+ "ocrx-models",
+ "ocrx-ovisocr2",
+ "ocrx-primitives",
+ "ocrx-runtime",
+ "serde",
+ "serde_json",
+ "vulkano",
+]
 
 [[package]]
 name = "ocrx-inference-api"

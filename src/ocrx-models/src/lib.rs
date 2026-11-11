@@ -56,6 +56,36 @@ impl ModelManagerImpl {
         &self.catalog
     }
 
+    #[must_use]
+    pub fn cache_root(&self) -> &std::path::Path {
+        &self.cache_root
+    }
+
+    /// Content-only verification (no binding port): used by prepare's
+    /// asset-readiness step before deciding to install.
+    ///
+    /// # Errors
+    ///
+    /// Missing/hash categories from the content verifier.
+    pub fn verify_content_only(
+        &self,
+        manifest: &ocrx_inference_api::ModelManifest,
+    ) -> Result<(), ocrx_inference_api::InferenceError> {
+        verify::verify_content(&self.cache_root, manifest)
+    }
+
+    /// Resolves every manifest asset to its cache path (role-ordered).
+    ///
+    /// # Errors
+    ///
+    /// Cache-layout errors.
+    pub fn required_asset_paths(
+        &self,
+        manifest: &ocrx_inference_api::ModelManifest,
+    ) -> Result<Vec<(ocrx_inference_api::AssetRole, std::path::PathBuf)>, ocrx_inference_api::InferenceError> {
+        cache::manifest_asset_paths(&self.cache_root, manifest)
+    }
+
     fn manifest(
         &self,
         model: &ocrx_inference_api::ModelId,

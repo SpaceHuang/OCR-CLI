@@ -22,7 +22,7 @@ pub mod task;
 
 pub use asset::{
     AdapterRequirement, AssetDescriptor, AssetProvenance, AssetScope, BindingRequirement,
-    DownloadProposal, InstallPolicy, InstallInteraction, ModelManifest,
+    DownloadProposal, InstallPolicy, InstallInteraction, ModelManifest, NonInteractive,
 };
 pub use backend::{
     BackendHandle, BackendOutput, EncodedTask, ImagePlacement, NativeFinishReason,
@@ -31,8 +31,8 @@ pub use backend::{
 pub use error::InferenceError;
 pub use id::{AdapterId, AssetRole, BackendId, ModelId, ProfileId, RuntimeId};
 pub use identity::{
-    AdapterIdentity, AssetIdentity, ModelDisplayMeta, ModelIdentity, RuntimeIdentity,
-    RuntimeTelemetry, StaticInferenceIdentity, StepProfile, STEP_PROFILE_ENV,
+    AdapterIdentity, AssetIdentity, InferenceIdentity, ModelDisplayMeta, ModelIdentity,
+    RuntimeIdentity, RuntimeTelemetry, StaticInferenceIdentity, StepProfile, STEP_PROFILE_ENV,
 };
 pub use management::{
     BindingVerifier, DeviceDiagnostics, DeviceManager, InstallPlan, InstallPlanItem,

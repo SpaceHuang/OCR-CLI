@@ -32,6 +32,12 @@ impl Default for OvisProtocolAdapter {
 }
 
 impl OvisProtocolAdapter {
+    /// Builds the adapter with the frozen identity.
+    ///
+    /// # Panics
+    ///
+    /// Never: the frozen adapter id is a compile-time constant validated by
+    /// tests.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -50,6 +56,10 @@ impl ProtocolAdapter for OvisProtocolAdapter {
 
     /// Encodes one validated task. The Ovis protocol carries exactly one
     /// image before the prompt; the prompt passes through byte-identically.
+    ///
+    /// # Panics
+    ///
+    /// Never: validation returns errors instead.
     ///
     /// # Errors
     ///
@@ -76,6 +86,10 @@ impl ProtocolAdapter for OvisProtocolAdapter {
     /// normalize newlines → strip `<think>` (counting full blocks including
     /// silent empty strips and stray tags) → dual-text response with the
     /// decode echo passed through untouched.
+    ///
+    /// # Panics
+    ///
+    /// Never: the strip helper is total over any input.
     ///
     /// # Errors
     ///
