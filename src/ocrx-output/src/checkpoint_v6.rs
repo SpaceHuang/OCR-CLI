@@ -140,17 +140,12 @@ pub fn write_v6(path: impl AsRef<Path>, checkpoint: &V6Checkpoint) -> std::io::R
 pub fn read_any(path: impl AsRef<Path>) -> std::io::Result<CheckpointFile> {
     let content = std::fs::read_to_string(path)?;
     match content.lines().next() {
-        Some("ocrx-checkpoint-v6") => read_v6_content(&content)
-            .map(CheckpointFile::V6)
-            .or_else(|error| {
-                Ok(CheckpointFile::LegacyUnsupported {
-                    page_hint: page_hint(&content),
-                })
-                .map(|disposition| {
-                    let _ = error;
-                    disposition
-                })
-            }),
+        Some("ocrx-checkpoint-v6") => Ok(read_v6_content(&content).unwrap_or_else(|_| {
+            // Malformed v6: never a crash, never a destroy — reprocess.
+            CheckpointFile::LegacyUnsupported {
+                page_hint: page_hint(&content),
+            }
+        })),
         Some("ocrx-checkpoint-v5") => Ok(CheckpointFile::V5(read_v5_content(&content))),
         Some("ocrx-checkpoint-v4") | Some(_) => Ok(CheckpointFile::LegacyUnsupported {
             page_hint: page_hint(&content),
@@ -266,14 +261,7 @@ fn read_v5_content(content: &str) -> V5Disposition {
     };
     let pending = parameters.contains("pending-ocr=true");
     let degenerated = get("degenerated").is_some_and(|value| value == "true");
-    let route_ocr = parameters.contains("route=native") == false
-        && !parameters.contains("route=empty")
-        // A v5 native/empty checkpoint carries `route=native` (the legacy
-        // OCR key also embeds the token for the native matching branch, so
-        // OCR pages are detected by their ocr-profile marker instead).
-        && !parameters.contains("ocr-profile=");
     let is_ocr = parameters.contains("ocr-profile=");
-    let _ = route_ocr;
     if complete && pending {
         // Contradictory state: never map to complete (T047).
         return V5Disposition::Reprocess {
