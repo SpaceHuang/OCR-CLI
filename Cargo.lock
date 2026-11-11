@@ -830,6 +830,11 @@ dependencies = [
 [[package]]
 name = "ocrx-scan"
 version = "0.1.0"
+dependencies = [
+ "ocrx-core",
+ "ocrx-inference-api",
+ "ocrx-primitives",
+]
 
 [[package]]
 name = "ocrx-skill"
