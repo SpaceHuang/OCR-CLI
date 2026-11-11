@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn v6_round_trips_every_field_with_status_and_identity() {
-        let file = write_and_read(&checkpoint());
+        let file = write_and_read_tagged(&checkpoint(), "round");
         let CheckpointFile::V6(loaded) = file else {
             panic!("expected v6, got {file:?}");
         };
@@ -488,7 +488,7 @@ mod tests {
     fn v6_write_clamps_attempts_to_the_frozen_range_but_reads_accept_wider() {
         let mut wide = checkpoint();
         wide.attempts = 5;
-        let file = write_and_read(&wide);
+        let file = write_and_read_tagged(&wide, "clamps");
         let CheckpointFile::V6(loaded) = file else {
             panic!("expected v6");
         };
