@@ -1,0 +1,334 @@
+[
+    {
+        "gt_idx": [
+            2
+        ],
+        "gt": "$$\\left(\\begin{array}{cccccccccccc}1 & {\\chi}_{80}^9 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{80}^8 & {\\chi}_{80}^8\\\\ {\\chi}_{80}^9 & 1 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & -{\\chi}_{80}^8 & -{\\chi}_{80}^8\\\\ {\\chi}_{50}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  ***&  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{80}^8 & {-\\chi}_{80}^8 & 0 & 0 & 0 & 0 & 0 & 0 & {-\\chi}_{20}^6 & {\\chi}_{180}^{14}\\\\ {\\chi}_{80}^8 & {-\\chi}_{80}^8 & 0 & 0 & 0 & 0 & 0 & 0 & {\\chi}_{180}^{14} & {-\\chi}_{20}^6\\end{array}\\right)\\tag{17}$$",
+        "pred_idx": [
+            ""
+        ],
+        "pred": "",
+        "gt_position": [
+            2
+        ],
+        "pred_position": "",
+        "norm_gt": "(1{\\chi}_80^9{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5{\\chi}_80^8{\\chi}_80^8\\\\{\\chi}_80^91{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5{\\chi}_20^5-{\\chi}_80^8-{\\chi}_80^8\\\\{\\chi}_50^5{\\chi}_20^500\\\\{\\chi}_20^5{\\chi}_20^500\\\\{\\chi}_20^5{\\chi}_20^5***00\\\\{\\chi}_20^5{\\chi}_20^500\\\\{\\chi}_20^5{\\chi}_20^500\\\\{\\chi}_20^5{\\chi}_20^500\\\\{\\chi}_80^8-\\chi_80^8000000-\\chi_20^6{\\chi}_180^14\\\\{\\chi}_80^8-\\chi_80^8000000{\\chi}_180^14-\\chi_20^6)",
+        "norm_pred": "",
+        "gt_category_type": "equation_isolated",
+        "pred_category_type": "",
+        "gt_attribute": [
+            {}
+        ],
+        "edit": 1,
+        "img_id": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "gt_cdm": "\\left(\\begin{array}{cccccccccccc}1 & {\\chi}_{80}^9 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{80}^8 & {\\chi}_{80}^8\\\\ {\\chi}_{80}^9 & 1 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & {\\chi}_{20}^5 & -{\\chi}_{80}^8 & -{\\chi}_{80}^8\\\\ {\\chi}_{50}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  ***&  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{20}^5 & {\\chi}_{20}^5 &  &  &  &  &  &  & 0 & 0\\\\ {\\chi}_{80}^8 & {-\\chi}_{80}^8 & 0 & 0 & 0 & 0 & 0 & 0 & {-\\chi}_{20}^6 & {\\chi}_{180}^{14}\\\\ {\\chi}_{80}^8 & {-\\chi}_{80}^8 & 0 & 0 & 0 & 0 & 0 & 0 & {\\chi}_{180}^{14} & {-\\chi}_{20}^6\\end{array}\\right)",
+        "image_name": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "upper_len": 469,
+        "metric": {
+            "Edit_dist": 1.0,
+            "CDM": 0.0
+        },
+        "Edit_num": 469,
+        "img_id_cdm": "0",
+        "pred_cdm": ""
+    },
+    {
+        "gt_idx": [
+            5
+        ],
+        "gt": "$${\\rho }_{1}\\left( \\mathfrak{s}\\right)  = \\frac{-1}{\\sqrt{5}}\\left( \\begin{array}{ccc} 1 & \\sqrt{2} & \\sqrt{2} \\\\  \\sqrt{2} & 2\\cos \\frac{2\\pi }{5} & 2\\cos \\frac{6\\pi }{5} \\\\  \\sqrt{2} & 2\\cos \\frac{6\\pi }{5} & 2\\cos \\frac{2\\pi }{5} \\end{array}\\right) \\text{ and }{\\rho }_{1}\\left( \\mathfrak{t}\\right)  = \\operatorname{diag}\\left( {1,{\\zeta }_{5}^{2},{\\zeta }_{5}^{3}}\\right) .$$",
+        "pred_idx": [
+            ""
+        ],
+        "pred": "",
+        "gt_position": [
+            5
+        ],
+        "pred_position": "",
+        "norm_gt": "{\\rho}_1(s)=\\frac-1{\\sqrt5}(1\\sqrt2\\sqrt2\\\\\\sqrt22\\cos\\frac{2\\pi}52\\cos\\frac{6\\pi}5\\\\\\sqrt22\\cos\\frac{6\\pi}52\\cos\\frac{2\\pi}5)and{\\rho}_1(t)=diag({1,{\\zeta}_5^2,{\\zeta}_5^3})",
+        "norm_pred": "",
+        "gt_category_type": "equation_isolated",
+        "pred_category_type": "",
+        "gt_attribute": [
+            {}
+        ],
+        "edit": 1,
+        "img_id": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "gt_cdm": "{\\rho }_{1}\\left( \\mathfrak{s}\\right)  = \\frac{-1}{\\sqrt{5}}\\left( \\begin{array}{ccc} 1 & \\sqrt{2} & \\sqrt{2} \\\\  \\sqrt{2} & 2\\cos \\frac{2\\pi }{5} & 2\\cos \\frac{6\\pi }{5} \\\\  \\sqrt{2} & 2\\cos \\frac{6\\pi }{5} & 2\\cos \\frac{2\\pi }{5} \\end{array}\\right) \\text{ and }{\\rho }_{1}\\left( \\mathfrak{t}\\right)  = \\operatorname{diag}\\left( {1,{\\zeta }_{5}^{2},{\\zeta }_{5}^{3}}\\right) .",
+        "image_name": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "upper_len": 174,
+        "metric": {
+            "Edit_dist": 1.0,
+            "CDM": 0.0
+        },
+        "Edit_num": 174,
+        "img_id_cdm": "1",
+        "pred_cdm": ""
+    },
+    {
+        "gt_idx": [
+            7
+        ],
+        "gt": "$${\\rho }_{2}\\left( \\mathfrak{s}\\right)  = \\frac{1}{2}\\left( \\begin{array}{ccc}  - 1 & 1 & \\sqrt{2} \\\\  1 &  - 1 & \\sqrt{2} \\\\  \\sqrt{2} &  - \\sqrt{2} & 0 \\end{array}\\right) ,{\\rho }_{2}\\left( \\mathfrak{t}\\right)  = \\operatorname{diag}\\left( {{\\zeta }_{4},{\\zeta }_{4}^{3},1}\\right) ,$$",
+        "pred_idx": [
+            ""
+        ],
+        "pred": "",
+        "gt_position": [
+            7
+        ],
+        "pred_position": "",
+        "norm_gt": "{\\rho}_2(s)=\\frac12(-11\\sqrt2\\\\1-1\\sqrt2\\\\\\sqrt2-\\sqrt20),{\\rho}_2(t)=diag({\\zeta}_4,{\\zeta}_4^3,1}),",
+        "norm_pred": "",
+        "gt_category_type": "equation_isolated",
+        "pred_category_type": "",
+        "gt_attribute": [
+            {}
+        ],
+        "edit": 1,
+        "img_id": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "gt_cdm": "{\\rho }_{2}\\left( \\mathfrak{s}\\right)  = \\frac{1}{2}\\left( \\begin{array}{ccc}  - 1 & 1 & \\sqrt{2} \\\\  1 &  - 1 & \\sqrt{2} \\\\  \\sqrt{2} &  - \\sqrt{2} & 0 \\end{array}\\right) ,{\\rho }_{2}\\left( \\mathfrak{t}\\right)  = \\operatorname{diag}\\left( {{\\zeta }_{4},{\\zeta }_{4}^{3},1}\\right) ,",
+        "image_name": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "upper_len": 101,
+        "metric": {
+            "Edit_dist": 1.0,
+            "CDM": 0.0
+        },
+        "Edit_num": 101,
+        "img_id_cdm": "2",
+        "pred_cdm": ""
+    },
+    {
+        "gt_idx": [
+            8
+        ],
+        "gt": "$${\\rho }_{3}\\left( \\mathfrak{s}\\right)  = \\frac{1}{2}\\left( \\begin{array}{cc} {\\zeta }_{4} & \\sqrt{3}{\\zeta }_{4} \\\\  \\sqrt{3}{\\zeta }_{4} &  - {\\zeta }_{4} \\end{array}\\right) ,{\\rho }_{3}\\left( \\mathfrak{t}\\right)  = \\operatorname{diag}\\left( {{\\zeta }_{4},{\\zeta }_{4}^{3}}\\right) ,$$",
+        "pred_idx": [
+            ""
+        ],
+        "pred": "",
+        "gt_position": [
+            8
+        ],
+        "pred_position": "",
+        "norm_gt": "{\\rho}_3(s)=\\frac12({\\zeta}_4\\sqrt3{\\zeta}_4\\\\\\sqrt3{\\zeta}_4-{\\zeta}_4),{\\rho}_3(t)=diag({\\zeta}_4,{\\zeta}_4^3}),",
+        "norm_pred": "",
+        "gt_category_type": "equation_isolated",
+        "pred_category_type": "",
+        "gt_attribute": [
+            {}
+        ],
+        "edit": 1,
+        "img_id": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "gt_cdm": "{\\rho }_{3}\\left( \\mathfrak{s}\\right)  = \\frac{1}{2}\\left( \\begin{array}{cc} {\\zeta }_{4} & \\sqrt{3}{\\zeta }_{4} \\\\  \\sqrt{3}{\\zeta }_{4} &  - {\\zeta }_{4} \\end{array}\\right) ,{\\rho }_{3}\\left( \\mathfrak{t}\\right)  = \\operatorname{diag}\\left( {{\\zeta }_{4},{\\zeta }_{4}^{3}}\\right) ,",
+        "image_name": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "upper_len": 114,
+        "metric": {
+            "Edit_dist": 1.0,
+            "CDM": 0.0
+        },
+        "Edit_num": 114,
+        "img_id_cdm": "3",
+        "pred_cdm": ""
+    },
+    {
+        "gt_idx": [
+            9
+        ],
+        "gt": "$$\\rho_4(\\mathfrak{s}) = \\zeta_4^3, \\quad \\rho_4( \\mathfrak{t}) = \\zeta_4, \\quad \\rho_5(\\mathfrak{s}) = \\zeta_4, \\quad \\rho_5( \\mathfrak{t}) = \\zeta_4^3.$$",
+        "pred_idx": [
+            ""
+        ],
+        "pred": "",
+        "gt_position": [
+            9
+        ],
+        "pred_position": "",
+        "norm_gt": "\\rho_4(s)=\\zeta_4^3,\\rho_4(t)=\\zeta_4,\\rho_5(s)=\\zeta_4,\\rho_5(t)=\\zeta_4^3",
+        "norm_pred": "",
+        "gt_category_type": "equation_isolated",
+        "pred_category_type": "",
+        "gt_attribute": [
+            {}
+        ],
+        "edit": 1,
+        "img_id": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "gt_cdm": "\\rho_4(\\mathfrak{s}) = \\zeta_4^3, \\quad \\rho_4( \\mathfrak{t}) = \\zeta_4, \\quad \\rho_5(\\mathfrak{s}) = \\zeta_4, \\quad \\rho_5( \\mathfrak{t}) = \\zeta_4^3.",
+        "image_name": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "upper_len": 75,
+        "metric": {
+            "Edit_dist": 1.0,
+            "CDM": 0.0
+        },
+        "Edit_num": 75,
+        "img_id_cdm": "4",
+        "pred_cdm": ""
+    },
+    {
+        "gt_idx": [
+            11
+        ],
+        "gt": "$${\\rho }_{1} \\oplus  2{\\rho }_{2} \\oplus  {\\rho }_{0},\\quad{\\rho }_{1} \\oplus  {\\rho }_{2} \\oplus  {\\rho }_{3} \\oplus  2{\\rho }_{0},\\quad{\\rho }_{1} \\oplus  {\\rho }_{2} \\oplus  {\\rho }_{4} \\oplus  {\\rho }_{5} \\oplus  2{\\rho }_{0}.$$",
+        "pred_idx": [
+            ""
+        ],
+        "pred": "",
+        "gt_position": [
+            11
+        ],
+        "pred_position": "",
+        "norm_gt": "{\\rho}_1\\oplus2{\\rho}_2\\oplus{\\rho}_0,{\\rho}_1\\oplus{\\rho}_2\\oplus{\\rho}_3\\oplus2{\\rho}_0,{\\rho}_1\\oplus{\\rho}_2\\oplus{\\rho}_4\\oplus{\\rho}_5\\oplus2{\\rho}_0",
+        "norm_pred": "",
+        "gt_category_type": "equation_isolated",
+        "pred_category_type": "",
+        "gt_attribute": [
+            {}
+        ],
+        "edit": 1,
+        "img_id": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "gt_cdm": "{\\rho }_{1} \\oplus  2{\\rho }_{2} \\oplus  {\\rho }_{0},\\quad{\\rho }_{1} \\oplus  {\\rho }_{2} \\oplus  {\\rho }_{3} \\oplus  2{\\rho }_{0},\\quad{\\rho }_{1} \\oplus  {\\rho }_{2} \\oplus  {\\rho }_{4} \\oplus  {\\rho }_{5} \\oplus  2{\\rho }_{0}.",
+        "image_name": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "upper_len": 155,
+        "metric": {
+            "Edit_dist": 1.0,
+            "CDM": 0.0
+        },
+        "Edit_num": 155,
+        "img_id_cdm": "5",
+        "pred_cdm": ""
+    },
+    {
+        "gt_idx": [
+            0
+        ],
+        "gt": "$$\n\\frac{3} {8} \\quad\\frac{4} {9} \\quad0. 6 2 5 \\quad0. 5 \\quad0. 3 7 \\quad\\frac{9} {1 0}\n$$",
+        "pred_idx": [
+            8
+        ],
+        "pred": "\\[ \\frac{3}{8} \\frac{4}{9} 0.625 0 \\]",
+        "edit": 0.4117647058823529,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            18
+        ],
+        "pred_position": 1141,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+        "norm_gt": "\\frac38\\frac490.6250.50.37\\frac910",
+        "norm_pred": "\\frac38\\frac490.6250",
+        "gt_cdm": "\\frac{3} {8} \\quad\\frac{4} {9} \\quad0. 6 2 5 \\quad0. 5 \\quad0. 3 7 \\quad\\frac{9} {1 0}",
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+        "upper_len": 34,
+        "metric": {
+            "Edit_dist": 0.4117647058823529,
+            "CDM": 0.706
+        },
+        "Edit_num": 14,
+        "img_id_cdm": "6",
+        "pred_cdm": "\\frac{3}{8} \\frac{4}{9} 0.625 0"
+    },
+    {
+        "gt_idx": [
+            0
+        ],
+        "gt": "\\[5.076 \\ \\mathrm{m}^{2}=( \\qquad\\qquad) \\mathrm{d m}^{2}~~~~~~~~~~2.5L=\\left (  \\right ) mL\\]",
+        "pred_idx": [
+            0,
+            1
+        ],
+        "pred": "\\[ 5.076 \\mathrm{~m}^{2} = (\\quad) \\mathrm{dm}^{2} \\]\\[ 2.5 \\mathrm{~L} = (\\quad) \\]",
+        "edit": 0.16,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            9.001
+        ],
+        "pred_position": 744,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "norm_gt": "5.076\\m^2=()dm^22.5l=()ml",
+        "norm_pred": "5.076m^2=()dm^22.5l=()",
+        "gt_cdm": "5.076 \\ \\mathrm{m}^{2}=( \\qquad\\qquad) \\mathrm{d m}^{2}~~~~~~~~~~2.5L=\\left (  \\right ) mL",
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "upper_len": 25,
+        "metric": {
+            "Edit_dist": 0.12,
+            "CDM": 0.952
+        },
+        "Edit_num": 3,
+        "img_id_cdm": "7",
+        "pred_cdm": "5.076 \\mathrm{~m}^{2} = (\\quad) \\mathrm{dm}^{2} \\]\\[ 2.5 \\mathrm{~L} = (\\quad)"
+    },
+    {
+        "gt_idx": [
+            1
+        ],
+        "gt": "\\[5 \\mathrm{m}^{3}24\\mathrm{dm}^{3}=(\\qquad\\qquad)\\mathrm{dm}^{3}~~~~~~~0.15m^{3}=( \\qquad\\qquad) \\mathrm{dm}^{3}=( \\qquad\\qquad)\\mathrm{cm}^{3}\\]",
+        "pred_idx": [
+            2,
+            3
+        ],
+        "pred": "\\[ 5 \\mathrm{~m}^{3} 24 \\mathrm{dm}^{3} = (\\quad) \\mathrm{dm}^{3} \\]\\[ 0.15 \\mathrm{~m}^{3} = (\\quad) \\]",
+        "edit": 0.3157894736842105,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            9.002
+        ],
+        "pred_position": 820,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "norm_gt": "5m^324dm^3=()dm^30.15m^3=()dm^3=()cm^3",
+        "norm_pred": "5m^324dm^3=()dm^30.15m^3=()",
+        "gt_cdm": "5 \\mathrm{m}^{3}24\\mathrm{dm}^{3}=(\\qquad\\qquad)\\mathrm{dm}^{3}~~~~~~~0.15m^{3}=( \\qquad\\qquad) \\mathrm{dm}^{3}=( \\qquad\\qquad)\\mathrm{cm}^{3}",
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "upper_len": 38,
+        "metric": {
+            "Edit_dist": 0.2894736842105263,
+            "CDM": 0.8
+        },
+        "Edit_num": 11,
+        "img_id_cdm": "8",
+        "pred_cdm": "5 \\mathrm{~m}^{3} 24 \\mathrm{dm}^{3} = (\\quad) \\mathrm{dm}^{3} \\]\\[ 0.15 \\mathrm{~m}^{3} = (\\quad)"
+    },
+    {
+        "gt_idx": [
+            2
+        ],
+        "gt": "\\[1.05~{\\mathrm{L}}\\!=\\!(\\phantom{-}\\!\\!\\!\\!\\!\\phantom{\\frac{1}{\\mathrm{d}\\mathrm{m}^{+}}})\\mathrm{d}\\mathrm{m}^{3}=\\left(\\right)mL\\]",
+        "pred_idx": [
+            4
+        ],
+        "pred": "\\[ 1.05 \\mathrm{~L} = (\\quad) \\mathrm{dm}^{3} = (\\quad) \\mathrm{mL} \\]",
+        "edit": 0.0,
+        "gt_category_type": "equation_isolated",
+        "gt_position": [
+            9.003
+        ],
+        "pred_position": 916,
+        "pred_category_type": "equation_isolated",
+        "gt_attribute": [
+            {}
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "norm_gt": "1.05l=()dm^3=()ml",
+        "norm_pred": "1.05l=()dm^3=()ml",
+        "gt_cdm": "1.05~{\\mathrm{L}}\\!=\\!(\\phantom{-}\\!\\!\\!\\!\\!\\phantom{\\frac{1}{\\mathrm{d}\\mathrm{m}^{+}}})\\mathrm{d}\\mathrm{m}^{3}=\\left(\\right)mL",
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "upper_len": 17,
+        "metric": {
+            "Edit_dist": 0.0,
+            "CDM": 1.0
+        },
+        "Edit_num": 0,
+        "img_id_cdm": "9",
+        "pred_cdm": "1.05 \\mathrm{~L} = (\\quad) \\mathrm{dm}^{3} = (\\quad) \\mathrm{mL}"
+    }
+]

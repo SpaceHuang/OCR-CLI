@@ -1,0 +1,841 @@
+[
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+        ],
+        "pred": [],
+        "img_id": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "edit": 1.0,
+        "image_name": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+        "upper_len": 11,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 11
+    },
+    {
+        "gt": [
+            6
+        ],
+        "pred": [
+            6
+        ],
+        "img_id": "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8.png",
+        "edit": 0.0,
+        "image_name": "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8.png",
+        "upper_len": 1,
+        "metric": {
+            "Edit_dist": 0.0
+        },
+        "Edit_num": 0
+    },
+    {
+        "gt": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+        ],
+        "pred": [
+            4,
+            9,
+            12,
+            7,
+            11,
+            10,
+            3,
+            13,
+            5,
+            6,
+            8
+        ],
+        "img_id": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.png",
+        "edit": 0.9090909090909091,
+        "image_name": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.png",
+        "upper_len": 11,
+        "metric": {
+            "Edit_dist": 0.9090909090909091
+        },
+        "Edit_num": 10
+    },
+    {
+        "gt": [
+            1
+        ],
+        "pred": [],
+        "img_id": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png",
+        "edit": 1.0,
+        "image_name": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png",
+        "upper_len": 1,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 1
+    },
+    {
+        "gt": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            12
+        ],
+        "pred": [],
+        "img_id": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46.png",
+        "edit": 1.0,
+        "image_name": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46.png",
+        "upper_len": 7,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 7
+    },
+    {
+        "gt": [
+            4,
+            5,
+            9
+        ],
+        "pred": [],
+        "img_id": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png",
+        "edit": 1.0,
+        "image_name": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png",
+        "upper_len": 3,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 3
+    },
+    {
+        "gt": [
+            5,
+            6,
+            7,
+            8
+        ],
+        "pred": [],
+        "img_id": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png",
+        "edit": 1.0,
+        "image_name": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png",
+        "upper_len": 4,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 4
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            6,
+            7,
+            8,
+            9,
+            13
+        ],
+        "pred": [],
+        "img_id": "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2.jpg",
+        "edit": 1.0,
+        "image_name": "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2.jpg",
+        "upper_len": 9,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 9
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+        ],
+        "pred": [],
+        "img_id": "jiaocai_jiaocai_en_310.jpg",
+        "edit": 1.0,
+        "image_name": "jiaocai_jiaocai_en_310.jpg",
+        "upper_len": 16,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 16
+    },
+    {
+        "gt": [
+            2,
+            4,
+            5
+        ],
+        "pred": [
+            5,
+            2,
+            4
+        ],
+        "img_id": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3.jpg",
+        "edit": 0.6666666666666666,
+        "image_name": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3.jpg",
+        "upper_len": 3,
+        "metric": {
+            "Edit_dist": 0.6666666666666666
+        },
+        "Edit_num": 2
+    },
+    {
+        "gt": [
+            2,
+            4,
+            7
+        ],
+        "pred": [],
+        "img_id": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg",
+        "edit": 1.0,
+        "image_name": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg",
+        "upper_len": 3,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 3
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+        ],
+        "pred": [
+            2,
+            3,
+            4,
+            5,
+            6
+        ],
+        "img_id": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+        "edit": 0.16666666666666666,
+        "image_name": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+        "upper_len": 6,
+        "metric": {
+            "Edit_dist": 0.16666666666666666
+        },
+        "Edit_num": 1
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            12,
+            16,
+            19,
+            24,
+            27
+        ],
+        "pred": [],
+        "img_id": "jiaocaineedrop_2017.pdf_0.jpg",
+        "edit": 1.0,
+        "image_name": "jiaocaineedrop_2017.pdf_0.jpg",
+        "upper_len": 14,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 14
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            7,
+            8,
+            9,
+            12,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            28,
+            29,
+            35,
+            41,
+            47,
+            53,
+            59
+        ],
+        "pred": [
+            1,
+            2,
+            4,
+            5,
+            7,
+            9,
+            8,
+            12,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            28,
+            29,
+            35,
+            41,
+            47,
+            53,
+            59
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+        "edit": 0.125,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+        "upper_len": 24,
+        "metric": {
+            "Edit_dist": 0.125
+        },
+        "Edit_num": 3
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            16,
+            19,
+            22,
+            25,
+            26,
+            27
+        ],
+        "pred": [],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_1358.jpg",
+        "edit": 1.0,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_1358.jpg",
+        "upper_len": 19,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 19
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            13,
+            14,
+            20,
+            21
+        ],
+        "pred": [],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_1478.jpg",
+        "edit": 1.0,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_1478.jpg",
+        "upper_len": 11,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 11
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            8,
+            10,
+            12,
+            14,
+            15,
+            17,
+            18,
+            20,
+            21,
+            23,
+            24,
+            26,
+            27,
+            28
+        ],
+        "pred": [
+            5,
+            14,
+            27,
+            1,
+            2,
+            3
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_194.jpg",
+        "edit": 0.9,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_194.jpg",
+        "upper_len": 20,
+        "metric": {
+            "Edit_dist": 0.9
+        },
+        "Edit_num": 18
+    },
+    {
+        "gt": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9.001,
+            9.002,
+            9.003,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            25,
+            26,
+            27,
+            28,
+            29,
+            31,
+            33,
+            35,
+            36,
+            37,
+            38,
+            40,
+            42,
+            44,
+            45,
+            46,
+            47,
+            48,
+            50
+        ],
+        "pred": [
+            31,
+            1,
+            2,
+            5,
+            6,
+            7,
+            8,
+            33,
+            9.001,
+            42,
+            9.002,
+            9.003,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            36,
+            50,
+            18,
+            19,
+            25,
+            26,
+            27,
+            28,
+            29,
+            35,
+            37,
+            38,
+            44,
+            40,
+            45,
+            46,
+            47,
+            48
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "edit": 0.3333333333333333,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "upper_len": 39,
+        "metric": {
+            "Edit_dist": 0.3333333333333333
+        },
+        "Edit_num": 13
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            28,
+            29,
+            30,
+            31,
+            36,
+            37,
+            38,
+            39,
+            40
+        ],
+        "pred": [
+            1,
+            2,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            3,
+            16,
+            17,
+            28,
+            29,
+            30,
+            31,
+            36,
+            37,
+            38,
+            39,
+            40
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_2839.jpg",
+        "edit": 0.11538461538461539,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_2839.jpg",
+        "upper_len": 26,
+        "metric": {
+            "Edit_dist": 0.11538461538461539
+        },
+        "Edit_num": 3
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            8,
+            9,
+            11,
+            13,
+            15,
+            17,
+            21,
+            26,
+            30,
+            34,
+            39,
+            40
+        ],
+        "pred": [
+            11,
+            39,
+            30,
+            26,
+            21,
+            40,
+            13,
+            1,
+            3,
+            4,
+            5,
+            2,
+            6,
+            34,
+            17,
+            8,
+            9,
+            15
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_3713.jpg",
+        "edit": 1.0,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_3713.jpg",
+        "upper_len": 18,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 18
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            9,
+            11,
+            12,
+            19,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            40,
+            41,
+            42,
+            48,
+            49,
+            50,
+            53,
+            56,
+            59
+        ],
+        "pred": [
+            19,
+            3,
+            4,
+            5,
+            9,
+            34,
+            2,
+            40,
+            48,
+            11,
+            12,
+            26,
+            27,
+            28,
+            49,
+            29,
+            50,
+            30,
+            31,
+            53,
+            1,
+            41,
+            56,
+            35,
+            42,
+            59,
+            33,
+            32
+        ],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_620.jpg",
+        "edit": 0.75,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_620.jpg",
+        "upper_len": 28,
+        "metric": {
+            "Edit_dist": 0.75
+        },
+        "Edit_num": 21
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+        ],
+        "pred": [],
+        "img_id": "jiaocaineedrop_jiaocai_needrop_en_922.jpg",
+        "edit": 1.0,
+        "image_name": "jiaocaineedrop_jiaocai_needrop_en_922.jpg",
+        "upper_len": 18,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 18
+    },
+    {
+        "gt": [
+            2,
+            6,
+            7
+        ],
+        "pred": [],
+        "img_id": "scihub_bloodadvances.2019030924.pdf_3.jpg",
+        "edit": 1.0,
+        "image_name": "scihub_bloodadvances.2019030924.pdf_3.jpg",
+        "upper_len": 3,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 3
+    },
+    {
+        "gt": [
+            2,
+            4,
+            5,
+            6,
+            8,
+            9,
+            10
+        ],
+        "pred": [
+            8,
+            10,
+            6,
+            9,
+            2,
+            4,
+            5
+        ],
+        "img_id": "scihub_ijop.12033.pdf_5.jpg",
+        "edit": 1.0,
+        "image_name": "scihub_ijop.12033.pdf_5.jpg",
+        "upper_len": 7,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 7
+    },
+    {
+        "gt": [
+            4,
+            6,
+            7
+        ],
+        "pred": [],
+        "img_id": "scihub_j.cbpb.2019.110324.pdf_6.jpg",
+        "edit": 1.0,
+        "image_name": "scihub_j.cbpb.2019.110324.pdf_6.jpg",
+        "upper_len": 3,
+        "metric": {
+            "Edit_dist": 1.0
+        },
+        "Edit_num": 3
+    },
+    {
+        "gt": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+        ],
+        "pred": [
+            9,
+            6,
+            7,
+            2,
+            3,
+            5,
+            8,
+            10,
+            4
+        ],
+        "img_id": "scihub_j.1528-1167.2008.01552.x.pdf_3.jpg",
+        "edit": 0.8,
+        "image_name": "scihub_j.1528-1167.2008.01552.x.pdf_3.jpg",
+        "upper_len": 10,
+        "metric": {
+            "Edit_dist": 0.8
+        },
+        "Edit_num": 8
+    }
+]

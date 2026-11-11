@@ -1,0 +1,137 @@
+{
+    "text_block": {
+        "all": {
+            "Edit_dist": {
+                "ALL_page_avg": 0.774659594209089,
+                "edit_whole": 0.7880514289616799,
+                "edit_sample_avg": 0.7613166975201621
+            }
+        },
+        "group": {
+            "sample_count": {}
+        },
+        "page": {
+            "Edit_dist": {
+                "ALL": 0.774659594209089,
+                "data_source: newspaper": 0.774659594209089,
+                "language: english": 0.728313198938018,
+                "language: simplified_chinese": 0.778318520151542,
+                "layout: other_layout": 0.774659594209089,
+                "subset: v1.5": 0.774659594209089
+            }
+        }
+    },
+    "display_formula": {
+        "all": {
+            "Edit_dist": {
+                "ALL_page_avg": "NaN"
+            },
+            "CDM": {}
+        },
+        "group": {},
+        "page": {},
+        "metric_debug": {
+            "CDM": {
+                "stage": "CDM",
+                "workers": 8,
+                "sample_count": 0,
+                "timeout_case_count": 0,
+                "timeout_cases": [],
+                "exception_case_count": 0,
+                "exception_cases": []
+            }
+        }
+    },
+    "table": {
+        "all": {
+            "TEDS": {
+                "all": 0.18033383283972157
+            },
+            "TEDS_structure_only": {
+                "all": 0.18333333333333335
+            },
+            "Edit_dist": {
+                "ALL_page_avg": 0.4243807184756726,
+                "edit_whole": 0.7677946324387398,
+                "edit_sample_avg": 0.8103735789683859
+            }
+        },
+        "group": {
+            "sample_count": {}
+        },
+        "page": {
+            "Edit_dist": {
+                "ALL": 0.4243807184756726,
+                "data_source: newspaper": 0.4243807184756726,
+                "language: english": 0.5027596801673208,
+                "language: simplified_chinese": 0.18924383340072787,
+                "layout: other_layout": 0.4243807184756726,
+                "subset: v1.5": 0.4243807184756726
+            },
+            "TEDS": {
+                "ALL": 0.5444277067560035,
+                "data_source: newspaper": 0.5444277067560035,
+                "language: english": 0.4785200580092575,
+                "language: simplified_chinese": 0.7421506529962413,
+                "layout: other_layout": 0.5444277067560035,
+                "subset: v1.5": 0.5444277067560035
+            },
+            "TEDS_structure_only": {
+                "ALL": 0.5471153846153846,
+                "data_source: newspaper": 0.5471153846153846,
+                "language: english": 0.4794871794871795,
+                "language: simplified_chinese": 0.75,
+                "layout: other_layout": 0.5471153846153846,
+                "subset: v1.5": 0.5471153846153846
+            }
+        },
+        "metric_debug": {
+            "TEDS": {
+                "stage": "TEDS",
+                "workers": 8,
+                "timeout_sec": 120.0,
+                "sample_count": 33,
+                "timeout_case_count": 0,
+                "timeout_cases": [],
+                "error_case_count": 0,
+                "error_cases": []
+            }
+        }
+    },
+    "reading_order": {
+        "all": {
+            "Edit_dist": {
+                "ALL_page_avg": 0.8505968960691406,
+                "edit_whole": 0.8646590515749394,
+                "edit_sample_avg": 0.8505968960691406
+            }
+        },
+        "group": {
+            "sample_count": {}
+        },
+        "page": {
+            "Edit_dist": {
+                "ALL": 0.8505968960691406,
+                "data_source: newspaper": 0.8505968960691406,
+                "language: english": 0.7714348206474191,
+                "language: simplified_chinese": 0.8568465336024343,
+                "layout: other_layout": 0.8505968960691406,
+                "subset: v1.5": 0.8505968960691406
+            }
+        }
+    },
+    "match_debug": {
+        "workers": 8,
+        "page_count": 41,
+        "quick_match_truncated_timeout_sec": 300,
+        "match_timeout_sec": 420,
+        "text_match_fallback_pages": {
+            "quick_match_timeout": [],
+            "page_timeout": []
+        },
+        "text_match_fallback_counts": {
+            "quick_match_timeout": 0,
+            "page_timeout": 0
+        }
+    }
+}

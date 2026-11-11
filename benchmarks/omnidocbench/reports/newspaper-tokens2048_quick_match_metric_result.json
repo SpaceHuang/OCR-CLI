@@ -1,0 +1,149 @@
+{
+    "text_block": {
+        "all": {
+            "Edit_dist": {
+                "ALL_page_avg": 0.478966879176932,
+                "edit_whole": 0.5442604436968687,
+                "edit_sample_avg": 0.616893870396341
+            }
+        },
+        "group": {
+            "sample_count": {}
+        },
+        "page": {
+            "Edit_dist": {
+                "ALL": 0.478966879176932,
+                "None": 0.13538029809364172,
+                "colorful_backgroud": 0.0274182729971686,
+                "data_source: newspaper": 0.478966879176932,
+                "language: english": 0.10812956053643294,
+                "language: simplified_chinese": 0.8648381431677216,
+                "layout: other_layout": 0.6047185921157006,
+                "layout: three_column": 0.011327696685886391,
+                "subset: v1.5": 0.478966879176932
+            }
+        }
+    },
+    "display_formula": {
+        "all": {
+            "Edit_dist": {
+                "ALL_page_avg": "NaN"
+            },
+            "CDM": {}
+        },
+        "group": {},
+        "page": {},
+        "metric_debug": {
+            "CDM": {
+                "stage": "CDM",
+                "workers": 8,
+                "sample_count": 0,
+                "timeout_case_count": 0,
+                "timeout_cases": [],
+                "exception_case_count": 0,
+                "exception_cases": []
+            }
+        }
+    },
+    "table": {
+        "all": {
+            "TEDS": {
+                "all": 0.24390763366658794
+            },
+            "TEDS_structure_only": {
+                "all": 0.2960568269287087
+            },
+            "Edit_dist": {
+                "ALL_page_avg": 0.3380352057295351,
+                "edit_whole": 0.6672646258897055,
+                "edit_sample_avg": 0.7112553758737228
+            }
+        },
+        "group": {
+            "sample_count": {}
+        },
+        "page": {
+            "Edit_dist": {
+                "ALL": 0.33803520572953516,
+                "None": 0.2934158786298197,
+                "data_source: newspaper": 0.33803520572953516,
+                "language: english": 0.3197970894329185,
+                "language: simplified_chinese": 0.4565829616575433,
+                "layout: other_layout": 0.3612112963266791,
+                "layout: three_column": 0.013569937369519834,
+                "subset: v1.5": 0.33803520572953516
+            },
+            "TEDS": {
+                "ALL": 0.58786012891827,
+                "None": 0.5907685620822772,
+                "data_source: newspaper": 0.58786012891827,
+                "language: english": 0.6003211102464956,
+                "language: simplified_chinese": 0.5068637502848029,
+                "layout: other_layout": 0.5592282539207496,
+                "layout: three_column": 0.9887063788835546,
+                "subset: v1.5": 0.58786012891827
+            },
+            "TEDS_structure_only": {
+                "ALL": 0.6541952341982179,
+                "None": 0.6538129062809419,
+                "data_source: newspaper": 0.6541952341982179,
+                "language: english": 0.6650970651005077,
+                "language: simplified_chinese": 0.5833333333333333,
+                "layout: other_layout": 0.6294948937838049,
+                "layout: three_column": 1.0,
+                "subset: v1.5": 0.6541952341982179
+            }
+        },
+        "metric_debug": {
+            "TEDS": {
+                "stage": "TEDS",
+                "workers": 8,
+                "timeout_sec": 120.0,
+                "sample_count": 69,
+                "timeout_case_count": 0,
+                "timeout_cases": [],
+                "error_case_count": 0,
+                "error_cases": []
+            }
+        }
+    },
+    "reading_order": {
+        "all": {
+            "Edit_dist": {
+                "ALL_page_avg": 0.4781650109386399,
+                "edit_whole": 0.6323490640653836,
+                "edit_sample_avg": 0.4781650109386399
+            }
+        },
+        "group": {
+            "sample_count": {}
+        },
+        "page": {
+            "Edit_dist": {
+                "ALL": 0.47816501093863983,
+                "None": 0.1752078113391829,
+                "colorful_backgroud": 0.09999999999999999,
+                "data_source: newspaper": 0.47816501093863983,
+                "language: english": 0.13077441358821143,
+                "language: simplified_chinese": 0.8396390108843559,
+                "layout: other_layout": 0.6028911163512772,
+                "layout: three_column": 0.014339806435394672,
+                "subset: v1.5": 0.47816501093863983
+            }
+        }
+    },
+    "match_debug": {
+        "workers": 8,
+        "page_count": 151,
+        "quick_match_truncated_timeout_sec": 300,
+        "match_timeout_sec": 420,
+        "text_match_fallback_pages": {
+            "quick_match_timeout": [],
+            "page_timeout": []
+        },
+        "text_match_fallback_counts": {
+            "quick_match_timeout": 0,
+            "page_timeout": 0
+        }
+    }
+}
