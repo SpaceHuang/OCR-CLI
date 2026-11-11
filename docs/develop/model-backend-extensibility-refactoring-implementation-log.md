@@ -99,3 +99,30 @@
 - adapter decode 警告：nonempty>0 → warnings=["think_removed"]；scan assemble 用它复现 ThinkRemoved
   页面警告（page_json golden 关键）。
 - scan 不得依赖 ocrx-runtime/ocrx-models/ocrx-inference/ocrx-ovisocr2（T089 架构脚本会查）。
+
+
+## 断点续接锚点（2026-11-12，阶段 F 中段）
+
+已完成并提交：T001–T057 中的 T001–T055、T059–T064（勾选状态见计划文档，`grep "^- \[x\]" 统计）。
+T053 已提交（plan.rs 纯校验移植，56 scan 测试）。workspace 全绿。
+
+**下一个任务（按序）：**
+1. T052：scan/lib.rs 的 ScanApplication/ScanRequest/ScanOutcome/ScanEvent 骨架（库入口不打印/不退出/不装
+   signal handler）。
+2. T056：native-first（port main.rs run_native_first_phase/route_native_validation 语义 ~900-990 行 +
+   native 提交经 ocrx_output::commit_native_page_v6）；T057 最终 OCR 队列合并 + 按需 prepare（队列 0 时
+   不 prepare——用 static_identity 预比较即可完全复用）。
+3. T058：渲染器迁移（main.rs 1564-1926：SegmentRenderer/PdfWorkerScheduler/WorkerScanRenderer/
+   parse_dimensions/linear_scale_ratio/gcd + pdfium_owner.rs 整文件 1101 行 → scan/render.rs；实现
+   window::PageRenderer；SwitchDocument 协议在 pdfium_owner）。
+4. T065/T066/T067/T068：合并汇总（output::collect_page_markdowns/merge_markdown 已 pub）、
+   routing sidecar（port main.rs write_routing_checkpoint_sidecars 755-800 行）、result 字段（port
+   serialize_scan_result 4609-4683，model 从 InferenceIdentity.display，runtime=llama.cpp@0.1.161）、
+   StepProfile/CommitProfile 接线、prepare 失败 pending。
+5. T063 跨文档：multi_doc.rs（port main.rs run_scan_multi 4267-4509 + DocScanEnv/ModelSlot 语义改为
+   共享 session；scan_summary_json 4190-4266；aggregate_scan_exit 4204）。
+6. 阶段 G/H/I 按实施日志前节清单。
+
+**重要：** main.rs 的对应函数在 T074/T077 前不删；port 时用 python 脚本或 Write 工具（heredoc 会被长
+内容截断）。scan crate 依赖现况：core/primitives/inference-api/pdf/output/image。测试必须每个临时目录
+唯一 tag。每次 commit 前 `cargo test --workspace --locked`。
