@@ -1,0 +1,51 @@
+{
+    "page_match": {
+        "workers": 8,
+        "page_count": 1651,
+        "quick_match_truncated_timeout_sec": 300,
+        "match_timeout_sec": 420,
+        "fallbacks": {
+            "quick_match_timeout": {
+                "count": 4,
+                "cases": [
+                    "docstructbench_enbook-zlib-o.O-17208435.pdf_57.jpg",
+                    "newspaper_0b1bb8d03b4287eb95f67b68c2cf9f92_1.jpg",
+                    "newspaper_0b86dae4d8f328a0e79d9ac394000dec_1.jpg",
+                    "newspaper_e6ddb0246224fb8bd8788e6cc7839021_1.jpg"
+                ]
+            },
+            "page_timeout": {
+                "count": 0,
+                "cases": []
+            }
+        }
+    },
+    "metrics": {
+        "display_formula": {
+            "CDM": {
+                "workers": 8,
+                "timeout_sec": null,
+                "sample_count": 2352,
+                "timeout_case_count": 0,
+                "timeout_cases": [],
+                "error_case_count": 0,
+                "error_cases": [],
+                "exception_case_count": 0,
+                "exception_cases": []
+            }
+        },
+        "table": {
+            "TEDS": {
+                "workers": 8,
+                "timeout_sec": 120.0,
+                "sample_count": 665,
+                "timeout_case_count": 0,
+                "timeout_cases": [],
+                "error_case_count": 0,
+                "error_cases": [],
+                "exception_case_count": 0,
+                "exception_cases": []
+            }
+        }
+    }
+}

@@ -1,0 +1,246 @@
+{
+    "page-91b20bf2-3ad5-41f4-b739-4cc4b18ab1eb.png_[0]": {
+        "TEDS": 0.9671972691761384,
+        "TEDS_structure_only": 1.0
+    },
+    "page-69c15957-4d6d-485c-a244-04a1a8d29d37.png_[0]": {
+        "TEDS": 0.9503080332558191,
+        "TEDS_structure_only": 0.9588014981273408
+    },
+    "page-50ffe5d2-cd27-449a-a813-d4a8c44b12ea.png_[0]": {
+        "TEDS": 0.9626683763500312,
+        "TEDS_structure_only": 0.9876543209876543
+    },
+    "page-49746735-505c-442d-b3f6-c55b1bf9e48b.png_[0]": {
+        "TEDS": 0.8828256388087983,
+        "TEDS_structure_only": 0.9032258064516129
+    },
+    "page-9390721f-e06c-47ea-8b21-0f27c72df7b7.png_[0]": {
+        "TEDS": 0.9831782061290258,
+        "TEDS_structure_only": 0.9953161592505855
+    },
+    "page-38fc7c6b-80ed-46be-bb53-29986a63ad3e.png_[0]": {
+        "TEDS": 0.9377081272050841,
+        "TEDS_structure_only": 0.9766666666666667
+    },
+    "page-f3e750d8-8201-4a22-9419-9776798b7a32.png_[0]": {
+        "TEDS": 0.9506000707696692,
+        "TEDS_structure_only": 0.9866844207723036
+    },
+    "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3.jpg_[0]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3.jpg_[1]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3.jpg_[2]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2.jpg_[0]": {
+        "TEDS": 0.9440723001963153,
+        "TEDS_structure_only": 0.9690721649484536
+    },
+    "yanbaor2_yanbaoPPT_5877.jpg_[0]": {
+        "TEDS": 0.9935087203605723,
+        "TEDS_structure_only": 0.9958847736625515
+    },
+    "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4.jpg_[0]": {
+        "TEDS": 0.4801199906803353,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4.jpg_[1]": {
+        "TEDS": 0.48166023166023153,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4.jpg_[2]": {
+        "TEDS": 0.47973570387363473,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-hup.777.pdf_8.jpg_[0]": {
+        "TEDS": 0.9658243290345068,
+        "TEDS_structure_only": 0.9867549668874173
+    },
+    "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6.jpg_[0]": {
+        "TEDS": 0.9964187327823691,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6.jpg_[1]": {
+        "TEDS": 0.9965564738292011,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_jiaocai_needrop_en_2360.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_jiaocai_needrop_en_2360.jpg_[1]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_jiaocai_needrop_en_2360.jpg_[2]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[0]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[1]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[2]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[3]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "scihub_ijcac.2012040101.pdf_5.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "scihub_jneurosci.16-15-04625.1996.pdf_2.jpg_[0]": {
+        "TEDS": 0.4462821067821068,
+        "TEDS_structure_only": 0.488
+    },
+    "scihub_s00586-010-1656-7.pdf_3.jpg_[0]": {
+        "TEDS": 0.7259615384615385,
+        "TEDS_structure_only": 0.8
+    },
+    "scihub_s00586-010-1656-7.pdf_3.jpg_[1]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[0]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[1]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[2]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[3]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[4]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[5]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[6]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[7]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[8]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[9]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[10]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[11]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png_[12]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png_[0]": {
+        "TEDS": 0.8277426160337553,
+        "TEDS_structure_only": 0.9662447257383966
+    },
+    "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png_[1]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png_[2]": {
+        "TEDS": 0.5583380125902121,
+        "TEDS_structure_only": 0.7771260997067448
+    },
+    "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png_[3]": {
+        "TEDS": 0.8539325842696629,
+        "TEDS_structure_only": 0.9550561797752809
+    },
+    "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png_[4]": {
+        "TEDS": -0.16153846153846163,
+        "TEDS_structure_only": 0.4666666666666667
+    },
+    "newspaper_The Times UK_0801@magazinesclubnew_page_031.png_[0]": {
+        "TEDS": 0.9955623306233062,
+        "TEDS_structure_only": 1.0
+    },
+    "newspaper_The Guardian UK_0801@magazinesclubnew_page_052.png_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "newspaper_The Guardian UK_0801@magazinesclubnew_page_052.png_[1]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png_[0]": {
+        "TEDS": 0.5122105156240295,
+        "TEDS_structure_only": 0.8160919540229885
+    },
+    "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png_[1]": {
+        "TEDS": -0.002597263964990937,
+        "TEDS_structure_only": 0.2696629213483146
+    },
+    "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png_[2]": {
+        "TEDS": 0.6062355095884506,
+        "TEDS_structure_only": 0.76
+    },
+    "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png_[3]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png_[4]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png_[5]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "magazine_TheEconomist.2024.02.24_page_076.png_[0]": {
+        "TEDS": 0.670025493258565,
+        "TEDS_structure_only": 0.7758186397984886
+    },
+    "magazine_TheEconomist.2024.02.24_page_076.png_[1]": {
+        "TEDS": 0.9661885245901639,
+        "TEDS_structure_only": 0.9672131147540983
+    },
+    "magazine_TheEconomist.2024.02.24_page_076.png_[2]": {
+        "TEDS": 0.9423280423280423,
+        "TEDS_structure_only": 0.9487179487179487
+    },
+    "magazine_TheEconomist.2024.02.24_page_076.png_[3]": {
+        "TEDS": 0.6963141025641026,
+        "TEDS_structure_only": 0.75
+    },
+    "magazine_TheEconomist.2024.02.24_page_076.png_[4]": {
+        "TEDS": 0.678989651416122,
+        "TEDS_structure_only": 0.6875
+    }
+}

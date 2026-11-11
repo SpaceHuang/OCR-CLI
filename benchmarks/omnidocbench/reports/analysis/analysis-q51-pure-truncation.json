@@ -1,0 +1,270 @@
+{
+ "schema_version": 1,
+ "task": "Q5.1 pure-truncated three-way characterization",
+ "n_pages": 28,
+ "summary": {
+  "loop_numeric_increment": 19,
+  "loop_suspect_weak": 3,
+  "true_long_content": 4,
+  "loop_exact_period": 2
+ },
+ "loop_share": "24/28",
+ "verdict_input": {
+  "q1_5_condition": "loop_* share is the Q1.5 trigger (truncated pages entering the escape-ladder tail tier); observed share decides whether Q1.5 is conditionally initiated",
+  "d6_residual": "true_long_content + budget_edge stay accepted residual"
+ },
+ "pages": [
+  {
+   "stem": "newspaper_c79c0c10a5df54b21bccad8f64063ffa_1",
+   "md_chars": 21227,
+   "exact_period_chars": 119,
+   "masked_strong_period_chars": 119,
+   "masked_weak_period_chars": 119,
+   "truncated_marker": false,
+   "class": "loop_exact_period"
+  },
+  {
+   "stem": "newspaper_e3842a5681ef54c62a58804adec06c3f_1",
+   "md_chars": 23078,
+   "exact_period_chars": 345,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": 345,
+   "truncated_marker": false,
+   "class": "loop_exact_period"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-chem.200701981.pdf_9",
+   "md_chars": 19434,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 17,
+   "masked_weak_period_chars": 17,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "eastmoney_f4848e9d70d37f406f54c714024c5ef002832a1bf64290aa5c163665887a3e55.pdf_5",
+   "md_chars": 23254,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 34,
+   "masked_weak_period_chars": 34,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1991_Problems_1991_page_001",
+   "md_chars": 19317,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 7,
+   "masked_weak_period_chars": 7,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1999_Solutions_1999s_page_003",
+   "md_chars": 22379,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 16,
+   "masked_weak_period_chars": 16,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2000_Solutions_2000s_page_002",
+   "md_chars": 18911,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 8,
+   "masked_weak_period_chars": 8,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2006_Problems_2006_page_001",
+   "md_chars": 19332,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 7,
+   "masked_weak_period_chars": 7,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2011_Problems_2011_page_001",
+   "md_chars": 39587,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 166,
+   "masked_weak_period_chars": 166,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2011_Solutions_2011s_page_003",
+   "md_chars": 19022,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 8,
+   "masked_weak_period_chars": 8,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_377",
+   "md_chars": 18338,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 10,
+   "masked_weak_period_chars": 10,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_999",
+   "md_chars": 19900,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 18,
+   "masked_weak_period_chars": 18,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "newspaper_1cddf9d22ca549f3a86cf1512a3110cc_1",
+   "md_chars": 21401,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 9,
+   "masked_weak_period_chars": 9,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "newspaper_87769622e073730af94822416c60c710_1",
+   "md_chars": 20942,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 37,
+   "masked_weak_period_chars": 37,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "newspaper_f1de032fb6a25cf85c85c15cb2d2a63a_1",
+   "md_chars": 21350,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 26,
+   "masked_weak_period_chars": 26,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "newspaper_fe5ed29024932fad071afc53807b16ba_4",
+   "md_chars": 16384,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 7,
+   "masked_weak_period_chars": 7,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "newspaper_USAToday-2025-01-08@magazinesclubnew_page_024",
+   "md_chars": 27689,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 16,
+   "masked_weak_period_chars": 16,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "page-00b6ac57-4466-4eb0-937d-bb29a44fa0d3",
+   "md_chars": 19522,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 16,
+   "masked_weak_period_chars": 16,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "page-b9d507e7-1239-42de-b70a-d7ca65393dc9",
+   "md_chars": 22980,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 35,
+   "masked_weak_period_chars": 35,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "page-c7a51204-5142-4c7a-bc9d-1faf1fe1be02",
+   "md_chars": 19758,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 6,
+   "masked_weak_period_chars": 6,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_4770",
+   "md_chars": 21119,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": 27,
+   "masked_weak_period_chars": 27,
+   "truncated_marker": false,
+   "class": "loop_numeric_increment"
+  },
+  {
+   "stem": "eastmoney_66eea274d39b939da0f10253d279e119d87646f10fd21b3942eaf6c5d93b8134.pdf_0",
+   "md_chars": 22472,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": 530,
+   "truncated_marker": false,
+   "class": "loop_suspect_weak"
+  },
+  {
+   "stem": "eastmoney_d64a9204564ad81332a4dc3767365740a00228323d2862604d15cb15b318f3af.pdf_3",
+   "md_chars": 22513,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": 472,
+   "truncated_marker": false,
+   "class": "loop_suspect_weak"
+  },
+  {
+   "stem": "yanbaor2_4e9a940b90058ba924ee3a9a659167960bfe5b595134f556aad6a9d2ff004f73.pdf_1",
+   "md_chars": 23506,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": 459,
+   "truncated_marker": false,
+   "class": "loop_suspect_weak"
+  },
+  {
+   "stem": "eastmoney_bdbfdb8a6ab56be3ab1b40009ee648b6d250013ce653c146f2d2023bd8d14772.pdf_26",
+   "md_chars": 23050,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": null,
+   "truncated_marker": false,
+   "class": "true_long_content"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2004_Problems_2004_page_001",
+   "md_chars": 38443,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": null,
+   "truncated_marker": false,
+   "class": "true_long_content"
+  },
+  {
+   "stem": "newspaper_0b1bb8d03b4287eb95f67b68c2cf9f92_1",
+   "md_chars": 29019,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": null,
+   "truncated_marker": false,
+   "class": "true_long_content"
+  },
+  {
+   "stem": "yanbaopptmerge_5473246b8da789b9bfdeef53a70c4d72afd480415d5cbcedb83d105856710328.pdf_8",
+   "md_chars": 23050,
+   "exact_period_chars": null,
+   "masked_strong_period_chars": null,
+   "masked_weak_period_chars": null,
+   "truncated_marker": false,
+   "class": "true_long_content"
+  }
+ ]
+}

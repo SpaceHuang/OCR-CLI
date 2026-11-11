@@ -354,10 +354,79 @@ pub struct JobSummary {
     pub failed_pages: u32,
     pub truncated_pages: u32,
     pub degenerated_pages: u32,
+    /// Think removals summed over all committed/skipped pages (quality plan
+    /// Q3.1); surfaces in the scan result as `think_blocks_stripped_total`.
+    pub think_blocks_stripped: u64,
     pub warnings: Vec<String>,
     pub diagnostics: Vec<PageDiagnostic>,
     pub cancelled: bool,
 }
+
+/// One degeneration-retry rung (quality plan Q1.4a): the render and decode
+/// variant the attempt uses. `None` fields mean plain; at most one decode
+/// override per rung in the frozen tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DegenerationRetryStep {
+    /// Perturbed render ratio (numerator, denominator); `None` renders plain.
+    pub perturbed: Option<(u32, u32)>,
+    /// MTMD token-grid override for the decode (Q1.4c, e.g. 2048).
+    pub image_tokens: Option<u32>,
+    /// Ordered `repeat_penalty -> greedy` decode chain (Q1.2, D-13).
+    pub sampling: Option<ocrx_runtime::RetrySampling>,
+    /// Q1.1c candidate C (D-10): whitespace-valley column-split pass - the
+    /// page is re-decoded per detected column band and the band markdowns
+    /// merge in reading order. The heaviest rung: final position only.
+    pub column_split: bool,
+}
+
+impl DegenerationRetryStep {
+    /// Plain-render + plain-decode perturbation rung (the baseline ladder).
+    #[must_use]
+    pub const fn perturbed(numerator: u32, denominator: u32) -> Self {
+        Self {
+            perturbed: Some((numerator, denominator)),
+            image_tokens: None,
+            sampling: None,
+            column_split: false,
+        }
+    }
+}
+
+/// Degeneration retry ladder (quality plan Q1.4a): the rungs walked in order
+/// from attempt 2 on, frozen as a data table so the experiment-adjudicated
+/// composition is a single-line change. SCRATCH EXPERIMENT COMPOSITION
+/// (Q1.2/Q1.4c adjudication, docs/develop/q12-sampling-spike-build-record-2026-11-07.md §4.2/§5):
+/// plain 1024 -> token-grid 2048 (46 corpus escapes, quality text 0.89) ->
+/// repeat_penalty 1.2x window 64 (2 corpus escapes; 21% standalone marginal
+/// on formula-type loops). Perturbation rungs are EXCLUDED by data: 0
+/// escapes both as the baseline ladder (0/213) and as composed-ladder tail
+/// rungs (0/228 decodes) - dropping the tail cuts worst-case retry cost 40%
+/// with zero outcome change (the 114 residual pages escape on none of the
+/// perturbation decodes). Attempt cap = 3. The main-line default remains the
+/// baseline two perturbation rungs until Q1.3 lands this composition.
+pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: Some(2048),
+        sampling: None,
+        column_split: false,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: None,
+        sampling: Some(ocrx_runtime::RetrySampling {
+            repeat_penalty_milli: 1_200,
+            penalty_window: 64,
+        }),
+        column_split: false,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: None,
+        sampling: None,
+        column_split: true,
+    },
+];
 
 pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
     let mut warnings = native.warnings;
@@ -370,6 +439,7 @@ pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
         failed_pages: native.failed_pages + ocr.failed_pages,
         truncated_pages: native.truncated_pages + ocr.truncated_pages,
         degenerated_pages: native.degenerated_pages + ocr.degenerated_pages,
+        think_blocks_stripped: native.think_blocks_stripped + ocr.think_blocks_stripped,
         warnings,
         diagnostics,
         cancelled: native.cancelled || ocr.cancelled,
@@ -600,6 +670,25 @@ pub trait PageArtifactRecognizer<M> {
         self.recognize_artifact(model, page, image)
     }
 
+    /// Q1.2/Q1.4c escape-ladder seam (quality plan §4.1, D-1): recognition
+    /// for degeneration retries (`attempts >= 2` only), carrying the ladder
+    /// step's decode variants (sampler chain / token grid). The default
+    /// delegates to the plain path so fakes and non-sampling recognizers are
+    /// unchanged; real recognizers override it to execute the step's decode
+    /// variants. Normal (attempt-1) recognition can never reach this method.
+    fn recognize_retry_artifact_cancelled(
+        &mut self,
+        model: &mut M,
+        page: u32,
+        image: &RenderedPage,
+        step: &DegenerationRetryStep,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> io::Result<PageArtifactResult> {
+        let _ = step;
+        self.recognize_artifact_cancelled(model, page, image, cancellation, progress)
+    }
+
     /// P4.4 window recognition (plan §7.3): decodes the window's pages
     /// concurrently. The default runs them sequentially through
     /// [`Self::recognize_artifact_cancelled`] — numerically identical to
@@ -638,6 +727,9 @@ pub struct PageArtifactResult {
     pub truncated: bool,
     pub degenerated: bool,
     pub warnings: Vec<String>,
+    /// Think removals at the adapter artifact entry (quality plan Q3.1):
+    /// complete blocks (incl. silent empty strips) plus stray tags.
+    pub think_blocks_stripped: u32,
     /// Pre-crop normalized raw output, preserved to the `page-NNNN.raw`
     /// sidecar for degenerated/repetition-cleaned pages (plan §3.3).
     pub raw_output: String,
@@ -697,8 +789,11 @@ where
     /// Same failure surface as [`run_with_checkpoints_cancelled`].
     /// Single-stream attempt machine (serial semantics, plan §3.5/§7.3):
     /// `start_attempt` 1 = full serial path (original render first); 2 = a
-    /// batched attempt-1 degeneration retry (perturbed renders from here).
-    /// Stops after attempt 3; a render failure is terminal for the page.
+    /// batched attempt-1 degeneration retry (perturbed renders from here,
+    /// walking [`DEGENERATION_RETRY_LADDER`] in order). The attempt cap is
+    /// `1 + ladder.len()` (quality plan Q1.4a: the ladder composition is
+    /// frozen by experiment data, the table is the single edit point); a
+    /// render failure is terminal for the page.
     fn serial_attempt_outcome(
         &mut self,
         model: &mut M,
@@ -715,11 +810,17 @@ where
             // by the generation allocated here.
             let generation = self.commit_recorder.begin_render(page);
             let render_started = std::time::Instant::now();
-            let image = if attempts == 1 {
-                self.renderer.render(page)
+            let step = if attempts == 1 {
+                None
             } else {
-                let (numerator, denominator) = if attempts == 2 { (47, 50) } else { (53, 50) };
-                self.renderer.render_perturbed(page, numerator, denominator)
+                let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
+                DEGENERATION_RETRY_LADDER.get(ladder_index)
+            };
+            let image = match step.and_then(|rung| rung.perturbed) {
+                Some((numerator, denominator)) => {
+                    self.renderer.render_perturbed(page, numerator, denominator)
+                }
+                None => self.renderer.render(page),
             };
             self.commit_recorder.record_render_wait(
                 page,
@@ -748,15 +849,35 @@ where
                 pipeline.encode_one(page, &image);
             }
             let mut page_heartbeat = |event: GenerationProgress| heartbeat(page, event);
-            match self.recognizer.recognize_artifact_cancelled(
-                model,
-                page,
-                &image,
-                cancellation,
-                &mut page_heartbeat,
-            ) {
+            // Q1.2: attempts >= 2 are degeneration retries — recognition
+            // goes through the retry seam so the sampler chain applies only
+            // there; attempt 1 keeps the plain greedy path.
+            let recognized = if attempts >= 2 {
+                self.recognizer.recognize_retry_artifact_cancelled(
+                    model,
+                    page,
+                    &image,
+                    step.unwrap_or(&DegenerationRetryStep::perturbed(1, 1)),
+                    cancellation,
+                    &mut page_heartbeat,
+                )
+            } else {
+                self.recognizer.recognize_artifact_cancelled(
+                    model,
+                    page,
+                    &image,
+                    cancellation,
+                    &mut page_heartbeat,
+                )
+            };
+            match recognized {
                 Ok(artifact) => {
-                    if artifact.degenerated && attempts < 3 {
+                    // Q1.5/D-14: pure truncation enters the ladder too — Q5.1
+                    // showed 24/28 truncated pages are long-period loops
+                    // evading the detector; the ladder rungs (2048/penalty/
+                    // column-split) are the only re-read chance they get.
+                    let ladder_worthy = artifact.degenerated || artifact.truncated;
+                    if ladder_worthy && attempts <= DEGENERATION_RETRY_LADDER.len() as u32 {
                         continue;
                     }
                     return SerialOutcome::Terminal(Ok((image, artifact, attempts)));
@@ -821,6 +942,7 @@ where
         let mut failed = 0_u32;
         let mut truncated = 0_u32;
         let mut degenerated = 0_u32;
+        let mut think_blocks_stripped = 0_u64;
         let mut warnings = std::collections::BTreeSet::new();
         let mut diagnostics = Vec::new();
         // P4.4 (plan §7.3): pages are processed in windows of up to
@@ -854,6 +976,7 @@ where
                             if checkpoint.truncated {
                                 truncated += 1;
                             }
+                            think_blocks_stripped += u64::from(checkpoint.think_blocks_stripped);
                             warnings.extend(checkpoint.warnings.iter().cloned());
                             diagnostics.push(checkpoint.diagnostic());
                             completed += 1;
@@ -915,6 +1038,7 @@ where
                     &mut failed,
                     &mut truncated,
                     &mut degenerated,
+                    &mut think_blocks_stripped,
                     &mut warnings,
                     &mut diagnostics,
                     &self.commit_recorder,
@@ -1050,10 +1174,9 @@ where
                         continue;
                     }
                 };
-                if artifact.degenerated {
-                    // Retry budget mirrors the serial machine: the batched
-                    // call was attempt 1, so up to two perturbed retries
-                    // remain (attempts 2/3).
+                if artifact.degenerated || artifact.truncated {
+                    // Q1.5/D-14: truncated window pages retry through the
+                    // ladder exactly like degenerated ones.
                     match self.serial_attempt_outcome(model, page, 2, cancellation, heartbeat) {
                         SerialOutcome::RenderFailed { cancelled } => {
                             terminal.push(TerminalPage::RenderFailed { page, cancelled });
@@ -1119,6 +1242,7 @@ where
                         if artifact.degenerated {
                             degenerated += 1;
                         }
+                        think_blocks_stripped += u64::from(artifact.think_blocks_stripped);
                         warnings.extend(artifact_warnings.iter().cloned());
                         write_render_audit(root, page, image.audit)?;
                         // Raw-output sidecar (plan §3.3): preserved whenever
@@ -1145,6 +1269,7 @@ where
                             attempts,
                             raw: raw_pointer,
                             warnings: artifact_warnings,
+                            think_blocks_stripped: artifact.think_blocks_stripped,
                             audit: Some(image.audit),
                         };
                         // T1: write span + terminal fold (mirror of
@@ -1267,6 +1392,7 @@ where
             failed_pages: failed,
             truncated_pages: truncated,
             degenerated_pages: degenerated,
+            think_blocks_stripped,
             warnings: warnings.into_iter().collect(),
             diagnostics,
             cancelled: cancellation.is_cancelled(),
@@ -1464,6 +1590,7 @@ impl ScanController {
                 .iter()
                 .filter(|page| page.status == PageStatus::Failed)
                 .count() as u32,
+            think_blocks_stripped: 0,
             truncated_pages: self
                 .pages
                 .iter()
@@ -1638,6 +1765,7 @@ pub fn pending_ocr_checkpoint(
         attempts: 1,
         raw: None,
         warnings: vec![reason.into()],
+        think_blocks_stripped: 0,
         audit: None,
     }
 }
@@ -1727,12 +1855,15 @@ pub struct PageCheckpoint {
     /// Repetition-degeneration flag (plan §3.3): a degenerated page is
     /// reprocessed on resume even when otherwise reusable.
     pub degenerated: bool,
-    /// Attempts spent by the most recent processing run (1..=3); reset on
-    /// every Reprocess.
+    /// Attempts spent by the most recent processing run (1..=1+len of
+    /// []); reset on every Reprocess.
     pub attempts: u32,
     /// Raw-output sidecar pointer (`page-NNNN.raw`), per requirement §7.4.
     pub raw: Option<String>,
     pub warnings: Vec<String>,
+    /// Think removals at the adapter artifact entry (quality plan Q3.1);
+    /// additive v5 field, defaults to 0 when absent.
+    pub think_blocks_stripped: u32,
     pub audit: Option<RenderAudit>,
 }
 
@@ -1810,6 +1941,7 @@ fn commit_terminal_pages(
     failed: &mut u32,
     truncated: &mut u32,
     degenerated: &mut u32,
+    think_blocks_stripped: &mut u64,
     warnings: &mut std::collections::BTreeSet<String>,
     diagnostics: &mut Vec<PageDiagnostic>,
     commit_recorder: &commit_profile::CommitRecorder,
@@ -1838,6 +1970,7 @@ fn commit_terminal_pages(
                 if artifact.degenerated {
                     *degenerated += 1;
                 }
+                *think_blocks_stripped += u64::from(artifact.think_blocks_stripped);
                 warnings.extend(artifact_warnings.iter().cloned());
                 write_render_audit(root, page, image.audit)?;
                 // Raw-output sidecar (plan §3.3): preserved whenever the page
@@ -1863,6 +1996,7 @@ fn commit_terminal_pages(
                     attempts,
                     raw: raw_pointer,
                     warnings: artifact_warnings,
+                    think_blocks_stripped: artifact.think_blocks_stripped,
                     audit: Some(image.audit),
                 };
                 // T1: the write span covers the atomic writes through the
@@ -2278,7 +2412,7 @@ pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> 
     // Additive v5 fields (plan §3.3): older parsers collect unknown lines
     // without reading them, so this stays bidirectionally compatible.
     let content = format!(
-        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\ndegenerated={}\nattempts={}\nraw={}\nwarnings={}\naudit={}\n",
+        "ocrx-checkpoint-v5\npage={}\ninput={}\nmodel={}\nprofile={}\nparameters={}\ncomplete={}\noutput={}\ntruncated={}\ndegenerated={}\nattempts={}\nraw={}\nwarnings={}\nthink_blocks_stripped={}\naudit={}\n",
         checkpoint.page_number,
         encode_field(&checkpoint.compatibility.input_sha256),
         encode_field(&checkpoint.compatibility.model),
@@ -2291,6 +2425,7 @@ pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> 
         checkpoint.attempts,
         checkpoint.raw.as_deref().unwrap_or("none"),
         encode_field(&checkpoint.warnings.join("\n")),
+        checkpoint.think_blocks_stripped,
         checkpoint.audit.map_or_else(
             || "none".to_owned(),
             |audit| encode_field(&audit.as_checkpoint_fragment())
@@ -2374,6 +2509,15 @@ pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
         Some(&"none") | None => None,
         Some(name) => Some((*name).to_owned()),
     };
+    let think_blocks_stripped = match values.get("think_blocks_stripped") {
+        Some(value) => value.parse().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid checkpoint think_blocks_stripped count",
+            )
+        })?,
+        None => 0,
+    };
     Ok(PageCheckpoint {
         page_number,
         compatibility: CompatibilityKey {
@@ -2393,6 +2537,7 @@ pub fn read_checkpoint(path: impl AsRef<Path>) -> io::Result<PageCheckpoint> {
         } else {
             warning_text.split('\n').map(str::to_owned).collect()
         },
+        think_blocks_stripped,
         audit,
     })
 }
@@ -2817,14 +2962,14 @@ fn temporary_path(path: &Path) -> PathBuf {
 mod tests {
     use super::{
         CancellationToken, CheckpointDisposition, CheckpointResumeAction, CheckpointState,
-        CompatibilityKey, ErrorReport, GenerationProgress, Heartbeat, JobStatus, JobSummary,
-        ModelLoader, OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageCheckpoint,
-        PageDiagnostic, PageIncomplete, PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer,
-        PageStatus, ProgressEvent, ProgressMode, ProgressSnapshot, ProgressStage, RenderAudit,
-        RenderedPage, ReportFormat, Reporter, ResultReport, ResultStatus,
-        RoutingCheckpointMetadata, RoutingCheckpointResult, ScanController, ScanService,
-        atomic_write, classify_recognition_error, format_report, merge_job_summaries,
-        recover_pending_ocr_queue,
+        CompatibilityKey, DEGENERATION_RETRY_LADDER, DegenerationRetryStep, ErrorReport,
+        GenerationProgress, Heartbeat, JobStatus, JobSummary, ModelLoader, OcrQueuePage,
+        PageArtifactRecognizer, PageArtifactResult, PageCheckpoint, PageDiagnostic, PageIncomplete,
+        PageLifecycle, PageMarkdown, PageRecognizer, PageRenderer, PageStatus, ProgressEvent,
+        ProgressMode, ProgressSnapshot, ProgressStage, RenderAudit, RenderedPage, ReportFormat,
+        Reporter, ResultReport, ResultStatus, RoutingCheckpointMetadata, RoutingCheckpointResult,
+        ScanController, ScanService, atomic_write, classify_recognition_error, format_report,
+        merge_job_summaries, recover_pending_ocr_queue,
     };
     use crate::encode_pipeline;
     use std::fs;
@@ -2888,6 +3033,7 @@ mod tests {
             self.calls.push(page);
             Ok(PageArtifactResult {
                 png: Some(vec![page as u8]),
+                think_blocks_stripped: 0,
                 markdown: format!("page {page}"),
                 degenerated: false,
                 raw_output: String::new(),
@@ -2916,6 +3062,7 @@ mod tests {
             self.serial_calls.push(page);
             Ok(PageArtifactResult {
                 png: Some(vec![page as u8]),
+                think_blocks_stripped: 0,
                 markdown: format!("page {page}"),
                 degenerated: false,
                 raw_output: String::new(),
@@ -2967,6 +3114,7 @@ mod tests {
             }
             Ok(PageArtifactResult {
                 png: Some(vec![page as u8]),
+                think_blocks_stripped: 0,
                 markdown: format!("page {page}"),
                 degenerated: false,
                 raw_output: String::new(),
@@ -3324,6 +3472,7 @@ mod tests {
     fn normal_artifact(page: u32) -> PageArtifactResult {
         PageArtifactResult {
             png: Some(vec![page as u8]),
+            think_blocks_stripped: 0,
             markdown: format!("clean page {page}"),
             page_json: format!(
                 r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]"}}"#
@@ -3338,6 +3487,7 @@ mod tests {
     fn degenerate_artifact(page: u32) -> PageArtifactResult {
         PageArtifactResult {
             png: Some(vec![page as u8]),
+            think_blocks_stripped: 0,
             markdown: format!("cropped page {page}"),
             page_json: format!(
                 r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"max_tokens","warnings":["truncated","repetition_removed","degenerated"]}}"#
@@ -3356,6 +3506,7 @@ mod tests {
     struct ScriptedRecognizer {
         script: std::collections::VecDeque<PageArtifactResult>,
         calls: u32,
+        retry_calls: u32,
         on_call: Option<Box<dyn FnMut(u32)>>,
         fail_when_cancelled: Option<CancellationToken>,
     }
@@ -3367,6 +3518,24 @@ mod tests {
             _image: &RenderedPage,
         ) -> std::io::Result<PageArtifactResult> {
             self.calls += 1;
+            self.scripted_next(page)
+        }
+
+        fn recognize_retry_artifact_cancelled(
+            &mut self,
+            _model: &mut u32,
+            page: u32,
+            _image: &RenderedPage,
+            _step: &DegenerationRetryStep,
+            _cancellation: &CancellationToken,
+            _progress: &mut dyn FnMut(GenerationProgress),
+        ) -> std::io::Result<PageArtifactResult> {
+            self.retry_calls += 1;
+            self.scripted_next(page)
+        }
+    }
+    impl ScriptedRecognizer {
+        fn scripted_next(&mut self, page: u32) -> std::io::Result<PageArtifactResult> {
             if let Some(callback) = self.on_call.as_mut() {
                 callback(page);
             }
@@ -3455,6 +3624,7 @@ mod tests {
             degenerate_artifact(1),
             PageArtifactResult {
                 png: Some(vec![99]), // recognition output; PNG comes from the pipeline
+                think_blocks_stripped: 0,
                 markdown: "page 1 retry".to_owned(),
                 page_json: r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"eos","warnings":[]}"#.to_owned(),
                 truncated: false,
@@ -3466,6 +3636,7 @@ mod tests {
         let recognizer = ScriptedRecognizer {
             script,
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3793,18 +3964,23 @@ mod tests {
         // exactly one diagnostic for the page.
         let root = test_dir("shared-fallback-truncated-once");
         let _ = fs::remove_dir_all(&root);
-        let script = std::collections::VecDeque::from(vec![PageArtifactResult {
+        // Q1.5/D-14: the truncated page walks the full 4-rung ladder before
+        // committing truncated — the once-only PAGE count is what this test
+        // guards (per-attempt artifacts are not page counts).
+        let script = std::collections::VecDeque::from((1..=4).map(|_| PageArtifactResult {
             png: Some(vec![1]),
+            think_blocks_stripped: 0,
             markdown: "page 1 truncated content".to_owned(),
             page_json: r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}"#.to_owned(),
             truncated: true,
             degenerated: false,
             warnings: vec!["truncated".to_owned()],
             raw_output: String::new(),
-        }]);
+        }).collect::<Vec<_>>());
         let recognizer = ScriptedRecognizer {
             script,
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -3923,6 +4099,7 @@ mod tests {
             attempts: 3,
             raw: Some("page-0104.raw".to_owned()),
             warnings: vec!["truncated".to_owned(), "degenerated".to_owned()],
+            think_blocks_stripped: 0,
             audit: None,
         };
         super::write_checkpoint(&path, &checkpoint).unwrap();
@@ -3981,6 +4158,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -4001,6 +4179,38 @@ mod tests {
     }
 
     #[test]
+    fn degeneration_retries_route_through_the_retry_seam() {
+        // Q1.2: attempt 1 recognition takes the plain path; every
+        // degeneration retry (attempts >= 2) takes the retry seam. With the
+        // default 2-entry ladder, one degenerate + one normal script entry
+        // yields exactly 1 plain call and 1 retry call.
+        let root = test_dir("retry-seam-routing");
+        let _ = fs::remove_dir_all(&root);
+        let renderer = ScriptedRenderer {
+            calls: std::collections::VecDeque::new(),
+        };
+        let recognizer = ScriptedRecognizer {
+            script: [degenerate_artifact(1), normal_artifact(1)]
+                .into_iter()
+                .collect(),
+            calls: 0,
+            retry_calls: 0,
+            on_call: None,
+            fail_when_cancelled: None,
+        };
+        let mut service = ScanService::new(renderer, FakeLoader { loads: 0 }, recognizer);
+        let summary = service
+            .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
+            .unwrap();
+        assert_eq!(summary.completed_pages, 1);
+        assert_eq!(
+            (service.recognizer.calls, service.recognizer.retry_calls),
+            (1, 1)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn scenario_b_all_attempts_degenerate_commits_marked_partial_with_raw() {
         let root = test_dir("scenario-b");
         let _ = fs::remove_dir_all(&root);
@@ -4012,17 +4222,22 @@ mod tests {
                 degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
+                degenerate_artifact(104),
             ]
             .into_iter()
             .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
         let summary = run_scan_with(&root, &[104], renderer, recognizer, false).unwrap();
         assert_eq!(summary.degenerated_pages, 1);
         let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 3);
+        assert_eq!(checkpoint.attempts, 4);
         assert!(checkpoint.degenerated);
         assert_eq!(checkpoint.raw.as_deref(), Some("page-0104.raw"));
         assert_eq!(
@@ -4041,7 +4256,11 @@ mod tests {
     }
 
     #[test]
-    fn scenario_c_pure_truncation_never_retries_and_resumes_as_committed() {
+    fn scenario_c_pure_truncation_retries_through_ladder_then_resumes_committed() {
+        // Q1.5/D-14 (v1.5.2): pure truncation ENTERS the ladder — Q5.1 showed
+        // 24/28 truncated pages are long-period loops evading the detector.
+        // Resume disposition unchanged: the committed truncated page stays
+        // reusable (SkipCommitted) on resume.
         let root = test_dir("scenario-c");
         let _ = fs::remove_dir_all(&root);
         let truncated_only = PageArtifactResult {
@@ -4053,8 +4272,16 @@ mod tests {
             calls: std::collections::VecDeque::new(),
         };
         let recognizer = ScriptedRecognizer {
-            script: [truncated_only].into_iter().collect(),
+            script: [
+                truncated_only.clone(),
+                truncated_only.clone(),
+                truncated_only.clone(),
+                truncated_only,
+            ]
+            .into_iter()
+            .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -4062,7 +4289,7 @@ mod tests {
         assert_eq!(summary.truncated_pages, 1);
         assert_eq!(summary.degenerated_pages, 0);
         let checkpoint = super::read_checkpoint(root.join("page-0005.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 1);
+        assert_eq!(checkpoint.attempts, 4);
         assert_eq!(checkpoint.raw, None);
         assert_eq!(
             checkpoint.resume_action(&degeneration_compatibility(), &root, 5),
@@ -4085,10 +4312,12 @@ mod tests {
                 degenerate_artifact(104),
                 degenerate_artifact(104),
                 degenerate_artifact(104),
+                degenerate_artifact(104),
             ]
             .into_iter()
             .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
@@ -4101,18 +4330,20 @@ mod tests {
             script: [
                 degenerate_artifact(104),
                 degenerate_artifact(104),
+                degenerate_artifact(104),
                 normal_artifact(104),
             ]
             .into_iter()
             .collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
         let summary = run_scan_with(&root, &[104], renderer, recognizer, true).unwrap();
         assert_eq!(summary.degenerated_pages, 0);
         let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 3);
+        assert_eq!(checkpoint.attempts, 4);
         assert!(!checkpoint.degenerated);
         let document = fs::read_to_string(root.join("document.md")).unwrap();
         assert!(!document.contains('⚠'));
@@ -4132,6 +4363,7 @@ mod tests {
         let recognizer = ScriptedRecognizer {
             script: std::collections::VecDeque::new(),
             calls: 0,
+            retry_calls: 0,
             on_call: Some(Box::new(move |_| cancel_trigger.request_cancel())),
             fail_when_cancelled: Some(token.clone()),
         };
@@ -4152,21 +4384,121 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    struct LadderProbeRenderer {
+        log: std::rc::Rc<std::cell::RefCell<Vec<(u32, u32, u32)>>>,
+    }
+    impl PageRenderer for LadderProbeRenderer {
+        fn preflight(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
+            self.log.borrow_mut().push((page, 1, 1));
+            RenderedPage::new(1, 1, vec![1, 2, 3])
+        }
+        fn render_perturbed(
+            &mut self,
+            page: u32,
+            numerator: u32,
+            denominator: u32,
+        ) -> std::io::Result<RenderedPage> {
+            self.log.borrow_mut().push((page, numerator, denominator));
+            RenderedPage::new(1, 1, vec![4, 5, 6])
+        }
+    }
+
     #[test]
     fn perturbed_retries_use_frozen_scale_ratios() {
+        // Q1.4a mechanism gate: the retry ladder is the frozen data table;
+        // an always-degenerate page must render plain on attempt 1, then
+        // walk the table in order, and commit with attempts = 1 + table
+        // length when it never stops degenerating.
         let root = test_dir("scenario-ratios");
         let _ = fs::remove_dir_all(&root);
-        let renderer = ScriptedRenderer {
-            calls: std::collections::VecDeque::new(),
+        let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let renderer = LadderProbeRenderer {
+            log: std::rc::Rc::clone(&log),
         };
+        // An exhausted script falls back to normal artifacts, so script the
+        // full budget: one degenerate artifact per attempt (4 with the
+        // experiment ladder); the last degenerate artifact commits.
         let recognizer = ScriptedRecognizer {
-            script: std::collections::VecDeque::new(), // always degenerate
+            script: (1..=4).map(degenerate_artifact).collect(),
             calls: 0,
+            retry_calls: 0,
             on_call: None,
             fail_when_cancelled: None,
         };
-        let _ = run_scan_with(&root, &[1], renderer, recognizer, false).unwrap();
+        let mut service = ScanService::new(renderer, FakeLoader { loads: 0 }, recognizer);
+        let summary = service
+            .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
+            .unwrap();
+        assert_eq!(summary.degenerated_pages, 1);
+        // Every non-perturbed rung renders plain (1,1,1) — e.g. the
+        // token-grid and penalty rungs; perturbed rungs walk their ratios.
+        let expected_rungs = DEGENERATION_RETRY_LADDER
+            .iter()
+            .map(|rung| rung.perturbed.unwrap_or((1, 1)))
+            .map(|(numerator, denominator)| (1, numerator, denominator));
+        assert_eq!(
+            *log.borrow(),
+            vec![(1, 1, 1)]
+                .into_iter()
+                .chain(expected_rungs)
+                .collect::<Vec<_>>()
+        );
+        let checkpoint = super::read_checkpoint(root.join("page-0001.checkpoint")).unwrap();
+        assert_eq!(
+            checkpoint.attempts,
+            1 + DEGENERATION_RETRY_LADDER.len() as u32
+        );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checkpoint_attempts_field_supports_extended_ladder_and_stays_readable() {
+        // Q1.4b: attempts widens to 1..=N (N = ladder length + 1); a v5
+        // checkpoint written with attempts=5 round-trips, and older files
+        // without the additive attempts line keep defaulting to 1.
+        let directory = test_dir("checkpoint-attempts-5");
+        let _ = fs::remove_dir_all(&directory);
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: degeneration_compatibility(),
+            complete: true,
+            output_sha256: String::new(),
+            truncated: false,
+            degenerated: false,
+            attempts: 5,
+            raw: None,
+            warnings: Vec::new(),
+            think_blocks_stripped: 0,
+            audit: None,
+        };
+        let path = directory.join("page-0001.checkpoint");
+        super::write_checkpoint(&path, &checkpoint).unwrap();
+        assert_eq!(super::read_checkpoint(&path).unwrap().attempts, 5);
+        let legacy = format!(
+            "ocrx-checkpoint-v5
+page=1
+input={}
+model={}
+profile={}
+parameters={}
+complete=true
+output=abc
+truncated=false
+raw=none
+warnings=
+audit=none
+",
+            super::encode_field("input"),
+            super::encode_field("ovisocr2"),
+            super::encode_field("balanced"),
+            super::encode_field("tokens=16384"),
+        );
+        fs::write(&path, legacy).unwrap();
+        assert_eq!(super::read_checkpoint(&path).unwrap().attempts, 1);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -4630,6 +4962,7 @@ mod tests {
             output_sha256: "output".to_owned(),
             truncated: true,
             warnings: vec!["truncated".to_owned(), "repetition_removed".to_owned()],
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -4682,6 +5015,7 @@ mod tests {
             output_sha256: "output".to_owned(),
             truncated: false,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -4704,6 +5038,7 @@ mod tests {
             complete: true,
             output_sha256: "output".to_owned(),
             truncated: false,
+            think_blocks_stripped: 0,
             warnings: Vec::new(),
             audit: None,
             degenerated: false,
@@ -4756,6 +5091,7 @@ mod tests {
             output_sha256: String::new(),
             truncated: false,
             warnings: vec!["native_validation_failed".to_owned()],
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -4836,6 +5172,7 @@ mod tests {
             output_sha256: String::new(),
             truncated: false,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
             degenerated: false,
             attempts: 1,
@@ -5083,6 +5420,7 @@ mod tests {
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         super::write_checkpoint(&path, &checkpoint).unwrap();
@@ -5226,6 +5564,7 @@ mod tests {
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         super::commit_page(&directory, 1, b"png", "page\r\ntext", "{}", &checkpoint).unwrap();
@@ -5256,6 +5595,7 @@ mod tests {
             complete: false,
             output_sha256: String::new(),
             truncated: false,
+            think_blocks_stripped: 0,
             degenerated: false,
             attempts: 1,
             raw: None,
@@ -5300,6 +5640,7 @@ mod tests {
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         let page = super::commit_native_page_and_collect(
@@ -5351,6 +5692,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 2,
                 failed_pages: 0,
@@ -5365,6 +5707,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 1,
@@ -5379,6 +5722,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 0,
@@ -5393,6 +5737,7 @@ mod tests {
         assert_eq!(
             JobSummary {
                 degenerated_pages: 0,
+                think_blocks_stripped: 0,
                 selected_pages: 2,
                 completed_pages: 1,
                 failed_pages: 0,
@@ -5410,6 +5755,7 @@ mod tests {
     fn merge_job_summaries_combines_native_and_ocr_phases() {
         let native = JobSummary {
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             selected_pages: 3,
             completed_pages: 2,
             failed_pages: 0,
@@ -5428,6 +5774,7 @@ mod tests {
         };
         let ocr = JobSummary {
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             selected_pages: 1,
             completed_pages: 1,
             failed_pages: 0,

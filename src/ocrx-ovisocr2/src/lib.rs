@@ -42,6 +42,9 @@ pub struct PageArtifactOutput {
     pub truncated: bool,
     pub degenerated: bool,
     pub warnings: Vec<String>,
+    /// Number of think removals (complete blocks + stray tags), including
+    /// silent empty-block strips (quality plan Q3.1).
+    pub think_blocks_stripped: u32,
     /// Pre-crop normalized raw model output, preserved for the
     /// `page-NNNN.raw` sidecar required by requirement §7.4.
     pub raw_output: String,
@@ -137,14 +140,153 @@ pub fn write_page_artifacts_with_status_cancelled(
     cancellation: &CancellationToken,
     progress: &mut dyn FnMut(GenerationProgress),
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
+    write_page_artifacts_with_retry_sampling_cancelled(
+        runtime,
+        page,
+        width,
+        height,
+        rgb8,
+        max_output_tokens,
+        output_root,
+        cancellation,
+        progress,
+        None,
+        None,
+    )
+}
+
+/// Q1.1c column-split retry pass (quality plan §4.1, D-10): detects column
+/// bands on the rendered page (whitespace-valley projection), decodes each
+/// band through the plain greedy path, and merges the band markdowns in
+/// left-to-right order into one artifact. Degeneration is honest at page
+/// level: ANY band degenerated marks the page degenerated. Detection
+/// failure falls back to a single full-width band.
+#[allow(clippy::too_many_arguments)]
+pub fn write_page_artifacts_column_split_cancelled(
+    runtime: &mut impl Runtime,
+    page: u32,
+    width: u32,
+    height: u32,
+    rgb8: Vec<u8>,
+    max_output_tokens: u32,
+    output_root: impl AsRef<Path>,
+    cancellation: &CancellationToken,
+    progress: &mut dyn FnMut(GenerationProgress),
+) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
+    let bands = detect_column_bands(width, height, &rgb8).unwrap_or_else(|| vec![(0, width)]);
+    let bytes_per_row = width as usize * 3;
+    let mut merged_text = String::new();
+    let mut merged_raw = String::new();
+    let mut degenerated = false;
+    let mut truncated = false;
+    let mut warnings: Vec<String> = Vec::new();
+    let mut think_blocks_stripped = 0_u32;
+    let request = try_request(max_output_tokens).map_err(std::io::Error::other)?;
+    for (x0, x1) in bands.iter().copied() {
+        if cancellation.is_cancelled() {
+            return Err(std::io::Error::other("cancelled").into());
+        }
+        let band_width = (x1 - x0) as usize;
+        let mut band_rgb8 = Vec::with_capacity(band_width * height as usize * 3);
+        for row in 0..height as usize {
+            let start = row * bytes_per_row + x0 as usize * 3;
+            band_rgb8.extend_from_slice(&rgb8[start..start + band_width * 3]);
+        }
+        let response = runtime.generate_with_progress(
+            InferenceRequest::new(page, x1 - x0, height, band_rgb8, request.max_output_tokens)?,
+            cancellation,
+            progress,
+        )?;
+        if response.finish_reason == "max_tokens" {
+            truncated = true;
+        }
+        let normalized = normalize_line_endings(&response.raw_output);
+        merged_raw.push_str(&normalized);
+        let think = strip_think_blocks(&normalized);
+        think_blocks_stripped += u32::try_from(think.total()).unwrap_or(u32::MAX);
+        let crop = degenerate_tail_crop(&think.text);
+        if crop.degenerated || response.finish_reason == "repetition_loop" {
+            degenerated = true;
+        }
+        if crop.repetition_removed {
+            warnings.push("repetition_removed".to_owned());
+        }
+        // Bands carry no figure crops of their own: bbox tags are dropped.
+        let band_markdown = replace_bbox_images(&crop.text, page, 0);
+        if !band_markdown.trim().is_empty() {
+            if !merged_text.is_empty() {
+                merged_text.push_str(
+                    "
+
+",
+                );
+            }
+            merged_text.push_str(&band_markdown);
+        }
+    }
+    let crop = DegenerateTailCrop {
+        text: merged_text.clone(),
+        degenerated,
+        repetition_removed: warnings
+            .iter()
+            .any(|warning| warning == "repetition_removed"),
+    };
+    let think = ThinkStrip {
+        text: String::new(),
+        nonempty: 0,
+        empty: 0,
+        strays: 0,
+    };
+    let document = adapt_cropped_response(page, &crop.text, "eos", &crop, &think)
+        .map_err(|error| format!("adapter: {error:?}"))?;
+    let (markdown, dropped_links) =
+        drop_invalid_markdown_image_links(&replace_bbox_images(&crop.text, page, 0), &output_root);
+    if dropped_links > 0 {
+        warnings.push("invalid_image_link_dropped".to_owned());
+    }
+    Ok(PageArtifactOutput {
+        markdown,
+        page_json: document
+            .to_json()
+            .map_err(|error| format!("serialize page: {error:?}"))?,
+        truncated,
+        degenerated,
+        warnings,
+        think_blocks_stripped,
+        raw_output: merged_raw,
+    })
+}
+
+/// Q1.2 variant: `retry_sampling` is `Some` only on degeneration-retry
+/// recognition (attempts >= 2, quality plan §4.1); the request then carries
+/// the ordered `repeat_penalty → greedy` chain spec for the runtime's retry
+/// context. Normal pages pass `None` and stay pure greedy.
+#[allow(clippy::too_many_arguments)]
+pub fn write_page_artifacts_with_retry_sampling_cancelled(
+    runtime: &mut impl Runtime,
+    page: u32,
+    width: u32,
+    height: u32,
+    rgb8: Vec<u8>,
+    max_output_tokens: u32,
+    output_root: impl AsRef<Path>,
+    cancellation: &CancellationToken,
+    progress: &mut dyn FnMut(GenerationProgress),
+    retry_sampling: Option<ocrx_runtime::RetrySampling>,
+    image_tokens_override: Option<u32>,
+) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     // D5.1: an over-cap budget fails the page explicitly; the old silent
     // clamp hid that the requested budget was not in effect.
     let request = try_request(max_output_tokens).map_err(std::io::Error::other)?;
-    let response = runtime.generate_with_progress(
-        InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?,
-        cancellation,
-        progress,
-    )?;
+    let mut inference =
+        InferenceRequest::new(page, width, height, rgb8.clone(), request.max_output_tokens)?;
+    if let Some(retry_sampling) = retry_sampling {
+        inference = inference.with_retry_sampling(retry_sampling);
+    }
+    if let Some(image_tokens) = image_tokens_override {
+        inference = inference.with_image_tokens_override(image_tokens);
+    }
+    let response = runtime.generate_with_progress(inference, cancellation, progress)?;
     if cancellation.is_cancelled() {
         return Err(std::io::Error::other("cancelled").into());
     }
@@ -163,13 +305,14 @@ fn adapt_and_write(
     output_root: impl AsRef<Path>,
 ) -> Result<PageArtifactOutput, Box<dyn std::error::Error>> {
     let truncated = response.finish_reason == "max_tokens";
-    // Single-source degeneration pipeline (plan §3.2.2): the tail crop runs
-    // once here, before bbox stripping, and the cropped text drives every
-    // downstream artifact (page .md, page.json, bbox extraction) so the
-    // artifacts can never diverge on the loop body.
+    // Single-source degeneration pipeline (plan §3.2.2): the think strip and
+    // tail crop each run once here, before bbox stripping, and the resulting
+    // text drives every downstream artifact (page .md, page.json, bbox
+    // extraction) so the artifacts can never diverge (quality plan Q3.1).
     let normalized_raw = normalize_line_endings(&response.raw_output);
-    let crop = degenerate_tail_crop(&normalized_raw);
-    let document = adapt_cropped_response(page, &crop.text, &response.finish_reason, &crop)
+    let think = strip_think_blocks(&normalized_raw);
+    let crop = degenerate_tail_crop(&think.text);
+    let document = adapt_cropped_response(page, &crop.text, &response.finish_reason, &crop, &think)
         .map_err(|error| format!("adapter: {error:?}"))?;
     let image = image::RgbImage::from_raw(width, height, rgb8).ok_or("invalid RGB8 image shape")?;
     let boxes = document
@@ -190,7 +333,18 @@ fn adapt_and_write(
         )?;
     }
     let markdown = replace_bbox_images(&crop.text, page, boxes.len());
-    validate_markdown_image_links(&markdown, &output_root)?;
+    // Q4: a bad model-emitted image link degrades to a link-level removal
+    // (warning) instead of failing the whole page; page.json blocks were
+    // derived before this and never carried the link.
+    let (markdown, dropped_links) = drop_invalid_markdown_image_links(&markdown, &output_root);
+    let mut warnings = document
+        .warnings
+        .iter()
+        .map(|warning| warning.as_str().to_owned())
+        .collect::<Vec<_>>();
+    if dropped_links > 0 {
+        warnings.push("invalid_image_link_dropped".to_owned());
+    }
     Ok(PageArtifactOutput {
         markdown,
         page_json: document
@@ -198,22 +352,329 @@ fn adapt_and_write(
             .map_err(|error| format!("serialize page: {error:?}"))?,
         truncated,
         degenerated: document.warnings.contains(&PageWarning::Degenerated),
-        warnings: document
-            .warnings
-            .iter()
-            .map(|warning| warning.as_str().to_owned())
-            .collect(),
+        warnings,
+        think_blocks_stripped: u32::try_from(think.total()).unwrap_or(u32::MAX),
         raw_output: normalized_raw,
     })
 }
 
-fn validate_markdown_image_links(
+/// Result of stripping leaked reasoning blocks from a raw model output
+/// (quality plan Q3). The strip semantics mirror the export script's
+/// `THINK_BLOCK` + `STRAY_THINK` passes byte for byte: complete
+/// `<think…>…</think>` blocks (non-greedy to the first close tag) with their
+/// trailing whitespace run, then stray `<think…>` / `</think…>` tags the same
+/// way. Word boundaries apply: `<thinking>` is never a think tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThinkStrip {
+    pub text: String,
+    /// Complete blocks whose interior had non-whitespace content; these set
+    /// the `think_removed` warning.
+    pub nonempty: usize,
+    /// Complete blocks whose interior was whitespace only; stripped silently
+    /// but counted into the result.
+    pub empty: usize,
+    /// Stray open/close tags removed outside a complete block.
+    pub strays: usize,
+}
+
+impl ThinkStrip {
+    pub fn total(&self) -> usize {
+        self.nonempty + self.empty + self.strays
+    }
+}
+
+/// Q1.1c candidate C (quality plan §4.1, D-10): column-band detection by
+/// vertical whitespace-valley projection on the rendered page - the classic
+/// layout-analysis pass, no model and no prompt change. Returns x bounds in
+/// pixels for 2..=4 columns left to right, or `None` when no reliable
+/// valley set exists (callers fall back to a single full-width band).
+pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(u32, u32)>> {
+    if width == 0 || height == 0 || rgb8.len() != width as usize * height as usize * 3 {
+        return None;
+    }
+    // Downscale by horizontal stride sampling to ~900 analysis columns.
+    let target_w = 900_u32;
+    let stride_x = (width / target_w).max(1) as usize;
+    let stride_y = ((height / width * target_w).max(1) / 2).max(1) as usize;
+    let columns = (width as usize / stride_x).max(1);
+    let row_lo = (height as usize * 5 / 100 / stride_y) * stride_y;
+    let row_hi = (height as usize * 95 / 100 / stride_y) * stride_y;
+    let mut ink = vec![0.0_f32; columns];
+    for (cx, ink_slot) in ink.iter_mut().enumerate() {
+        let x = cx * stride_x;
+        let mut dark = 0_usize;
+        let mut sampled = 0_usize;
+        let mut y = row_lo;
+        while y < row_hi {
+            let base = (y * width as usize + x) * 3;
+            let luminance = u32::from(rgb8[base]) * 299
+                + u32::from(rgb8[base + 1]) * 587
+                + u32::from(rgb8[base + 2]) * 114;
+            if luminance < 48_000 {
+                dark += 1;
+            }
+            sampled += 1;
+            y += stride_y;
+        }
+        *ink_slot = dark as f32 / sampled.max(1) as f32;
+    }
+    let smoothed: Vec<f32> = (0..columns)
+        .map(|i| {
+            let lo = i.saturating_sub(3);
+            let hi = (i + 4).min(columns);
+            ink[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
+        })
+        .collect();
+    let band_lo = columns * 8 / 100;
+    let band_hi = columns * 92 / 100;
+    let median = {
+        let mut band = smoothed[band_lo..band_hi].to_vec();
+        band.sort_by(f32::total_cmp);
+        band[band.len() / 2]
+    };
+    let threshold = (median * 0.45).max(0.015);
+    // Interior near-empty runs = valley candidates.
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    for (i, value) in smoothed[band_lo..band_hi].iter().enumerate() {
+        let i = band_lo + i;
+        if *value <= threshold {
+            if run_start.is_none() {
+                run_start = Some(i);
+            }
+        } else if let Some(start) = run_start.take() {
+            runs.push((start, i));
+        }
+    }
+    if let Some(start) = run_start.take() {
+        runs.push((start, band_hi));
+    }
+    if runs.len() < 3 {
+        return None;
+    }
+    let min_col = columns * 12 / 100;
+    let mut cuts: Vec<usize> = Vec::new();
+    for &(start, end) in &runs[1..runs.len() - 1] {
+        let center = usize::midpoint(start, end);
+        let _ = (start, end);
+        let mut bounds = vec![band_lo];
+        bounds.extend_from_slice(&cuts);
+        bounds.push(band_hi);
+        let fits = bounds
+            .windows(2)
+            .all(|pair| center >= pair[0] + min_col && pair[1] >= center + min_col);
+        if fits {
+            cuts.push(center);
+        }
+    }
+    if cuts.len() + 1 < 2 {
+        return None;
+    }
+    let mut bands = Vec::new();
+    let stride_x = stride_x as u32;
+    let mut left = band_lo as u32 * stride_x;
+    for cut in &cuts {
+        let right = *cut as u32 * stride_x;
+        bands.push((left, right));
+        left = right;
+    }
+    bands.push((left, width));
+    Some(bands)
+}
+
+/// Strips leaked `<think>` reasoning blocks from a raw model output. Runs
+/// once at the artifact entry so page .md, page.json and bbox extraction all
+/// consume the same stripped text (single-source, plan D-5).
+pub fn strip_think_blocks(input: &str) -> ThinkStrip {
+    fn is_tag_start(rest: &str) -> Option<(usize, bool)> {
+        // Returns (byte offset, is_open_tag) of the next `<think` / `</think`
+        // that forms a real tag (`\b`: the char after `think` is a word
+        // boundary) and ends at the first `>`.
+        let mut search = 0;
+        while let Some(rel) = rest[search..].find('<') {
+            let start = search + rel;
+            let after = &rest[start + 1..];
+            let (is_open, word) = if let Some(word) = after.strip_prefix("think") {
+                (true, word)
+            } else if let Some(word) = after.strip_prefix("/think") {
+                (false, word)
+            } else {
+                search = start + 1;
+                continue;
+            };
+            // `\b` after `think`: next char must not be alphanumeric or `_`.
+            let boundary = !word
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+            if !boundary {
+                search = start + 1;
+                continue;
+            }
+            let Some(_tag_end) = word.find('>') else {
+                // No closing `>`: not a tag, keep scanning.
+                search = start + 1;
+                continue;
+            };
+            return Some((start, is_open));
+        }
+        None
+    }
+
+    fn skip_whitespace(input: &str, mut offset: usize) -> usize {
+        while let Some(char) = input[offset..].chars().next() {
+            if char.is_whitespace() {
+                offset += char.len_utf8();
+            } else {
+                break;
+            }
+        }
+        offset
+    }
+
+    let mut output = String::with_capacity(input.len());
+    let mut nonempty = 0;
+    let mut empty = 0;
+    let mut strays = 0;
+    let mut rest = input;
+    loop {
+        let Some((start, is_open)) = is_tag_start(rest) else {
+            output.push_str(rest);
+            return ThinkStrip {
+                text: output,
+                nonempty,
+                empty,
+                strays,
+            };
+        };
+        output.push_str(&rest[..start]);
+        let after_tag = &rest[start..];
+        let tag_len = after_tag.find('>').map_or(0, |end| end + 1);
+        if is_open {
+            // Non-greedy block semantics: the block ends at the NEXT close
+            // tag, with any interleaved open tags counted as interior text.
+            let mut scan = tag_len;
+            let mut close_start = None;
+            while let Some((rel, opens_again)) = is_tag_start(&after_tag[scan..]) {
+                if !opens_again {
+                    close_start = Some(scan + rel);
+                    break;
+                }
+                let inner_len = after_tag[scan + rel..].find('>').map_or(0, |end| end + 1);
+                scan += rel + inner_len;
+            }
+            if let Some(close_start) = close_start {
+                let close_len = after_tag[close_start..].find('>').map_or(0, |end| end + 1);
+                let interior = &after_tag[tag_len..close_start];
+                if interior.trim().is_empty() {
+                    empty += 1;
+                } else {
+                    nonempty += 1;
+                }
+                // close_start is relative to after_tag (= rest[start..]);
+                // the skip offset must be absolute in rest.
+                let end = skip_whitespace(rest, start + close_start + close_len);
+                rest = &rest[end..];
+                continue;
+            }
+            // Unclosed open tag: stray tag, keep the content.
+            strays += 1;
+            let end = skip_whitespace(rest, start + tag_len);
+            rest = &rest[end..];
+            continue;
+        }
+        // Stray close tag.
+        strays += 1;
+        let end = skip_whitespace(rest, start + tag_len);
+        rest = &rest[end..];
+    }
+}
+
+/// A link is dropped when it violates the path contract (prefix outside
+/// `images/page-…` or containing `..` — the path-traversal rejection is kept,
+/// expressed as removal instead of a page failure, quality plan D-4) or when
+/// the referenced artifact was not produced (e.g. a crop that fell outside
+/// the page).
+fn image_link_is_droppable(relative: &str, root: &Path) -> bool {
+    !relative.starts_with("images/page-")
+        || relative.contains("..")
+        || !root.join(relative).is_file()
+}
+
+/// Extracts the `images/…` path (if any) from a scanned construct.
+fn images_path_inside(text: &str) -> Option<(&str, usize, usize)> {
+    let start = text.find("images/")?;
+    let end = text[start..]
+        .find(|character: char| {
+            character.is_whitespace() || character == ')' || character == '"' || character == '>'
+        })
+        .map_or(text.len(), |offset| start + offset);
+    Some((&text[start..end], start, end))
+}
+
+/// Q4 (quality plan §4.4): degrades invalid/missing bbox image links from a
+/// page-level failure to a link-level removal. Returns the cleaned markdown
+/// and the number of dropped links; each drop raises the
+/// `invalid_image_link_dropped` warning at the call site.
+fn drop_invalid_markdown_image_links(
     markdown: &str,
     output_root: impl AsRef<Path>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> (String, usize) {
     let root = output_root.as_ref();
+    let mut dropped = 0;
+
+    // Pass A: `<img …>` tags carrying an images/ path.
+    let mut without_tags = String::with_capacity(markdown.len());
     let mut rest = markdown;
+    while let Some(start) = rest.find("<img") {
+        let Some(tag_end_rel) = rest[start..].find('>') else {
+            break;
+        };
+        without_tags.push_str(&rest[..start]);
+        let tag_end = start + tag_end_rel + 1;
+        let tag = &rest[start..tag_end];
+        match images_path_inside(tag) {
+            Some((relative, _, _)) if image_link_is_droppable(relative, root) => {
+                dropped += 1; // tag removed
+            }
+            _ => without_tags.push_str(tag),
+        }
+        rest = &rest[tag_end..];
+    }
+    without_tags.push_str(rest);
+
+    // Pass B: `![alt](images/…)` markdown constructs.
+    let mut without_markdown_links = String::with_capacity(without_tags.len());
+    let mut rest = without_tags.as_str();
+    while let Some(bang) = rest.find("![") {
+        let Some(paren_rel) = rest[bang..].find("](") else {
+            without_markdown_links.push_str(&rest[..bang + 2]);
+            rest = &rest[bang + 2..];
+            continue;
+        };
+        let path_start = bang + paren_rel + 2;
+        let Some(close_rel) = rest[path_start..].find(')') else {
+            without_markdown_links.push_str(&rest[..path_start]);
+            rest = &rest[path_start..];
+            continue;
+        };
+        let construct_end = path_start + close_rel + 1;
+        let path = &rest[path_start..path_start + close_rel];
+        without_markdown_links.push_str(&rest[..bang]);
+        if path.starts_with("images/") && image_link_is_droppable(path, root) {
+            dropped += 1; // construct removed
+        } else {
+            without_markdown_links.push_str(&rest[bang..construct_end]);
+        }
+        rest = &rest[construct_end..];
+    }
+    without_markdown_links.push_str(rest);
+
+    // Pass C: bare `images/…` tokens that survived both construct forms.
+    let mut output = String::with_capacity(without_markdown_links.len());
+    let mut rest = without_markdown_links.as_str();
     while let Some(start) = rest.find("images/") {
+        output.push_str(&rest[..start]);
         let candidate = &rest[start..];
         let end = candidate
             .find(|character: char| {
@@ -221,15 +682,16 @@ fn validate_markdown_image_links(
             })
             .unwrap_or(candidate.len());
         let relative = &candidate[..end];
-        if !relative.starts_with("images/page-") || relative.contains("..") {
-            return Err(format!("invalid markdown image link: {relative}").into());
-        }
-        if !root.join(relative).is_file() {
-            return Err(format!("markdown image link is missing: {relative}").into());
+        if image_link_is_droppable(relative, root) {
+            dropped += 1; // token removed
+        } else {
+            output.push_str(relative);
         }
         rest = &candidate[end..];
     }
-    Ok(())
+    output.push_str(rest);
+
+    (output, dropped)
 }
 
 fn replace_bbox_images(raw: &str, page: u32, count: usize) -> String {
@@ -294,13 +756,22 @@ pub fn adapt_response(
     response: &InferenceResponse,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     let normalized = normalize_line_endings(&response.raw_output);
-    let crop = degenerate_tail_crop(&normalized);
-    adapt_cropped_response(page_number, &crop.text, &response.finish_reason, &crop)
+    let think = strip_think_blocks(&normalized);
+    let crop = degenerate_tail_crop(&think.text);
+    adapt_cropped_response(
+        page_number,
+        &crop.text,
+        &response.finish_reason,
+        &crop,
+        &think,
+    )
 }
 
 /// Adapter entry for already-cropped text: the entry crop metadata is merged
 /// into the page warnings verbatim (plan §3.2.2); re-detecting on the cropped
-/// text would be a no-op and could not recover the metadata.
+/// text would be a no-op and could not recover the metadata. `think` carries
+/// the think-strip outcome so a non-empty block raises `think_removed`
+/// (quality plan Q3.1).
 ///
 /// # Errors
 ///
@@ -310,6 +781,7 @@ pub fn adapt_cropped_response(
     cropped: &str,
     finish_reason: &str,
     crop: &DegenerateTailCrop,
+    think: &ThinkStrip,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     build_page_document(
         page_number,
@@ -317,6 +789,7 @@ pub fn adapt_cropped_response(
         finish_reason,
         crop.degenerated,
         crop.repetition_removed,
+        think.nonempty,
     )
 }
 
@@ -349,13 +822,15 @@ fn parse_page_with_termination(
     finish_reason: &str,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     let normalized = normalize_line_endings(raw);
-    let crop = degenerate_tail_crop(&normalized);
+    let think = strip_think_blocks(&normalized);
+    let crop = degenerate_tail_crop(&think.text);
     build_page_document(
         page_number,
         &crop.text,
         finish_reason,
         crop.degenerated,
         crop.repetition_removed,
+        think.nonempty,
     )
 }
 
@@ -365,6 +840,7 @@ fn build_page_document(
     finish_reason: &str,
     crop_degenerated: bool,
     crop_repetition_removed: bool,
+    think_nonempty: usize,
 ) -> Result<PageDocument, ocrx_core::DomainError> {
     let mut blocks = Vec::new();
     let markdown = remove_bbox_image_placeholders(normalized);
@@ -400,6 +876,9 @@ fn build_page_document(
     }
     if crop_repetition_removed {
         warnings.push(PageWarning::RepetitionRemoved);
+    }
+    if think_nonempty > 0 {
+        warnings.push(PageWarning::ThinkRemoved);
     }
     if degenerated {
         warnings.push(PageWarning::Degenerated);
@@ -1057,21 +1536,92 @@ mod tests {
         );
     }
 
+    // ---- Q4: link-level degradation of invalid bbox image links (quality plan §4.4) ----
+
     #[test]
-    fn markdown_image_links_require_existing_output_artifacts() {
+    fn invalid_and_missing_image_links_are_dropped_not_page_fatal() {
         let root = std::env::temp_dir().join(format!("ocrx-ovis-links-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("images")).unwrap();
-        assert!(
-            validate_markdown_image_links("![figure](images/page-0001-figure-001.png)", &root)
-                .is_err()
+        // Missing file: the whole image construct is dropped, body survives.
+        let (markdown, dropped) = drop_invalid_markdown_image_links(
+            "before ![figure](images/page-0001-figure-001.png) after",
+            &root,
         );
+        assert_eq!(markdown, "before  after");
+        assert_eq!(dropped, 1);
+        // Path traversal: dropped (rejected by removal, never passed through).
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("![x](images/../secret) 正文", &root);
+        assert_eq!(markdown, " 正文");
+        assert_eq!(dropped, 1);
+        // Existing file: link kept byte for byte.
         std::fs::write(root.join("images/page-0001-figure-001.png"), b"png").unwrap();
-        assert!(
-            validate_markdown_image_links("![figure](images/page-0001-figure-001.png)", &root)
-                .is_ok()
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("![figure](images/page-0001-figure-001.png)", &root);
+        assert_eq!(markdown, "![figure](images/page-0001-figure-001.png)");
+        assert_eq!(dropped, 0);
+        // img-tag form with a traversal path is dropped as a whole tag.
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("a <img src=\"images/../evil.png\" /> b", &root);
+        assert_eq!(markdown, "a  b");
+        assert_eq!(dropped, 1);
+        // Mixed links: only the bad one is removed, granularity stays per link.
+        let (markdown, dropped) = drop_invalid_markdown_image_links(
+            "![good](images/page-0001-figure-001.png) ![bad](images/page-9999-figure-009.png)",
+            &root,
         );
-        assert!(validate_markdown_image_links("![x](images/../secret)", &root).is_err());
+        assert_eq!(markdown, "![good](images/page-0001-figure-001.png) ");
+        assert_eq!(dropped, 1);
+        // Prefix violations that are not images/page- links are dropped too.
+        let (markdown, dropped) =
+            drop_invalid_markdown_image_links("看这个 images/other/stuff.png", &root);
+        assert_eq!(markdown, "看这个 ");
+        assert_eq!(dropped, 1);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn page_with_invalid_model_image_link_commits_with_drop_warning() {
+        struct EvilLinkRuntime;
+        impl Runtime for EvilLinkRuntime {
+            fn info(&self) -> RuntimeInfo {
+                RuntimeInfo {
+                    backend: Backend::Cpu,
+                    image_token_limit: 1024,
+                }
+            }
+
+            fn generate(
+                &mut self,
+                _request: InferenceRequest,
+            ) -> Result<InferenceResponse, String> {
+                Ok(InferenceResponse {
+                    raw_output: "正文\n<img src=\"images/../../evil.png\" />\n完".to_owned(),
+                    finish_reason: "eos".to_owned(),
+                })
+            }
+        }
+        let root = std::env::temp_dir().join(format!("ocrx-ovis-evil-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let output = write_page_artifacts_with_status(
+            &mut EvilLinkRuntime,
+            9,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            &root,
+        )
+        .expect("page must commit despite the invalid link");
+        assert!(!output.markdown.contains("images/../../evil.png"));
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning == "invalid_image_link_dropped")
+        );
+        assert!(output.markdown.contains("正文"));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1364,5 +1914,412 @@ mod tests {
             format!("real content\n{period}{period}{period}")
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // ---- Q3: think-block stripping at the artifact entry (quality plan §4.3) ----
+
+    struct ThinkRuntime {
+        raw: String,
+    }
+    impl Runtime for ThinkRuntime {
+        fn info(&self) -> RuntimeInfo {
+            RuntimeInfo {
+                backend: Backend::Cpu,
+                image_token_limit: 1024,
+            }
+        }
+
+        fn generate(&mut self, _request: InferenceRequest) -> Result<InferenceResponse, String> {
+            Ok(InferenceResponse {
+                raw_output: self.raw.clone(),
+                finish_reason: "eos".to_owned(),
+            })
+        }
+    }
+
+    /// Parity vectors with the export-script semantics
+    /// (`THINK_BLOCK = r"<think\b[^>]*>.*?</think>\s*"`, DOTALL, then
+    /// `STRAY_THINK = r"</?think\b[^>]*>\s*"`); Q3 acceptance ① requires the
+    /// product strip to match the export strip byte for byte.
+    #[test]
+    fn strip_think_blocks_matches_export_script_semantics() {
+        // Complete empty block: removed with trailing whitespace, silent.
+        let strip = strip_think_blocks("<think>\n\n</think>\n\nBody");
+        assert_eq!(strip.text, "Body");
+        assert_eq!((strip.nonempty, strip.empty, strip.strays), (0, 1, 0));
+        // Complete non-empty block with attributes on the open tag.
+        let strip = strip_think_blocks("<think attrs=\"x\">reasoning</think> text");
+        assert_eq!(strip.text, "text");
+        assert_eq!((strip.nonempty, strip.empty, strip.strays), (1, 0, 0));
+        // Stray close tag between content: tag removed, no whitespace eaten.
+        let strip = strip_think_blocks("A</think>B");
+        assert_eq!(strip.text, "AB");
+        assert_eq!((strip.nonempty, strip.empty, strip.strays), (0, 0, 1));
+        // Unclosed open tag: the tag is stray, the content stays.
+        let strip = strip_think_blocks("A <think> x B");
+        assert_eq!(strip.text, "A x B");
+        assert_eq!(strip.strays, 1);
+        // Word boundary: `<thinking>` is NOT a think tag.
+        let strip = strip_think_blocks("<thinking> keep </thinking>");
+        assert_eq!(strip.text, "<thinking> keep </thinking>");
+        assert_eq!(strip.total(), 0);
+        // Nested malformed open tags: non-greedy block to the FIRST close,
+        // the remaining close tag is stray.
+        let strip = strip_think_blocks("<think>a<think>b</think>c</think>");
+        assert_eq!(strip.text, "c");
+        assert_eq!(strip.nonempty, 1);
+        assert_eq!(strip.strays, 1);
+        // Two complete blocks in sequence.
+        let strip = strip_think_blocks("<think>x</think>A<think>y</think>B");
+        assert_eq!(strip.text, "AB");
+        assert_eq!(strip.nonempty, 2);
+    }
+
+    #[test]
+    fn strip_think_blocks_is_idempotent() {
+        let once = strip_think_blocks("<think>\n\n</think>\n\nBody</think> tail");
+        let twice = strip_think_blocks(&once.text);
+        assert_eq!(once.text, twice.text);
+        assert_eq!(twice.total(), 0);
+    }
+
+    #[test]
+    fn think_page_artifacts_equal_no_think_page_except_the_removed_block() {
+        // BLK-3 expected-difference regression: stripping a think block on an
+        // otherwise normal page must change the artifacts by exactly the
+        // think block - the stripped page equals the clean page byte for
+        // byte, plus the single `think_removed` warning.
+        let body = "# Chapter 1\n\nThe product of two integers is given by $a \\cdot b$.\n";
+        let with_think = format!("<think>\ninternal reasoning\n</think>\n\n{body}");
+        let think_output = write_page_artifacts_with_status(
+            &mut ThinkRuntime {
+                raw: with_think.clone(),
+            },
+            7,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            std::env::temp_dir().join(format!("ocrx-ovis-think-{}", std::process::id())),
+        )
+        .unwrap();
+        let clean_output = write_page_artifacts_with_status(
+            &mut ThinkRuntime {
+                raw: body.to_owned(),
+            },
+            7,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            std::env::temp_dir().join(format!("ocrx-ovis-think-clean-{}", std::process::id())),
+        )
+        .unwrap();
+        assert_eq!(think_output.markdown, clean_output.markdown);
+        assert_eq!(
+            think_output.warnings,
+            [clean_output.warnings, vec!["think_removed".to_owned()]].concat()
+        );
+        assert_eq!(think_output.think_blocks_stripped, 1);
+        // The raw sidecar contract (§7.4) keeps the pre-strip normalized raw.
+        assert_eq!(think_output.raw_output, with_think);
+        // page.json differs only by the warning.
+        let think_document = PageDocument::from_json(&think_output.page_json).unwrap();
+        let clean_document = PageDocument::from_json(&clean_output.page_json).unwrap();
+        assert_eq!(think_document.blocks, clean_document.blocks);
+        assert!(think_document.warnings.contains(&PageWarning::ThinkRemoved));
+        assert!(clean_document.warnings.is_empty());
+    }
+
+    #[test]
+    fn empty_think_block_is_stripped_silently_but_counted() {
+        let output = write_page_artifacts_with_status(
+            &mut ThinkRuntime {
+                raw: "<think>\n\n</think>\n\nBody text".to_owned(),
+            },
+            8,
+            10,
+            10,
+            vec![255; 10 * 10 * 3],
+            512,
+            std::env::temp_dir().join(format!("ocrx-ovis-think-empty-{}", std::process::id())),
+        )
+        .unwrap();
+        assert_eq!(output.markdown.trim_start(), "Body text");
+        assert!(
+            !output
+                .warnings
+                .iter()
+                .any(|warning| warning == "think_removed")
+        );
+        assert_eq!(output.think_blocks_stripped, 1);
+        let document = PageDocument::from_json(&output.page_json).unwrap();
+        assert!(!document.warnings.contains(&PageWarning::ThinkRemoved));
+    }
+
+    struct RequestCaptureRuntime {
+        seen: std::sync::Mutex<Vec<ocrx_runtime::InferenceRequest>>,
+    }
+    impl Runtime for RequestCaptureRuntime {
+        fn info(&self) -> RuntimeInfo {
+            RuntimeInfo {
+                backend: Backend::Cpu,
+                image_token_limit: 1024,
+            }
+        }
+
+        fn generate(&mut self, request: InferenceRequest) -> Result<InferenceResponse, String> {
+            self.seen.lock().unwrap().push(request);
+            Ok(InferenceResponse {
+                raw_output: "body".to_owned(),
+                finish_reason: "eos".to_owned(),
+            })
+        }
+    }
+
+    #[test]
+    fn detect_column_bands_finds_two_columns_on_synthetic_page() {
+        // Synthetic 600x200 page: white, with black text-like stripes in
+        // x=60..240 and x=360..540, empty gutter in between.
+        let width = 600_u32;
+        let height = 200_u32;
+        let mut rgb8 = vec![255_u8; (width * height * 3) as usize];
+        for stripe_x in 60..240 {
+            for y in (10..190).step_by(6) {
+                for dy in 0..3 {
+                    let base = ((y + dy) * width as usize + stripe_x as usize) * 3;
+                    rgb8[base] = 20;
+                    rgb8[base + 1] = 20;
+                    rgb8[base + 2] = 20;
+                }
+            }
+        }
+        for stripe_x in 360..540 {
+            for y in (10..190).step_by(6) {
+                for dy in 0..3 {
+                    let base = ((y + dy) * width as usize + stripe_x as usize) * 3;
+                    rgb8[base] = 20;
+                    rgb8[base + 1] = 20;
+                    rgb8[base + 2] = 20;
+                }
+            }
+        }
+        let bands = detect_column_bands(width, height, &rgb8).expect("two columns detected");
+        assert_eq!(bands.len(), 2, "bands: {bands:?}");
+        assert!(bands[0].0 <= 60);
+        assert!(bands[0].1 >= 240 && bands[0].1 <= 360);
+        assert!(bands[1].0 >= 240 && bands[1].0 <= 360);
+        assert!(bands[1].1 >= 540);
+    }
+
+    #[test]
+    fn detect_column_bands_returns_none_for_uniform_page() {
+        let width = 600_u32;
+        let height = 200_u32;
+        let rgb8 = vec![255_u8; (width * height * 3) as usize];
+        assert_eq!(detect_column_bands(width, height, &rgb8), None);
+    }
+
+    struct MultiBandRuntime {
+        responses: std::sync::Mutex<Vec<String>>,
+    }
+    impl Runtime for MultiBandRuntime {
+        fn info(&self) -> RuntimeInfo {
+            RuntimeInfo {
+                backend: Backend::Cpu,
+                image_token_limit: 1024,
+            }
+        }
+
+        fn generate(&mut self, _request: InferenceRequest) -> Result<InferenceResponse, String> {
+            let mut queue = self.responses.lock().unwrap();
+            let raw = if queue.is_empty() {
+                "band default".to_owned()
+            } else {
+                queue.remove(0)
+            };
+            Ok(InferenceResponse {
+                raw_output: raw,
+                finish_reason: "eos".to_owned(),
+            })
+        }
+    }
+
+    #[test]
+    fn column_split_merges_band_markdown_in_order_and_flags_any_band_loop() {
+        let width = 600_u32;
+        let height = 60_u32;
+        // Two ink stripes so two bands are detected; content irrelevant.
+        let mut rgb8 = vec![255_u8; (width * height * 3) as usize];
+        for stripe_x in 60..240 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        for stripe_x in 360..540 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        let runtime = MultiBandRuntime {
+            responses: std::sync::Mutex::new(vec![
+                "左栏内容".to_owned(),
+                "右栏 <think>
+
+</think>内容"
+                    .to_owned(),
+            ]),
+        };
+        let mut runtime = runtime;
+        let root = std::env::temp_dir().join(format!("ocrx-ovis-colsplit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let output = write_page_artifacts_column_split_cancelled(
+            &mut runtime,
+            5,
+            width,
+            height,
+            rgb8,
+            512,
+            &root,
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .expect("column-split artifacts");
+        assert!(
+            output.markdown.contains("左栏内容") && output.markdown.contains("右栏 内容"),
+            "merged: {}",
+            output.markdown
+        );
+        assert!(
+            output.markdown.find("左栏内容").unwrap() < output.markdown.find("右栏 内容").unwrap(),
+            "band order is left-to-right"
+        );
+        // The right band's empty think block is stripped silently (counted).
+        assert_eq!(output.think_blocks_stripped, 1);
+        assert!(!output.degenerated);
+        // Two band decodes hit the runtime.
+        assert_eq!(runtime.responses.lock().unwrap().len(), 0);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn column_split_marks_page_degenerated_when_any_band_loops() {
+        let width = 600_u32;
+        let height = 60_u32;
+        let mut rgb8 = vec![255_u8; (width * height * 3) as usize];
+        for stripe_x in 60..240 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        for stripe_x in 360..540 {
+            for y in (5..55).step_by(6) {
+                let base = (y * width as usize + stripe_x as usize) * 3;
+                rgb8[base] = 20;
+                rgb8[base + 1] = 20;
+                rgb8[base + 2] = 20;
+            }
+        }
+        let period = "循环片段".repeat(4);
+        let runtime = MultiBandRuntime {
+            responses: std::sync::Mutex::new(vec![
+                "左栏干净".to_owned(),
+                format!("右栏{period}{period}{period}"),
+            ]),
+        };
+        let mut runtime = runtime;
+        let root =
+            std::env::temp_dir().join(format!("ocrx-ovis-colsplit-loop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let output = write_page_artifacts_column_split_cancelled(
+            &mut runtime,
+            6,
+            width,
+            height,
+            rgb8,
+            512,
+            &root,
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .expect("column-split artifacts");
+        assert!(output.degenerated, "any band loop marks the page");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn retry_sampling_option_flows_into_the_inference_request() {
+        // Q1.2: the retry spec lands on the request only when provided;
+        // the plain path keeps None (attempt-1 greedy contract).
+        let root = std::env::temp_dir().join(format!("ocrx-ovis-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let capture = RequestCaptureRuntime {
+            seen: std::sync::Mutex::new(Vec::new()),
+        };
+        let mut capture = capture;
+        {
+            let _ = write_page_artifacts_with_retry_sampling_cancelled(
+                &mut capture,
+                3,
+                10,
+                10,
+                vec![255; 10 * 10 * 3],
+                512,
+                &root,
+                &CancellationToken::new(),
+                &mut |_| {},
+                Some(ocrx_runtime::RetrySampling::new(1_150, 256).unwrap()),
+                Some(2048),
+            )
+            .unwrap();
+        }
+        let seen = capture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            seen[0].retry_sampling,
+            Some(ocrx_runtime::RetrySampling {
+                repeat_penalty_milli: 1_150,
+                penalty_window: 256,
+            })
+        );
+        assert_eq!(seen[0].image_tokens_override, Some(2048));
+        drop(seen);
+        {
+            let _ = write_page_artifacts_with_status_cancelled(
+                &mut capture,
+                4,
+                10,
+                10,
+                vec![255; 10 * 10 * 3],
+                512,
+                &root,
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        }
+        let seen = capture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[1].retry_sampling, None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn no_think_pages_stay_byte_identical() {
+        // The golden reference fixture has no think block; the strip stage
+        // must be a no-op on it (Q3 acceptance ③ / gold-set zero-diff gate).
+        let raw = include_str!("../tests/fixtures/reference/page-01.raw.md");
+        let strip = strip_think_blocks(raw);
+        assert_eq!(strip.text, raw);
+        assert_eq!(strip.total(), 0);
     }
 }
