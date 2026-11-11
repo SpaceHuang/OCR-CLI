@@ -5,6 +5,9 @@
 pub mod ladder;
 pub mod ocr;
 pub mod state;
+
+#[cfg(test)]
+mod test_support;
 pub mod window;
 pub mod compatibility;
 pub mod resume;

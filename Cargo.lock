@@ -848,8 +848,11 @@ dependencies = [
  "image",
  "ocrx-core",
  "ocrx-inference-api",
+ "ocrx-output",
  "ocrx-pdf",
  "ocrx-primitives",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

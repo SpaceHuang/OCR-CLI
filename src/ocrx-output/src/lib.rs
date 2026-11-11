@@ -294,7 +294,8 @@ pub use compatibility::{ocr_final_compare, ocr_pre_compare, OcrIdentity, PdfIden
 
 pub mod checkpoint_v6;
 pub use checkpoint_v6::{
-    read_any, write_v6, CheckpointFile, V5Disposition, V6Checkpoint, V6Status,
+    artifacts_intact, commit_native_page_v6, commit_page_v6, commit_pending_ocr_v6, read_any,
+    write_v6, CheckpointFile, V5Disposition, V6Checkpoint, V6Status,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1430,7 +1431,7 @@ fn classify_recognition_error(error: &std::io::Error) -> (&'static str, &'static
 }
 
 /// Removes full-page PNG copies after merge; figure crops and page Markdown stay for resume.
-fn cleanup_full_page_images(root: &Path, page_numbers: &[u32]) -> io::Result<()> {
+pub fn cleanup_full_page_images(root: &Path, page_numbers: &[u32]) -> io::Result<()> {
     for &page in page_numbers {
         let _ = fs::remove_file(root.join("images").join(format!("page-{page:04}.png")));
     }
@@ -2442,7 +2443,7 @@ pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> 
     atomic_write(path, content.as_bytes())
 }
 
-fn write_render_audit(root: &Path, page: u32, audit: RenderAudit) -> io::Result<()> {
+pub fn write_render_audit(root: &Path, page: u32, audit: RenderAudit) -> io::Result<()> {
     let path = root.join(format!("page-{page:04}.render-audit"));
     let temporary = root.join(format!(".page-{page:04}.render-audit.part"));
     atomic_write(&temporary, audit.as_checkpoint_fragment().as_bytes())?;

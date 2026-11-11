@@ -13,4 +13,7 @@ ocrx-core = { path = "../ocrx-core" }
 ocrx-primitives = { path = "../ocrx-primitives" }
 ocrx-inference-api = { path = "../ocrx-inference-api" }
 ocrx-pdf = { path = "../ocrx-pdf" }
+ocrx-output = { path = "../ocrx-output" }
+serde.workspace = true
+serde_json.workspace = true
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
