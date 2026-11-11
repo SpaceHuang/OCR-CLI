@@ -4,3 +4,4 @@
 
 pub mod ladder;
 pub mod ocr;
+pub mod state;

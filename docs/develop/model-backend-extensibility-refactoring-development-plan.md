@@ -1401,7 +1401,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T048（T046）迁移原子页提交、native 提交、产物 hash 和 render audit；完成判定：complete checkpoint 最后写，引用图片缺失或篡改不可复用，无整页 PNG 的 native 行为不变。
 - [x] T049（T046）迁移 pending 队列恢复并按 route 去重；完成判定：排序稳定、输入不兼容不恢复、同一页不会被 native 和 OCR 重复收集。
 - [x] T050（T009）将 output 的取消/进度/哈希切换到 primitives；完成判定：无重复实现，现有 output 测试通过，对外 legacy re-export 可暂留并由 T086 统一删除。
-- [ ] T051（T044、T048）把 ScanService（含 P4.4 窗口编排、机制 A 原子提交与外部持模型窗口循环入口 `run_pages_with_model`，X1 共享槽使用）、loader、recognizer（含 `recognize_window_cancelled`）和 OCR 队列复制到 scan 新模块，暂不删除 output 旧实现和旧导出；完成判定：新 scan 不调用 output 旧扫描类型，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T088 删除。
+- [x] T051（T044、T048）把 ScanService（含 P4.4 窗口编排、机制 A 原子提交与外部持模型窗口循环入口 `run_pages_with_model`，X1 共享槽使用）、loader、recognizer（含 `recognize_window_cancelled`）和 OCR 队列复制到 scan 新模块，暂不删除 output 旧实现和旧导出；完成判定：新 scan 不调用 output 旧扫描类型，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T088 删除。
 
 ### 阶段 F：扫描应用迁移
 
