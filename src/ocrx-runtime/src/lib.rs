@@ -213,14 +213,29 @@ impl InferenceRequest {
 
 pub use ocrx_core::{BATCH_ERROR_PREFIX, WINDOW_DEPTH};
 
+/// Internal worker task for the new backend path (plan §8.6): one protocol-
+/// encoded single-image task. Page identity stays with the caller; the
+/// worker routes progress by slot index and consumes the caller-supplied
+/// prompt — the worker itself holds no OCR prompt (temporary bridge: the
+/// legacy `Runtime` wrapper injects the frozen prompt until T087 deletes it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkerTask {
+    /// Window slot index (0-based); never a page number.
+    pub slot: u32,
+    pub prompt: String,
+    pub width: u32,
+    pub height: u32,
+    pub image_rgb8: Vec<u8>,
+    pub max_output_tokens: u32,
+    pub image_tokens_override: Option<u32>,
+    pub retry_sampling: Option<RetrySampling>,
+}
+
 /// Decode-generation marker for checkpoint compatibility (quality plan
-/// Q1.3 / D-15): the wrapper era that produced a page. Generation 1 =
-/// llama.cpp wrapper 0.1.152/0.1.153; generation 2 = 0.1.161 (sampler-
-/// capable decode, normal-page output drift declared per D-15). The scan
-/// writes `decode=<gen>` into the checkpoint compatibility parameters, so
-/// checkpoints from another generation never pass the reuse check and are
-/// reprocessed instead of silently mixed into one scan.
-pub const DECODE_GENERATION: u32 = 2;
+/// Q1.3 / D-15). The single source of truth moved to the public inference
+/// API (plan §8.6: 代次常量随身份迁入推理侧单一来源); this re-export keeps
+/// the legacy scan path compiling until T086/T077 delete it.
+pub use ocrx_inference_api::DECODE_GENERATION;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceResponse {
@@ -297,6 +312,16 @@ pub trait Runtime {
         results
     }
 }
+
+mod backend;
+
+/// Generic backend implementations (plan §8.6). The llama.cpp backend and
+/// its factory are cfg-gated like `LlamaMtmdRuntime`; the programmable fake
+/// is always available.
+pub use backend::{CapturedTask, FakeRuntimeBackend, ProgrammedResponse};
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub use backend::{LlamaBackend, LlamaRuntimeFactory};
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod llama_mtmd;

@@ -8,9 +8,10 @@
 
 use std::time::Instant;
 
-/// Enablement variable: set to anything other than `0`/empty to record the
-/// per-step segment costs of the windowed decode loop.
-pub const STEP_PROFILE_ENV: &str = "OCRX_STEP_PROFILE";
+// The StepProfile DTO, its `delta_from` semantics, the env constant, and the
+// frozen JSON golden live in the public API (RBLK-3): the scan must never
+// reference a runtime-owned type. This module keeps only the recorder.
+pub use ocrx_inference_api::{StepProfile, STEP_PROFILE_ENV};
 
 /// Segments of the window decode loop that are measured separately
 /// (plan T0.1: batch 构建 / 逐槽 FFI / 采样 / detokenize / 环检测 / 等待 decode).
@@ -51,101 +52,7 @@ fn segment_index(segment: Segment) -> usize {
     }
 }
 
-/// Aggregated per-step profiling snapshot, in microseconds. Accumulated by
-/// the inference worker across every windowed decode of the process.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct StepProfile {
-    pub windows: u64,
-    pub steps: u64,
-    pub tokens: u64,
-    /// Total wall time of the windowed decode functions.
-    pub window_total_us: u64,
-    pub encode_us: u64,
-    pub slot_setup_us: u64,
-    pub batch_build_us: u64,
-    pub decode_wait_us: u64,
-    pub logits_ffi_us: u64,
-    pub argmax_us: u64,
-    pub detokenize_us: u64,
-    pub ring_us: u64,
-    /// Window wall time not attributed to any measured segment (progress
-    /// messaging, allocations outside segments, slot teardown).
-    pub residual_us: u64,
-}
 
-impl StepProfile {
-    /// Whether profiling was requested through the environment.
-    #[must_use]
-    pub fn env_enabled() -> bool {
-        enabled_from(std::env::var_os(STEP_PROFILE_ENV).as_deref())
-    }
-
-    /// Per-document delta from a baseline snapshot (X1 shared actor): every
-    /// field is additive, so the orchestrated document reports
-    /// `snapshot - baseline` (saturating) instead of the actor's cumulative.
-    #[must_use]
-    pub fn delta_from(&self, base: &Self) -> Self {
-        Self {
-            windows: self.windows.saturating_sub(base.windows),
-            steps: self.steps.saturating_sub(base.steps),
-            tokens: self.tokens.saturating_sub(base.tokens),
-            window_total_us: self.window_total_us.saturating_sub(base.window_total_us),
-            encode_us: self.encode_us.saturating_sub(base.encode_us),
-            slot_setup_us: self.slot_setup_us.saturating_sub(base.slot_setup_us),
-            batch_build_us: self.batch_build_us.saturating_sub(base.batch_build_us),
-            decode_wait_us: self.decode_wait_us.saturating_sub(base.decode_wait_us),
-            logits_ffi_us: self.logits_ffi_us.saturating_sub(base.logits_ffi_us),
-            argmax_us: self.argmax_us.saturating_sub(base.argmax_us),
-            detokenize_us: self.detokenize_us.saturating_sub(base.detokenize_us),
-            ring_us: self.ring_us.saturating_sub(base.ring_us),
-            residual_us: self.residual_us.saturating_sub(base.residual_us),
-        }
-    }
-
-    /// Sums `other` into `self` (the worker accumulates across windows).
-    pub fn accumulate(&mut self, other: &Self) {
-        self.windows += other.windows;
-        self.steps += other.steps;
-        self.tokens += other.tokens;
-        self.window_total_us += other.window_total_us;
-        self.encode_us += other.encode_us;
-        self.slot_setup_us += other.slot_setup_us;
-        self.batch_build_us += other.batch_build_us;
-        self.decode_wait_us += other.decode_wait_us;
-        self.logits_ffi_us += other.logits_ffi_us;
-        self.argmax_us += other.argmax_us;
-        self.detokenize_us += other.detokenize_us;
-        self.ring_us += other.ring_us;
-        self.residual_us += other.residual_us;
-    }
-
-    /// Frozen debug-channel JSON (`step-profile.json`). Field names are a
-    /// contract with the phase-2 diagnostic tooling; additions may append,
-    /// renames/removals are breaking.
-    #[must_use]
-    pub fn to_json(&self) -> String {
-        format!(
-            "{{\"schema_version\":1,\"windows\":{},\"steps\":{},\"tokens\":{},\"us\":{{\"window_total\":{},\"encode\":{},\"slot_setup\":{},\"batch_build\":{},\"decode_wait\":{},\"logits_ffi\":{},\"argmax\":{},\"detokenize\":{},\"ring\":{},\"residual\":{}}}}}",
-            self.windows,
-            self.steps,
-            self.tokens,
-            self.window_total_us,
-            self.encode_us,
-            self.slot_setup_us,
-            self.batch_build_us,
-            self.decode_wait_us,
-            self.logits_ffi_us,
-            self.argmax_us,
-            self.detokenize_us,
-            self.ring_us,
-            self.residual_us,
-        )
-    }
-}
-
-fn enabled_from(value: Option<&std::ffi::OsStr>) -> bool {
-    value.is_some_and(|value| !value.is_empty() && value != "0")
-}
 
 /// Per-window segment recorder. Disabled instances make every call a no-op
 /// branch (the profiling gate must cost nothing in normal scans).
@@ -260,47 +167,11 @@ impl StepProfiler {
 
 #[cfg(test)]
 mod tests {
-    use super::{Segment, StepProfile, StepProfiler, enabled_from};
+    // The StepProfile golden/env tests moved with the type into the public
+    // API (ocrx-inference-api); this module keeps only the recorder tests.
+    use super::{Segment, StepProfiler};
+    use ocrx_inference_api::StepProfile;
     use std::time::Duration;
-
-    #[test]
-    fn step_profile_json_schema_is_frozen() {
-        // A1: the debug channel's field names are a contract with the T0.1
-        // diagnostic tooling. This golden string locks them; new fields may
-        // append, renames or removals are breaking changes.
-        let profile = StepProfile {
-            windows: 2,
-            steps: 33,
-            tokens: 128,
-            window_total_us: 1_000_000,
-            encode_us: 400_000,
-            slot_setup_us: 5_000,
-            batch_build_us: 12_000,
-            decode_wait_us: 500_000,
-            logits_ffi_us: 40_000,
-            argmax_us: 30_000,
-            detokenize_us: 8_000,
-            ring_us: 2_000,
-            residual_us: 3_000,
-        };
-        assert_eq!(
-            profile.to_json(),
-            "{\"schema_version\":1,\"windows\":2,\"steps\":33,\"tokens\":128,\"us\":{\"window_total\":1000000,\"encode\":400000,\"slot_setup\":5000,\"batch_build\":12000,\"decode_wait\":500000,\"logits_ffi\":40000,\"argmax\":30000,\"detokenize\":8000,\"ring\":2000,\"residual\":3000}}"
-        );
-        assert_eq!(
-            StepProfile::default().to_json(),
-            "{\"schema_version\":1,\"windows\":0,\"steps\":0,\"tokens\":0,\"us\":{\"window_total\":0,\"encode\":0,\"slot_setup\":0,\"batch_build\":0,\"decode_wait\":0,\"logits_ffi\":0,\"argmax\":0,\"detokenize\":0,\"ring\":0,\"residual\":0}}"
-        );
-    }
-
-    #[test]
-    fn env_enablement_treats_unset_zero_and_empty_as_off() {
-        assert!(!enabled_from(None));
-        assert!(!enabled_from(Some(std::ffi::OsStr::new("0"))));
-        assert!(!enabled_from(Some(std::ffi::OsStr::new(""))));
-        assert!(enabled_from(Some(std::ffi::OsStr::new("1"))));
-        assert!(enabled_from(Some(std::ffi::OsStr::new("true"))));
-    }
 
     #[test]
     fn profiler_accumulates_segments_counts_and_residual() {

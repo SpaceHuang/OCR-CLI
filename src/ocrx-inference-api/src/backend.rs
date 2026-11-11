@@ -102,6 +102,20 @@ pub trait ProtocolAdapter {
 
 /// Runtime backend executing encoded tasks.
 pub trait RuntimeBackend {
+    /// Cumulative telemetry of this backend (load/first-token/tokens/time);
+    /// the session proxies it for `InferenceSession::telemetry()` and must
+    /// not double-accumulate.
+    fn telemetry(&self) -> crate::identity::RuntimeTelemetry {
+        crate::identity::RuntimeTelemetry::default()
+    }
+
+    /// Optional cumulative step-profile snapshot (T1, env-gated); `None`
+    /// when the channel is disabled. The session proxies it through
+    /// `InferenceSession::step_profile()`.
+    fn step_profile(&self) -> Option<crate::identity::StepProfile> {
+        None
+    }
+
     /// Generates one response while polling cancellation and reporting
     /// progress at least once per elapsed second (one event when blocking
     /// image encoding starts).

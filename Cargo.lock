@@ -747,6 +747,7 @@ dependencies = [
 name = "ocrx-core"
 version = "0.1.0"
 dependencies = [
+ "ocrx-primitives",
  "serde",
  "serde_json",
 ]
@@ -818,8 +819,10 @@ dependencies = [
  "llama-cpp-2",
  "llama-cpp-sys-2",
  "ocrx-core",
+ "ocrx-inference-api",
  "ocrx-models",
  "ocrx-pdf",
+ "ocrx-primitives",
 ]
 
 [[package]]
