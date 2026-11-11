@@ -106,6 +106,20 @@ Useful scan options include:
 
 The exact behavior of model installation, output schemas, and profile selection remains subject to the v0.1 compatibility and quality gates.
 
+### Profile selection
+
+Quality differences between the quantized profiles are small: the
+OmniDocBench v1.6 full-set baseline puts all four profiles within a 2.4-point
+Overall spread (75.6-78.0), and `balanced` (Q5_K_M) actually beat the F16
+`reference` profile by 2.1 points
+([`docs/test/reports/omnidocbench-baseline-2026-11-06.md`](docs/test/reports/omnidocbench-baseline-2026-11-06.md)).
+Pick a profile by speed and VRAM, not by expected quality:
+`balanced` is the recommended default whenever it fits in memory, `compact`
+for tight budgets. `--model-profile auto` keeps the memory-floor selection
+described above; pass `--model-profile balanced` explicitly when your machine
+could also run a larger profile and you want the fastest decoding tier that
+holds the best measured quality.
+
 ## Windows GPU support (Vulkan)
 
 Windows builds default to the CPU baseline. A Vulkan-enabled binary is built

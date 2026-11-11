@@ -1,0 +1,6948 @@
+{
+ "schema_version": 1,
+ "generator": "scripts/build-degeneration-corpus.py",
+ "source_profile": "balanced",
+ "source_benchmark_manifest": "benchmarks/omnidocbench/manifest.json",
+ "purpose": "Frozen 213-page degeneration corpus for the escape-ladder experiments (quality plan Q1.0).",
+ "counts": {
+  "degenerated": 213,
+  "truncated_total": 33,
+  "degenerated_truncated_intersection": 5,
+  "pure_truncated": 28,
+  "missing": 1
+ },
+ "pages": [
+  {
+   "stem": "book_en_5.Advanced.Modern.Algebra.-.J.Rotman.2003_page_887",
+   "scan_dir": "book_en_5.Advanced.Modern.Algebra.-.J.Rotman.2003_page_887-9f200acd",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "book_en_5.Advanced.Modern.Algebra.-.J.Rotman.2003_page_887.png",
+   "pdf": "pdfs\\book_en_5.Advanced.Modern.Algebra.-.J.Rotman.2003_page_887.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "book_en_国外数学教材-An Excursion through Elementary Mathematics（初等数学漫游）-An excursion through elementary mathematics, Vol.3 (Caminha Muniz Neto A)_0100",
+   "scan_dir": "book_en_国外数学教材-An Excursion through Elementary Mathematics（初等数学漫游）-An excursion through elementary mathematics, Vol.3 (Caminha Muniz Neto A)_0100-04256743",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 293,
+     "height": 444
+    },
+    "rendered": {
+     "width": 1221,
+     "height": 1851
+    },
+    "model": {
+     "width": 1221,
+     "height": 1851
+    }
+   },
+   "image_path": "book_en_国外数学教材-An Excursion through Elementary Mathematics（初等数学漫游）-An excursion through elementary mathematics, Vol.3 (Caminha Muniz Neto A)_0100.png",
+   "pdf": "pdfs\\book_en_国外数学教材-An Excursion through Elementary Mathematics（初等数学漫游）-An excursion through elementary mathematics, Vol.3 (Caminha Muniz Neto A)_0100.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0092",
+   "scan_dir": "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0092-4e055d91",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 301,
+     "height": 416
+    },
+    "rendered": {
+     "width": 1253,
+     "height": 1734
+    },
+    "model": {
+     "width": 1253,
+     "height": 1734
+    }
+   },
+   "image_path": "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0092.png",
+   "pdf": "pdfs\\book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0092.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0119",
+   "scan_dir": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0119-02b8d433",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0119.png",
+   "pdf": "pdfs\\book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0119.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0451",
+   "scan_dir": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0451-115e1f95",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0451.png",
+   "pdf": "pdfs\\book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0451.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_001",
+   "scan_dir": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_001-547b6f07",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_001.png",
+   "pdf": "pdfs\\color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_001.pdf",
+   "source_category": "colorful_textbook",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_004",
+   "scan_dir": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_004-2856d099",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_004.png",
+   "pdf": "pdfs\\color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_004.pdf",
+   "source_category": "colorful_textbook",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006",
+   "scan_dir": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006-f5c3eb36",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006.png",
+   "pdf": "pdfs\\color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006.pdf",
+   "source_category": "colorful_textbook",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149",
+   "scan_dir": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149-c7667281",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 348,
+     "height": 491
+    },
+    "rendered": {
+     "width": 1449,
+     "height": 2046
+    },
+    "model": {
+     "width": 1449,
+     "height": 2046
+    }
+   },
+   "image_path": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg",
+   "pdf": "pdfs\\docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328",
+   "scan_dir": "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328-76b28a87",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 344,
+     "height": 490
+    },
+    "rendered": {
+     "width": 1433,
+     "height": 2040
+    },
+    "model": {
+     "width": 1433,
+     "height": 2040
+    }
+   },
+   "image_path": "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328.jpg",
+   "pdf": "pdfs\\docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "docstructbench_dianzishu_zhongwenzaixian-o.O-61523162.pdf_276",
+   "scan_dir": "docstructbench_dianzishu_zhongwenzaixian-o.O-61523162.pdf_276-47d6dbe0",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 350,
+     "height": 492
+    },
+    "rendered": {
+     "width": 1457,
+     "height": 2049
+    },
+    "model": {
+     "width": 1457,
+     "height": 2049
+    }
+   },
+   "image_path": "docstructbench_dianzishu_zhongwenzaixian-o.O-61523162.pdf_276.jpg",
+   "pdf": "pdfs\\docstructbench_dianzishu_zhongwenzaixian-o.O-61523162.pdf_276.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4-8c58b282",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-bf03175144.pdf_4.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-hup.777.pdf_8",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-hup.777.pdf_8-b9551a1f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 378,
+     "height": 492
+    },
+    "rendered": {
+     "width": 1575,
+     "height": 2048
+    },
+    "model": {
+     "width": 1575,
+     "height": 2048
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-hup.777.pdf_8.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-hup.777.pdf_8.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3-71da16d8",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 540
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2250
+    },
+    "model": {
+     "width": 1700,
+     "height": 2250
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4-1ee12923",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 519
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2164
+    },
+    "model": {
+     "width": 1653,
+     "height": 2164
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.jcp.2010.12.006.pdf_5",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-j.jcp.2010.12.006.pdf_5-727931c6",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 363,
+     "height": 495
+    },
+    "rendered": {
+     "width": 1512,
+     "height": 2063
+    },
+    "model": {
+     "width": 1512,
+     "height": 2063
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-j.jcp.2010.12.006.pdf_5.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-j.jcp.2010.12.006.pdf_5.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.jcrimjus.2010.04.003.pdf_8",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-j.jcrimjus.2010.04.003.pdf_8-5187cbd8",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 529
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2205
+    },
+    "model": {
+     "width": 1654,
+     "height": 2205
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-j.jcrimjus.2010.04.003.pdf_8.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-j.jcrimjus.2010.04.003.pdf_8.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.msec.2003.09.055.pdf_1",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-j.msec.2003.09.055.pdf_1-72b2ed9a",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 529
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2206
+    },
+    "model": {
+     "width": 1653,
+     "height": 2206
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-j.msec.2003.09.055.pdf_1.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-j.msec.2003.09.055.pdf_1.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-j.physletb.2004.11.060.pdf_2",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-j.physletb.2004.11.060.pdf_2-4d9d31b4",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 364,
+     "height": 494
+    },
+    "rendered": {
+     "width": 1517,
+     "height": 2059
+    },
+    "model": {
+     "width": 1517,
+     "height": 2059
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-j.physletb.2004.11.060.pdf_2.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-j.physletb.2004.11.060.pdf_2.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3-2317a729",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 527
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2197
+    },
+    "model": {
+     "width": 1654,
+     "height": 2197
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2-05dd5c98",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 524
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2182
+    },
+    "model": {
+     "width": 1654,
+     "height": 2182
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11-9743088d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 524
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2182
+    },
+    "model": {
+     "width": 1654,
+     "height": 2182
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6-627cd18e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 363,
+     "height": 495
+    },
+    "rendered": {
+     "width": 1512,
+     "height": 2064
+    },
+    "model": {
+     "width": 1512,
+     "height": 2064
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-s0167-8655%2800%2900107-0.pdf_6.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5",
+   "scan_dir": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5-e3272d4d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2",
+   "scan_dir": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2-b9716c61",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+   "pdf": "pdfs\\docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6",
+   "scan_dir": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6-d0139846",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg",
+   "pdf": "pdfs\\eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2",
+   "scan_dir": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2-14857227",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+   "pdf": "pdfs\\eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2",
+   "scan_dir": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2-e5284817",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+   "pdf": "pdfs\\eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2",
+   "scan_dir": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2-a3d1762e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 562
+    },
+    "rendered": {
+     "width": 1655,
+     "height": 2340
+    },
+    "model": {
+     "width": 1655,
+     "height": 2340
+    }
+   },
+   "image_path": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+   "pdf": "pdfs\\eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "eastmoney_c2abc680754ea4676c752cb3bda24323046ece560f8b23ce66b705887c9bcf9b.pdf_16",
+   "scan_dir": "eastmoney_c2abc680754ea4676c752cb3bda24323046ece560f8b23ce66b705887c9bcf9b.pdf_16-91a37e5b",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2338
+    },
+    "model": {
+     "width": 1654,
+     "height": 2338
+    }
+   },
+   "image_path": "eastmoney_c2abc680754ea4676c752cb3bda24323046ece560f8b23ce66b705887c9bcf9b.pdf_16.jpg",
+   "pdf": "pdfs\\eastmoney_c2abc680754ea4676c752cb3bda24323046ece560f8b23ce66b705887c9bcf9b.pdf_16.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "eastmoney_ea59610b9b1a8f0df46f7a89da1116cbf256c772e1148f26017991e28c8bca21.pdf_18",
+   "scan_dir": "eastmoney_ea59610b9b1a8f0df46f7a89da1116cbf256c772e1148f26017991e28c8bca21.pdf_18-bd2d7369",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 562
+    },
+    "rendered": {
+     "width": 1655,
+     "height": 2340
+    },
+    "model": {
+     "width": 1655,
+     "height": 2340
+    }
+   },
+   "image_path": "eastmoney_ea59610b9b1a8f0df46f7a89da1116cbf256c772e1148f26017991e28c8bca21.pdf_18.jpg",
+   "pdf": "pdfs\\eastmoney_ea59610b9b1a8f0df46f7a89da1116cbf256c772e1148f26017991e28c8bca21.pdf_18.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1995_Solutions_1995s_page_002",
+   "scan_dir": "exam_paper_en-file-putnam-archive_1995_Solutions_1995s_page_002-fa14bbf8",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_1995_Solutions_1995s_page_002.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_1995_Solutions_1995s_page_002.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1996_Solutions_1996s_page_003",
+   "scan_dir": "exam_paper_en-file-putnam-archive_1996_Solutions_1996s_page_003-d9032ce1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_1996_Solutions_1996s_page_003.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_1996_Solutions_1996s_page_003.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_001",
+   "scan_dir": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_001-0d75e323",
+   "complete": true,
+   "degenerated": true,
+   "truncated": true,
+   "attempts": 3,
+   "warnings": [
+    "truncated",
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_001.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_001.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_002",
+   "scan_dir": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_002-bb263531",
+   "complete": true,
+   "degenerated": true,
+   "truncated": true,
+   "attempts": 3,
+   "warnings": [
+    "truncated",
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_002.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_002.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_003",
+   "scan_dir": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_003-0a6e2a4d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": true,
+   "attempts": 3,
+   "warnings": [
+    "truncated",
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_003.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_1997_Solutions_1997s_page_003.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2000_Problems_2000_page_001",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2000_Problems_2000_page_001-8e2663d8",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2000_Problems_2000_page_001.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2000_Problems_2000_page_001.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2000_Solutions_2000s_page_001",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2000_Solutions_2000s_page_001-b9c8f0e1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": true,
+   "attempts": 3,
+   "warnings": [
+    "truncated",
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2000_Solutions_2000s_page_001.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2000_Solutions_2000s_page_001.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2001_Solutions_2001s_page_002",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2001_Solutions_2001s_page_002-a74a97b1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": true,
+   "attempts": 3,
+   "warnings": [
+    "truncated",
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2001_Solutions_2001s_page_002.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2001_Solutions_2001s_page_002.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2002_Solutions_2002s_page_002",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2002_Solutions_2002s_page_002-23751aba",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2002_Solutions_2002s_page_002.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2002_Solutions_2002s_page_002.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2009_Solutions_2009s_page_001",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2009_Solutions_2009s_page_001-850a6d01",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2009_Solutions_2009s_page_001.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2009_Solutions_2009s_page_001.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2010_Solutions_2010s_page_005",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2010_Solutions_2010s_page_005-45f608cf",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2010_Solutions_2010s_page_005.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2010_Solutions_2010s_page_005.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2011_Solutions_2011s_page_002",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2011_Solutions_2011s_page_002-4078fb78",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2011_Solutions_2011s_page_002.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2011_Solutions_2011s_page_002.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "exam_paper_en-file-putnam-archive_2015_Solutions_2015s_page_005",
+   "scan_dir": "exam_paper_en-file-putnam-archive_2015_Solutions_2015s_page_005-add121b6",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "exam_paper_en-file-putnam-archive_2015_Solutions_2015s_page_005.png",
+   "pdf": "pdfs\\exam_paper_en-file-putnam-archive_2015_Solutions_2015s_page_005.pdf",
+   "source_category": "exam_paper",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocai_jiaocai_en_310",
+   "scan_dir": "jiaocai_jiaocai_en_310-25ee81d6",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "jiaocai_jiaocai_en_310.jpg",
+   "pdf": "pdfs\\jiaocai_jiaocai_en_310.pdf",
+   "source_category": "exam_paper",
+   "language": "en_ch_mixed",
+   "layout": "single_column"
+  },
+  {
+   "stem": "jiaocaineedrop_2017.pdf_0",
+   "scan_dir": "jiaocaineedrop_2017.pdf_0-0d08a2c5",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "jiaocaineedrop_2017.pdf_0.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_2017.pdf_0.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1349",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_1349-c6b66419",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 320,
+     "height": 234
+    },
+    "rendered": {
+     "width": 1334,
+     "height": 974
+    },
+    "model": {
+     "width": 1334,
+     "height": 974
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_1349.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1358",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_1358-1c073ea0",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 679
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 2829
+    },
+    "model": {
+     "width": 2000,
+     "height": 2829
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_1358.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_1358.pdf",
+   "source_category": "exam_paper",
+   "language": "en_ch_mixed",
+   "layout": "single_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1417",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_1417-a13538ad",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 573
+    },
+    "rendered": {
+     "width": 1701,
+     "height": 2386
+    },
+    "model": {
+     "width": 1701,
+     "height": 2386
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_1417.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_1417.pdf",
+   "source_category": "colorful_textbook",
+   "language": "simplified_chinese",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1478",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_1478-84fe4b14",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 679
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 2831
+    },
+    "model": {
+     "width": 2000,
+     "height": 2831
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_1478.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_1478.pdf",
+   "source_category": "exam_paper",
+   "language": "en_ch_mixed",
+   "layout": "single_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1836",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_1836-2d156dd5",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1419,
+     "height": 2006
+    },
+    "rendered": {
+     "width": 2422,
+     "height": 3424
+    },
+    "model": {
+     "width": 2422,
+     "height": 3424
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_1836.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_1836.pdf",
+   "source_category": "colorful_textbook",
+   "language": "simplified_chinese",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_1898",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_1898-1a0c416f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 433,
+     "height": 600
+    },
+    "rendered": {
+     "width": 1806,
+     "height": 2500
+    },
+    "model": {
+     "width": 1806,
+     "height": 2500
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_1898.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_1898.pdf",
+   "source_category": "colorful_textbook",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_194",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_194-df114f5e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1000,
+     "height": 1345
+    },
+    "rendered": {
+     "width": 2483,
+     "height": 3339
+    },
+    "model": {
+     "width": 2483,
+     "height": 3339
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_194.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_194.pdf",
+   "source_category": "exam_paper",
+   "language": "en_ch_mixed",
+   "layout": "single_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_2211",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_2211-347149e1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 320,
+     "height": 234
+    },
+    "rendered": {
+     "width": 1334,
+     "height": 974
+    },
+    "model": {
+     "width": 1334,
+     "height": 974
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_2211.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_2360",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_2360-28885289",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 320,
+     "height": 231
+    },
+    "rendered": {
+     "width": 1334,
+     "height": 962
+    },
+    "model": {
+     "width": 1334,
+     "height": 962
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_2360.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_2360.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_2839",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_2839-efe700fe",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 320,
+     "height": 227
+    },
+    "rendered": {
+     "width": 1334,
+     "height": 944
+    },
+    "model": {
+     "width": 1334,
+     "height": 944
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_2839.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_2839.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_3458",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_3458-e0fd3758",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_3458.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_3458.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_349",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_349-c791c47b",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 640,
+     "height": 453
+    },
+    "rendered": {
+     "width": 2667,
+     "height": 1886
+    },
+    "model": {
+     "width": 2667,
+     "height": 1886
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_349.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_349.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_3713",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_3713-207a8af0",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 640,
+     "height": 448
+    },
+    "rendered": {
+     "width": 2667,
+     "height": 1866
+    },
+    "model": {
+     "width": 2667,
+     "height": 1866
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_3713.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_3713.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_482",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_482-86f5ce56",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 640,
+     "height": 448
+    },
+    "rendered": {
+     "width": 2667,
+     "height": 1866
+    },
+    "model": {
+     "width": 2667,
+     "height": 1866
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_482.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_482.pdf",
+   "source_category": "exam_paper",
+   "language": "en_ch_mixed",
+   "layout": "double_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_620",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_620-74e86209",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 669
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 2787
+    },
+    "model": {
+     "width": 2000,
+     "height": 2787
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_620.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_620.pdf",
+   "source_category": "exam_paper",
+   "language": "simplified_chinese",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "jiaocaineedrop_jiaocai_needrop_en_922",
+   "scan_dir": "jiaocaineedrop_jiaocai_needrop_en_922-55fa0e1d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 320,
+     "height": 430
+    },
+    "rendered": {
+     "width": 1334,
+     "height": 1791
+    },
+    "model": {
+     "width": 1334,
+     "height": 1791
+    }
+   },
+   "image_path": "jiaocaineedrop_jiaocai_needrop_en_922.jpg",
+   "pdf": "pdfs\\jiaocaineedrop_jiaocai_needrop_en_922.pdf",
+   "source_category": "exam_paper",
+   "language": "en_ch_mixed",
+   "layout": "single_column"
+  },
+  {
+   "stem": "magazine_TheEconomist.2024.02.24_page_076",
+   "scan_dir": "magazine_TheEconomist.2024.02.24_page_076-9bd8a96f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1094,
+     "height": 1438
+    },
+    "rendered": {
+     "width": 2512,
+     "height": 3301
+    },
+    "model": {
+     "width": 2512,
+     "height": 3301
+    }
+   },
+   "image_path": "magazine_TheEconomist.2024.02.24_page_076.png",
+   "pdf": "pdfs\\magazine_TheEconomist.2024.02.24_page_076.pdf",
+   "source_category": "magazine",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_019d4d5296ba8f1c21277d72fb0cf0db_1",
+   "scan_dir": "newspaper_019d4d5296ba8f1c21277d72fb0cf0db_1-fe490f32",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_019d4d5296ba8f1c21277d72fb0cf0db_1.jpg",
+   "pdf": "pdfs\\newspaper_019d4d5296ba8f1c21277d72fb0cf0db_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1",
+   "scan_dir": "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1-2b16e333",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.jpg",
+   "pdf": "pdfs\\newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_028a1dd5500fbd774e4d85df3c460c4d_1",
+   "scan_dir": "newspaper_028a1dd5500fbd774e4d85df3c460c4d_1-50a1fffe",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_028a1dd5500fbd774e4d85df3c460c4d_1.jpg",
+   "pdf": "pdfs\\newspaper_028a1dd5500fbd774e4d85df3c460c4d_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_02912feb79994ae24665509d964ad9ce_1",
+   "scan_dir": "newspaper_02912feb79994ae24665509d964ad9ce_1-9c6be79e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1424,
+     "height": 956
+    },
+    "rendered": {
+     "width": 3514,
+     "height": 2360
+    },
+    "model": {
+     "width": 3514,
+     "height": 2360
+    }
+   },
+   "image_path": "newspaper_02912feb79994ae24665509d964ad9ce_1.jpg",
+   "pdf": "pdfs\\newspaper_02912feb79994ae24665509d964ad9ce_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_06b975dbc47dc2dc2a3a1468293f6a2c_1",
+   "scan_dir": "newspaper_06b975dbc47dc2dc2a3a1468293f6a2c_1-c9308d76",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_06b975dbc47dc2dc2a3a1468293f6a2c_1.jpg",
+   "pdf": "pdfs\\newspaper_06b975dbc47dc2dc2a3a1468293f6a2c_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_0b86dae4d8f328a0e79d9ac394000dec_1",
+   "scan_dir": "newspaper_0b86dae4d8f328a0e79d9ac394000dec_1-1b0e0d24",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_0b86dae4d8f328a0e79d9ac394000dec_1.jpg",
+   "pdf": "pdfs\\newspaper_0b86dae4d8f328a0e79d9ac394000dec_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_0ce88e1e131aef7a59d0533be36870de_1",
+   "scan_dir": "newspaper_0ce88e1e131aef7a59d0533be36870de_1-ba28bc72",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_0ce88e1e131aef7a59d0533be36870de_1.jpg",
+   "pdf": "pdfs\\newspaper_0ce88e1e131aef7a59d0533be36870de_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_0cfb8a42b5d4194d8c73dba0cdf6256c_1",
+   "scan_dir": "newspaper_0cfb8a42b5d4194d8c73dba0cdf6256c_1-ef281d5f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_0cfb8a42b5d4194d8c73dba0cdf6256c_1.jpg",
+   "pdf": "pdfs\\newspaper_0cfb8a42b5d4194d8c73dba0cdf6256c_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_14b9d21f7fed39fb42849e9cde233930_1",
+   "scan_dir": "newspaper_14b9d21f7fed39fb42849e9cde233930_1-d6d410b3",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_14b9d21f7fed39fb42849e9cde233930_1.jpg",
+   "pdf": "pdfs\\newspaper_14b9d21f7fed39fb42849e9cde233930_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_17f81b80831d8d58564b9c8e3cf79261_1",
+   "scan_dir": "newspaper_17f81b80831d8d58564b9c8e3cf79261_1-311e951f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_17f81b80831d8d58564b9c8e3cf79261_1.jpg",
+   "pdf": "pdfs\\newspaper_17f81b80831d8d58564b9c8e3cf79261_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_2140e879cd0d3c1b5ba2ea1e3a75aab6_1",
+   "scan_dir": "newspaper_2140e879cd0d3c1b5ba2ea1e3a75aab6_1-fb7c45fe",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_2140e879cd0d3c1b5ba2ea1e3a75aab6_1.jpg",
+   "pdf": "pdfs\\newspaper_2140e879cd0d3c1b5ba2ea1e3a75aab6_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_26f4ed67a5e8922e7d42b35d317ebf4b_1",
+   "scan_dir": "newspaper_26f4ed67a5e8922e7d42b35d317ebf4b_1-50af7000",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_26f4ed67a5e8922e7d42b35d317ebf4b_1.jpg",
+   "pdf": "pdfs\\newspaper_26f4ed67a5e8922e7d42b35d317ebf4b_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_2a645bfcbcd473423581cd9f1ceb778e_1",
+   "scan_dir": "newspaper_2a645bfcbcd473423581cd9f1ceb778e_1-7966459f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_2a645bfcbcd473423581cd9f1ceb778e_1.jpg",
+   "pdf": "pdfs\\newspaper_2a645bfcbcd473423581cd9f1ceb778e_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_2c69e142b52dbb30cac2cb11d3eb25e5_1",
+   "scan_dir": "newspaper_2c69e142b52dbb30cac2cb11d3eb25e5_1-c353cb0e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_2c69e142b52dbb30cac2cb11d3eb25e5_1.jpg",
+   "pdf": "pdfs\\newspaper_2c69e142b52dbb30cac2cb11d3eb25e5_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_2de954934f60ac538c5bd5dc40833a61_1",
+   "scan_dir": "newspaper_2de954934f60ac538c5bd5dc40833a61_1-0250874a",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_2de954934f60ac538c5bd5dc40833a61_1.jpg",
+   "pdf": "pdfs\\newspaper_2de954934f60ac538c5bd5dc40833a61_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_35352f94db65d19e097395380498ec15_1",
+   "scan_dir": "newspaper_35352f94db65d19e097395380498ec15_1-39b56070",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_35352f94db65d19e097395380498ec15_1.jpg",
+   "pdf": "pdfs\\newspaper_35352f94db65d19e097395380498ec15_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_354720d92a632709eb8e61795b191390_1",
+   "scan_dir": "newspaper_354720d92a632709eb8e61795b191390_1-70142d43",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_354720d92a632709eb8e61795b191390_1.jpg",
+   "pdf": "pdfs\\newspaper_354720d92a632709eb8e61795b191390_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_35bdaa11dec104ccbdc9e19ac8527d21_1",
+   "scan_dir": "newspaper_35bdaa11dec104ccbdc9e19ac8527d21_1-c3a5a32f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_35bdaa11dec104ccbdc9e19ac8527d21_1.jpg",
+   "pdf": "pdfs\\newspaper_35bdaa11dec104ccbdc9e19ac8527d21_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_401c73055b88a62c479edd3d490cea8a_1",
+   "scan_dir": "newspaper_401c73055b88a62c479edd3d490cea8a_1-0e0c97f3",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_401c73055b88a62c479edd3d490cea8a_1.jpg",
+   "pdf": "pdfs\\newspaper_401c73055b88a62c479edd3d490cea8a_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_41a09cb64841567c220d8cac3c1cc193_1",
+   "scan_dir": "newspaper_41a09cb64841567c220d8cac3c1cc193_1-8bd4cc44",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_41a09cb64841567c220d8cac3c1cc193_1.jpg",
+   "pdf": "pdfs\\newspaper_41a09cb64841567c220d8cac3c1cc193_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_4790b51e8fa793743699647c09a93ccb_1",
+   "scan_dir": "newspaper_4790b51e8fa793743699647c09a93ccb_1-cdc3829a",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_4790b51e8fa793743699647c09a93ccb_1.jpg",
+   "pdf": "pdfs\\newspaper_4790b51e8fa793743699647c09a93ccb_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_4b4ad1f6cba28a4844d7ffa9306223a4_1",
+   "scan_dir": "newspaper_4b4ad1f6cba28a4844d7ffa9306223a4_1-8abf0aac",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_4b4ad1f6cba28a4844d7ffa9306223a4_1.jpg",
+   "pdf": "pdfs\\newspaper_4b4ad1f6cba28a4844d7ffa9306223a4_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_4cec63ef5a813c5a49dd8e577f3180e7_1",
+   "scan_dir": "newspaper_4cec63ef5a813c5a49dd8e577f3180e7_1-f960ccdc",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_4cec63ef5a813c5a49dd8e577f3180e7_1.jpg",
+   "pdf": "pdfs\\newspaper_4cec63ef5a813c5a49dd8e577f3180e7_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_571a946262006cd89199b67353c408b8_1",
+   "scan_dir": "newspaper_571a946262006cd89199b67353c408b8_1-25482878",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_571a946262006cd89199b67353c408b8_1.jpg",
+   "pdf": "pdfs\\newspaper_571a946262006cd89199b67353c408b8_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_5a8b7563a3262beecbecd7ddd3ef8827_1",
+   "scan_dir": "newspaper_5a8b7563a3262beecbecd7ddd3ef8827_1-892d6fbb",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_5a8b7563a3262beecbecd7ddd3ef8827_1.jpg",
+   "pdf": "pdfs\\newspaper_5a8b7563a3262beecbecd7ddd3ef8827_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_5aedf678eff04d8ebac3692d54103e19_1",
+   "scan_dir": "newspaper_5aedf678eff04d8ebac3692d54103e19_1-6de4da5d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_5aedf678eff04d8ebac3692d54103e19_1.jpg",
+   "pdf": "pdfs\\newspaper_5aedf678eff04d8ebac3692d54103e19_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_5bba361b0a5ca11745edbef140e2a431_1",
+   "scan_dir": "newspaper_5bba361b0a5ca11745edbef140e2a431_1-2fd39bcd",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_5bba361b0a5ca11745edbef140e2a431_1.jpg",
+   "pdf": "pdfs\\newspaper_5bba361b0a5ca11745edbef140e2a431_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_5c4e17f22cdc19d414a3c521f631c899_1",
+   "scan_dir": "newspaper_5c4e17f22cdc19d414a3c521f631c899_1-e4a46805",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_5c4e17f22cdc19d414a3c521f631c899_1.jpg",
+   "pdf": "pdfs\\newspaper_5c4e17f22cdc19d414a3c521f631c899_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_5d4b8e73eacbc6ecac0d7b1396fd01d7_1",
+   "scan_dir": "newspaper_5d4b8e73eacbc6ecac0d7b1396fd01d7_1-69e10271",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_5d4b8e73eacbc6ecac0d7b1396fd01d7_1.jpg",
+   "pdf": "pdfs\\newspaper_5d4b8e73eacbc6ecac0d7b1396fd01d7_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_5e8bcc55b922fd521a667c6ef01027d5_1",
+   "scan_dir": "newspaper_5e8bcc55b922fd521a667c6ef01027d5_1-9ac90ec6",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_5e8bcc55b922fd521a667c6ef01027d5_1.jpg",
+   "pdf": "pdfs\\newspaper_5e8bcc55b922fd521a667c6ef01027d5_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_635e4e6a64cf2ccfb2560f9b6dfe24b5_1",
+   "scan_dir": "newspaper_635e4e6a64cf2ccfb2560f9b6dfe24b5_1-848fb279",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_635e4e6a64cf2ccfb2560f9b6dfe24b5_1.jpg",
+   "pdf": "pdfs\\newspaper_635e4e6a64cf2ccfb2560f9b6dfe24b5_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_6d2b5f833fe20785bc395f757524cb05_1",
+   "scan_dir": "newspaper_6d2b5f833fe20785bc395f757524cb05_1-4016bf42",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_6d2b5f833fe20785bc395f757524cb05_1.jpg",
+   "pdf": "pdfs\\newspaper_6d2b5f833fe20785bc395f757524cb05_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_6fa919bfb48695bc785d9f326e3cdd36_1",
+   "scan_dir": "newspaper_6fa919bfb48695bc785d9f326e3cdd36_1-b1dd8982",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_6fa919bfb48695bc785d9f326e3cdd36_1.jpg",
+   "pdf": "pdfs\\newspaper_6fa919bfb48695bc785d9f326e3cdd36_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_73fc8720a9b2798307ba43a8b8e47b5e_1",
+   "scan_dir": "newspaper_73fc8720a9b2798307ba43a8b8e47b5e_1-6b585b3a",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_73fc8720a9b2798307ba43a8b8e47b5e_1.jpg",
+   "pdf": "pdfs\\newspaper_73fc8720a9b2798307ba43a8b8e47b5e_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_74fc3b01b2cc4a7e6ca0f1af2b998187_1",
+   "scan_dir": "newspaper_74fc3b01b2cc4a7e6ca0f1af2b998187_1-0ed72eca",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_74fc3b01b2cc4a7e6ca0f1af2b998187_1.jpg",
+   "pdf": "pdfs\\newspaper_74fc3b01b2cc4a7e6ca0f1af2b998187_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_75bb60c3be9959e1be400d6b8281fea1_1",
+   "scan_dir": "newspaper_75bb60c3be9959e1be400d6b8281fea1_1-37ca7fe2",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_75bb60c3be9959e1be400d6b8281fea1_1.jpg",
+   "pdf": "pdfs\\newspaper_75bb60c3be9959e1be400d6b8281fea1_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_7746db2ad2ea24c827eac60244375bbf_1",
+   "scan_dir": "newspaper_7746db2ad2ea24c827eac60244375bbf_1-be999c74",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_7746db2ad2ea24c827eac60244375bbf_1.jpg",
+   "pdf": "pdfs\\newspaper_7746db2ad2ea24c827eac60244375bbf_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_8076765115f6c402e81c6bfb48139bc2_1",
+   "scan_dir": "newspaper_8076765115f6c402e81c6bfb48139bc2_1-3a95460a",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_8076765115f6c402e81c6bfb48139bc2_1.jpg",
+   "pdf": "pdfs\\newspaper_8076765115f6c402e81c6bfb48139bc2_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_95f2062735b213b3d7d471a48d5ec71b_1",
+   "scan_dir": "newspaper_95f2062735b213b3d7d471a48d5ec71b_1-4de9f28a",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_95f2062735b213b3d7d471a48d5ec71b_1.jpg",
+   "pdf": "pdfs\\newspaper_95f2062735b213b3d7d471a48d5ec71b_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_9729b78cbf9f2820b9f257fff7e3171b_1",
+   "scan_dir": "newspaper_9729b78cbf9f2820b9f257fff7e3171b_1-4d2c06aa",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_9729b78cbf9f2820b9f257fff7e3171b_1.jpg",
+   "pdf": "pdfs\\newspaper_9729b78cbf9f2820b9f257fff7e3171b_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_9bb9e05d38b370251a4b0a8d070d1d55_1",
+   "scan_dir": "newspaper_9bb9e05d38b370251a4b0a8d070d1d55_1-6bcf9c3b",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_9bb9e05d38b370251a4b0a8d070d1d55_1.jpg",
+   "pdf": "pdfs\\newspaper_9bb9e05d38b370251a4b0a8d070d1d55_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_9eafddb83b0f7f99c42ff364b080e2c1_1",
+   "scan_dir": "newspaper_9eafddb83b0f7f99c42ff364b080e2c1_1-fcea3e3f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_9eafddb83b0f7f99c42ff364b080e2c1_1.jpg",
+   "pdf": "pdfs\\newspaper_9eafddb83b0f7f99c42ff364b080e2c1_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_a105e3b0ddb10be6a596f76407c79180_1",
+   "scan_dir": "newspaper_a105e3b0ddb10be6a596f76407c79180_1-5879890b",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1424,
+     "height": 956
+    },
+    "rendered": {
+     "width": 3514,
+     "height": 2360
+    },
+    "model": {
+     "width": 3514,
+     "height": 2360
+    }
+   },
+   "image_path": "newspaper_a105e3b0ddb10be6a596f76407c79180_1.jpg",
+   "pdf": "pdfs\\newspaper_a105e3b0ddb10be6a596f76407c79180_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_a15057349a86850e55b084c235fa2f22_1",
+   "scan_dir": "newspaper_a15057349a86850e55b084c235fa2f22_1-7f819f3c",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_a15057349a86850e55b084c235fa2f22_1.jpg",
+   "pdf": "pdfs\\newspaper_a15057349a86850e55b084c235fa2f22_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_a7666484ee01a811247e52f784164cbb_1",
+   "scan_dir": "newspaper_a7666484ee01a811247e52f784164cbb_1-bd4361e0",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_a7666484ee01a811247e52f784164cbb_1.jpg",
+   "pdf": "pdfs\\newspaper_a7666484ee01a811247e52f784164cbb_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_a9c9e3816aa5cb6866d02c10273dc665_1",
+   "scan_dir": "newspaper_a9c9e3816aa5cb6866d02c10273dc665_1-81a0be2e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_a9c9e3816aa5cb6866d02c10273dc665_1.jpg",
+   "pdf": "pdfs\\newspaper_a9c9e3816aa5cb6866d02c10273dc665_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_b615618f3cdb0f2c13ffb5865dea799c_1",
+   "scan_dir": "newspaper_b615618f3cdb0f2c13ffb5865dea799c_1-dbd56cbb",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1424,
+     "height": 956
+    },
+    "rendered": {
+     "width": 3514,
+     "height": 2360
+    },
+    "model": {
+     "width": 3514,
+     "height": 2360
+    }
+   },
+   "image_path": "newspaper_b615618f3cdb0f2c13ffb5865dea799c_1.jpg",
+   "pdf": "pdfs\\newspaper_b615618f3cdb0f2c13ffb5865dea799c_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_b95d1d8eb0d756cc94a5d8b5db3cf69b_1",
+   "scan_dir": "newspaper_b95d1d8eb0d756cc94a5d8b5db3cf69b_1-311a1df9",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_b95d1d8eb0d756cc94a5d8b5db3cf69b_1.jpg",
+   "pdf": "pdfs\\newspaper_b95d1d8eb0d756cc94a5d8b5db3cf69b_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_bd75af5f4791aa56ef05ce2443e8a7e0_1",
+   "scan_dir": "newspaper_bd75af5f4791aa56ef05ce2443e8a7e0_1-546b6553",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_bd75af5f4791aa56ef05ce2443e8a7e0_1.jpg",
+   "pdf": "pdfs\\newspaper_bd75af5f4791aa56ef05ce2443e8a7e0_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_c0794b9574ba55a589418fa1ae160b9a_1",
+   "scan_dir": "newspaper_c0794b9574ba55a589418fa1ae160b9a_1-7e8e088d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_c0794b9574ba55a589418fa1ae160b9a_1.jpg",
+   "pdf": "pdfs\\newspaper_c0794b9574ba55a589418fa1ae160b9a_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_c3c88b76543e2caf044c9f7689f23ec9_1",
+   "scan_dir": "newspaper_c3c88b76543e2caf044c9f7689f23ec9_1-68606ae6",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_c3c88b76543e2caf044c9f7689f23ec9_1.jpg",
+   "pdf": "pdfs\\newspaper_c3c88b76543e2caf044c9f7689f23ec9_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_c8e8e00e1b1a70aa44afd1fbdaf59430_1",
+   "scan_dir": "newspaper_c8e8e00e1b1a70aa44afd1fbdaf59430_1-04d3c69b",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_c8e8e00e1b1a70aa44afd1fbdaf59430_1.jpg",
+   "pdf": "pdfs\\newspaper_c8e8e00e1b1a70aa44afd1fbdaf59430_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_c9147e07a59fdd1194da22f2ec07dd1c_1",
+   "scan_dir": "newspaper_c9147e07a59fdd1194da22f2ec07dd1c_1-1499ce41",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_c9147e07a59fdd1194da22f2ec07dd1c_1.jpg",
+   "pdf": "pdfs\\newspaper_c9147e07a59fdd1194da22f2ec07dd1c_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_c9e9b3e7b8a5f5a5b59304a9924c41b9_1",
+   "scan_dir": "newspaper_c9e9b3e7b8a5f5a5b59304a9924c41b9_1-5e63be98",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_c9e9b3e7b8a5f5a5b59304a9924c41b9_1.jpg",
+   "pdf": "pdfs\\newspaper_c9e9b3e7b8a5f5a5b59304a9924c41b9_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_015",
+   "scan_dir": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_015-f185c24f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 528,
+     "height": 1092
+    },
+    "rendered": {
+     "width": 2002,
+     "height": 4141
+    },
+    "model": {
+     "width": 2002,
+     "height": 4141
+    }
+   },
+   "image_path": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_015.png",
+   "pdf": "pdfs\\newspaper_Chicago Tribune_0801@magazinesclubnew_page_015.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019",
+   "scan_dir": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019-15a91afe",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 528,
+     "height": 1092
+    },
+    "rendered": {
+     "width": 2002,
+     "height": 4141
+    },
+    "model": {
+     "width": 2002,
+     "height": 4141
+    }
+   },
+   "image_path": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "pdf": "pdfs\\newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_032",
+   "scan_dir": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_032-1230c3be",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 528,
+     "height": 1092
+    },
+    "rendered": {
+     "width": 2002,
+     "height": 4141
+    },
+    "model": {
+     "width": 2002,
+     "height": 4141
+    }
+   },
+   "image_path": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_032.png",
+   "pdf": "pdfs\\newspaper_Chicago Tribune_0801@magazinesclubnew_page_032.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_d1716a12000a38e1e4c0bf66309558db_1",
+   "scan_dir": "newspaper_d1716a12000a38e1e4c0bf66309558db_1-fd7dd495",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_d1716a12000a38e1e4c0bf66309558db_1.jpg",
+   "pdf": "pdfs\\newspaper_d1716a12000a38e1e4c0bf66309558db_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_d6cd76e5afe881630173bd4921531a4b_1",
+   "scan_dir": "newspaper_d6cd76e5afe881630173bd4921531a4b_1-d8eec194",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_d6cd76e5afe881630173bd4921531a4b_1.jpg",
+   "pdf": "pdfs\\newspaper_d6cd76e5afe881630173bd4921531a4b_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_d84e38031cf03d3fd4649910cf0ecce1_1",
+   "scan_dir": "newspaper_d84e38031cf03d3fd4649910cf0ecce1_1-8b5a076c",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_d84e38031cf03d3fd4649910cf0ecce1_1.jpg",
+   "pdf": "pdfs\\newspaper_d84e38031cf03d3fd4649910cf0ecce1_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_Daily Mail_2022-08-01@magazinesclubnew_page_009",
+   "scan_dir": "newspaper_Daily Mail_2022-08-01@magazinesclubnew_page_009-eb9cdd55",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1152,
+     "height": 1493
+    },
+    "rendered": {
+     "width": 2529,
+     "height": 3278
+    },
+    "model": {
+     "width": 2529,
+     "height": 3278
+    }
+   },
+   "image_path": "newspaper_Daily Mail_2022-08-01@magazinesclubnew_page_009.png",
+   "pdf": "pdfs\\newspaper_Daily Mail_2022-08-01@magazinesclubnew_page_009.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_Daily Star 2025-1-8@magazinesclubnew_page_060",
+   "scan_dir": "newspaper_Daily Star 2025-1-8@magazinesclubnew_page_060-3d0fda59",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 535,
+     "height": 680
+    },
+    "rendered": {
+     "width": 2229,
+     "height": 2835
+    },
+    "model": {
+     "width": 2229,
+     "height": 2835
+    }
+   },
+   "image_path": "newspaper_Daily Star 2025-1-8@magazinesclubnew_page_060.png",
+   "pdf": "pdfs\\newspaper_Daily Star 2025-1-8@magazinesclubnew_page_060.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_dd99f17cad0992a54fdf424b1c5e86ee_1",
+   "scan_dir": "newspaper_dd99f17cad0992a54fdf424b1c5e86ee_1-fc988991",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_dd99f17cad0992a54fdf424b1c5e86ee_1.jpg",
+   "pdf": "pdfs\\newspaper_dd99f17cad0992a54fdf424b1c5e86ee_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_e567840b2e327602422573ccdc1c4275_1",
+   "scan_dir": "newspaper_e567840b2e327602422573ccdc1c4275_1-319ddbb9",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_e567840b2e327602422573ccdc1c4275_1.jpg",
+   "pdf": "pdfs\\newspaper_e567840b2e327602422573ccdc1c4275_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_e6083de4647ef28434cb6a598b073ae4_1",
+   "scan_dir": "newspaper_e6083de4647ef28434cb6a598b073ae4_1-7d2e1f9f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_e6083de4647ef28434cb6a598b073ae4_1.jpg",
+   "pdf": "pdfs\\newspaper_e6083de4647ef28434cb6a598b073ae4_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_e62730aaeb9b509119e0c3699ac18201_1",
+   "scan_dir": "newspaper_e62730aaeb9b509119e0c3699ac18201_1-45b59daf",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_e62730aaeb9b509119e0c3699ac18201_1.jpg",
+   "pdf": "pdfs\\newspaper_e62730aaeb9b509119e0c3699ac18201_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_e6ddb0246224fb8bd8788e6cc7839021_1",
+   "scan_dir": "newspaper_e6ddb0246224fb8bd8788e6cc7839021_1-a7b5ce0d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_e6ddb0246224fb8bd8788e6cc7839021_1.jpg",
+   "pdf": "pdfs\\newspaper_e6ddb0246224fb8bd8788e6cc7839021_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_e7246d706077d2064a6e667dfc73925e_1",
+   "scan_dir": "newspaper_e7246d706077d2064a6e667dfc73925e_1-d8aa17cb",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_e7246d706077d2064a6e667dfc73925e_1.jpg",
+   "pdf": "pdfs\\newspaper_e7246d706077d2064a6e667dfc73925e_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_e81b9b3561d4d4e865ff6713782fd432_1",
+   "scan_dir": "newspaper_e81b9b3561d4d4e865ff6713782fd432_1-590340d3",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_e81b9b3561d4d4e865ff6713782fd432_1.jpg",
+   "pdf": "pdfs\\newspaper_e81b9b3561d4d4e865ff6713782fd432_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_eb569707cf5621d4c71d5898216cdb17_1",
+   "scan_dir": "newspaper_eb569707cf5621d4c71d5898216cdb17_1-7e34044c",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_eb569707cf5621d4c71d5898216cdb17_1.jpg",
+   "pdf": "pdfs\\newspaper_eb569707cf5621d4c71d5898216cdb17_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_ef5c785d9cc21ccf6b73d143f231b5c5_1",
+   "scan_dir": "newspaper_ef5c785d9cc21ccf6b73d143f231b5c5_1-474de190",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_ef5c785d9cc21ccf6b73d143f231b5c5_1.jpg",
+   "pdf": "pdfs\\newspaper_ef5c785d9cc21ccf6b73d143f231b5c5_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_f36d00fe3544ae72725aac9dc7f19aa8_1",
+   "scan_dir": "newspaper_f36d00fe3544ae72725aac9dc7f19aa8_1-69406705",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_f36d00fe3544ae72725aac9dc7f19aa8_1.jpg",
+   "pdf": "pdfs\\newspaper_f36d00fe3544ae72725aac9dc7f19aa8_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_fe2c8b45b2a086cd75984640bb3080e1_1",
+   "scan_dir": "newspaper_fe2c8b45b2a086cd75984640bb3080e1_1-1ed648b2",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 661,
+     "height": 945
+    },
+    "rendered": {
+     "width": 2408,
+     "height": 3444
+    },
+    "model": {
+     "width": 2408,
+     "height": 3444
+    }
+   },
+   "image_path": "newspaper_fe2c8b45b2a086cd75984640bb3080e1_1.jpg",
+   "pdf": "pdfs\\newspaper_fe2c8b45b2a086cd75984640bb3080e1_1.pdf",
+   "source_category": "newspaper",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_NY Daily News_August 1@magazinesclubnew_page_007",
+   "scan_dir": "newspaper_NY Daily News_August 1@magazinesclubnew_page_007-b662e8b7",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 468,
+     "height": 600
+    },
+    "rendered": {
+     "width": 1950,
+     "height": 2500
+    },
+    "model": {
+     "width": 1950,
+     "height": 2500
+    }
+   },
+   "image_path": "newspaper_NY Daily News_August 1@magazinesclubnew_page_007.png",
+   "pdf": "pdfs\\newspaper_NY Daily News_August 1@magazinesclubnew_page_007.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014",
+   "scan_dir": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014-06f29aea",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 384,
+     "height": 804
+    },
+    "rendered": {
+     "width": 1600,
+     "height": 3350
+    },
+    "model": {
+     "width": 1600,
+     "height": 3350
+    }
+   },
+   "image_path": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png",
+   "pdf": "pdfs\\newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_018",
+   "scan_dir": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_018-c374eda1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 384,
+     "height": 804
+    },
+    "rendered": {
+     "width": 1600,
+     "height": 3350
+    },
+    "model": {
+     "width": 1600,
+     "height": 3350
+    }
+   },
+   "image_path": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_018.png",
+   "pdf": "pdfs\\newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_018.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Guardian UK_0801@magazinesclubnew_page_051",
+   "scan_dir": "newspaper_The Guardian UK_0801@magazinesclubnew_page_051-f6ee8508",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1630,
+     "height": 2048
+    },
+    "rendered": {
+     "width": 2569,
+     "height": 3228
+    },
+    "model": {
+     "width": 2569,
+     "height": 3228
+    }
+   },
+   "image_path": "newspaper_The Guardian UK_0801@magazinesclubnew_page_051.png",
+   "pdf": "pdfs\\newspaper_The Guardian UK_0801@magazinesclubnew_page_051.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Guardian UK_0801@magazinesclubnew_page_052",
+   "scan_dir": "newspaper_The Guardian UK_0801@magazinesclubnew_page_052-e95ebafe",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1630,
+     "height": 2048
+    },
+    "rendered": {
+     "width": 2569,
+     "height": 3228
+    },
+    "model": {
+     "width": 2569,
+     "height": 3228
+    }
+   },
+   "image_path": "newspaper_The Guardian UK_0801@magazinesclubnew_page_052.png",
+   "pdf": "pdfs\\newspaper_The Guardian UK_0801@magazinesclubnew_page_052.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Guardian UK_0801@magazinesclubnew_page_061",
+   "scan_dir": "newspaper_The Guardian UK_0801@magazinesclubnew_page_061-0c7b1bce",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1630,
+     "height": 2048
+    },
+    "rendered": {
+     "width": 2569,
+     "height": 3228
+    },
+    "model": {
+     "width": 2569,
+     "height": 3228
+    }
+   },
+   "image_path": "newspaper_The Guardian UK_0801@magazinesclubnew_page_061.png",
+   "pdf": "pdfs\\newspaper_The Guardian UK_0801@magazinesclubnew_page_061.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Times UK_0801@magazinesclubnew_page_020",
+   "scan_dir": "newspaper_The Times UK_0801@magazinesclubnew_page_020-f5ff5ffc",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 432,
+     "height": 549
+    },
+    "rendered": {
+     "width": 1798,
+     "height": 2289
+    },
+    "model": {
+     "width": 1798,
+     "height": 2289
+    }
+   },
+   "image_path": "newspaper_The Times UK_0801@magazinesclubnew_page_020.png",
+   "pdf": "pdfs\\newspaper_The Times UK_0801@magazinesclubnew_page_020.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Times UK_0801@magazinesclubnew_page_031",
+   "scan_dir": "newspaper_The Times UK_0801@magazinesclubnew_page_031-79523d6f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 432,
+     "height": 549
+    },
+    "rendered": {
+     "width": 1798,
+     "height": 2289
+    },
+    "model": {
+     "width": 1798,
+     "height": 2289
+    }
+   },
+   "image_path": "newspaper_The Times UK_0801@magazinesclubnew_page_031.png",
+   "pdf": "pdfs\\newspaper_The Times UK_0801@magazinesclubnew_page_031.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Times UK_0801@magazinesclubnew_page_083",
+   "scan_dir": "newspaper_The Times UK_0801@magazinesclubnew_page_083-6ad445f4",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 432,
+     "height": 549
+    },
+    "rendered": {
+     "width": 1798,
+     "height": 2289
+    },
+    "model": {
+     "width": 1798,
+     "height": 2289
+    }
+   },
+   "image_path": "newspaper_The Times UK_0801@magazinesclubnew_page_083.png",
+   "pdf": "pdfs\\newspaper_The Times UK_0801@magazinesclubnew_page_083.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_004",
+   "scan_dir": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_004-f30bcd80",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 502,
+     "height": 1005
+    },
+    "rendered": {
+     "width": 2035,
+     "height": 4075
+    },
+    "model": {
+     "width": 2035,
+     "height": 4075
+    }
+   },
+   "image_path": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_004.png",
+   "pdf": "pdfs\\newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_004.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_009",
+   "scan_dir": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_009-61f0e68e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 502,
+     "height": 1005
+    },
+    "rendered": {
+     "width": 2035,
+     "height": 4075
+    },
+    "model": {
+     "width": 2035,
+     "height": 4075
+    }
+   },
+   "image_path": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_009.png",
+   "pdf": "pdfs\\newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_009.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018",
+   "scan_dir": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018-cd894b0b",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 502,
+     "height": 1005
+    },
+    "rendered": {
+     "width": 2035,
+     "height": 4075
+    },
+    "model": {
+     "width": 2035,
+     "height": 4075
+    }
+   },
+   "image_path": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png",
+   "pdf": "pdfs\\newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_003",
+   "scan_dir": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_003-8c810ff1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 575,
+     "height": 1042
+    },
+    "rendered": {
+     "width": 2138,
+     "height": 3878
+    },
+    "model": {
+     "width": 2138,
+     "height": 3878
+    }
+   },
+   "image_path": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_003.png",
+   "pdf": "pdfs\\newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_003.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025",
+   "scan_dir": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025-d467cbe4",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 575,
+     "height": 1042
+    },
+    "rendered": {
+     "width": 2138,
+     "height": 3878
+    },
+    "model": {
+     "width": 2138,
+     "height": 3878
+    }
+   },
+   "image_path": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "pdf": "pdfs\\newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_033",
+   "scan_dir": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_033-705e1d8c",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 575,
+     "height": 1042
+    },
+    "rendered": {
+     "width": 2138,
+     "height": 3878
+    },
+    "model": {
+     "width": 2138,
+     "height": 3878
+    }
+   },
+   "image_path": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_033.png",
+   "pdf": "pdfs\\newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_033.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_TheGuardianUS-2025-1-8@magazinesclubnew_page_033",
+   "scan_dir": "newspaper_TheGuardianUS-2025-1-8@magazinesclubnew_page_033-f374eecf",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 1374,
+     "height": 2067
+    },
+    "rendered": {
+     "width": 2347,
+     "height": 3533
+    },
+    "model": {
+     "width": 2347,
+     "height": 3533
+    }
+   },
+   "image_path": "newspaper_TheGuardianUS-2025-1-8@magazinesclubnew_page_033.png",
+   "pdf": "pdfs\\newspaper_TheGuardianUS-2025-1-8@magazinesclubnew_page_033.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_009",
+   "scan_dir": "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_009-d7e3e554",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 645,
+     "height": 1140
+    },
+    "rendered": {
+     "width": 2167,
+     "height": 3826
+    },
+    "model": {
+     "width": 2167,
+     "height": 3826
+    }
+   },
+   "image_path": "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_009.png",
+   "pdf": "pdfs\\newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_009.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_042",
+   "scan_dir": "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_042-dd85797d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 672,
+     "height": 1136
+    },
+    "rendered": {
+     "width": 2214,
+     "height": 3744
+    },
+    "model": {
+     "width": 2214,
+     "height": 3744
+    }
+   },
+   "image_path": "newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_042.png",
+   "pdf": "pdfs\\newspaper_TheWashingtonPost-2025-01-08@magazinesclubnew_page_042.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "newspaper_USAToday-2025-01-08@magazinesclubnew_page_012",
+   "scan_dir": "newspaper_USAToday-2025-01-08@magazinesclubnew_page_012-6f1b1999",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 528,
+     "height": 1020
+    },
+    "rendered": {
+     "width": 2072,
+     "height": 4002
+    },
+    "model": {
+     "width": 2072,
+     "height": 4002
+    }
+   },
+   "image_path": "newspaper_USAToday-2025-01-08@magazinesclubnew_page_012.png",
+   "pdf": "pdfs\\newspaper_USAToday-2025-01-08@magazinesclubnew_page_012.pdf",
+   "source_category": "newspaper",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "notes_1ba14cb325bc448f7201b20502ecf2b5_14",
+   "scan_dir": "notes_1ba14cb325bc448f7201b20502ecf2b5_14-cd604c1f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 344,
+     "height": 486
+    },
+    "rendered": {
+     "width": 1434,
+     "height": 2026
+    },
+    "model": {
+     "width": 1434,
+     "height": 2026
+    }
+   },
+   "image_path": "notes_1ba14cb325bc448f7201b20502ecf2b5_14.jpg",
+   "pdf": "pdfs\\notes_1ba14cb325bc448f7201b20502ecf2b5_14.pdf",
+   "source_category": "note",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "notes_f7f010b78016aeebd76e56d9283eb67f_5",
+   "scan_dir": "notes_f7f010b78016aeebd76e56d9283eb67f_5-bdfdd4bd",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 344,
+     "height": 486
+    },
+    "rendered": {
+     "width": 1432,
+     "height": 2024
+    },
+    "model": {
+     "width": 1432,
+     "height": 2024
+    }
+   },
+   "image_path": "notes_f7f010b78016aeebd76e56d9283eb67f_5.jpg",
+   "pdf": "pdfs\\notes_f7f010b78016aeebd76e56d9283eb67f_5.pdf",
+   "source_category": "note",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7",
+   "scan_dir": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7-83319d3d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png",
+   "pdf": "pdfs\\page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-141c2c16-4b50-4c3b-a64b-3e2fd8bb4002",
+   "scan_dir": "page-141c2c16-4b50-4c3b-a64b-3e2fd8bb4002-fb8c93da",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "page-141c2c16-4b50-4c3b-a64b-3e2fd8bb4002.png",
+   "pdf": "pdfs\\page-141c2c16-4b50-4c3b-a64b-3e2fd8bb4002.pdf",
+   "source_category": "book",
+   "language": "en_ch_mixed",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8",
+   "scan_dir": "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8-f4786f79",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 672
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2800
+    },
+    "model": {
+     "width": 1700,
+     "height": 2800
+    }
+   },
+   "image_path": "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8.png",
+   "pdf": "pdfs\\page-1955f827-fb35-4806-b3a4-463d9e0d6cc8.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-1ce383cc-63a3-43c9-b6f2-7498a952b65c",
+   "scan_dir": "page-1ce383cc-63a3-43c9-b6f2-7498a952b65c-223c3022",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-1ce383cc-63a3-43c9-b6f2-7498a952b65c.png",
+   "pdf": "pdfs\\page-1ce383cc-63a3-43c9-b6f2-7498a952b65c.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-213e6a57-ba81-4afb-8184-2e1cf2a7664d",
+   "scan_dir": "page-213e6a57-ba81-4afb-8184-2e1cf2a7664d-ad18f7f2",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 529
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2206
+    },
+    "model": {
+     "width": 1700,
+     "height": 2206
+    }
+   },
+   "image_path": "page-213e6a57-ba81-4afb-8184-2e1cf2a7664d.png",
+   "pdf": "pdfs\\page-213e6a57-ba81-4afb-8184-2e1cf2a7664d.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-27a46d41-49b5-4562-a546-6cbbafd23a81",
+   "scan_dir": "page-27a46d41-49b5-4562-a546-6cbbafd23a81-9e2a051c",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "page-27a46d41-49b5-4562-a546-6cbbafd23a81.png",
+   "pdf": "pdfs\\page-27a46d41-49b5-4562-a546-6cbbafd23a81.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96",
+   "scan_dir": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96-2730ff90",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png",
+   "pdf": "pdfs\\page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-38fc7c6b-80ed-46be-bb53-29986a63ad3e",
+   "scan_dir": "page-38fc7c6b-80ed-46be-bb53-29986a63ad3e-5ad8473f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 402,
+     "height": 522
+    },
+    "rendered": {
+     "width": 1675,
+     "height": 2175
+    },
+    "model": {
+     "width": 1675,
+     "height": 2175
+    }
+   },
+   "image_path": "page-38fc7c6b-80ed-46be-bb53-29986a63ad3e.png",
+   "pdf": "pdfs\\page-38fc7c6b-80ed-46be-bb53-29986a63ad3e.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-39f38730-0ae6-4cfe-8b99-c65d06d09544",
+   "scan_dir": "page-39f38730-0ae6-4cfe-8b99-c65d06d09544-3d73b59e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-39f38730-0ae6-4cfe-8b99-c65d06d09544.png",
+   "pdf": "pdfs\\page-39f38730-0ae6-4cfe-8b99-c65d06d09544.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-3ecc67a1-9b19-4fb9-b74d-acbb73db5c53",
+   "scan_dir": "page-3ecc67a1-9b19-4fb9-b74d-acbb73db5c53-29d0bb4f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 267,
+     "height": 391
+    },
+    "rendered": {
+     "width": 1111,
+     "height": 1631
+    },
+    "model": {
+     "width": 1111,
+     "height": 1631
+    }
+   },
+   "image_path": "page-3ecc67a1-9b19-4fb9-b74d-acbb73db5c53.png",
+   "pdf": "pdfs\\page-3ecc67a1-9b19-4fb9-b74d-acbb73db5c53.pdf",
+   "source_category": "historical_document",
+   "language": "traditional_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-49746735-505c-442d-b3f6-c55b1bf9e48b",
+   "scan_dir": "page-49746735-505c-442d-b3f6-c55b1bf9e48b-99a534c4",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-49746735-505c-442d-b3f6-c55b1bf9e48b.png",
+   "pdf": "pdfs\\page-49746735-505c-442d-b3f6-c55b1bf9e48b.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "page-50ffe5d2-cd27-449a-a813-d4a8c44b12ea",
+   "scan_dir": "page-50ffe5d2-cd27-449a-a813-d4a8c44b12ea-4fa2a47e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 527
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2197
+    },
+    "model": {
+     "width": 1654,
+     "height": 2197
+    }
+   },
+   "image_path": "page-50ffe5d2-cd27-449a-a813-d4a8c44b12ea.png",
+   "pdf": "pdfs\\page-50ffe5d2-cd27-449a-a813-d4a8c44b12ea.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-56023e3d-ae9b-486d-b7bb-419624d18356",
+   "scan_dir": "page-56023e3d-ae9b-486d-b7bb-419624d18356-6c9decc7",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "page-56023e3d-ae9b-486d-b7bb-419624d18356.png",
+   "pdf": "pdfs\\page-56023e3d-ae9b-486d-b7bb-419624d18356.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "page-69c15957-4d6d-485c-a244-04a1a8d29d37",
+   "scan_dir": "page-69c15957-4d6d-485c-a244-04a1a8d29d37-2b87f452",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 539
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2245
+    },
+    "model": {
+     "width": 1654,
+     "height": 2245
+    }
+   },
+   "image_path": "page-69c15957-4d6d-485c-a244-04a1a8d29d37.png",
+   "pdf": "pdfs\\page-69c15957-4d6d-485c-a244-04a1a8d29d37.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-7050793e-109f-4066-be91-107f94b617b9",
+   "scan_dir": "page-7050793e-109f-4066-be91-107f94b617b9-36144d78",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-7050793e-109f-4066-be91-107f94b617b9.png",
+   "pdf": "pdfs\\page-7050793e-109f-4066-be91-107f94b617b9.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-91b20bf2-3ad5-41f4-b739-4cc4b18ab1eb",
+   "scan_dir": "page-91b20bf2-3ad5-41f4-b739-4cc4b18ab1eb-371ff5d5",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 381,
+     "height": 538
+    },
+    "rendered": {
+     "width": 1587,
+     "height": 2240
+    },
+    "model": {
+     "width": 1587,
+     "height": 2240
+    }
+   },
+   "image_path": "page-91b20bf2-3ad5-41f4-b739-4cc4b18ab1eb.png",
+   "pdf": "pdfs\\page-91b20bf2-3ad5-41f4-b739-4cc4b18ab1eb.pdf",
+   "source_category": "academic_literature",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-9390721f-e06c-47ea-8b21-0f27c72df7b7",
+   "scan_dir": "page-9390721f-e06c-47ea-8b21-0f27c72df7b7-ed069fda",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-9390721f-e06c-47ea-8b21-0f27c72df7b7.png",
+   "pdf": "pdfs\\page-9390721f-e06c-47ea-8b21-0f27c72df7b7.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41",
+   "scan_dir": "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41-1fe2a3cb",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41.png",
+   "pdf": "pdfs\\page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-9d14b692-a01c-45bd-9726-929bd3c4b726",
+   "scan_dir": "page-9d14b692-a01c-45bd-9726-929bd3c4b726-e99fd6cd",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 339,
+     "height": 482
+    },
+    "rendered": {
+     "width": 1413,
+     "height": 2007
+    },
+    "model": {
+     "width": 1413,
+     "height": 2007
+    }
+   },
+   "image_path": "page-9d14b692-a01c-45bd-9726-929bd3c4b726.png",
+   "pdf": "pdfs\\page-9d14b692-a01c-45bd-9726-929bd3c4b726.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-aae359c6-5e6e-4e18-9187-2e9d55b6e9bd",
+   "scan_dir": "page-aae359c6-5e6e-4e18-9187-2e9d55b6e9bd-94d32d4d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-aae359c6-5e6e-4e18-9187-2e9d55b6e9bd.png",
+   "pdf": "pdfs\\page-aae359c6-5e6e-4e18-9187-2e9d55b6e9bd.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983",
+   "scan_dir": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983-9b3444b1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png",
+   "pdf": "pdfs\\page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-af9aded3-1faf-4d12-ad5f-28a66d0a9114",
+   "scan_dir": "page-af9aded3-1faf-4d12-ad5f-28a66d0a9114-f264e0f5",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 344,
+     "height": 486
+    },
+    "rendered": {
+     "width": 1433,
+     "height": 2024
+    },
+    "model": {
+     "width": 1433,
+     "height": 2024
+    }
+   },
+   "image_path": "page-af9aded3-1faf-4d12-ad5f-28a66d0a9114.png",
+   "pdf": "pdfs\\page-af9aded3-1faf-4d12-ad5f-28a66d0a9114.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "page-b13fef06-6ae9-4b2d-a948-0340e03f97ce",
+   "scan_dir": "page-b13fef06-6ae9-4b2d-a948-0340e03f97ce-4fc5733d",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 344,
+     "height": 486
+    },
+    "rendered": {
+     "width": 1433,
+     "height": 2024
+    },
+    "model": {
+     "width": 1433,
+     "height": 2024
+    }
+   },
+   "image_path": "page-b13fef06-6ae9-4b2d-a948-0340e03f97ce.png",
+   "pdf": "pdfs\\page-b13fef06-6ae9-4b2d-a948-0340e03f97ce.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46",
+   "scan_dir": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46-c0dfd134",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 529
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2205
+    },
+    "model": {
+     "width": 1654,
+     "height": 2205
+    }
+   },
+   "image_path": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46.png",
+   "pdf": "pdfs\\page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "page-b2cc5729-a6b2-49ba-af62-788bf069b617",
+   "scan_dir": "page-b2cc5729-a6b2-49ba-af62-788bf069b617-1d6b71cd",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-b2cc5729-a6b2-49ba-af62-788bf069b617.png",
+   "pdf": "pdfs\\page-b2cc5729-a6b2-49ba-af62-788bf069b617.pdf",
+   "source_category": "book",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-b342f5e6-cc5a-4920-b1b5-83f96bc476d8",
+   "scan_dir": "page-b342f5e6-cc5a-4920-b1b5-83f96bc476d8-e3e0695f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 157,
+     "height": 238
+    },
+    "rendered": {
+     "width": 656,
+     "height": 992
+    },
+    "model": {
+     "width": 656,
+     "height": 992
+    }
+   },
+   "image_path": "page-b342f5e6-cc5a-4920-b1b5-83f96bc476d8.png",
+   "pdf": "pdfs\\page-b342f5e6-cc5a-4920-b1b5-83f96bc476d8.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6",
+   "scan_dir": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6-519b3154",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.png",
+   "pdf": "pdfs\\page-b4b6b1d1-5fa6-42ce-8a62-8a6ddd4608f6.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4",
+   "scan_dir": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4-cec956fe",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.png",
+   "pdf": "pdfs\\page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "page-d5c82c0e-2a7d-4573-9dce-bff939504367",
+   "scan_dir": "page-d5c82c0e-2a7d-4573-9dce-bff939504367-80af0bf1",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-d5c82c0e-2a7d-4573-9dce-bff939504367.png",
+   "pdf": "pdfs\\page-d5c82c0e-2a7d-4573-9dce-bff939504367.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-d5e0cd38-ac0f-422c-b6d5-c8f001720491",
+   "scan_dir": "page-d5e0cd38-ac0f-422c-b6d5-c8f001720491-24b994f0",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "page-d5e0cd38-ac0f-422c-b6d5-c8f001720491.png",
+   "pdf": "pdfs\\page-d5e0cd38-ac0f-422c-b6d5-c8f001720491.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-dad0f4e5-290f-496f-bbdd-099ad75c6ff0",
+   "scan_dir": "page-dad0f4e5-290f-496f-bbdd-099ad75c6ff0-e622c617",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "page-dad0f4e5-290f-496f-bbdd-099ad75c6ff0.png",
+   "pdf": "pdfs\\page-dad0f4e5-290f-496f-bbdd-099ad75c6ff0.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357",
+   "scan_dir": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357-3a48eb4e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357.png",
+   "pdf": "pdfs\\page-dca64e05-1ce6-49ee-857a-9b5d05a87357.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-e6c5454d-90ad-495c-85db-a416b7cd6452",
+   "scan_dir": "page-e6c5454d-90ad-495c-85db-a416b7cd6452-47cb3d05",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 539
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2245
+    },
+    "model": {
+     "width": 1654,
+     "height": 2245
+    }
+   },
+   "image_path": "page-e6c5454d-90ad-495c-85db-a416b7cd6452.png",
+   "pdf": "pdfs\\page-e6c5454d-90ad-495c-85db-a416b7cd6452.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "page-f3e750d8-8201-4a22-9419-9776798b7a32",
+   "scan_dir": "page-f3e750d8-8201-4a22-9419-9776798b7a32-679dd38e",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "page-f3e750d8-8201-4a22-9419-9776798b7a32.png",
+   "pdf": "pdfs\\page-f3e750d8-8201-4a22-9419-9776798b7a32.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010",
+   "scan_dir": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010-e7fbd0cb",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 360
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1500
+    },
+    "model": {
+     "width": 2000,
+     "height": 1500
+    }
+   },
+   "image_path": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010.png",
+   "pdf": "pdfs\\PPT_LEP power point presentation-English-FINAL-10-31-07_page_010.pdf",
+   "source_category": "PPT2PDF",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "PPT_session 10_page_022",
+   "scan_dir": "PPT_session 10_page_022-02e679a5",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 360
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1500
+    },
+    "model": {
+     "width": 2000,
+     "height": 1500
+    }
+   },
+   "image_path": "PPT_session 10_page_022.png",
+   "pdf": "pdfs\\PPT_session 10_page_022.pdf",
+   "source_category": "PPT2PDF",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "PPT_session 10_page_023",
+   "scan_dir": "PPT_session 10_page_023-f51a51f7",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 360
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1500
+    },
+    "model": {
+     "width": 2000,
+     "height": 1500
+    }
+   },
+   "image_path": "PPT_session 10_page_023.png",
+   "pdf": "pdfs\\PPT_session 10_page_023.pdf",
+   "source_category": "PPT2PDF",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "PPT_session 10_page_028",
+   "scan_dir": "PPT_session 10_page_028-6927fc1f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 360
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1500
+    },
+    "model": {
+     "width": 2000,
+     "height": 1500
+    }
+   },
+   "image_path": "PPT_session 10_page_028.png",
+   "pdf": "pdfs\\PPT_session 10_page_028.pdf",
+   "source_category": "PPT2PDF",
+   "language": "english",
+   "layout": "single_column"
+  },
+  {
+   "stem": "scihub_bloodadvances.2019030924.pdf_3",
+   "scan_dir": "scihub_bloodadvances.2019030924.pdf_3-10ddbd29",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 396,
+     "height": 522
+    },
+    "rendered": {
+     "width": 1650,
+     "height": 2175
+    },
+    "model": {
+     "width": 1650,
+     "height": 2175
+    }
+   },
+   "image_path": "scihub_bloodadvances.2019030924.pdf_3.jpg",
+   "pdf": "pdfs\\scihub_bloodadvances.2019030924.pdf_3.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "scihub_ijcac.2012040101.pdf_5",
+   "scan_dir": "scihub_ijcac.2012040101.pdf_5-5d27e9e3",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 336,
+     "height": 480
+    },
+    "rendered": {
+     "width": 1400,
+     "height": 2000
+    },
+    "model": {
+     "width": 1400,
+     "height": 2000
+    }
+   },
+   "image_path": "scihub_ijcac.2012040101.pdf_5.jpg",
+   "pdf": "pdfs\\scihub_ijcac.2012040101.pdf_5.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "scihub_ijop.12033.pdf_5",
+   "scan_dir": "scihub_ijop.12033.pdf_5-d7f37cab",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 522
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2174
+    },
+    "model": {
+     "width": 1654,
+     "height": 2174
+    }
+   },
+   "image_path": "scihub_ijop.12033.pdf_5.jpg",
+   "pdf": "pdfs\\scihub_ijop.12033.pdf_5.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "scihub_j.1528-1167.2008.01552.x.pdf_3",
+   "scan_dir": "scihub_j.1528-1167.2008.01552.x.pdf_3-fcaa8633",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 396,
+     "height": 522
+    },
+    "rendered": {
+     "width": 1650,
+     "height": 2175
+    },
+    "model": {
+     "width": 1650,
+     "height": 2175
+    }
+   },
+   "image_path": "scihub_j.1528-1167.2008.01552.x.pdf_3.jpg",
+   "pdf": "pdfs\\scihub_j.1528-1167.2008.01552.x.pdf_3.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "double_column"
+  },
+  {
+   "stem": "scihub_j.cbpb.2019.110324.pdf_6",
+   "scan_dir": "scihub_j.cbpb.2019.110324.pdf_6-7b0f5653",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 529
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2205
+    },
+    "model": {
+     "width": 1654,
+     "height": 2205
+    }
+   },
+   "image_path": "scihub_j.cbpb.2019.110324.pdf_6.jpg",
+   "pdf": "pdfs\\scihub_j.cbpb.2019.110324.pdf_6.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "scihub_j.jmb.2003.10.009.pdf_4",
+   "scan_dir": "scihub_j.jmb.2003.10.009.pdf_4-0625b737",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2339
+    },
+    "model": {
+     "width": 1700,
+     "height": 2339
+    }
+   },
+   "image_path": "scihub_j.jmb.2003.10.009.pdf_4.jpg",
+   "pdf": "pdfs\\scihub_j.jmb.2003.10.009.pdf_4.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "scihub_jneurosci.16-15-04625.1996.pdf_2",
+   "scan_dir": "scihub_jneurosci.16-15-04625.1996.pdf_2-7ec22f14",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 408,
+     "height": 528
+    },
+    "rendered": {
+     "width": 1700,
+     "height": 2200
+    },
+    "model": {
+     "width": 1700,
+     "height": 2200
+    }
+   },
+   "image_path": "scihub_jneurosci.16-15-04625.1996.pdf_2.jpg",
+   "pdf": "pdfs\\scihub_jneurosci.16-15-04625.1996.pdf_2.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "1andmore_column"
+  },
+  {
+   "stem": "scihub_s00586-010-1656-7.pdf_3",
+   "scan_dir": "scihub_s00586-010-1656-7.pdf_3-a1099f50",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 527
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2197
+    },
+    "model": {
+     "width": 1654,
+     "height": 2197
+    }
+   },
+   "image_path": "scihub_s00586-010-1656-7.pdf_3.jpg",
+   "pdf": "pdfs\\scihub_s00586-010-1656-7.pdf_3.pdf",
+   "source_category": "academic_literature",
+   "language": "english",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8",
+   "scan_dir": "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8-6dcc6c03",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8.jpg",
+   "pdf": "pdfs\\yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3",
+   "scan_dir": "yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3-6e624921",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1653,
+     "height": 2339
+    },
+    "model": {
+     "width": 1653,
+     "height": 2339
+    }
+   },
+   "image_path": "yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3.jpg",
+   "pdf": "pdfs\\yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3.pdf",
+   "source_category": "research_report",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_1090",
+   "scan_dir": "yanbaopptmerge_yanbaoPPT_1090-ddfc9b14",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 300
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1250
+    },
+    "model": {
+     "width": 2000,
+     "height": 1250
+    }
+   },
+   "image_path": "yanbaopptmerge_yanbaoPPT_1090.jpg",
+   "pdf": "pdfs\\yanbaopptmerge_yanbaoPPT_1090.pdf",
+   "source_category": "PPT2PDF",
+   "language": "simplified_chinese",
+   "layout": "double_column"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_1225",
+   "scan_dir": "yanbaopptmerge_yanbaoPPT_1225-5cb0ac16",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 360
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1500
+    },
+    "model": {
+     "width": 2000,
+     "height": 1500
+    }
+   },
+   "image_path": "yanbaopptmerge_yanbaoPPT_1225.jpg",
+   "pdf": "pdfs\\yanbaopptmerge_yanbaoPPT_1225.pdf",
+   "source_category": "PPT2PDF",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_4330",
+   "scan_dir": "yanbaopptmerge_yanbaoPPT_4330-ac24b811",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 794,
+     "height": 492
+    },
+    "rendered": {
+     "width": 3309,
+     "height": 2048
+    },
+    "model": {
+     "width": 3309,
+     "height": 2048
+    }
+   },
+   "image_path": "yanbaopptmerge_yanbaoPPT_4330.jpg",
+   "pdf": "pdfs\\yanbaopptmerge_yanbaoPPT_4330.pdf",
+   "source_category": "PPT2PDF",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_4570",
+   "scan_dir": "yanbaopptmerge_yanbaoPPT_4570-ecb018bf",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 360
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1500
+    },
+    "model": {
+     "width": 2000,
+     "height": 1500
+    }
+   },
+   "image_path": "yanbaopptmerge_yanbaoPPT_4570.jpg",
+   "pdf": "pdfs\\yanbaopptmerge_yanbaoPPT_4570.pdf",
+   "source_category": "PPT2PDF",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "yanbaopptmerge_yanbaoPPT_5070",
+   "scan_dir": "yanbaopptmerge_yanbaoPPT_5070-d08ee679",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 480,
+     "height": 360
+    },
+    "rendered": {
+     "width": 2000,
+     "height": 1500
+    },
+    "model": {
+     "width": 2000,
+     "height": 1500
+    }
+   },
+   "image_path": "yanbaopptmerge_yanbaoPPT_5070.jpg",
+   "pdf": "pdfs\\yanbaopptmerge_yanbaoPPT_5070.pdf",
+   "source_category": "PPT2PDF",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27",
+   "scan_dir": "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27-79b1a99f",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27.jpg",
+   "pdf": "pdfs\\yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  },
+  {
+   "stem": "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14",
+   "scan_dir": "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14-c29348d6",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 561
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2339
+    },
+    "model": {
+     "width": 1654,
+     "height": 2339
+    }
+   },
+   "image_path": "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14.jpg",
+   "pdf": "pdfs\\yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14.pdf",
+   "source_category": "magazine",
+   "language": "simplified_chinese",
+   "layout": "other_layout"
+  },
+  {
+   "stem": "yanbaor2_yanbaoPPT_5877",
+   "scan_dir": "yanbaor2_yanbaoPPT_5877-27a009f6",
+   "complete": true,
+   "degenerated": true,
+   "truncated": false,
+   "attempts": 3,
+   "warnings": [
+    "repetition_removed",
+    "degenerated"
+   ],
+   "render": {
+    "scaled": false,
+    "ratio": "1/1",
+    "original": {
+     "width": 397,
+     "height": 539
+    },
+    "rendered": {
+     "width": 1654,
+     "height": 2245
+    },
+    "model": {
+     "width": 1654,
+     "height": 2245
+    }
+   },
+   "image_path": "yanbaor2_yanbaoPPT_5877.jpg",
+   "pdf": "pdfs\\yanbaor2_yanbaoPPT_5877.pdf",
+   "source_category": "book",
+   "language": "simplified_chinese",
+   "layout": "single_column"
+  }
+ ]
+}

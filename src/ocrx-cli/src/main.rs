@@ -82,6 +82,9 @@ struct ScanOptions {
     keep_pages: bool,
     /// PDF open password (--password). Sensitive: never printed or logged.
     password: Option<String>,
+    /// Q1.1c/D-10 (O-5): enable the column-split retry rung. Default on;
+    /// formula-dense document sets measured harmful - pass --column-split-retry off.
+    column_split_retry: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +157,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         non_interactive: false,
         keep_pages: false,
         password: None,
+        column_split_retry: true,
     };
     let mut index = 1;
     while index < args.len() {
@@ -2082,6 +2086,11 @@ struct OvisRecognizer {
     step_profile_base: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
     /// T1: PNG encode timing sink; clone of the scan's shared recorder.
     commit_recorder: ocrx_output::commit_profile::CommitRecorder,
+    /// Q1.1c/D-10 type gate (O-5): the column-split rung engages only when
+    /// enabled. Default on (newspaper-class residual empirically positive);
+    /// formula-dense document sets (academic/exam) measured HARMFUL
+    /// (text 0.18 -> 0.13, formulas cut cross-band) - pass off for those.
+    column_split_enabled: bool,
 }
 impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
     /// Phase-4 W3: donates the production encoder - the scan service's
@@ -2147,6 +2156,101 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
             truncated: artifact.truncated,
             degenerated: artifact.degenerated,
             warnings: artifact.warnings,
+            think_blocks_stripped: artifact.think_blocks_stripped,
+            raw_output: artifact.raw_output,
+        })
+    }
+
+    fn recognize_retry_artifact_cancelled(
+        &mut self,
+        model: &mut LlamaMtmdRuntime,
+        page: u32,
+        image: &RenderedPage,
+        step: &ocrx_output::DegenerationRetryStep,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(GenerationProgress),
+    ) -> std::io::Result<PageArtifactResult> {
+        if step.column_split && !self.column_split_enabled {
+            // O-5 type gate: disabled for this scan - the rung is skipped
+            // (the page commits from the penalty rung's last state).
+            return self.recognize_artifact_cancelled(model, page, image, cancellation, progress);
+        }
+        if step.column_split {
+            // Q1.1c final rung: whitespace-valley column bands, one plain
+            // decode per band, band markdowns merged in reading order.
+            let artifact = ocrx_ovisocr2::write_page_artifacts_column_split_cancelled(
+                model,
+                page,
+                image.width,
+                image.height,
+                image.rgb8.clone(),
+                self.max_tokens,
+                &self.output,
+                cancellation,
+                progress,
+            )
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+            let snapshot = model.telemetry();
+            let base = *self.telemetry_base.borrow();
+            *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
+            let profile_snapshot = model.step_profile();
+            let profile_base = self.step_profile_base.borrow().unwrap_or_default();
+            *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
+            let mut png = Cursor::new(Vec::new());
+            image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
+                .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
+                .write_to(&mut png, ImageFormat::Png)
+                .map_err(std::io::Error::other)?;
+            return Ok(PageArtifactResult {
+                png: Some(png.into_inner()),
+                markdown: artifact.markdown,
+                page_json: artifact.page_json,
+                truncated: artifact.truncated,
+                degenerated: artifact.degenerated,
+                warnings: artifact.warnings,
+                think_blocks_stripped: artifact.think_blocks_stripped,
+                raw_output: artifact.raw_output,
+            });
+        }
+        if step.sampling.is_none() && step.image_tokens.is_none() {
+            // Rungs without decode variants (perturbation-only) keep the
+            // pre-Q1.2 plain decode.
+            return self.recognize_artifact_cancelled(model, page, image, cancellation, progress);
+        }
+        let artifact = ocrx_ovisocr2::write_page_artifacts_with_retry_sampling_cancelled(
+            model,
+            page,
+            image.width,
+            image.height,
+            image.rgb8.clone(),
+            self.max_tokens,
+            &self.output,
+            cancellation,
+            progress,
+            step.sampling,
+            step.image_tokens,
+        )
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let snapshot = model.telemetry();
+        let base = *self.telemetry_base.borrow();
+        *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
+        let profile_snapshot = model.step_profile();
+        let profile_base = self.step_profile_base.borrow().unwrap_or_default();
+        *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
+        // Retry-committed pages need the same page raster as the plain path.
+        let mut png = Cursor::new(Vec::new());
+        image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
+            .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
+            .write_to(&mut png, ImageFormat::Png)
+            .map_err(std::io::Error::other)?;
+        Ok(PageArtifactResult {
+            png: Some(png.into_inner()),
+            markdown: artifact.markdown,
+            page_json: artifact.page_json,
+            truncated: artifact.truncated,
+            degenerated: artifact.degenerated,
+            warnings: artifact.warnings,
+            think_blocks_stripped: artifact.think_blocks_stripped,
             raw_output: artifact.raw_output,
         })
     }
@@ -2202,6 +2306,7 @@ impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
                 truncated: output.truncated,
                 degenerated: output.degenerated,
                 warnings: output.warnings,
+                think_blocks_stripped: output.think_blocks_stripped,
                 raw_output: output.raw_output,
             }));
         }
@@ -2763,6 +2868,7 @@ fn scan_document(
         telemetry_base: Rc::clone(&telemetry_base),
         step_profile_base: Rc::clone(&step_profile_base),
         commit_recorder: commit_recorder.clone(),
+        column_split_enabled: options.column_split_retry,
     };
     // Phase-4 W3: extract the donated PNG encoder before the recognizer
     // moves into the scan service.
@@ -2811,7 +2917,7 @@ fn scan_document(
         // share one key). Checkpoints written before this field exist no
         // longer match and are reprocessed instead of resumed.
         parameters: format!(
-            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};batch={};route=native",
+            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};batch={};route=native;decode={}",
             ocrx_output::pdf_compatibility_parameters(
                 &options.pdf_mode,
                 &options.quality_tier,
@@ -2823,7 +2929,8 @@ fn scan_document(
             options.max_image_tokens.unwrap_or(1024),
             options.context_size.unwrap_or(20_480),
             options.device,
-            window_depth
+            window_depth,
+            ocrx_runtime::DECODE_GENERATION
         ),
     };
     let mut initial_queue = if options.resume {
@@ -2981,6 +3088,7 @@ fn scan_document(
                 attempts: 1,
                 raw: None,
                 warnings: Vec::new(),
+                think_blocks_stripped: 0,
                 audit: None,
             };
             let committed =
@@ -3048,6 +3156,7 @@ fn scan_document(
             attempts: 1,
             raw: None,
             warnings: Vec::new(),
+            think_blocks_stripped: 0,
             audit: None,
         };
         match commit_native_page_and_collect(
@@ -3343,6 +3452,7 @@ fn scan_document(
                     failed_pages: ocr_service_pages.len() as u32,
                     truncated_pages: 0,
                     degenerated_pages: 0,
+                    think_blocks_stripped_total: 0,
                     warnings: vec![unavailable_reason],
                     diagnostics: ocr_service_pages
                         .iter()
@@ -3620,6 +3730,7 @@ fn scan_document(
             failed_pages: 0,
             truncated_pages: 0,
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -3895,6 +4006,7 @@ fn scan_document(
                 failed_pages: summary.failed_pages,
                 truncated_pages: summary.truncated_pages,
                 degenerated_pages: summary.degenerated_pages,
+                think_blocks_stripped_total: summary.think_blocks_stripped,
                 warnings: summary.warnings.clone(),
                 diagnostics: summary.diagnostics.clone(),
                 pdf_routing: final_routing_diagnostics_with_pending(
@@ -4484,6 +4596,7 @@ struct ScanResultFields<'a> {
     failed_pages: u32,
     truncated_pages: u32,
     degenerated_pages: u32,
+    think_blocks_stripped_total: u64,
     warnings: Vec<String>,
     diagnostics: Vec<PageDiagnostic>,
     pdf_routing: Vec<String>,
@@ -4538,7 +4651,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         .join(",");
     let pdf_routing = fields.pdf_routing.join(",");
     format!(
-        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
+        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
         fields.status,
         json_escape_path(fields.input),
         markdown,
@@ -4553,6 +4666,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         fields.failed_pages,
         fields.truncated_pages,
         fields.degenerated_pages,
+        fields.think_blocks_stripped_total,
         fields.routing_counts.native_text,
         fields.routing_counts.ocr,
         fields.routing_counts.empty,
@@ -5113,6 +5227,7 @@ previous: {}",
             attempts: 1,
             raw: None,
             warnings: vec!["truncated".to_owned()],
+            think_blocks_stripped: 0,
             audit: None,
         };
         let mut summary = ocrx_output::JobSummary {
@@ -5121,6 +5236,7 @@ previous: {}",
             failed_pages: 0,
             truncated_pages: 0,
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -5165,6 +5281,7 @@ previous: {}",
                 attempts: 1,
                 raw: None,
                 warnings: Vec::new(),
+                think_blocks_stripped: 0,
                 audit: None,
             },
         )
@@ -5175,6 +5292,7 @@ previous: {}",
             failed_pages: 0,
             truncated_pages: 0,
             degenerated_pages: 0,
+            think_blocks_stripped: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -5297,6 +5415,7 @@ previous: {}",
                 non_interactive: false,
                 keep_pages: false,
                 password: None,
+                column_split_retry: true,
             })
         );
         assert!(parse_scan_args(&["input.pdf", "--model", "other"]).is_err());
@@ -6091,6 +6210,7 @@ previous: {}",
                 attempts: 1,
                 raw: None,
                 warnings: vec!["truncated".to_owned()],
+                think_blocks_stripped: 0,
                 audit: None,
             },
         )
@@ -6305,6 +6425,7 @@ previous: {}",
         let input = Path::new("/tmp/input\tname\n.pdf");
         let json = super::serialize_scan_result(&ScanResultFields {
             degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
             status: "partial",
             input,
             markdown_path: None,
@@ -6334,6 +6455,7 @@ previous: {}",
 
         assert!(json.contains("\"status\":\"partial\""));
         assert!(json.contains("\"truncated\":1"));
+        assert!(json.contains("\"think_blocks_stripped_total\":0"));
         assert!(json.contains("\"document_type\":\"mixed\""));
         assert!(json.contains("\"warnings\":[\"truncated\"]"));
         assert!(json.contains(
@@ -6347,6 +6469,7 @@ previous: {}",
         let routing = "{\"page\":3,\"classification\":{},\"processing\":{\"planned_method\":\"native_text\",\"actual_method\":\"ocr\",\"fallback_reason\":\"native_validation_failed\"}}".to_owned();
         let json = super::serialize_scan_result(&ScanResultFields {
             degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,
@@ -6381,6 +6504,7 @@ previous: {}",
     fn scan_result_json_preserves_page_diagnostic_warnings_and_audit() {
         let json = super::serialize_scan_result(&ScanResultFields {
             degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
             status: "partial",
             input: Path::new("/tmp/input.pdf"),
             markdown_path: None,
@@ -6603,6 +6727,7 @@ previous: {}",
                 non_interactive: false,
                 keep_pages: false,
                 password: None,
+                column_split_retry: true,
             }))
         );
         assert_eq!(

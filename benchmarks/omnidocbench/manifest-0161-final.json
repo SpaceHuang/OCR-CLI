@@ -1,0 +1,41 @@
+{
+ "schema_version": 1,
+ "set_id": "omnidocbench-0161-final-ladder",
+ "purpose": "Verification scan of the FINAL merge-candidate ladder [2048 -> penalty -> column-split] on the full set; BLK-1 quantified re-measurement for the composed-stack GO criterion.",
+ "benchmark": {
+  "name": "OmniDocBench",
+  "version": "v1.6 (main branch, 2026-10-29)",
+  "dataset_revision": "aa1ee96d106dbe53d0ae59474d75c6e6d9b53fec",
+  "gt_pages": 1651,
+  "eval_toolkit_version": "1.6.0",
+  "eval_docker_image": "ghcr.io/zeng-weijun/omnidocbench-eval:repro-ubuntu2204",
+  "eval_match_method": "quick_match"
+ },
+ "pipeline": {
+  "source_repo": "scratch/q12-sampling-escape",
+  "source_head": "b6060e9",
+  "code_effective_commits": "90b0b5b (composed ladder) + fedecc8 (perturbation removal) + b2c60a2 (column-split rung) + clippy pass",
+  "ocrx_binary": "C:/t/release/ocrx.exe",
+  "ocrx_binary_sha256": "318f44eaf6b22923c1ca67f70e281cf722790d9e102c482625de9c920848e66f",
+  "binary_note": "PE relink is not byte-reproducible (COFF timestamp); identity = source commits + sha256 of the exact file that ran the scan.",
+  "wrapper_pins": {
+   "llama-cpp-2": "0.1.161",
+   "llama-cpp-sys-2": "0.1.161"
+  },
+  "backend": "vulkan",
+  "gpu": "RTX 4090D 24GB",
+  "model": "ATH-MaaS/OvisOCR2",
+  "gguf_revision": "8a22290a0c42dbcf84739d6d4c2763f877494ae0",
+  "profile": "balanced (Q5_K_M)",
+  "ladder": [
+   "plain 1024",
+   "token-grid 2048",
+   "repeat_penalty 1.2x window 64",
+   "column-split"
+  ],
+  "attempt_cap": 4
+ },
+ "scan_command": "ocrx scan pdfs -o scans/0161-full-balanced-finalladder --model ovisocr2 --model-profile balanced --dpi 300 --non-interactive",
+ "export_command": "scripts/export-omnidocbench-predictions.py --scans scans/0161-full-balanced-finalladder --mapping pdfs/mapping.json --out predictions/0161-full-balanced-finalladder",
+ "eval_command": "scripts/run-omnidocbench-eval.py --gt dataset/OmniDocBench.json --predictions predictions/0161-full-balanced-finalladder --name omnidocbench-0161-final-all --workers 8"
+}

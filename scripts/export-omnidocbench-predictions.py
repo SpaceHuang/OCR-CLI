@@ -47,6 +47,10 @@ def parse_args(argv=None):
                         help="prediction output directory (<stem>.md files)")
     parser.add_argument("--keep-image-links", action="store_true",
                         help="keep bbox-crop image markdown links (default: strip)")
+    parser.add_argument("--stems-filter", type=Path, default=None,
+                        help="optional file with one stem per line; scan stems outside "
+                             "the filter are ignored instead of reported as extra "
+                             "(subset exports, e.g. the degeneration corpus)")
     return parser.parse_args(argv)
 
 
@@ -187,7 +191,13 @@ def main(argv=None) -> int:
             })
         pages.append(entry)
 
-    extra = sorted(set(by_stem) - mapping_stems)
+    extra = set(by_stem) - mapping_stems
+    if args.stems_filter is not None:
+        filter_stems = {line.strip() for line in
+                        args.stems_filter.read_text(encoding="utf-8").splitlines()
+                        if line.strip()}
+        extra -= filter_stems
+    extra = sorted(extra)
 
     report = {
         "schema_version": SCHEMA_VERSION,
