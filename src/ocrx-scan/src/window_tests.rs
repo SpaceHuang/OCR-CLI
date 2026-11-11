@@ -119,7 +119,7 @@ impl InferenceSession for FakeSession {
     }
 
     fn telemetry(&self) -> RuntimeTelemetry {
-        Default::default()
+        RuntimeTelemetry::default()
     }
 
     fn step_profile(&self) -> Option<StepProfile> {

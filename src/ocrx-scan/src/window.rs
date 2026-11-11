@@ -167,18 +167,13 @@ pub fn run_pages_with_session(
                     session_identity: Some(session.identity()),
                     has_pending_decode: true,
                 };
-                if matches!(
-                    crate::resume::classify(&file, root, &context),
-                    crate::resume::PageDisposition::Reuse {
-                        truncated: was_truncated,
-                        ..
-                    }
-                ) {
+                let disposition = crate::resume::classify(&file, root, &context);
+                if matches!(disposition, crate::resume::PageDisposition::Reuse { .. }) {
                     let crate::resume::PageDisposition::Reuse {
                         think_blocks_stripped: count,
                         truncated: was_truncated,
                         warnings: page_warnings,
-                    } = crate::resume::classify(&file, root, &context)
+                    } = disposition
                     else {
                         unreachable!("just matched");
                     };
@@ -422,10 +417,7 @@ pub fn run_pages_with_session(
     if config.keep_pages {
         // Keep-pages cleanup mirrors the legacy behavior: full-page PNGs
         // are dropped, figure crops stay.
-        let _ = cleanup_full_page_images(
-            root,
-            &page_numbers.to_vec(),
-        );
+        let _ = cleanup_full_page_images(root, page_numbers);
     }
 
     Ok(JobSummary {
@@ -510,24 +502,21 @@ fn serial_attempt_outcome(
             }
         };
         let mut recognizer = SessionRecognizer::new(session, root);
-        let recognized = match step {
-            // Rung 3: column split (gated by the CLI switch).
-            Some(rung) if rung.column_split => {
-                if config.column_split_enabled {
-                    recognizer.recognize_column_split(page, &image, cancellation, heartbeat)
-                } else {
-                    // Gate closed: the ladder is exhausted for this page; it
-                    // keeps the degenerated/truncated state that brought it
-                    // here (the caller re-submits nothing further).
-                    Err(RecognizeError::Failed(std::io::Error::other(
-                        "column split disabled",
-                    )))
-                }
+        // Rung 3 (column split) is gated by the CLI switch; a closed gate
+        // exhausts the ladder for the page.
+        // `step`/`recognized` are the ladder attempt pair.
+        #[allow(clippy::similar_names)]
+        let recognized_outcome = match step {
+            Some(rung) if rung.column_split && config.column_split_enabled => {
+                recognizer.recognize_column_split(page, &image, cancellation, heartbeat)
             }
+            Some(rung) if rung.column_split => Err(RecognizeError::Failed(std::io::Error::other(
+                "column split disabled",
+            ))),
             Some(rung) => recognizer.recognize_retry(page, &image, rung, cancellation, heartbeat),
             None => recognizer.recognize(page, &image, cancellation, heartbeat),
         };
-        match recognized {
+        match recognized_outcome {
             Ok(artifact) => {
                 // Q1.5/D-14: pure truncation enters the ladder too.
                 let ladder_worthy = artifact.degenerated || artifact.truncated;

@@ -271,12 +271,14 @@ mod tests {
         let mut checkpoint = v6_native(true);
         checkpoint.degenerated = true;
         let current = identity();
+        // The degeneration gate fires before any identity work: even with a
+        // matching statik + session the page reprocesses.
         let statik = StaticInferenceIdentity::from_execution(&current);
         assert!(matches!(
             classify(
                 &CheckpointFile::V6(checkpoint),
                 &root,
-                &context(None, None, false)
+                &context(Some(&statik), Some(&current), false)
             ),
             PageDisposition::Reprocess { reason: "degenerated page" }
         ));
