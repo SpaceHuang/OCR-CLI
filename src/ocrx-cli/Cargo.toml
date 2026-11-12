@@ -10,6 +10,9 @@ workspace = true
 
 [dependencies]
 ocrx-core = { path = "../ocrx-core" }
+ocrx-inference = { path = "../ocrx-inference" }
+ocrx-inference-api = { path = "../ocrx-inference-api" }
+ocrx-scan = { path = "../ocrx-scan" }
 ocrx-runtime = { path = "../ocrx-runtime" }
 ocrx-models = { path = "../ocrx-models" }
 ocrx-output = { path = "../ocrx-output" }

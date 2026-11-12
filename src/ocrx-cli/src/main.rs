@@ -28,6 +28,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod compose;
 mod pdfium_owner;
 mod platform_paths;
 use platform_paths::home_dir;

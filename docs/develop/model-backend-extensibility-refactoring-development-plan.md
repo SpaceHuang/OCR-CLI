@@ -1425,7 +1425,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 G：CLI 收缩与生产组合
 
-- [ ] T069（T030、T038、T039、T042、T052）实现 `compose.rs` 生产组合根；完成判定：只注册 Ovis，scan 接收 API trait，model/doctor 使用同一 manager，无第二套注册数据；组合顺序为 catalog → probe/设备/runtime factory → 静态 registry → `BindingVerifier` 实现 → 注入 verifier 构造 `ModelManagerImpl` → `InferenceServiceImpl` → `ScanApplication`（§6.1，RBLK-9）。
+- [x] T069（T030、T038、T039、T042、T052）实现 `compose.rs` 生产组合根；完成判定：只注册 Ovis，scan 接收 API trait，model/doctor 使用同一 manager，无第二套注册数据；组合顺序为 catalog → probe/设备/runtime factory → 静态 registry → `BindingVerifier` 实现 → 注入 verifier 构造 `ModelManagerImpl` → `InferenceServiceImpl` → `ScanApplication`（§6.1，RBLK-9）。
 - [ ] T070（T069）拆分参数、配置和交互模块；完成判定：现有参数取值、默认值、配置优先级、offline/non-interactive 和下载确认测试通过。
 - [ ] T071（T069）将 `model list/info/recommend` 切换到 ModelManager；完成判定：无 PDF/scan 对象，输出与 T003 golden 一致。
 - [ ] T072（T069、T070）将 `model install/verify/remove` 切换到 ModelManager；完成判定：CLI 无 URL/hash/cache 拼接，交互和错误码 golden 通过；`verify` 端到端专项（RBLK-9）：资产文件全部正确但注入端口的 registry 身份（runtime/sys/upstream/adapter 任一）不匹配时 verify 失败且错误类别为 IncompatibleBinding，全部匹配时通过；架构检查断言无 models → inference 依赖。

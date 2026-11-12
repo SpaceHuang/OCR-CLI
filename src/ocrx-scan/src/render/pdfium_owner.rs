@@ -273,7 +273,7 @@ fn compose_rendered_page(
 /// Main-thread handle: channel endpoints plus the poisoned flag. Dropping the
 /// handle closes the request channel and the owner exits after its current
 /// operation (plan §6.2 cancellation contract).
-pub(crate) struct PdfiumOwnerHandle {
+pub struct PdfiumOwnerHandle {
     requests: Option<std::sync::mpsc::Sender<PdfRequest>>,
     responses: std::sync::mpsc::Receiver<PdfResponse>,
     timeout: Duration,
@@ -287,7 +287,7 @@ impl PdfiumOwnerHandle {
     /// Spawns the owner thread with the real PDFium executor. The renderer is
     /// constructed inside the thread: the binding init happens there and the
     /// main thread never sees a pdfium type (plan §6.1).
-    pub(crate) fn spawn(
+    pub fn spawn(
         library_dir: PathBuf,
         input: PathBuf,
         options: RenderOptions,
@@ -522,6 +522,89 @@ impl PdfiumOwnerHandle {
     }
 }
 
+/// Production [`crate::app::PdfDocumentAccess`] over the owner handle:
+/// every PDF fact (page count, classification signals, native extraction)
+/// crosses the owner channel; the main thread holds no pdfium type.
+pub struct OwnerPdfAccess {
+    handle: Rc<RefCell<PdfiumOwnerHandle>>,
+    library_dir: PathBuf,
+    input: PathBuf,
+    options: RenderOptions,
+    password: Option<String>,
+    prefetch_depth: u32,
+}
+
+impl OwnerPdfAccess {
+    /// Spawns the owner thread for one document.
+    #[must_use]
+    pub fn spawn(
+        library_dir: PathBuf,
+        input: PathBuf,
+        options: RenderOptions,
+        password: Option<String>,
+        prefetch_depth: u32,
+    ) -> Self {
+        Self {
+            handle: Rc::new(RefCell::new(PdfiumOwnerHandle::spawn(
+                library_dir.clone(),
+                input.clone(),
+                options.clone(),
+                password.clone(),
+                prefetch_depth,
+            ))),
+            library_dir,
+            input,
+            options,
+            password,
+            prefetch_depth,
+        }
+    }
+
+    /// Builds the window-loop renderer over the SAME owner (shared handle).
+    #[must_use]
+    pub fn renderer(
+        &self,
+        commit_recorder: ocrx_output::commit_profile::CommitRecorder,
+    ) -> OwnerPageRenderer {
+        OwnerPageRenderer::new(Rc::clone(&self.handle), commit_recorder)
+    }
+
+    /// Recreates the owner for a NEW document (SwitchDocument semantics:
+    /// the old handle drops, closing the previous channel cleanly).
+    pub fn switch_document(&mut self, input: &Path) {
+        self.input = input.to_path_buf();
+        self.handle = Rc::new(RefCell::new(PdfiumOwnerHandle::spawn(
+            self.library_dir.clone(),
+            self.input.clone(),
+            self.options
+            self.password.clone(),
+            self.prefetch_depth,
+        )));
+    }
+}
+
+impl crate::app::PdfDocumentAccess for OwnerPdfAccess {
+    fn page_count(&mut self, _input: &Path) -> std::io::Result<usize> {
+        self.handle.borrow_mut().page_count()
+    }
+
+    fn analyze(
+        &mut self,
+        _input: &Path,
+        pages: &[usize],
+        tier: QualityTier,
+    ) -> std::io::Result<Vec<PageClassification>> {
+        self.handle
+            .borrow_mut()
+            .analyze(pages, tier)
+            .map_err(std::io::Error::other)
+    }
+
+    fn extract_native(&mut self, page: u32) -> std::io::Result<ocrx_pdf::NativePage> {
+        self.handle.borrow_mut().extract_native(page)
+    }
+}
+
 impl Drop for PdfiumOwnerHandle {
     fn drop(&mut self) {
         self.requests.take(); // close the channel; the owner exits
@@ -600,7 +683,8 @@ pub struct OwnerPageRenderer {
 }
 
 impl OwnerPageRenderer {
-    pub(crate) fn new(
+    #[must_use]
+    pub fn new(
         handle: Rc<RefCell<PdfiumOwnerHandle>>,
         commit_recorder: ocrx_output::commit_profile::CommitRecorder,
     ) -> Self {

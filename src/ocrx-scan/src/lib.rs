@@ -3,6 +3,7 @@
 //! CLI keeps its legacy path until T074/T077.
 
 pub mod app;
+pub use app::{DocumentFailure, DocumentOptions, DocumentOutcome, PdfDocumentAccess, ScanApplication, ScanEvent, ScanOutcome};
 pub mod ladder;
 pub mod ocr;
 pub mod state;
