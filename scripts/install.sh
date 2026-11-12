@@ -17,11 +17,17 @@ if [[ -n "${OCRX_RELEASE_ARCHIVE:-}" ]]; then
   tar -xzf "$OCRX_RELEASE_ARCHIVE" -C "$TEMP_DIR"
   BIN=$(find "$TEMP_DIR" -type f -path '*/bin/ocrx' -print -quit)
   [[ -n "$BIN" && -x "$BIN" ]] || { echo "archive has no ocrx binary" >&2; exit 4; }
+  PDFIUM=$(find "$TEMP_DIR" -type f -path '*/lib/libpdfium.dylib' -print -quit)
+  [[ -n "$PDFIUM" && -f "$PDFIUM" ]] || { echo "archive has no bundled PDFium library" >&2; exit 4; }
 else
   [[ -f "$BIN" ]] || { echo "build target/release/ocrx first" >&2; exit 4; }
 fi
 mkdir -p "$PREFIX/bin"
 install -m 755 "$BIN" "$PREFIX/bin/ocrx"
+if [[ -n "${OCRX_RELEASE_ARCHIVE:-}" ]]; then
+  mkdir -p "$PREFIX/lib"
+  install -m 755 "$PDFIUM" "$PREFIX/lib/libpdfium.dylib"
+fi
 if [[ "${OCRX_INSTALL_SKILL:-0}" == "1" ]]; then
   HOME="$HOME" OCRX_SKILL_TARGET="${OCRX_SKILL_TARGET:-all}" "$PREFIX/bin/ocrx" skill install
 fi
