@@ -4351,6 +4351,42 @@ fn run_scan_multi(options: ScanOptions) -> ! {
             std::process::exit(2);
         }
     };
+    // Validate the aggregate root before starting the owner or any document.
+    // Child-directory checks cannot protect scan-summary.json on failure paths.
+    let output_policy = (|| -> Result<(), String> {
+        let working_directory = std::env::current_dir().map_err(|error| error.to_string())?;
+        let cache = std::env::var_os("OCRX_MODEL_CACHE")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(ocrx_models::default_cache_root);
+        let protected = [cache.join("ocrx/models"), cache.join("ovisocr2")];
+        for input in &inputs {
+            validate_scan_output_policy(
+                input,
+                &output_root,
+                &[protected[0].as_path(), protected[1].as_path()],
+                &working_directory,
+            )?;
+        }
+        if output_root.join("scan-summary.json").exists() && !options.overwrite && !options.resume {
+            return Err("scan-summary.json already exists; use --resume or --overwrite".to_owned());
+        }
+        Ok(())
+    })();
+    if let Err(error) = output_policy {
+        reporter.error(
+            &ErrorReport {
+                code: 9,
+                kind: "output".to_owned(),
+                message: "output directory refused by the output policy".to_owned(),
+                cause: Some(error),
+                suggestion: Some("choose a dedicated output directory; use --resume or --overwrite for existing results".to_owned()),
+            },
+            report_format,
+        );
+        print_reporter(reporter);
+        std::process::exit(9);
+    }
     let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
     let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
         .map(PathBuf::from)
@@ -4395,7 +4431,8 @@ fn run_scan_multi(options: ScanOptions) -> ! {
         // X1 protocol ③/④: the switch happens at the document scheduling
         // boundary; an Err VALUE skips this document and the invocation
         // continues; owner poison is the fail-loud invocation abort.
-        if let Err(error) = owner.borrow_mut().switch_document(&canonical) {
+        let switch_result = owner.borrow_mut().switch_document(&canonical);
+        if let Err(error) = switch_result {
             if let Some(poison) = owner.borrow().poisoned() {
                 reporter.error(
                     &ErrorReport {
