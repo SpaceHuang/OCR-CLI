@@ -527,11 +527,9 @@ impl PdfiumOwnerHandle {
 /// crosses the owner channel; the main thread holds no pdfium type.
 pub struct OwnerPdfAccess {
     handle: Rc<RefCell<PdfiumOwnerHandle>>,
-    library_dir: PathBuf,
-    input: PathBuf,
-    options: RenderOptions,
-    password: Option<String>,
-    prefetch_depth: u32,
+    /// The document the owner currently serves; a differing `input` in any
+    /// port call triggers the X1 `SwitchDocument` swap (same owner thread).
+    current_input: PathBuf,
 }
 
 impl OwnerPdfAccess {
@@ -546,17 +544,9 @@ impl OwnerPdfAccess {
     ) -> Self {
         Self {
             handle: Rc::new(RefCell::new(PdfiumOwnerHandle::spawn(
-                library_dir.clone(),
-                input.clone(),
-                options,
-                password.clone(),
-                prefetch_depth,
+                library_dir, input.clone(), options, password, prefetch_depth,
             ))),
-            library_dir,
-            input,
-            options,
-            password,
-            prefetch_depth,
+            current_input: input,
         }
     }
 
@@ -569,31 +559,44 @@ impl OwnerPdfAccess {
         OwnerPageRenderer::new(Rc::clone(&self.handle), commit_recorder)
     }
 
-    /// Recreates the owner for a NEW document (SwitchDocument semantics:
-    /// the old handle drops, closing the previous channel cleanly).
-    pub fn switch_document(&mut self, input: &Path) {
-        self.input = input.to_path_buf();
-        self.handle = Rc::new(RefCell::new(PdfiumOwnerHandle::spawn(
-            self.library_dir.clone(),
-            self.input.clone(),
-            self.options,
-            self.password.clone(),
-            self.prefetch_depth,
-        )));
+    /// X1 SwitchDocument: the SAME owner thread swaps to the new document
+    /// (prefetch cache cleared, `next_prefetch` reset; a dead/unresponsive
+    /// owner surfaces as an error on the follow-up calls).
+    ///
+    /// # Errors
+    ///
+    /// Channel/owner failure.
+    pub fn switch_document(&mut self, input: &Path) -> std::io::Result<()> {
+        self.handle
+            .borrow_mut()
+            .switch_document(input)
+            .map_err(std::io::Error::other)?;
+        self.current_input = input.to_path_buf();
+        Ok(())
+    }
+
+    /// Ensures the owner serves `input` (no-op when it already does).
+    fn ensure_document(&mut self, input: &Path) -> std::io::Result<()> {
+        if self.current_input != input {
+            self.switch_document(input)?;
+        }
+        Ok(())
     }
 }
 
 impl crate::app::PdfDocumentAccess for OwnerPdfAccess {
-    fn page_count(&mut self, _input: &Path) -> std::io::Result<usize> {
+    fn page_count(&mut self, input: &Path) -> std::io::Result<usize> {
+        self.ensure_document(input)?;
         self.handle.borrow_mut().page_count()
     }
 
     fn analyze(
         &mut self,
-        _input: &Path,
+        input: &Path,
         pages: &[usize],
         tier: QualityTier,
     ) -> std::io::Result<Vec<PageClassification>> {
+        self.ensure_document(input)?;
         self.handle
             .borrow_mut()
             .analyze(pages, tier)

@@ -141,6 +141,28 @@ pub struct DocumentOutcome {
     /// Structured failure (`kind`/`message`/`cause`) when the document
     /// aborted before producing a summary.
     pub failure: Option<DocumentFailure>,
+    /// `document.md` path when the merge produced one (present + non-empty
+    /// merge scope).
+    pub markdown_path: Option<std::path::PathBuf>,
+    /// Frozen route classification (`document_type=` value).
+    pub document_type: String,
+    /// Frozen routing counters (`routing_counts` in result.json).
+    pub routing_counts: RoutingCounts,
+    /// Final routing diagnostic JSON strings (`pdf_routing` array).
+    pub pdf_routing: Vec<String>,
+    /// Figure PNGs under `images/` (bbox crops only).
+    pub images_count: usize,
+    /// Wall time of the document run (result.json `elapsed_ms`).
+    pub elapsed_ms: u128,
+}
+
+/// Frozen routing counters (result.json `routing_counts` object).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RoutingCounts {
+    pub native_text: u32,
+    pub ocr: u32,
+    pub empty: u32,
+    pub fallback: u32,
 }
 
 /// Structured document-level failure (exit-code mapping stays in the CLI).
@@ -280,6 +302,7 @@ impl ScanApplication {
         cancellation: &CancellationToken,
         emit: &mut dyn FnMut(ScanEvent),
     ) -> std::io::Result<DocumentOutcome> {
+        let started = std::time::Instant::now();
         let failure =
             |code: u8, kind: &str, message: &str, cause: Option<String>| DocumentOutcome {
                 input: input.to_path_buf(),
@@ -298,6 +321,12 @@ impl ScanApplication {
                 pages: Vec::new(),
                 backend: None,
                 identity: None,
+                markdown_path: None,
+                document_type: String::new(),
+                routing_counts: RoutingCounts::default(),
+                pdf_routing: Vec::new(),
+                images_count: 0,
+                elapsed_ms: 0,
                 telemetry_delta: None,
                 step_profile_delta: None,
                 failure: Some(DocumentFailure {
@@ -861,6 +890,19 @@ impl ScanApplication {
             })
             .collect();
         let pending_set: HashSet<u32> = final_queue.iter().map(|page| page.page).collect();
+        let pdf_routing = crate::report::final_routing_diagnostics_with_pending(
+            &options.pdf_mode,
+            &pages,
+            &classifications,
+            &fallback_reasons,
+            &pending_set,
+            &HashSet::new(),
+        );
+        let routing_counts =
+            routing_counts_for_mode(&options.pdf_mode, &pages, &classifications, &fallback_reasons);
+        let document_type = ocrx_pdf::summarize_document_type(&classifications)
+            .as_str()
+            .to_owned();
         write_routing_checkpoint_sidecars_with_states(
             output,
             &options.pdf_mode,
@@ -924,6 +966,23 @@ impl ScanApplication {
             audit: None,
             warnings: Vec::new(),
         };
+        let markdown_path = output
+            .join("document.md")
+            .is_file()
+            .then(|| output.join("document.md"));
+        let images_count = std::fs::read_dir(output.join("images"))
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        entry.path().is_file()
+                            && entry.path().extension().is_some_and(|extension| extension == "png")
+                            && entry.file_name().to_string_lossy().starts_with("page-")
+                            && entry.file_name().to_string_lossy().contains("-figure-")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
         Ok(DocumentOutcome {
             input: input.to_path_buf(),
             output_dir: output.to_path_buf(),
@@ -938,6 +997,12 @@ impl ScanApplication {
             identity: identity.clone(),
             telemetry_delta,
             step_profile_delta,
+            markdown_path,
+            document_type,
+            routing_counts,
+            pdf_routing,
+            images_count,
+            elapsed_ms: started.elapsed().as_millis(),
             failure: None,
         })
     }
@@ -1073,6 +1138,47 @@ pub(crate) fn valid_native_page(page: u32) -> NativePage {
             geometry_anomaly: false,
         },
     }
+}
+
+/// Frozen routing counters (plan §6.3/legacy routing_counts_for_mode): the
+/// ocr mode counts every non-empty page as OCR; auto/text count by
+/// recommendation with fallback pages double-counting ocr+fallback.
+#[must_use]
+pub fn routing_counts_for_mode(
+    mode: &str,
+    pages: &[usize],
+    classifications: &[PageClassification],
+    fallback_reasons: &[(u32, PdfReasonCode)],
+) -> RoutingCounts {
+    if mode == "ocr" {
+        let empty = classifications
+            .iter()
+            .filter(|classification| classification.recommended_method == ProcessingMethod::Empty)
+            .count();
+        return RoutingCounts {
+            native_text: 0,
+            ocr: u32::try_from(pages.len().saturating_sub(empty)).unwrap_or(u32::MAX),
+            empty: u32::try_from(empty).unwrap_or(u32::MAX),
+            fallback: 0,
+        };
+    }
+    let mut counts = RoutingCounts::default();
+    for (page, classification) in pages.iter().zip(classifications) {
+        if fallback_reasons
+            .iter()
+            .any(|(number, _)| *number == *page as u32)
+        {
+            counts.ocr += 1;
+            counts.fallback += 1;
+        } else {
+            match classification.recommended_method {
+                ProcessingMethod::NativeText => counts.native_text += 1,
+                ProcessingMethod::Ocr => counts.ocr += 1,
+                ProcessingMethod::Empty => counts.empty += 1,
+            }
+        }
+    }
+    counts
 }
 
 /// Platform identifier for the compatibility identity (frozen strings).
