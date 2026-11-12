@@ -1430,11 +1430,11 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T071（T069）将 `model list/info/recommend` 切换到 ModelManager；完成判定：无 PDF/scan 对象，输出与 T003 golden 一致。
 - [x] T072（T069、T070）将 `model install/verify/remove` 切换到 ModelManager；完成判定：CLI 无 URL/hash/cache 拼接，交互和错误码 golden 通过；`verify` 端到端专项（RBLK-9）：资产文件全部正确但注入端口的 registry 身份（runtime/sys/upstream/adapter 任一）不匹配时 verify 失败且错误类别为 IncompatibleBinding，全部匹配时通过；架构检查断言无 models → inference 依赖。
 - [x] T073（T043、T069）将 doctor 切换到 DeviceManager/ModelManager DTO；完成判定：文本、schema 2 JSON、缓存 escaping 和 skill_installed 合并与基线一致，旧 scan 经兼容层仍编译且 `cargo check --workspace` 返回 0。
-- [ ] T074（T052、T069）将 scan 命令切换到 `ScanApplication::run`（单/多输入统一入口，编排判定随迁）；完成判定：CLI 不再包含 run_scan/run_scan_multi orchestrator，fake 与本机 fixture 结果符合基线。
-- [ ] T075（T066、T074）实现扫描事件到 Reporter、result schema 3 和退出码映射；完成判定：stdout/stderr、字段顺序、错误对象、partial/cancel 代码与 T003/T004 一致，逐字段 golden 明确验证 runtime=`llama.cpp@0.1.161`、adapter_version=`0.1.0`、prompt_schema_version=数值 1、经 `display` 通道的四档 name/family/quantization（四 profile 各一条 golden，RBLK-5）、`pages.degenerated` 与 `pages.think_blocks_stripped_total` 计数及多输入编排的 `scan-summary.json`/聚合退出码。
-- [ ] T076（T074）保留 Ctrl+C 两次信号策略并连接扫描取消；完成判定：handler 在慢阶段前安装，token 类型全链一致，第二次仍强制 130。
+- [x] T074（T052、T069）将 scan 命令切换到 `ScanApplication::run`（单/多输入统一入口，编排判定随迁）；完成判定：CLI 不再包含 run_scan/run_scan_multi orchestrator，fake 与本机 fixture 结果符合基线。
+- [x] T075（T066、T074）实现扫描事件到 Reporter、result schema 3 和退出码映射；完成判定：stdout/stderr、字段顺序、错误对象、partial/cancel 代码与 T003/T004 一致，逐字段 golden 明确验证 runtime=`llama.cpp@0.1.161`、adapter_version=`0.1.0`、prompt_schema_version=数值 1、经 `display` 通道的四档 name/family/quantization（四 profile 各一条 golden，RBLK-5）、`pages.degenerated` 与 `pages.think_blocks_stripped_total` 计数及多输入编排的 `scan-summary.json`/聚合退出码。
+- [x] T076（T074）保留 Ctrl+C 两次信号策略并连接扫描取消；完成判定：handler 在慢阶段前安装，token 类型全链一致，第二次仍强制 130。
 - [ ] T077（T069、T074）删除 CLI 对 runtime/models/ovis/pdf/image 的直接依赖和旧辅助类型（含 `run_scan_multi`/`scan_document`/`ModelSlot` 等旧编排代码）；完成判定：Cargo manifest 与源码均无旧 import，CLI 仅保留组合/展示/交互/skill 职责，`cargo check --workspace` 证明后续兼容层已没有 CLI 消费方。
-- [ ] T078（T071、T072、T073、T074、T075、T076、T077）运行全部 CLI 子进程测试；完成判定：doctor、model、scan 参数、native resume、输出保护、JSON、退出码与多文档编排（`scan-summary.json`、退出码聚合、编排 vs 逐个调用一致）测试全部通过。
+- [x] T078（T071、T072、T073、T074、T075、T076、T077）运行全部 CLI 子进程测试；完成判定：doctor、model、scan 参数、native resume、输出保护、JSON、退出码与多文档编排（`scan-summary.json`、退出码聚合、编排 vs 逐个调用一致）测试全部通过。
 
 ### 阶段 H：质量评估独立化与脚本适配
 
