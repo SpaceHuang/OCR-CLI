@@ -393,6 +393,155 @@ fn parse_v5_pdf_identity(parameters: &str) -> Option<crate::compatibility::PdfId
     })
 }
 
+/// Commits an OCR page with a v6 checkpoint: identical artifact order to
+/// the legacy `commit_page` (PNG → md → json → artifact hash → checkpoint
+/// last), with the structured compatibility identity.
+///
+/// # Errors
+///
+/// Underlying I/O errors; the checkpoint is written only after every
+/// artifact is durable (mechanism A ordering).
+pub fn commit_page_v6(
+    output_root: impl AsRef<Path>,
+    page_number: u32,
+    png: &[u8],
+    markdown: &str,
+    page_json: &str,
+    checkpoint: &V6Checkpoint,
+) -> std::io::Result<()> {
+    if page_number == 0 || checkpoint.page_number != page_number {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "checkpoint page mismatch",
+        ));
+    }
+    let root = output_root.as_ref();
+    crate::atomic_write(
+        root.join("images")
+            .join(format!("page-{page_number:04}.png")),
+        png,
+    )?;
+    crate::atomic_write(
+        root.join(format!("page-{page_number:04}.md")),
+        crate::normalize_lf(markdown).as_bytes(),
+    )?;
+    crate::atomic_write(
+        root.join(format!("page-{page_number:04}.json")),
+        page_json.as_bytes(),
+    )?;
+    let output_sha256 =
+        crate::artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
+    write_v6(
+        root.join(format!("page-{page_number:04}.checkpoint")),
+        &V6Checkpoint {
+            status: V6Status::Complete,
+            output_sha256,
+            ..checkpoint.clone()
+        },
+    )
+}
+
+/// Commits a native page (no synthetic full-page PNG) with a v6 checkpoint.
+///
+/// # Errors
+///
+/// Underlying I/O errors.
+pub fn commit_native_page_v6(
+    output_root: impl AsRef<Path>,
+    page_number: u32,
+    markdown: &str,
+    page_json: &str,
+    checkpoint: &V6Checkpoint,
+) -> std::io::Result<()> {
+    if page_number == 0 || checkpoint.page_number != page_number {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "checkpoint page mismatch",
+        ));
+    }
+    let root = output_root.as_ref();
+    crate::atomic_write(
+        root.join(format!("page-{page_number:04}.md")),
+        crate::normalize_lf(markdown).as_bytes(),
+    )?;
+    crate::atomic_write(
+        root.join(format!("page-{page_number:04}.json")),
+        page_json.as_bytes(),
+    )?;
+    let output_sha256 =
+        crate::artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
+    write_v6(
+        root.join(format!("page-{page_number:04}.checkpoint")),
+        &V6Checkpoint {
+            status: V6Status::Complete,
+            output_sha256,
+            ..checkpoint.clone()
+        },
+    )
+}
+
+/// Writes a pending-OCR v6 checkpoint (native fallback / queue handoff).
+///
+/// # Errors
+///
+/// Underlying I/O errors.
+pub fn commit_pending_ocr_v6(
+    output_root: impl AsRef<Path>,
+    page_number: u32,
+    checkpoint: &V6Checkpoint,
+) -> std::io::Result<()> {
+    if page_number == 0 || checkpoint.page_number != page_number {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "checkpoint page mismatch",
+        ));
+    }
+    write_v6(
+        output_root
+            .as_ref()
+            .join(format!("page-{page_number:04}.checkpoint")),
+        &V6Checkpoint {
+            status: V6Status::PendingOcr,
+            ..checkpoint.clone()
+        },
+    )
+}
+
+/// Checks whether a committed page's artifacts still match the checkpoint
+/// (T048: a missing or tampered referenced artifact is not reusable).
+#[must_use]
+pub fn artifacts_intact(checkpoint: &V6Checkpoint, root: &Path) -> bool {
+    if checkpoint.status != V6Status::Complete {
+        return false;
+    }
+    let page = checkpoint.page_number;
+    let markdown_path = root.join(format!("page-{page:04}.md"));
+    let Ok(bytes) = std::fs::read(&markdown_path) else {
+        return false;
+    };
+    if ocrx_primitives::sha256(&bytes) != checkpoint.output_sha256 {
+        return false;
+    }
+    // Referenced images must exist (bbox crops + the full-page png only
+    // when the page carried one).
+    if root
+        .join("images")
+        .join(format!("page-{page:04}.png"))
+        .exists()
+    {
+        // full-page png present: fine
+    }
+    for warning in &checkpoint.warnings {
+        let _ = warning;
+    }
+    if let Some(raw) = &checkpoint.raw
+        && !root.join(raw).is_file()
+    {
+        return false;
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,153 +812,4 @@ mod tests {
         assert_eq!(loaded.think_blocks_stripped, 3, "count preserved for audit");
         assert_eq!(loaded.compatibility.pdf.platform, "macos");
     }
-}
-
-/// Commits an OCR page with a v6 checkpoint: identical artifact order to
-/// the legacy `commit_page` (PNG → md → json → artifact hash → checkpoint
-/// last), with the structured compatibility identity.
-///
-/// # Errors
-///
-/// Underlying I/O errors; the checkpoint is written only after every
-/// artifact is durable (mechanism A ordering).
-pub fn commit_page_v6(
-    output_root: impl AsRef<Path>,
-    page_number: u32,
-    png: &[u8],
-    markdown: &str,
-    page_json: &str,
-    checkpoint: &V6Checkpoint,
-) -> std::io::Result<()> {
-    if page_number == 0 || checkpoint.page_number != page_number {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "checkpoint page mismatch",
-        ));
-    }
-    let root = output_root.as_ref();
-    crate::atomic_write(
-        root.join("images")
-            .join(format!("page-{page_number:04}.png")),
-        png,
-    )?;
-    crate::atomic_write(
-        root.join(format!("page-{page_number:04}.md")),
-        crate::normalize_lf(markdown).as_bytes(),
-    )?;
-    crate::atomic_write(
-        root.join(format!("page-{page_number:04}.json")),
-        page_json.as_bytes(),
-    )?;
-    let output_sha256 =
-        crate::artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
-    write_v6(
-        root.join(format!("page-{page_number:04}.checkpoint")),
-        &V6Checkpoint {
-            status: V6Status::Complete,
-            output_sha256,
-            ..checkpoint.clone()
-        },
-    )
-}
-
-/// Commits a native page (no synthetic full-page PNG) with a v6 checkpoint.
-///
-/// # Errors
-///
-/// Underlying I/O errors.
-pub fn commit_native_page_v6(
-    output_root: impl AsRef<Path>,
-    page_number: u32,
-    markdown: &str,
-    page_json: &str,
-    checkpoint: &V6Checkpoint,
-) -> std::io::Result<()> {
-    if page_number == 0 || checkpoint.page_number != page_number {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "checkpoint page mismatch",
-        ));
-    }
-    let root = output_root.as_ref();
-    crate::atomic_write(
-        root.join(format!("page-{page_number:04}.md")),
-        crate::normalize_lf(markdown).as_bytes(),
-    )?;
-    crate::atomic_write(
-        root.join(format!("page-{page_number:04}.json")),
-        page_json.as_bytes(),
-    )?;
-    let output_sha256 =
-        crate::artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
-    write_v6(
-        root.join(format!("page-{page_number:04}.checkpoint")),
-        &V6Checkpoint {
-            status: V6Status::Complete,
-            output_sha256,
-            ..checkpoint.clone()
-        },
-    )
-}
-
-/// Writes a pending-OCR v6 checkpoint (native fallback / queue handoff).
-///
-/// # Errors
-///
-/// Underlying I/O errors.
-pub fn commit_pending_ocr_v6(
-    output_root: impl AsRef<Path>,
-    page_number: u32,
-    checkpoint: &V6Checkpoint,
-) -> std::io::Result<()> {
-    if page_number == 0 || checkpoint.page_number != page_number {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "checkpoint page mismatch",
-        ));
-    }
-    write_v6(
-        output_root
-            .as_ref()
-            .join(format!("page-{page_number:04}.checkpoint")),
-        &V6Checkpoint {
-            status: V6Status::PendingOcr,
-            ..checkpoint.clone()
-        },
-    )
-}
-
-/// Checks whether a committed page's artifacts still match the checkpoint
-/// (T048: a missing or tampered referenced artifact is not reusable).
-#[must_use]
-pub fn artifacts_intact(checkpoint: &V6Checkpoint, root: &Path) -> bool {
-    if checkpoint.status != V6Status::Complete {
-        return false;
-    }
-    let page = checkpoint.page_number;
-    let markdown_path = root.join(format!("page-{page:04}.md"));
-    let Ok(bytes) = std::fs::read(&markdown_path) else {
-        return false;
-    };
-    if ocrx_primitives::sha256(&bytes) != checkpoint.output_sha256 {
-        return false;
-    }
-    // Referenced images must exist (bbox crops + the full-page png only
-    // when the page carried one).
-    if root
-        .join("images")
-        .join(format!("page-{page:04}.png"))
-        .exists()
-    {
-        // full-page png present: fine
-    }
-    for warning in &checkpoint.warnings {
-        let _ = warning;
-    }
-    if let Some(raw) = &checkpoint.raw
-        && !root.join(raw).is_file()
-    {
-        return false;
-    }
-    true
 }

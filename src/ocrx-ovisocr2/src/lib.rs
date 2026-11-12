@@ -27,12 +27,6 @@ impl ThinkStrip {
     }
 }
 
-/// Q1.1c candidate C (quality plan §4.1, D-10): column-band detection by
-/// vertical whitespace-valley projection on the rendered page - the classic
-/// layout-analysis pass, no model and no prompt change. Returns x bounds in
-/// pixels for 2..=4 columns left to right, or `None` when no reliable
-/// valley set exists (callers fall back to a single full-width band).
-
 /// Strips leaked `<think>` reasoning blocks from a raw model output. Runs
 /// once at the artifact entry so page .md, page.json and bbox extraction all
 /// consume the same stripped text (single-source, plan D-5).

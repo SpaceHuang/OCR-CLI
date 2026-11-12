@@ -1,53 +1,57 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+   Compiling ocrx-ovisocr2 v0.1.0 (D:\Develop\OCR-CLI\.worktree\model-backend-ext\src\ocrx-ovisocr2)
+   Compiling ocrx-eval v0.1.0 (D:\Develop\OCR-CLI\.worktree\model-backend-ext\src\ocrx-eval)
+   Compiling ocrx-inference v0.1.0 (D:\Develop\OCR-CLI\.worktree\model-backend-ext\src\ocrx-inference)
+   Compiling ocrx v0.1.0 (D:\Develop\OCR-CLI\.worktree\model-backend-ext\src\ocrx-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.47s
      Running unittests src\main.rs (target\debug\deps\ocrx-2a40cf793f64efff.exe)
 
 running 53 tests
-test platform_paths::tests::cache_root_override_wins_and_platform_defaults_follow_standard_dirs ... ok
-test platform_paths::tests::home_dir_errors_when_no_variable_is_set ... ok
 test platform_paths::tests::config_dir_resolves_platform_standard_config_dirs ... ok
-test platform_paths::tests::home_dir_prefers_home_then_userprofile_then_drive_pair ... ok
-test tests::cli_result_report_uses_the_stable_reporter_contract ... ok
-test tests::aggregate_scan_exit_follows_the_severity_ladder ... ok
-test tests::injected_failure_errors_only_for_the_matching_page ... ok
-test platform_paths::tests::platform_label_is_stable ... ok
-test tests::command_parser_rejects_unknown_or_missing_commands ... ok
-test tests::config_resolution_uses_declared_precedence_and_audits_source ... ok
 test tests::budget_contract_mirrors_adapter_cap_and_default_combo_fits_context ... ok
-test tests::dynamic_fallback_requires_assets_only_after_new_ocr_work_appears ... ok
-test tests::linear_scale_ratio_uses_reduced_linear_width_ratio ... ok
-test tests::injected_failure_page_parser_accepts_positive_and_rejects_invalid ... ok
-test tests::fake_runtime_auto_pipeline_runs_native_then_ocr_for_fallback_pages ... ok
-test tests::model_preparation_is_required_only_for_planned_ocr_pages ... ok
-test tests::native_first_phase_text_failure_stops_without_commit ... ok
+test platform_paths::tests::cache_root_override_wins_and_platform_defaults_follow_standard_dirs ... ok
+test tests::aggregate_scan_exit_follows_the_severity_ladder ... ok
+test platform_paths::tests::home_dir_errors_when_no_variable_is_set ... ok
+test platform_paths::tests::platform_label_is_stable ... ok
+test tests::config_resolution_uses_declared_precedence_and_audits_source ... ok
+test tests::cli_result_report_uses_the_stable_reporter_contract ... ok
+test platform_paths::tests::home_dir_prefers_home_then_userprofile_then_drive_pair ... ok
 test tests::command_parser_accepts_declared_command_roots ... ok
-test tests::doctor_json_report_redacts_sensitive_cache_paths ... ok
+test tests::model_preparation_is_required_only_for_planned_ocr_pages ... ok
+test tests::command_parser_rejects_unknown_or_missing_commands ... ok
+test tests::dynamic_fallback_requires_assets_only_after_new_ocr_work_appears ... ok
+test tests::fake_runtime_auto_pipeline_runs_native_then_ocr_for_fallback_pages ... ok
+test tests::injected_failure_errors_only_for_the_matching_page ... ok
+test tests::linear_scale_ratio_uses_reduced_linear_width_ratio ... ok
 test tests::native_only_decision_only_continues_when_fallback_pages_exist ... ok
-test tests::numeric_options_enforce_runtime_safe_ranges ... ok
+test tests::injected_failure_page_parser_accepts_positive_and_rejects_invalid ... ok
+test tests::doctor_json_report_redacts_sensitive_cache_paths ... ok
 test tests::ocr_queue_after_native_phase_merges_initial_and_dynamic_pages ... ok
+test tests::native_first_phase_text_failure_stops_without_commit ... ok
+test tests::numeric_options_enforce_runtime_safe_ranges ... ok
 test tests::output_dir_for_doc_is_deterministic_and_collision_free_for_same_stems ... ok
 test tests::output_directory_defaults_to_input_stem_and_becomes_absolute ... ok
-test tests::doctor_json_report_has_stable_golden_shape ... ok
 test tests::page_selection_expands_sorts_and_deduplicates ... ok
 test tests::page_selection_rejects_zero_reversed_and_empty_items ... ok
 test tests::output_policy_rejects_case_variant_of_protected_path_on_windows ... ok
-test tests::scan_parser_rejects_resume_overwrite_and_missing_values ... ok
-test tests::output_policy_rejects_input_and_protected_overlap ... ok
 test tests::scan_parser_accepts_log_level ... ok
 test tests::scan_parser_accepts_multiple_positional_inputs_with_output_root ... ok
+test tests::scan_parser_rejects_resume_overwrite_and_missing_values ... ok
+test tests::scan_parser_accepts_pdf_routing_options_and_rejects_unknown_values ... ok
+test tests::scan_parser_accepts_runtime_and_execution_flags ... ok
+test tests::scan_parser_builds_typed_options_and_rejects_other_models ... ok
 test tests::scan_result_json_exposes_routing_metadata_alias ... ok
+test tests::doctor_json_report_has_stable_golden_shape ... ok
 test tests::scan_result_json_preserves_page_diagnostic_warnings_and_audit ... ok
 test tests::scan_result_json_preserves_truncation_and_escapes_paths ... ok
-test tests::scan_parser_accepts_pdf_routing_options_and_rejects_unknown_values ... ok
 test tests::scan_summary_json_carries_inputs_output_and_per_document_status ... ok
+test tests::output_policy_rejects_input_and_protected_overlap ... ok
+test tests::scan_parser_collects_inputs_between_options ... ok
+test tests::scan_parser_requires_output_root_for_multiple_inputs ... ok
+test tests::scan_parser_validates_model_profiles ... ok
+test tests::scan_parser_single_input_keeps_default_output_semantics ... ok
+test tests::scan_parser_validates_enum_and_positive_numeric_options ... ok
 test tests::resolve_scan_inputs_rejects_missing_paths_and_pdfless_directories ... ok
 test tests::scan_output_policy_allows_subdirectory_but_not_ancestor_of_working_directory ... ok
-test tests::scan_parser_accepts_runtime_and_execution_flags ... ok
-test tests::scan_parser_requires_output_root_for_multiple_inputs ... ok
-test tests::scan_parser_builds_typed_options_and_rejects_other_models ... ok
-test tests::scan_parser_collects_inputs_between_options ... ok
-test tests::scan_parser_single_input_keeps_default_output_semantics ... ok
-test tests::scan_parser_validates_model_profiles ... ok
-test tests::scan_parser_validates_enum_and_positive_numeric_options ... ok
 test tests::resolve_scan_inputs_expands_directories_dedupes_and_sorts ... ok
 test tests::cli_parameter_error_has_no_stdout_and_stable_exit_code ... ok
 test tests::cli_model_remove_rejects_unsupported_flags ... ok
@@ -56,7 +60,7 @@ test tests::cli_model_profile_commands_require_a_profile ... ok
 test tests::cli_initialization_error_is_one_json_error_object ... ok
 test tests::cli_resume_of_truncated_page_keeps_partial_status_and_exit_10 ... ok
 
-test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.87s
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.82s
 
      Running tests\cli_subprocess.rs (target\debug\deps\cli_subprocess-8add046b85779249.exe)
 
@@ -69,7 +73,7 @@ test cli_scan_rejects_vulkan_on_cpu_only_build ... ok
 test cli_doctor_json_report_parses_with_backslash_cache_root ... ok
 test cli_scan_resume_after_native_text_scan_succeeds ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.24s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.81s
 
      Running tests\multi_doc_orchestration.rs (target\debug\deps\multi_doc_orchestration-ba173abbf20cf9d9.exe)
 
@@ -92,7 +96,7 @@ running 2 tests
 test multi_input_relative_output_root_and_json_stdout_contract ... ok
 test orchestrated_cancellation_stops_the_queue_at_the_next_boundary ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
 
      Running tests\real_scan_fault_injection.rs (target\debug\deps\real_scan_fault_injection-7427db99d5ee9988.exe)
 
@@ -108,59 +112,59 @@ running 32 tests
 test pdf_contract_tests::native_pdf_page_requires_text_classification ... ok
 test pdf_contract_tests::native_pdf_page_requires_pdf_text_provenance ... ok
 test pdf_contract_tests::page_diagnostic_json_has_stable_shape_and_null_optional_fields ... ok
-test pdf_contract_tests::page_processing_rejects_inconsistent_actual_and_fallback_states ... ok
-test pdf_contract_tests::page_processing_validation_rejects_inconsistent_route_states ... ok
 test pdf_contract_tests::page_processing_accepts_pending_and_consistent_terminal_states ... ok
-test resource_sampler::tests::ps_parser_reads_bare_rss_kb_with_padding ... ok
+test pdf_contract_tests::page_processing_validation_rejects_inconsistent_route_states ... ok
 test pdf_contract_tests::pdf_diagnostic_strings_are_stable_machine_values ... ok
 test pdf_contract_tests::routed_domain_metadata_round_trips_through_serde_with_stable_enum_names ... ok
+test pdf_contract_tests::page_processing_rejects_inconsistent_actual_and_fallback_states ... ok
 test pdf_contract_tests::routing_configuration_enums_round_trip_with_stable_json_values ... ok
-test pdf_contract_tests::serde_metadata_rejects_unknown_reason_and_missing_required_fields ... ok
-test tests::bbox_uses_half_open_1000_space ... ok
-test resource_sampler::tests::tasklist_parser_reads_quoted_mem_usage_with_thousands_separator ... ok
-test pdf_contract_tests::pdf_page_document_v2_round_trips_contract_metadata_and_rejects_wrong_version ... ok
-test resource_sampler::tests::tasklist_parser_rejects_localized_info_lines_and_empty_output ... ok
 test resource_sampler::tests::tasklist_parser_takes_first_data_row_and_ignores_trailing_rows ... ok
 test tests::app_error_keeps_three_part_user_context ... ok
 test tests::bbox_constructor_rejects_invalid_values ... ok
-test tests::child_chain_propagates_through_nesting ... ok
-test tests::gpu_resource_report_json_has_stable_schema_golden ... ok
+test tests::bbox_uses_half_open_1000_space ... ok
+test resource_sampler::tests::tasklist_parser_reads_quoted_mem_usage_with_thousands_separator ... ok
+test pdf_contract_tests::pdf_page_document_v2_round_trips_contract_metadata_and_rejects_wrong_version ... ok
+test pdf_contract_tests::serde_metadata_rejects_unknown_reason_and_missing_required_fields ... ok
+test resource_sampler::tests::tasklist_parser_rejects_localized_info_lines_and_empty_output ... ok
+test resource_sampler::tests::ps_parser_reads_bare_rss_kb_with_padding ... ok
 test tests::child_keeps_observing_after_the_parent_handle_is_dropped ... ok
-test tests::child_observes_ancestors_but_its_cancel_stays_local ... ok
-test tests::error_kinds_have_stable_exit_codes ... ok
-test tests::json_validator_accepts_escaped_windows_paths_and_balanced_containers ... ok
+test tests::child_chain_propagates_through_nesting ... ok
 test tests::json_validator_rejects_unescaped_backslash_and_structural_errors ... ok
 test tests::page_document_empty_and_warning_variants_round_trip ... ok
+test tests::gpu_resource_report_json_has_stable_schema_golden ... ok
+test tests::json_validator_accepts_escaped_windows_paths_and_balanced_containers ... ok
 test tests::page_document_validation_rejects_invalid_visual_region ... ok
+test tests::error_kinds_have_stable_exit_codes ... ok
 test tests::page_document_json_has_stable_schema_golden ... ok
+test tests::child_observes_ancestors_but_its_cancel_stays_local ... ok
 test tests::page_document_validation_rejects_unknown_schema_and_zero_page ... ok
 test tests::window_depth_tiers_by_vram_and_skips_the_pit ... ok
-test resource_sampler::tests::real_sampler_returns_none_for_exited_process ... ok
 test resource_sampler::tests::real_sampler_returns_process_level_memory_on_windows ... ok
+test resource_sampler::tests::real_sampler_returns_none_for_exited_process ... ok
 
-test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.20s
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s
 
      Running unittests src\lib.rs (target\debug\deps\ocrx_eval-18ed7c243045fe58.exe)
 
 running 20 tests
-test execute::tests::rescan_comparison_passes_for_byte_identical_artifacts ... ok
-test quality::tests::native_release_metrics_enforce_all_p0_thresholds ... ok
-test execute::tests::rescan_comparison_flags_differences_and_missing_sides ... ok
 test quality::tests::bbox_recall_is_geometry_only_and_handles_empty_truth ... ok
-test quality::tests::quality_outcome_summary_counts_blank_duplicate_and_failed_pages ... ok
-test quality::tests::quality_manifest_rejects_incomplete_overlap_and_wrong_membership ... ok
-test execute::tests::evaluation_identity_json_is_deterministic_and_field_ordered ... ok
-test quality::tests::performance_gate_requires_five_runs_native_only_and_half_median ... ok
-test quality::tests::release_report_json_keeps_gate_failures_and_inputs ... ok
-test quality::tests::bbox_validity_rate_covers_empty_valid_and_invalid_sets ... ok
-test quality::tests::block_scores_match_text_and_bbox_once ... ok
-test quality::tests::release_manifest_requires_frozen_quality_set_sizes ... ok
 test quality::tests::normalized_edit_distance_is_unicode_safe_and_bounded ... ok
+test quality::tests::block_scores_match_text_and_bbox_once ... ok
+test execute::tests::evaluation_identity_json_is_deterministic_and_field_ordered ... ok
+test execute::tests::rescan_comparison_flags_differences_and_missing_sides ... ok
+test execute::tests::rescan_comparison_passes_for_byte_identical_artifacts ... ok
+test quality::tests::performance_gate_requires_five_runs_native_only_and_half_median ... ok
+test quality::tests::native_release_metrics_enforce_all_p0_thresholds ... ok
+test quality::tests::bbox_validity_rate_covers_empty_valid_and_invalid_sets ... ok
+test quality::tests::quality_manifest_rejects_incomplete_overlap_and_wrong_membership ... ok
+test quality::tests::quality_outcome_summary_counts_blank_duplicate_and_failed_pages ... ok
+test quality::tests::release_manifest_requires_frozen_quality_set_sizes ... ok
+test quality::tests::release_report_json_keeps_gate_failures_and_inputs ... ok
 test quality::tests::route_accuracy_is_deterministic_for_empty_perfect_and_mixed_routes ... ok
 test quality::tests::route_confusion_matrix_uses_stable_page_type_axes ... ok
 test quality::tests::reading_order_accuracy_scores_perfect_and_reversed_orders ... ok
-test quality::tests::quality_manifest_loader_parses_and_validates_tsv ... ok
 test quality::tests::quality_manifest_loader_rejects_malformed_sha256 ... ok
+test quality::tests::quality_manifest_loader_parses_and_validates_tsv ... ok
 test quality::tests::quality_manifest_loader_rejects_manifest_for_another_input ... ok
 test execute::tests::rescan_outputs_comparison_reads_real_directories ... ok
 
@@ -170,26 +174,26 @@ test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 running 21 tests
 test device::tests::auto_selects_the_frozen_priority_with_compiled_intersection ... ok
-test device::tests::compiled_backends_always_include_cpu ... ok
-test binding::tests::every_binding_field_is_checked_individually ... ok
-test binding::tests::the_registered_triple_passes ... ok
-test registry::tests::verifier_rejects_any_registry_mismatch ... ok
-test probe::tests::fake_probe_round_trips_configured_values ... ok
-test registry::tests::verifier_accepts_the_registered_triple ... ok
-test registry::tests::registry_identities_are_the_frozen_values ... ok
-test telemetry::tests::stopping_a_missing_sampler_is_none ... ok
 test device::tests::window_depth_tiers_by_probed_vram ... ok
-test service::tests::prepare_offline_without_assets_fails_before_creating_a_session ... ok
-test device::tests::diagnose_reports_the_structured_overview ... ok
-test service::tests::prepare_fails_loudly_for_unknown_models ... ok
-test service::tests::session_decode_echo_passes_the_backend_receipt_through ... ok
-test service::tests::session_preserves_per_slot_failures_in_windows ... ok
-test service::tests::submit_window_maps_batch_failures_to_every_entry ... ok
+test binding::tests::the_registered_triple_passes ... ok
 test device::tests::explicit_unavailable_devices_fail_loud ... ok
-test service::tests::static_identity_resolves_auto_and_carries_the_registry_values ... ok
+test binding::tests::every_binding_field_is_checked_individually ... ok
+test device::tests::compiled_backends_always_include_cpu ... ok
 test probe::tests::real_probe_reports_cpu_available_on_every_platform ... ok
+test service::tests::prepare_fails_loudly_for_unknown_models ... ok
+test registry::tests::registry_identities_are_the_frozen_values ... ok
+test service::tests::session_preserves_per_slot_failures_in_windows ... ok
+test registry::tests::verifier_accepts_the_registered_triple ... ok
+test device::tests::diagnose_reports_the_structured_overview ... ok
+test probe::tests::fake_probe_round_trips_configured_values ... ok
 test service::tests::session_serves_many_submits_with_cumulative_telemetry ... ok
+test service::tests::submit_window_maps_batch_failures_to_every_entry ... ok
+test registry::tests::verifier_rejects_any_registry_mismatch ... ok
+test service::tests::session_decode_echo_passes_the_backend_receipt_through ... ok
+test service::tests::static_identity_resolves_auto_and_carries_the_registry_values ... ok
+test telemetry::tests::stopping_a_missing_sampler_is_none ... ok
 test telemetry::tests::sampler_round_trip_is_available_on_windows ... ok
+test service::tests::prepare_offline_without_assets_fails_before_creating_a_session ... ok
 
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -198,31 +202,31 @@ test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 running 36 tests
 test asset::tests::non_interactive_port_declines_every_proposal ... ok
 test asset::tests::manifest_rejects_wrong_schema_non_https_and_bad_hashes ... ok
-test asset::tests::optional_roles_are_reported_separately_from_required_roles ... ok
 test backend::tests::default_generate_window_is_sequential_and_slot_indexed ... ok
-test asset::tests::manifest_rejects_duplicate_roles_and_unsafe_paths ... ok
 test backend::tests::decode_echo_flows_from_backend_output_through_decode ... ok
-test error::tests::every_category_has_a_stable_kind_token ... ok
-test backend::tests::encoded_task_carries_placement_and_variants_without_business_types ... ok
-test id::tests::invalid_identifier_reports_invalid_task_category ... ok
 test asset::tests::valid_multi_role_manifest_passes_validation ... ok
-test id::tests::identifiers_accept_clean_values_and_reject_bad_ones ... ok
+test asset::tests::manifest_rejects_duplicate_roles_and_unsafe_paths ... ok
+test asset::tests::optional_roles_are_reported_separately_from_required_roles ... ok
+test backend::tests::encoded_task_carries_placement_and_variants_without_business_types ... ok
 test error::tests::cancelled_is_a_category_without_detail ... ok
-test id::tests::identifiers_sort_and_display_stably ... ok
-test id::tests::identifiers_serialize_as_transparent_strings ... ok
+test error::tests::every_category_has_a_stable_kind_token ... ok
 test identity::tests::step_profile_delta_from_and_accumulate_cover_every_field ... ok
 test identity::tests::static_projection_covers_every_execution_field_except_backend_batch_depth_and_display ... ok
-test identity::tests::telemetry_tokens_per_second_is_zero_without_generation_time ... ok
-test identity::tests::step_profile_env_enablement_treats_unset_zero_and_empty_as_off ... ok
-test identity::tests::identity_serializes_with_deterministic_field_order_and_values ... ok
+test id::tests::identifiers_serialize_as_transparent_strings ... ok
+test id::tests::identifiers_sort_and_display_stably ... ok
+test id::tests::invalid_identifier_reports_invalid_task_category ... ok
 test identity::tests::model_identity_orders_assets_by_role_and_rejects_duplicates ... ok
-test management::tests::binding_verifier_port_accepts_and_rejects_via_fake ... ok
-test identity::tests::telemetry_delta_from_isolates_per_document_contribution ... ok
+test id::tests::identifiers_accept_clean_values_and_reject_bad_ones ... ok
+test identity::tests::step_profile_env_enablement_treats_unset_zero_and_empty_as_off ... ok
 test identity::tests::step_profile_json_schema_is_frozen ... ok
+test identity::tests::telemetry_delta_from_isolates_per_document_contribution ... ok
+test identity::tests::identity_serializes_with_deterministic_field_order_and_values ... ok
+test identity::tests::telemetry_tokens_per_second_is_zero_without_generation_time ... ok
+test management::tests::binding_verifier_port_accepts_and_rejects_via_fake ... ok
 test management::tests::install_plan_pending_bytes_counts_only_uncached_items ... ok
+test management::tests::receipt_carries_asset_identities_for_audit ... ok
 test management::tests::remove_report_separates_removed_from_kept_shared_roles ... ok
 test service::tests::cancelled_submit_maps_to_the_cancelled_category ... ok
-test management::tests::receipt_carries_asset_identities_for_audit ... ok
 test service::tests::default_submit_window_runs_sequentially_with_slot_progress ... ok
 test service::tests::fake_session_serves_multiple_submits_with_cumulative_telemetry ... ok
 test task::tests::decode_echo_defaults_to_none_for_both_variants ... ok
@@ -239,23 +243,23 @@ test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 running 28 tests
 test builtin::ovisocr2::tests::mmproj_source_url_is_shared_across_profiles ... ok
-test cache::tests::manifest_asset_paths_cover_every_role_in_manifest_order ... ok
 test builtin::ovisocr2::tests::all_four_profiles_validate_with_frozen_metadata ... ok
-test builtin::ovisocr2::tests::unknown_profile_is_rejected_without_network ... ok
 test cache::tests::ovis_layout_is_byte_identical_to_the_legacy_paths ... ok
-test cache::tests::path_escape_is_rejected_for_revisions_and_roles ... ok
+test cache::tests::manifest_asset_paths_cover_every_role_in_manifest_order ... ok
+test builtin::ovisocr2::tests::unknown_profile_is_rejected_without_network ... ok
+test catalog::tests::auto_resolution_follows_the_frozen_memory_rule ... ok
+test catalog::tests::catalog_lists_only_ovisocr2_with_frozen_profiles ... ok
+test install::tests::declined_interactive_confirmation_aborts_without_downloads ... ok
 test cache::tests::profiles_share_revision_scope_assets_but_keep_private_models ... ok
+test remove::tests::unknown_profiles_are_rejected_structurally ... ok
+test cache::tests::path_escape_is_rejected_for_revisions_and_roles ... ok
+test install::tests::policy_failures_never_create_partial_state ... ok
+test recommend::tests::recommendation_matches_the_frozen_memory_ladder ... ok
 test catalog::tests::manifest_resolution_rejects_unknown_profiles ... ok
 test catalog::tests::unknown_models_are_rejected_structurally ... ok
-test catalog::tests::auto_resolution_follows_the_frozen_memory_rule ... ok
-test remove::tests::unknown_profiles_are_rejected_structurally ... ok
-test catalog::tests::catalog_lists_only_ovisocr2_with_frozen_profiles ... ok
 test recommend::tests::blocked_first_choice_falls_back_to_compact_only ... ok
-test install::tests::declined_interactive_confirmation_aborts_without_downloads ... ok
-test recommend::tests::recommendation_matches_the_frozen_memory_ladder ... ok
 test transport::tests::curl_transport_refuses_non_https_urls_before_spawning_a_process ... ok
 test transport::tests::fake_transport_surfaces_controlled_failures_and_unknown_routes ... ok
-test install::tests::policy_failures_never_create_partial_state ... ok
 test verify::tests::verify_profile_surfaces_missing_assets_and_binding_failures ... ok
 test verify::tests::real_ovis_manifest_paths_resolve_without_materializing_bytes ... ok
 test transport::tests::fake_transport_replays_bytes_and_records_requests ... ok
@@ -272,22 +276,22 @@ test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
      Running unittests src\lib.rs (target\debug\deps\ocrx_output-dff55c951b812b51.exe)
 
 running 104 tests
-test compatibility::tests::native_matching_ignores_ocr_only_changes_and_routes_never_cross ... ok
-test checkpoint_v6::tests::v5_decode_and_think_fields_never_participate_or_fail ... ok
+test checkpoint_v6::tests::v5_native_complete_maps_to_reusable_v6_complete ... ok
+test checkpoint_v6::tests::v5_pending_suffix_maps_to_recoverable_pending ... ok
 test checkpoint_v6::tests::v5_ocr_complete_always_reprocesses ... ok
 test checkpoint_v6::tests::v5_contradictions_and_degenerated_reprocess ... ok
-test checkpoint_v6::tests::v5_native_complete_maps_to_reusable_v6_complete ... ok
-test commit_profile::tests::disabled_recorder_records_nothing ... ok
+test checkpoint_v6::tests::v5_decode_and_think_fields_never_participate_or_fail ... ok
 test commit_profile::tests::clones_share_one_state ... ok
-test commit_profile::tests::commit_profile_json_schema_is_frozen ... ok
-test commit_profile::tests::recorder_keys_rows_by_generation_and_totals_only_terminal ... ok
+test commit_profile::tests::disabled_recorder_records_nothing ... ok
 test compatibility::tests::display_changes_never_trigger_reprocessing_rblk7 ... ok
-test compatibility::tests::native_identities_do_not_match_ocr_expectations ... ok
 test compatibility::tests::final_compare_requires_the_actual_backend_and_batch_depth ... ok
-test checkpoint_v6::tests::v5_pending_suffix_maps_to_recoverable_pending ... ok
-test compatibility::tests::pre_compare_fails_on_any_static_execution_change ... ok
+test compatibility::tests::native_matching_ignores_ocr_only_changes_and_routes_never_cross ... ok
+test compatibility::tests::native_identities_do_not_match_ocr_expectations ... ok
 test compatibility::tests::pre_compare_ignores_actual_backend_and_batch_depth ... ok
 test compatibility::tests::pre_compare_passes_when_the_static_identity_agrees ... ok
+test commit_profile::tests::commit_profile_json_schema_is_frozen ... ok
+test compatibility::tests::pre_compare_fails_on_any_static_execution_change ... ok
+test commit_profile::tests::recorder_keys_rows_by_generation_and_totals_only_terminal ... ok
 test compatibility::tests::serialization_is_deterministic_and_stores_display_for_audit ... ok
 test tests::backend_initialization_errors_have_device_specific_diagnostics ... ok
 test tests::cancellation_token_distinguishes_first_and_second_interrupt ... ok
@@ -297,11 +301,13 @@ test tests::effective_ocr_checkpoint_rejects_changed_profile_or_device ... ok
 test checkpoint_v6::tests::v4_and_older_are_never_a_crash_and_hint_the_page ... ok
 test tests::checkpoint_disposition_distinguishes_pending_and_reprocess_states ... ok
 test tests::cancelled_window_discards_encode_results ... ok
-test tests::checkpoint_state_machine_exposes_recovery_states ... ok
 test tests::commit_profile_cancelled_scan_never_reaches_terminal_totals ... ok
+test tests::checkpoint_state_machine_exposes_recovery_states ... ok
+test checkpoint_v6::tests::pending_ocr_status_round_trips ... ok
+test checkpoint_v6::tests::v6_round_trips_every_field_with_status_and_identity ... ok
+test tests::atomic_write_rejects_directory_target_without_removing_existing_file ... ok
 test tests::heartbeat_emits_immediately_then_at_fixed_intervals ... ok
 test tests::incomplete_pending_ocr_checkpoint_is_recoverable_but_not_reusable ... ok
-test tests::atomic_write_rejects_directory_target_without_removing_existing_file ... ok
 test tests::job_summary_maps_page_outcomes_to_stable_status ... ok
 test tests::markdown_merge_rejects_empty_duplicate_or_zero_pages ... ok
 test tests::markdown_merge_sorts_pages_and_normalizes_line_endings ... ok
@@ -310,69 +316,67 @@ test tests::merge_markdown_inserts_frozen_incomplete_markers ... ok
 test tests::native_checkpoint_ignores_ocr_only_configuration_changes ... ok
 test tests::native_fallback_queue_is_sorted_and_deduplicated_by_page ... ok
 test tests::native_fallback_queue_keeps_only_failed_candidates_with_reasons ... ok
-test tests::encode_results_are_discarded_on_recognition_failure ... ok
 test tests::ocr_queue_merge_sorts_deduplicates_and_keeps_fallback_reason ... ok
-test tests::collect_page_markdowns_reads_existing_page_artifacts_in_requested_order ... ok
-test checkpoint_v6::tests::pending_ocr_status_round_trips ... ok
-test tests::atomic_write_commits_complete_content_without_part_file ... ok
+test tests::encode_results_are_discarded_on_recognition_failure ... ok
 test tests::output_may_sit_below_but_not_at_or_above_the_working_directory ... ok
 test tests::output_root_accepts_unrelated_absolute_path ... ok
-test checkpoint_v6::tests::v6_round_trips_every_field_with_status_and_identity ... ok
+test tests::checkpoint_attempts_field_supports_extended_ladder_and_stays_readable ... ok
+test tests::collect_page_markdowns_reads_existing_page_artifacts_in_requested_order ... ok
 test tests::output_root_rejects_relative_and_protected_paths ... ok
 test tests::output_root_rejects_trailing_space_or_dot_components_on_windows ... ok
-test tests::checkpoint_new_fields_round_trip_and_old_v5_text_stays_readable ... ok
 test tests::output_root_rejects_case_variant_of_protected_path_on_windows ... ok
-test tests::page_lifecycle_allows_only_forward_terminal_transitions ... ok
-test tests::checkpoint_round_trip_is_atomic_and_versioned ... ok
 test tests::output_containing_working_directory_folds_case_on_windows ... ok
+test tests::page_lifecycle_allows_only_forward_terminal_transitions ... ok
 test tests::path_contains_is_component_wise ... ok
 test tests::pdf_compatibility_fragment_changes_when_routing_contract_changes ... ok
 test tests::pending_ocr_checkpoint_factory_is_incomplete_and_recoverable ... ok
 test tests::pending_ocr_marker_is_stable_and_idempotent ... ok
-test tests::checkpoint_attempts_field_supports_extended_ladder_and_stays_readable ... ok
+test tests::output_root_overlap_uses_canonical_forms ... ok
+test tests::output_root_dot_dot_vector_is_resolved_before_overlap_check ... ok
+test tests::atomic_write_commits_complete_content_without_part_file ... ok
+test tests::checkpoint_round_trip_is_atomic_and_versioned ... ok
 test tests::progress_eta_is_unknown_without_samples_and_after_completion ... ok
 test tests::progress_jsonl_and_error_json_are_stable ... ok
 test tests::progress_stage_names_are_stable_machine_values ... ok
-test tests::finalize_document_merges_native_and_ocr_pages_in_pdf_order ... ok
-test tests::output_root_overlap_uses_canonical_forms ... ok
+test tests::checkpoint_new_fields_round_trip_and_old_v5_text_stays_readable ... ok
 test tests::rendered_page_carries_stable_render_audit ... ok
 test tests::rendered_page_rejects_invalid_rgb8_shape ... ok
-test tests::output_root_dot_dot_vector_is_resolved_before_overlap_check ... ok
 test tests::report_formats_are_stdout_ready ... ok
 test tests::reporter_keeps_json_result_on_stdout_and_progress_on_stderr ... ok
-test tests::overwrite_removes_only_an_allowed_output_root ... ok
 test tests::reporter_progress_off_emits_nothing ... ok
 test tests::reporter_redacts_sensitive_values_on_success_and_error_paths ... ok
 test tests::reporter_text_errors_never_pollute_machine_stdout ... ok
 test tests::result_json_is_versioned_and_escapes_user_values ... ok
+test tests::finalize_document_merges_native_and_ocr_pages_in_pdf_order ... ok
+test tests::overwrite_removes_only_an_allowed_output_root ... ok
 test tests::routing_checkpoint_metadata_has_stable_v6_json_shape ... ok
 test tests::routing_checkpoint_result_persists_v6_metadata_in_result_json ... ok
 test tests::scan_controller_processes_serially_and_stops_after_cancel ... ok
 test tests::scan_service_preflights_loads_once_and_processes_serially ... ok
-test tests::scan_service_cancellation_stops_new_pages_and_keeps_committed_page ... ok
-test tests::encoder_panic_is_fail_loud_at_fetch ... ok
 test checkpoint_v6::tests::v6_write_clamps_attempts_to_the_frozen_range_but_reads_accept_wider ... ok
+test tests::encoder_panic_is_fail_loud_at_fetch ... ok
+test tests::scan_service_cancellation_stops_new_pages_and_keeps_committed_page ... ok
 test tests::recovery_ignores_pending_checkpoint_from_another_input ... ok
 test tests::render_audit_is_written_as_atomic_page_sidecar ... ok
-test tests::encode_error_maps_to_page_recognize_diagnostic ... ok
 test tests::scenario_e_cancellation_during_attempt_reports_cancelled ... ok
 test tests::recovery_rebuilds_sorted_pending_ocr_queue_from_checkpoint_directory ... ok
-test tests::native_page_commit_and_collect_returns_the_committed_markdown ... ok
+test tests::encode_error_maps_to_page_recognize_diagnostic ... ok
 test tests::native_page_commit_does_not_create_raster_asset ... ok
-test tests::single_page_encode_error_yields_only_failed_diagnostics ... ok
+test tests::native_page_commit_and_collect_returns_the_committed_markdown ... ok
 test tests::page_commit_writes_artifacts_before_complete_checkpoint ... ok
+test tests::single_page_encode_error_yields_only_failed_diagnostics ... ok
 test tests::degeneration_retries_route_through_the_retry_seam ... ok
 test tests::encode_pipeline_commits_the_terminal_generation ... ok
+test tests::scenario_c_pure_truncation_retries_through_ladder_then_resumes_committed ... ok
 test tests::scenario_a_first_attempt_loops_second_succeeds ... ok
 test tests::perturbed_retries_use_frozen_scale_ratios ... ok
-test tests::scenario_b_all_attempts_degenerate_commits_marked_partial_with_raw ... ok
-test tests::scenario_c_pure_truncation_retries_through_ladder_then_resumes_committed ... ok
 test tests::commit_profile_disabled_yields_nothing ... ok
+test tests::scenario_b_all_attempts_degenerate_commits_marked_partial_with_raw ... ok
 test tests::shared_fallback_truncated_page_counted_once ... ok
 test tests::scenario_d_resume_retries_degenerated_pages_with_fresh_attempt_budget ... ok
-test tests::batch_fallback_discards_stale_attempt_encodes ... ok
 test tests::batch_level_failure_falls_back_to_single_stream_and_commits_all_pages ... ok
 test tests::commit_profile_captures_every_segment_end_to_end ... ok
+test tests::batch_fallback_discards_stale_attempt_encodes ... ok
 test tests::scan_service_resume_reuses_only_compatible_committed_pages ... ok
 test tests::pipeline_and_fallback_commits_are_byte_identical ... ok
 test tests::run_pages_with_model_matches_the_loading_entry_point ... ok
@@ -383,43 +387,43 @@ test result: ok. 104 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fi
 
 running 8 tests
 test adapter::tests::decode_counts_stray_tags_without_eating_content ... ok
-test adapter::tests::decode_passes_the_backend_echo_through_untouched ... ok
 test adapter::tests::decode_counts_word_boundary_protection_and_is_idempotent ... ok
+test adapter::tests::decode_strips_full_blocks_and_counts_silent_empty_strips ... ok
+test adapter::tests::encode_rejects_multi_image_requests ... ok
+test adapter::tests::decode_passes_the_backend_echo_through_untouched ... ok
+test adapter::tests::encode_places_the_image_before_an_untouched_prompt ... ok
 test adapter::tests::decode_raw_text_is_the_normalized_prestrip_output ... ok
 test adapter::tests::identity_is_the_frozen_display_pair ... ok
-test adapter::tests::encode_places_the_image_before_an_untouched_prompt ... ok
-test adapter::tests::encode_rejects_multi_image_requests ... ok
-test adapter::tests::decode_strips_full_blocks_and_counts_silent_empty_strips ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running unittests src\lib.rs (target\debug\deps\ocrx_pdf-d15ccfa8dc9d9d1a.exe)
 
 running 63 tests
-test tests::batch_classifier_applies_one_versioned_config_to_every_page ... ok
 test tests::batch_classifier_preserves_page_order_and_empty_inputs ... ok
+test tests::batch_classifier_applies_one_versioned_config_to_every_page ... ok
 test tests::bbox_iou_is_zero_for_disjoint_one_for_identical_and_expected_for_overlap ... ok
 test tests::checked_page_plan_matrix_keeps_empty_and_routes_uncertain_pages_conservatively ... ok
-test tests::classifier_config_freezes_version_and_controls_only_versioned_thresholds ... ok
-test tests::classifier_routes_broken_cmap_punctuation_text_to_ocr ... ok
-test tests::crop_bbox_rejects_invalid_bbox_and_valid_bbox_is_always_nonempty ... ok
 test tests::classifier_routes_deterministically_at_p0_boundaries ... ok
-test tests::classifier_routes_non_finite_page_signals_to_low_confidence_ocr ... ok
-test tests::classifier_uses_conservative_reason_precedence_for_unreliable_text ... ok
 test tests::classifier_keeps_symbol_light_but_legible_text_on_native_path ... ok
+test tests::classifier_routes_broken_cmap_punctuation_text_to_ocr ... ok
+test tests::classifier_config_freezes_version_and_controls_only_versioned_thresholds ... ok
+test tests::classifier_routes_non_finite_page_signals_to_low_confidence_ocr ... ok
+test tests::crop_bbox_fits_within_image_bounds_at_the_far_edge_without_overflow ... ok
+test tests::duplicate_text_geometry_is_detected_deterministically ... ok
 test tests::default_render_is_300_dpi ... ok
+test tests::document_summary_is_stable_and_conservative ... ok
 test tests::crop_bbox_uses_floor_for_near_edge_and_ceil_for_far_edge ... ok
 test tests::high_overlap_with_different_text_is_a_geometry_anomaly ... ok
-test tests::document_summary_is_stable_and_conservative ... ok
-test tests::duplicate_text_geometry_is_detected_deterministically ... ok
-test tests::crop_bbox_fits_within_image_bounds_at_the_far_edge_without_overflow ... ok
 test tests::geometry_anomaly_detects_overlapping_large_blocks_without_u16_overflow ... ok
+test tests::classifier_uses_conservative_reason_precedence_for_unreliable_text ... ok
+test tests::crop_bbox_rejects_invalid_bbox_and_valid_bbox_is_always_nonempty ... ok
 test tests::empty_pdf_page_artifacts_are_a_complete_empty_route ... ok
 test tests::huge_mediabox_fixture_is_hash_locked ... ok
-test tests::native_candidate_validation_is_tier_aware_and_preserves_page_number ... ok
 test tests::native_page_artifacts_validate_and_return_matching_markdown_and_json ... ok
 test tests::native_page_maps_to_existing_page_document_json_and_markdown_shape ... ok
 test tests::native_page_markdown_is_deterministic_and_excludes_non_markdown_assets ... ok
+test tests::native_candidate_validation_is_tier_aware_and_preserves_page_number ... ok
 test tests::native_pdf_page_artifacts_emit_routed_schema_v2_json ... ok
 test tests::native_pdf_page_document_carries_classification_and_block_provenance ... ok
 test tests::native_text_blocks_coalesce_same_line_and_preserve_reading_order ... ok
@@ -449,8 +453,8 @@ test tests::shared_pdfium_rejects_parent_dir_in_file_form_library_path ... ok
 test tests::save_bbox_png_rejects_invalid_bbox_without_writing_any_file ... ok
 test tests::worker_scheduler_rejects_missing_executable_and_invalid_range ... ok
 test tests::stage0_pdf_fixtures_are_present_and_hash_locked ... ok
-test tests::worker_segment_validation_rejects_missing_and_part_files ... ok
 test tests::bbox_iou_and_png_output_are_deterministic ... ok
+test tests::worker_segment_validation_rejects_missing_and_part_files ... ok
 test tests::worker_segment_validation_rejects_extra_png ... ok
 test tests::real_pdf_page_counts_match_fixtures ... ok
 test tests::real_pdfium_errors_classify_to_stable_content_categories ... ok
@@ -460,7 +464,7 @@ test tests::stage0_real_pdfium_fixture_reports_text_and_geometry_when_library_is
 test tests::real_render_pixel_budget_scales_proportionally_without_cropping ... ok
 test tests::real_pdf_page_selection_maps_to_the_requested_index ... ok
 
-test result: ok. 56 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 0.56s
+test result: ok. 56 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 0.54s
 
      Running unittests src\bin\pdfium-check.rs (target\debug\deps\pdfium_check-78c9c8dcdffac15e.exe)
 
@@ -490,14 +494,14 @@ test path_escape_library_dir_is_rejected ... ok
 test missing_library_does_not_silently_succeed ... ok
 test encrypted_pdf_requires_password_and_recovers_with_password ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
 
      Running tests\resource_regression.rs (target\debug\deps\resource_regression-8ecd682088f50547.exe)
 
 running 1 test
 test pdfium_resource_regression_collects_rss_curve ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.67s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.69s
 
      Running tests\worker_scheduler.rs (target\debug\deps\worker_scheduler-51d1862af41571a2.exe)
 
@@ -506,7 +510,7 @@ test worker_scheduler_commits_only_valid_segments_and_reports_resources ... ok
 test worker_scheduler_passes_password_as_optional_seventh_argument ... ok
 test worker_scheduler_rejects_failure_timeout_cancel_and_invalid_output ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
 
      Running unittests src\lib.rs (target\debug\deps\ocrx_primitives-487165bf3c1e56a5.exe)
 
@@ -515,9 +519,9 @@ test cancellation::tests::child_chain_propagates_through_nesting ... ok
 test cancellation::tests::child_keeps_observing_after_the_parent_handle_is_dropped ... ok
 test cancellation::tests::child_observes_ancestors_but_its_cancel_stays_local ... ok
 test cancellation::tests::first_request_is_graceful_and_second_escalates ... ok
+test hash::tests::sha256_matches_nist_vectors_and_chunking ... ok
 test progress::tests::progress_is_copyable_and_comparable ... ok
 test hash::tests::sha256_is_length_sensitive_across_the_56_byte_padding_boundary ... ok
-test hash::tests::sha256_matches_nist_vectors_and_chunking ... ok
 test hash::tests::sha256_file_matches_in_memory_hash_and_rejects_missing_files ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
@@ -525,49 +529,49 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src\lib.rs (target\debug\deps\ocrx_runtime-69647aaa409dc1eb.exe)
 
 running 46 tests
-test backend::llama::tests::decode_echo_carries_the_requested_variants_on_the_serial_path ... ok
-test backend::llama::tests::encoded_task_conversion_validates_the_ovis_protocol ... ok
-test backend::tests::fake_backend_cancel_aware_maps_to_cancelled ... ok
-test backend::llama::tests::worker_error_mapping_preserves_the_batch_level_protocol ... ok
-test backend::tests::fake_backend_divergent_echo_proves_the_receipt_comes_from_the_backend ... ok
-test backend::tests::fake_backend_exposes_programmable_step_profile_and_telemetry ... ok
-test backend::tests::fake_backend_window_success_is_slot_ordered_and_per_slot_failing ... ok
 test backend::llama::tests::finish_reason_mapping_covers_the_frozen_set ... ok
+test backend::llama::tests::decode_echo_carries_the_requested_variants_on_the_serial_path ... ok
+test backend::tests::fake_backend_cancel_aware_maps_to_cancelled ... ok
+test backend::llama::tests::encoded_task_conversion_validates_the_ovis_protocol ... ok
 test backend::tests::fake_backend_is_programmable_and_captures_requests ... ok
+test backend::llama::tests::worker_error_mapping_preserves_the_batch_level_protocol ... ok
+test backend::tests::fake_backend_exposes_programmable_step_profile_and_telemetry ... ok
 test llama_mtmd::tests::p2_loop_triggers_at_eight_repeats ... ok
-test backend::tests::fake_backend_window_batch_failure_fails_every_entry_without_consuming ... ok
+test backend::tests::fake_backend_divergent_echo_proves_the_receipt_comes_from_the_backend ... ok
 test llama_mtmd::tests::argmax_matches_max_by_total_cmp_on_special_values ... ok
-test llama_mtmd::tests::p1_loop_triggers_at_sixteen_repeats_not_fifteen ... ok
-test llama_mtmd::tests::p9_loop_triggers_at_four_repeats_not_three ... ok
-test llama_mtmd::tests::pre_loop_prefix_does_not_delay_or_fake_a_trigger ... ok
-test llama_mtmd::tests::p64_with_four_repeats_fits_window_and_triggers ... ok
-test llama_mtmd::tests::generation_forwards_progress_and_result_and_updates_telemetry ... ok
 test llama_mtmd::tests::real_model_load_generate_and_telemetry_through_the_actor ... ignored, env-gated: OCRX_E2E_MODEL=1 with the reference profile installed
 test llama_mtmd::tests::real_model_window_decode_matches_single_stream_prefix ... ignored, env-gated: OCRX_E2E_MODEL=1 with the reference profile installed
-test llama_mtmd::tests::periods_above_max_are_not_detected_at_runtime_level ... ok
-test llama_mtmd::tests::long_non_repeating_stream_never_triggers ... ok
-test llama_mtmd::tests::step_profile_survives_a_window_and_stale_message_drain ... ok
+test llama_mtmd::tests::p1_loop_triggers_at_sixteen_repeats_not_fifteen ... ok
+test backend::tests::fake_backend_window_success_is_slot_ordered_and_per_slot_failing ... ok
+test llama_mtmd::tests::p9_loop_triggers_at_four_repeats_not_three ... ok
+test llama_mtmd::tests::generation_forwards_progress_and_result_and_updates_telemetry ... ok
+test llama_mtmd::tests::pre_loop_prefix_does_not_delay_or_fake_a_trigger ... ok
+test llama_mtmd::tests::p64_with_four_repeats_fits_window_and_triggers ... ok
+test backend::tests::fake_backend_window_batch_failure_fails_every_entry_without_consuming ... ok
 test llama_mtmd::tests::window_context_capacity_covers_mixed_budgets ... ok
-test llama_mtmd::tests::step_profile_roundtrip_works_while_the_worker_is_alive ... ok
-test llama_mtmd::tests::telemetry_roundtrip_works_while_the_worker_is_alive ... ok
-test step_profile::tests::gpu_resource_report_schema_stays_untouched_by_step_channel ... ok
+test llama_mtmd::tests::long_non_repeating_stream_never_triggers ... ok
+test llama_mtmd::tests::periods_above_max_are_not_detected_at_runtime_level ... ok
 test step_profile::tests::step_profile_accumulate_sums_every_field ... ok
-test step_profile::tests::step_profile_delta_from_isolates_per_document_contribution ... ok
-test tests::backend_compiled_set_is_cargo_feature_gated ... ok
-test llama_mtmd::tests::window_protocol_forwards_results_and_per_page_progress ... ok
-test tests::fake_runtime_has_deterministic_inference_contract ... ok
-test step_profile::tests::disabled_profiler_records_nothing ... ok
 test llama_mtmd::tests::worker_disconnect_fails_loud_and_poisons_the_handle ... ok
+test step_profile::tests::disabled_profiler_records_nothing ... ok
+test llama_mtmd::tests::step_profile_survives_a_window_and_stale_message_drain ... ok
+test llama_mtmd::tests::telemetry_roundtrip_works_while_the_worker_is_alive ... ok
 test tests::backend_serializes_to_stable_lowercase_identifiers ... ok
-test tests::request_constructor_rejects_rgb8_dimension_mismatch ... ok
-test tests::retry_sampling_validates_penalty_and_window ... ok
-test tests::loop_fake_runtime_reports_repetition_loop_and_emits_progress ... ok
+test llama_mtmd::tests::window_protocol_forwards_results_and_per_page_progress ... ok
+test step_profile::tests::step_profile_delta_from_isolates_per_document_contribution ... ok
+test step_profile::tests::gpu_resource_report_schema_stays_untouched_by_step_channel ... ok
+test tests::backend_compiled_set_is_cargo_feature_gated ... ok
+test llama_mtmd::tests::step_profile_roundtrip_works_while_the_worker_is_alive ... ok
+test tests::fake_runtime_has_deterministic_inference_contract ... ok
 test tests::first_compiled_gpu_backend_respects_feature_gates ... ok
 test tests::generate_with_progress_emits_progress_observer ... ok
 test tests::generate_with_progress_honors_cancellation ... ok
+test tests::loop_fake_runtime_reports_repetition_loop_and_emits_progress ... ok
+test llama_mtmd::tests::load_failure_returns_err_and_joins_the_worker ... ok
+test tests::request_constructor_rejects_rgb8_dimension_mismatch ... ok
+test tests::retry_sampling_validates_penalty_and_window ... ok
 test tests::telemetry_delta_from_isolates_per_document_contribution ... ok
 test tests::windows_target_declares_pinned_llama_bindings_with_mtmd ... ok
-test llama_mtmd::tests::load_failure_returns_err_and_joins_the_worker ... ok
 test step_profile::tests::unbalanced_begin_is_ignored_and_close_window_cancels_open_segments ... ok
 test step_profile::tests::profiler_accumulates_segments_counts_and_residual ... ok
 test llama_mtmd::tests::argmax_matches_max_by_total_cmp_on_random_rows ... ok
@@ -591,42 +595,42 @@ test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fini
 
 running 80 tests
 test native::tests::text_mode_failure_terminates_and_auto_falls_back ... ok
-test compatibility::tests::fallback_depth_lands_in_the_checkpoint_identity ... ok
+test native::tests::final_queue_merges_initial_and_fallback_pages_sorted ... ok
+test ocr::parser::tests::adapter_preserves_unclosed_formula_and_maps_stop_token ... ok
+test ocr::parser::tests::crop_inline_level_period_handles_incident_shape_and_partial_tail ... ok
+test compatibility::tests::ocr_compatibility_reads_batch_and_generation_from_the_identity ... ok
+test ocr::markdown::tests::invalid_bbox_placeholder_cannot_escape_images_directory ... ok
 test native::tests::native_first_phase_commits_falls_back_and_terminates ... ok
+test compatibility::tests::fallback_depth_lands_in_the_checkpoint_identity ... ok
+test ocr::parser::tests::adapter_preserves_unclosed_table_as_markdown ... ok
+test ocr::parser::tests::bbox_loop_fixture_flags_degenerated_without_repetition_removed ... ok
 test ocr::parser::tests::crop_ignores_short_legitimate_repetitions ... ok
 test ocr::parser::tests::crop_is_idempotent_in_text_and_flags ... ok
-test ocr::markdown::tests::invalid_bbox_placeholder_cannot_escape_images_directory ... ok
-test ocr::parser::tests::adapter_preserves_unclosed_formula_and_maps_stop_token ... ok
-test ocr::parser::tests::bbox_loop_fixture_flags_degenerated_without_repetition_removed ... ok
-test ocr::parser::tests::adapter_preserves_unclosed_table_as_markdown ... ok
-test compatibility::tests::ocr_compatibility_reads_batch_and_generation_from_the_identity ... ok
-test ocr::parser::tests::crop_inline_level_period_handles_incident_shape_and_partial_tail ... ok
 test ladder::tests::detect_column_bands_returns_none_for_uniform_page ... ok
-test native::tests::final_queue_merges_initial_and_fallback_pages_sorted ... ok
 test ocr::parser::tests::crop_line_level_period_keeps_one_block_and_respects_byte_guard ... ok
 test ocr::parser::tests::incident_fixture_crops_loop_and_keeps_sources_consistent ... ok
-test ocr::parser::tests::loop_after_same_line_prefix_is_detected ... ok
 test ocr::parser::tests::non_ascii_period_with_different_partial_tail_does_not_panic ... ok
-test ocr::parser::tests::parser_deduplicates_repeated_bbox_regions_in_source_order ... ok
-test ocr::parser::tests::parser_handles_empty_output_and_rejects_invalid_bbox_shapes ... ok
-test ocr::parser::tests::parser_maps_bbox_image_tags_to_visual_regions ... ok
-test ocr::parser::tests::parser_maps_inline_formula_delimiters_to_formula_blocks ... ok
-test ocr::parser::tests::parser_maps_formula_and_html_table_to_core_blocks ... ok
-test ocr::parser::tests::parser_preserves_markdown_and_marks_truncation ... ok
-test ladder::tests::detect_column_bands_finds_two_columns_on_synthetic_page ... ok
+test ocr::parser::tests::loop_after_same_line_prefix_is_detected ... ok
 test ocr::parser::tests::parser_removes_only_high_confidence_tail_repetition ... ok
 test ocr::parser::tests::parser_removes_valid_bbox_image_placeholders_from_markdown ... ok
-test ocr::parser::tests::repetition_loop_implies_degenerated_even_without_text_hit ... ok
-test ocr::parser::tests::reference_raw_fixture_maps_to_stable_page_document_golden ... ok
-test ocr::parser::tests::strip_think_blocks_is_idempotent ... ok
+test ocr::parser::tests::parser_deduplicates_repeated_bbox_regions_in_source_order ... ok
+test ocr::parser::tests::parser_preserves_markdown_and_marks_truncation ... ok
+test ocr::parser::tests::parser_handles_empty_output_and_rejects_invalid_bbox_shapes ... ok
+test ladder::tests::detect_column_bands_finds_two_columns_on_synthetic_page ... ok
+test ocr::parser::tests::parser_maps_inline_formula_delimiters_to_formula_blocks ... ok
 test ocr::parser::tests::strip_think_blocks_matches_export_script_semantics ... ok
-test ocr::parser::tests::termination_mapping_accepts_repetition_loop_and_rejects_unknown ... ok
 test ocr::parser::tests::unrelated_tail_after_repeats_is_never_cropped ... ok
+test ocr::parser::tests::parser_maps_formula_and_html_table_to_core_blocks ... ok
+test ocr::parser::tests::strip_think_blocks_is_idempotent ... ok
+test ocr::parser::tests::parser_maps_bbox_image_tags_to_visual_regions ... ok
+test ocr::parser::tests::reference_raw_fixture_maps_to_stable_page_document_golden ... ok
+test ocr::parser::tests::repetition_loop_implies_degenerated_even_without_text_hit ... ok
 test ocr::prompt::tests::prompt_bytes_are_frozen_including_leading_and_middle_newlines ... ok
+test ocr::parser::tests::termination_mapping_accepts_repetition_loop_and_rejects_unknown ... ok
 test ocr::prompt::tests::prompt_identity_matches_the_checkpoint_contract ... ok
-test ocr::tests::request_disables_thinking_and_uses_zero_temperature ... ok
 test ocr::tests::request_rejects_tokens_above_manifest_limit ... ok
 test plan::tests::numeric_validation_mirrors_the_frozen_ranges ... ok
+test ocr::tests::request_disables_thinking_and_uses_zero_temperature ... ok
 test plan::tests::ocr_lifecycle_question_follows_the_initial_plan ... ok
 test plan::tests::output_dir_defaults_to_the_stem_layout ... ok
 test plan::tests::page_selection_parses_ranges_and_dedups ... ok
@@ -634,41 +638,41 @@ test render::pdfium_owner::tests::compose_rendered_page_identity_ratio_keeps_pix
 test render::pdfium_owner::tests::compose_rendered_page_matches_the_serial_audit_math ... ok
 test render::pdfium_owner::tests::every_switch_runs_on_the_same_single_owner_thread ... ok
 test render::pdfium_owner::tests::owner_page_renderer_forwards_and_holds_no_executor ... ok
-test render::pdfium_owner::tests::owner_panic_disconnects_and_fails_loud ... ok
 test render::pdfium_owner::tests::page_count_and_analyze_roundtrip_through_the_owner ... ok
-test render::pdfium_owner::tests::perturbed_render_renders_on_demand_outside_the_window ... ok
-test render::pdfium_owner::tests::render_error_is_a_value_and_the_channel_stays_open ... ok
+test render::pdfium_owner::tests::owner_panic_disconnects_and_fails_loud ... ok
 test report::tests::fallback_pages_record_the_ocr_actual_with_the_reason ... ok
 test report::tests::pending_pages_keep_planned_only_records ... ok
-test render::pdfium_owner::tests::switch_document_error_is_a_value_and_the_channel_stays_open ... ok
-test resume::tests::degenerated_pages_never_reuse ... ok
+test render::pdfium_owner::tests::render_prefetches_two_pages_ahead_and_serves_from_cache ... ok
 test render::pdfium_owner::tests::switch_document_clears_prefetch_and_serves_the_new_document ... ok
+test render::pdfium_owner::tests::render_error_is_a_value_and_the_channel_stays_open ... ok
+test resume::tests::degenerated_pages_never_reuse ... ok
+test render::pdfium_owner::tests::perturbed_render_renders_on_demand_outside_the_window ... ok
 test resume::tests::legacy_versions_are_never_reused ... ok
-test resume::tests::v5_ocr_complete_pages_reprocess_and_pending_recovers ... ok
 test state::tests::controller_gates_transitions_and_heartbeats ... ok
+test resume::tests::v5_ocr_complete_pages_reprocess_and_pending_recovers ... ok
+test render::pdfium_owner::tests::switch_document_error_is_a_value_and_the_channel_stays_open ... ok
 test state::tests::frozen_ladder_has_three_rungs_in_the_q14a_order ... ok
 test state::tests::job_summary_merge_adds_counts_and_unions_warnings ... ok
 test state::tests::lifecycle_transitions_follow_the_state_machine ... ok
 test state::tests::queue_merges_are_sorted_deduplicated_and_keep_first_reasons ... ok
 test state::tests::rendered_page_validates_rgb8_and_carries_the_audit ... ok
 test ocr::markdown::tests::invalid_and_missing_image_links_are_dropped_not_page_fatal ... ok
-test window_tests::cancelled_windows_commit_nothing_mechanism_a ... ok
+test resume::tests::ocr_reuse_without_pending_decode_needs_no_session_rblk8 ... ok
 test resume::tests::ocr_with_pending_decode_requires_the_final_compare ... ok
 test resume::tests::native_complete_reuses_when_intact ... ok
-test resume::tests::ocr_reuse_without_pending_decode_needs_no_session_rblk8 ... ok
+test window_tests::cancelled_windows_commit_nothing_mechanism_a ... ok
 test render::pdfium_owner::tests::full_window_prefetch_hides_the_next_window_render ... ok
-test render::pdfium_owner::tests::render_prefetches_two_pages_ahead_and_serves_from_cache ... ok
 test plan::tests::multi_input_resolution_expands_sorts_and_dedups ... ok
 test report::tests::sidecars_carry_the_frozen_schema_and_routing_shape ... ok
 test render::pdfium_owner::tests::request_timeout_poisons_the_owner_fail_loud ... ok
-test window_tests::render_failures_record_diagnostics_and_continue ... ok
 test app::tests::prepare_failure_keeps_recoverable_pending_and_committed_pages ... ok
-test window_tests::degenerated_pages_retry_through_the_frozen_ladder ... ok
+test window_tests::render_failures_record_diagnostics_and_continue ... ok
 test window_tests::window_batch_failure_falls_back_to_depth_one ... ok
+test window_tests::degenerated_pages_retry_through_the_frozen_ladder ... ok
 test app::tests::native_only_scan_never_prepares_and_writes_document ... ok
 test app::tests::auto_fallback_prepares_once_and_decodes_the_fallback_queue ... ok
-test app::tests::per_document_telemetry_delta_isolates_contributions ... ok
 test app::tests::multi_input_shares_one_session_across_documents ... ok
+test app::tests::per_document_telemetry_delta_isolates_contributions ... ok
 test window_tests::window_fills_use_the_identity_batch_depth_without_backfill ... ok
 
 test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
