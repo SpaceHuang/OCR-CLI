@@ -110,6 +110,9 @@ pub struct WindowConfig<'a> {
     pub keep_pages: bool,
     /// Ladder rung 3 gate (`--column-split-retry`, default on).
     pub column_split_enabled: bool,
+    /// BLK-3: the user's output-token budget — rides EVERY request (single,
+    /// window, retry, column split), not just the checkpoint identity.
+    pub max_output_tokens: u32,
 }
 
 /// Runs the windowed OCR pipeline over the prepared session (T063).
@@ -286,7 +289,7 @@ pub fn run_pages_with_session(
             Result<PageArtifactResult, RecognizeError>,
         > = std::collections::BTreeMap::new();
         if !images.is_empty() {
-            let mut recognizer = SessionRecognizer::new(session, root);
+            let mut recognizer = SessionRecognizer::new(session, root, config.max_output_tokens);
             let results = recognizer.recognize_window(&images, cancellation, &mut |slot, event| {
                 heartbeat(u32::try_from(slot).unwrap_or(u32::MAX), event);
             });
@@ -434,9 +437,9 @@ pub fn run_pages_with_session(
         terminal.clear();
     }
 
-    if config.keep_pages {
-        // Keep-pages cleanup mirrors the legacy behavior: full-page PNGs
-        // are dropped, figure crops stay.
+    // BLK-5: WITHOUT --keep-pages the full-page PNGs are dropped after the
+    // merge (figure crops stay); with it, they are kept.
+    if !config.keep_pages {
         let _ = cleanup_full_page_images(root, page_numbers);
     }
 
@@ -531,7 +534,7 @@ fn serial_attempt_outcome(
                 };
             }
         };
-        let mut recognizer = SessionRecognizer::new(session, root);
+        let mut recognizer = SessionRecognizer::new(session, root, config.max_output_tokens);
         // Rung 3 (column split) is gated by the CLI switch; a closed gate
         // exhausts the ladder for the page.
         // `step`/`recognized` are the ladder attempt pair.
@@ -635,7 +638,21 @@ fn commit_terminal(
                 // T1: the write span covers the atomic writes through the
                 // checkpoint rename inside commit_page_v6.
                 let write_started = std::time::Instant::now();
-                let png_bytes = artifact.png.clone().unwrap_or_default();
+                // BLK-1: the full-page PNG is the terminal render's real
+                // bytes — pre-encoded artifact bytes when a fake supplies
+                // them, otherwise a synchronous encode of this attempt's
+                // rgb8 (a retry commit can never reuse an earlier
+                // attempt's image because the terminal image rides the
+                // terminal entry). An encode failure is a page-level
+                // failure, never an empty file.
+                let png_bytes = match artifact.png.as_ref() {
+                    Some(bytes) if !bytes.is_empty() => bytes.clone(),
+                    _ => encode_page_png(image)?,
+                };
+                commit_recorder.record_png_encode(
+                    page,
+                    u64::try_from(write_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                );
                 match commit_page_v6(
                     root,
                     page,
@@ -721,6 +738,22 @@ fn commit_terminal(
         }
     }
     Ok(())
+}
+
+/// Encodes one rendered page's RGB8 into PNG bytes (synchronous commit-path
+/// fallback for the retired async encode pipeline; phase-4 W3 semantics:
+/// the bytes belong to the terminal render recorded in the entry).
+fn encode_page_png(image: &RenderedPage) -> std::io::Result<Vec<u8>> {
+    let img = image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid RGB8 page"))?;
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut cursor, image::ImageFormat::Png)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let bytes = cursor.into_inner();
+    if bytes.is_empty() {
+        return Err(std::io::Error::other("png encoder produced empty output"));
+    }
+    Ok(bytes)
 }
 
 /// Writes a pending-OCR checkpoint from the scan side (native fallback and

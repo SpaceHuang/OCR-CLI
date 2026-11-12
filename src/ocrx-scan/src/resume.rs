@@ -257,8 +257,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ocrx-resume-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("page-0001.md"), "body").unwrap();
+        std::fs::write(root.join("page-0001.json"), "{\"schema_version\":1}").unwrap();
         let mut checkpoint = v6_native(true);
-        checkpoint.output_sha256 = ocrx_primitives::sha256(b"body");
+        checkpoint.output_sha256 =
+            ocrx_output::artifact_sha256(&root.join("page-0001.md"), &root).unwrap();
         let current = identity();
         let statik = StaticInferenceIdentity::from_execution(&current);
         // Native reuse ignores the OCR session entirely.
@@ -304,8 +306,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ocrx-resume-ocr-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("page-0002.md"), "ocr body").unwrap();
+        std::fs::write(root.join("page-0002.json"), "{\"schema_version\":1}").unwrap();
         let mut checkpoint = v6_ocr(2);
-        checkpoint.output_sha256 = ocrx_primitives::sha256(b"ocr body");
+        checkpoint.output_sha256 =
+            ocrx_output::artifact_sha256(&root.join("page-0002.md"), &root).unwrap();
         let current = identity();
         let statik = StaticInferenceIdentity::from_execution(&current);
         let context = context(Some(&statik), None, false);
@@ -319,8 +323,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ocrx-resume-fin-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("page-0002.md"), "ocr body").unwrap();
+        std::fs::write(root.join("page-0002.json"), "{\"schema_version\":1}").unwrap();
         let mut checkpoint = v6_ocr(2);
-        checkpoint.output_sha256 = ocrx_primitives::sha256(b"ocr body");
+        checkpoint.output_sha256 =
+            ocrx_output::artifact_sha256(&root.join("page-0002.md"), &root).unwrap();
         let current = identity();
         let statik = StaticInferenceIdentity::from_execution(&current);
         // Pending decode but no session yet → reprocess (cannot authorize).

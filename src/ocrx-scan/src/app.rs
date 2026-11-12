@@ -348,22 +348,26 @@ impl ScanApplication {
                 ));
             }
         };
+        // BLK-4: validate the RAW selection BEFORE any filtering — an
+        // out-of-range selection is a usage error (exit 2), never a silent
+        // empty scan.
         let pages: Vec<usize> = match &options.pages {
-            Some(selection) => selection
-                .iter()
-                .copied()
-                .filter(|page| *page >= 1 && *page <= page_count)
-                .collect(),
+            Some(selection) => {
+                if selection
+                    .iter()
+                    .any(|page| *page == 0 || *page > page_count)
+                {
+                    return Ok(failure(
+                        2,
+                        "usage",
+                        "page selection is out of range",
+                        Some(format!("pdf has {page_count} pages")),
+                    ));
+                }
+                selection.clone()
+            }
             None => (1..=page_count).collect(),
         };
-        if pages.iter().any(|page| *page == 0 || *page > page_count) {
-            return Ok(failure(
-                2,
-                "usage",
-                "page selection is out of range",
-                Some(format!("pdf has {page_count} pages")),
-            ));
-        }
         let required_tier = if options.quality_tier == "l1" {
             QualityTier::L1
         } else {
@@ -450,6 +454,10 @@ impl ScanApplication {
         // Reused truncated/degenerated pages keep their incomplete flags in
         // the merged document (legacy collect_verified_page_markdowns rule).
         let mut reuse_incomplete: Vec<(u32, PageIncomplete)> = Vec::new();
+        // BLK-2: per-page reuse stats so a final-compare demotion can roll
+        // its contribution back out of the aggregates.
+        let mut reuse_stats: std::collections::HashMap<u32, (u32, bool, Vec<String>)> =
+            std::collections::HashMap::new();
         let mut reuse_think: u64 = 0;
         let mut reuse_truncated: u32 = 0;
         let mut reuse_warnings: HashSet<String> = HashSet::new();
@@ -481,6 +489,10 @@ impl ScanApplication {
                             reuse_incomplete.push((page_u32, PageIncomplete::Truncated));
                         }
                         reuse_warnings.extend(warnings.iter().cloned());
+                        reuse_stats.insert(
+                            page_u32,
+                            (think_blocks_stripped, truncated, warnings.clone()),
+                        );
                         // The checkpoint route decides the collection scope.
                         let is_ocr = matches!(
                             ocrx_output::read_any(&path),
@@ -673,7 +685,7 @@ impl ScanApplication {
                 })
                 .collect::<Vec<_>>(),
         );
-        let decode_pages = service_pages_from_ocr_queue(&final_queue);
+        let mut decode_pages = service_pages_from_ocr_queue(&final_queue);
         let has_pending_decode = !decode_pages.is_empty();
         // Two-phase continuation: with pending decode pages, the reused OCR
         // candidates must survive the final compare against the executing
@@ -752,8 +764,14 @@ impl ScanApplication {
                     final_compare_failures.push(*page);
                 }
             }
+            #[cfg(test)]
+            eprintln!("DEBUG-FC failures={final_compare_failures:?}");
             if !final_compare_failures.is_empty() {
                 // Inconsistent candidates reprocess: never a mixed document.
+                // BLK-2: the demoted pages must JOIN the decode queue AND
+                // leave the reuse bookkeeping, otherwise they are neither
+                // decoded nor collected (silent page loss reported as
+                // success).
                 resume_reuse.retain(|page| !final_compare_failures.contains(page));
                 final_queue = merge_ocr_queue(
                     &final_queue,
@@ -765,6 +783,22 @@ impl ScanApplication {
                         })
                         .collect::<Vec<_>>(),
                 );
+                // BLK-2: rebuild the actual decode queue from the merged
+                // queue — the old decode_pages predates the demotion.
+                decode_pages = service_pages_from_ocr_queue(&final_queue);
+                // BLK-2: roll back the reuse counters accumulated during
+                // static classification for the demoted pages.
+                for page in &final_compare_failures {
+                    if let Some(stats) = reuse_stats.remove(page) {
+                        reuse_think = reuse_think.saturating_sub(u64::from(stats.0));
+                        if stats.1 {
+                            reuse_truncated = reuse_truncated.saturating_sub(1);
+                        }
+                        for warning in &stats.2 {
+                            reuse_warnings.remove(warning);
+                        }
+                    }
+                }
             }
         }
         // Collect the reused OCR pages' markdown (identity-verified above).
@@ -825,6 +859,7 @@ impl ScanApplication {
                 resume: false,
                 keep_pages: options.keep_pages,
                 column_split_enabled: options.column_split_retry,
+                max_output_tokens: options.max_output_tokens,
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
             ocr_summary = run_pages_with_session(
@@ -952,24 +987,46 @@ impl ScanApplication {
         summary.warnings.extend(ocr_summary.warnings.clone());
         summary.diagnostics.clone_from(&ocr_summary.diagnostics);
         summary.cancelled |= ocr_summary.cancelled;
-        // T1: per-document delta (None without a session - no misleading
-        // zero rows for native-only/fully-reused documents).
-        let (telemetry_delta, step_profile_delta) = match session.as_ref() {
-            Some(executing) => {
+        // T1/BLK-9: per-document delta ONLY when THIS document actually used
+        // the shared session to decode (has_pending_decode). A fully-reused
+        // later document reports None identity/telemetry — matching its own
+        // single run (RBLK-8: orchestration == individual runs). The
+        // baseline still advances to the current snapshot so the NEXT
+        // decoding document deltas against the right point.
+        let used_session = has_pending_decode;
+        let (telemetry_delta, step_profile_delta) = match (session.as_ref(), used_session) {
+            (Some(executing), true) => {
                 let telemetry_now = executing.telemetry();
                 let step_now = executing.step_profile();
                 let telemetry_delta = telemetry_now.delta_from(telemetry_base);
                 let step_profile_delta =
                     step_now.map(|profile| profile.delta_from(step_profile_base));
-                // The NEXT document's baseline is this document's snapshot.
                 *telemetry_base = telemetry_now;
                 if let Some(profile) = step_now {
                     *step_profile_base = profile;
                 }
                 (Some(telemetry_delta), step_profile_delta)
             }
-            None => (None, None),
+            _ => (None, None),
         };
+        // BLK-8: T1 debug channel — both JSON files per document, only on a
+        // successful non-cancelled run (cancel/failure zero writes;
+        // disabled recorder = no commit profile file, disabled step channel
+        // = no step profile file). Frozen schema_version:1 golden strings.
+        if !cancellation.is_cancelled() && !summary.cancelled {
+            if let Some(delta) = step_profile_delta {
+                ocrx_output::atomic_write(
+                    output.join("step-profile.json"),
+                    delta.to_json().as_bytes(),
+                )?;
+            }
+            if commit_recorder.enabled() {
+                ocrx_output::atomic_write(
+                    output.join("commit-profile.json"),
+                    commit_recorder.snapshot().to_json().as_bytes(),
+                )?;
+            }
+        }
         let _ = PageStatus::Pending;
         let _ = PageDiagnostic {
             page: 0,
@@ -1000,6 +1057,10 @@ impl ScanApplication {
                     .count()
             })
             .unwrap_or(0);
+        // BLK-9: the document reports the platform identity ONLY when it
+        // actually used the shared session to decode. A fully-reused later
+        // document matches its own single run (model object null).
+        let document_identity = if used_session { identity.clone() } else { None };
         Ok(DocumentOutcome {
             input: input.to_path_buf(),
             output_dir: output.to_path_buf(),
@@ -1008,10 +1069,10 @@ impl ScanApplication {
                 .iter()
                 .map(|page| u32::try_from(*page).unwrap_or(0))
                 .collect(),
-            backend: identity
+            backend: document_identity
                 .as_ref()
                 .map(|identity| identity.backend.to_string()),
-            identity: identity.clone(),
+            identity: document_identity,
             telemetry_delta,
             step_profile_delta,
             markdown_path,
@@ -1326,6 +1387,9 @@ mod tests {
     struct FakeService {
         prepares: Rc<RefCell<usize>>,
         session: crate::window_tests::FakeSession,
+        /// BLK-2 knob: static identity override (differs from the session's
+        /// identity to force a final-compare mismatch).
+        static_override: Option<StaticInferenceIdentity>,
     }
 
     impl InferenceService for FakeService {
@@ -1352,7 +1416,10 @@ mod tests {
             _model: &ocrx_inference_api::ModelId,
             _requested_profile: &str,
         ) -> Result<StaticInferenceIdentity, ocrx_inference_api::InferenceError> {
-            Ok(StaticInferenceIdentity::from_execution(&identity()))
+            Ok(self
+                .static_override
+                .clone()
+                .unwrap_or_else(|| StaticInferenceIdentity::from_execution(&identity())))
         }
     }
 
@@ -1376,6 +1443,7 @@ mod tests {
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
             session,
+            static_override: None,
         };
         let mut renderer = FakeRenderer;
         let mut app = ScanApplication::new();
@@ -1433,6 +1501,7 @@ mod tests {
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
             session,
+            static_override: None,
         };
         let mut renderer = FakeRenderer;
         let mut app = ScanApplication::new();
@@ -1458,7 +1527,9 @@ mod tests {
         // The OCR page wrote its artifacts (markdown + checkpoint + routing).
         assert!(output.join("page-0002.md").is_file());
         assert!(output.join("page-0002.checkpoint").is_file());
-        assert!(output.join("images/page-0002.png").is_file());
+        // BLK-5: default (no --keep-pages) removes the full-page PNG;
+        // figure crops under images/ stay.
+        assert!(!output.join("images/page-0002.png").is_file());
         // document.md carries all three pages in order.
         let document_md = std::fs::read_to_string(output.join("document.md")).unwrap();
         assert!(document_md.contains("ocr body for page 2"));
@@ -1500,6 +1571,7 @@ mod tests {
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
             session,
+            static_override: None,
         };
         let mut renderer = FakeRenderer;
         let mut app = ScanApplication::new();
@@ -1534,6 +1606,52 @@ mod tests {
         assert!(a_md.contains("doc a body"));
         assert!(b_md.contains("doc b body"));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Session-side identity with a DIFFERENT batch depth than
+    /// [`crate::test_support::identity`] (forces a final-compare mismatch).
+    fn session_identity() -> ocrx_inference_api::InferenceIdentity {
+        let mut id = crate::test_support::identity();
+        id.batch_depth = 16;
+        id
+    }
+
+    fn static_identity_for_session() -> StaticInferenceIdentity {
+        StaticInferenceIdentity::from_execution(&session_identity())
+    }
+
+    /// A two-page OCR-mode doc fixture (both pages route to OCR).
+    struct TwoPageOcrPdf;
+
+    impl PdfDocumentAccess for TwoPageOcrPdf {
+        fn page_count(&mut self, _input: &Path) -> std::io::Result<usize> {
+            Ok(2)
+        }
+
+        fn analyze(
+            &mut self,
+            _input: &Path,
+            pages: &[usize],
+            _tier: QualityTier,
+        ) -> std::io::Result<Vec<PageClassification>> {
+            Ok(pages
+                .iter()
+                .map(|_page| PageClassification {
+                    page_type: PageType::Image,
+                    confidence: ocrx_core::RouteConfidence::High,
+                    recommended_method: ProcessingMethod::Ocr,
+                    reason: PdfReasonCode::ImageCoverageHigh,
+                })
+                .collect())
+        }
+
+        fn extract_native(&mut self, _page: u32) -> std::io::Result<ocrx_pdf::NativePage> {
+            Ok(NativePage {
+                text: String::new(),
+                blocks: Vec::new(),
+                signals: empty_signals(),
+            })
+        }
     }
 
     /// A two-page OCR-mode doc fixture (both pages route to OCR).
@@ -1688,6 +1806,7 @@ mod tests {
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
             session,
+            static_override: None,
         };
         let mut renderer = FakeRenderer;
         let mut app = ScanApplication::new();
@@ -1729,6 +1848,272 @@ mod tests {
             Some(1),
             "document B's delta covers only its own page (baseline advanced)"
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn zero_decode_followup_document_reports_no_identity_blk9() {
+        // BLK-9: doc A decodes and establishes the shared session; doc B is
+        // fully reusable (seeded v6 checkpoint matching the session identity)
+        // and must report NO identity/telemetry — matching its own single
+        // run — with zero new submits.
+        let root = std::env::temp_dir().join(format!("ocrx-app-blk9-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input_a = root.join("a.pdf");
+        let input_b = root.join("b.pdf");
+        std::fs::write(&input_a, b"a").unwrap();
+        std::fs::write(&input_b, b"b").unwrap();
+        let output_root = root.join("outs");
+        // Seed doc B's page-1 v6 checkpoint BEFORE the run: content matches
+        // the static identity so pre-compare passes and no decode happens.
+        let b_out = output_root.join("b");
+        std::fs::create_dir_all(&b_out).unwrap();
+        std::fs::write(b_out.join("page-0001.md"), "seeded body").unwrap();
+        std::fs::write(b_out.join("page-0001.json"), "{\"schema_version\":1}").unwrap();
+        let mut checkpoint = crate::test_support::v6_ocr(1);
+        // The integrity digest must match the write-path algorithm:
+        // artifact_sha256 over the md (+ referenced images; none here).
+        checkpoint.output_sha256 =
+            ocrx_output::artifact_sha256(&b_out.join("page-0001.md"), &b_out).unwrap();
+        ocrx_output::write_v6(b_out.join("page-0001.checkpoint"), &checkpoint).unwrap();
+        let pdf = FakeMultiPdf;
+        let session = crate::window_tests::FakeSession::with_depth(1);
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "doc a body".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
+        let prepares = Rc::new(RefCell::new(0_usize));
+        let mut service = FakeService {
+            prepares: Rc::clone(&prepares),
+            session,
+            static_override: None,
+        };
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let options = DocumentOptions {
+            pdf_mode: "ocr".to_owned(),
+            resume: true,
+            ..DocumentOptions::default()
+        };
+        let outcome = app
+            .run(
+                &[input_a, input_b],
+                &|input| {
+                    let stem = input.file_stem().unwrap().to_string_lossy().into_owned();
+                    output_root.join(stem)
+                },
+                &options,
+                &mut { pdf },
+                &mut renderer,
+                &mut service,
+                &CommitRecorder::disabled(),
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        assert_eq!(outcome.documents.len(), 2);
+        let a = &outcome.documents[0];
+        let b = &outcome.documents[1];
+        // A decoded: identity present.
+        assert!(a.identity.is_some(), "doc A decoded");
+        // B fully reused: NO identity, NO telemetry — matches its single run.
+        assert!(
+            b.identity.is_none(),
+            "B must not borrow A's session identity"
+        );
+        assert!(b.telemetry_delta.is_none());
+        assert!(b.step_profile_delta.is_none());
+        assert!(b.failure.is_none());
+        // Zero new submits for B (only A's page decoded).
+        // FakeSession core tracks captured across docs (shared service session).
+        assert!(b_out.join("document.md").is_file());
+        assert!(
+            b_out.join("document.md").is_file(),
+            "B merged its reused page"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn t1_json_files_written_on_success_and_absent_on_disabled_blk8() {
+        let root = std::env::temp_dir().join(format!("ocrx-app-blk8-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input = root.join("doc.pdf");
+        std::fs::write(&input, b"x").unwrap();
+        let output = root.join("out");
+        let mut pdf = FakeMultiPdf;
+        let session = crate::window_tests::FakeSession::with_depth(1);
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "body".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
+        session.set_step_profile(ocrx_inference_api::StepProfile {
+            windows: 1,
+            steps: 4,
+            tokens: 9,
+            ..ocrx_inference_api::StepProfile::default()
+        });
+        let prepares = Rc::new(RefCell::new(0_usize));
+        let mut service = FakeService {
+            prepares: Rc::clone(&prepares),
+            session,
+            static_override: None,
+        };
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let options = DocumentOptions {
+            pdf_mode: "ocr".to_owned(),
+            ..DocumentOptions::default()
+        };
+        // Enabled recorder: both files written.
+        let recorder = ocrx_output::commit_profile::CommitRecorder::with_enabled(true);
+        let outcome = app
+            .run(
+                std::slice::from_ref(&input),
+                &|_| output.clone(),
+                &options,
+                &mut pdf,
+                &mut renderer,
+                &mut service,
+                &recorder,
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        assert!(outcome.documents[0].failure.is_none());
+        let step_json = std::fs::read_to_string(output.join("step-profile.json")).unwrap();
+        assert!(step_json.starts_with("{\"schema_version\":1,\"windows\":1"));
+        let commit_json = std::fs::read_to_string(output.join("commit-profile.json")).unwrap();
+        assert!(commit_json.contains("\"schema_version\":1"));
+        // Disabled recorder: commit profile absent.
+        let output2 = root.join("out2");
+        let mut app2 = ScanApplication::new();
+        let outcome2 = app2
+            .run(
+                &[input],
+                &|_| output2.clone(),
+                &options,
+                &mut FakeMultiPdf,
+                &mut FakeRenderer,
+                &mut service,
+                &CommitRecorder::disabled(),
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        assert!(outcome2.documents[0].failure.is_none());
+        assert!(
+            output2.join("step-profile.json").is_file(),
+            "step channel independent of recorder"
+        );
+        assert!(
+            !output2.join("commit-profile.json").exists(),
+            "disabled recorder = no file"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn final_compare_mismatch_reprocesses_reused_and_pending_pages_blk2() {
+        // BLK-2: page 1 is pre-compare-reusable (seeded v6 checkpoint with the
+        // STATIC identity); page 2 is pending decode. The session's identity
+        // DIFFERS from the static one (different profile) → the final compare
+        // demotes page 1, and BOTH pages must decode under the new identity.
+        // No page may vanish from the merged document.
+        let root = std::env::temp_dir().join(format!("ocrx-app-blk2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input = root.join("doc.pdf");
+        std::fs::write(&input, b"x").unwrap();
+        let output = root.join("out");
+        std::fs::create_dir_all(&output).unwrap();
+        // Seed page 1: OCR checkpoint with the STATIC identity (matches
+        // static_identity → pre-compare passes).
+        std::fs::write(output.join("page-0001.md"), "seeded body").unwrap();
+        std::fs::write(output.join("page-0001.json"), "{\"schema_version\":1}").unwrap();
+        let mut checkpoint = crate::test_support::v6_ocr(1);
+        checkpoint.output_sha256 =
+            ocrx_output::artifact_sha256(&output.join("page-0001.md"), &output).unwrap();
+        ocrx_output::write_v6(output.join("page-0001.checkpoint"), &checkpoint).unwrap();
+        // The session identity DIFFERS from the static one: batch_depth 16.
+        let session = crate::window_tests::FakeSession::with_depth(16);
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "redecoded page 1".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
+        session.core.push(
+            2,
+            crate::window_tests::Program {
+                text: "decoded page 2".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
+        let mut pdf = TwoPageOcrPdf;
+        let prepares = Rc::new(RefCell::new(0_usize));
+        let mut service = FakeService {
+            prepares: Rc::clone(&prepares),
+            session,
+            static_override: None,
+        };
+        // static_identity must report the batch_depth-8 identity (matching
+        // the seeded checkpoint) so pre-compare passes; the session's
+        // batch_depth-16 identity then demotes it at the final compare.
+        service.static_override = Some(StaticInferenceIdentity::from_execution(
+            &crate::test_support::identity(),
+        ));
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let options = DocumentOptions {
+            pdf_mode: "ocr".to_owned(),
+            resume: true,
+            ..DocumentOptions::default()
+        };
+        let outcome = app
+            .run(
+                &[input],
+                &|_| output.clone(),
+                &options,
+                &mut pdf,
+                &mut renderer,
+                &mut service,
+                &CommitRecorder::disabled(),
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        let document = &outcome.documents[0];
+        assert!(document.failure.is_none(), "{:?}", document.failure);
+        // BOTH pages decoded (2 submits): the demoted reuse page AND the
+        // pending page.
+        assert_eq!(
+            document.summary.completed_pages, 2,
+            "diagnostics: {:?} warnings: {:?}",
+            document.summary.diagnostics, document.summary.warnings
+        );
+        assert!(output.join("page-0001.md").is_file());
+        assert!(output.join("page-0002.md").is_file());
+        let document_md = std::fs::read_to_string(output.join("document.md")).unwrap();
+        assert!(document_md.contains("redecoded page 1"));
+        assert!(document_md.contains("decoded page 2"));
+        // The decoded pages carry the NEW identity (batch_depth 16).
+        let new_checkpoint = ocrx_output::read_any(output.join("page-0001.checkpoint")).unwrap();
+        match new_checkpoint {
+            ocrx_output::CheckpointFile::V6(cp) => {
+                assert_eq!(cp.compatibility.ocr.as_ref().unwrap().batch_depth, 16);
+            }
+            other => panic!("expected v6, got {other:?}"),
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 }

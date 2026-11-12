@@ -42,6 +42,8 @@ pub(crate) struct Core {
     fail_next_window: std::cell::Cell<bool>,
     /// Cumulative generated tokens (T1 telemetry accumulation).
     generated_tokens: std::cell::Cell<u64>,
+    /// Programmed step-profile snapshot (T1 channel).
+    step_profile: std::cell::Cell<Option<ocrx_inference_api::StepProfile>>,
 }
 
 impl Core {
@@ -73,6 +75,10 @@ impl FakeSession {
 
     pub(crate) fn fail_next_window(&self) {
         self.core.fail_next_window.set(true);
+    }
+
+    pub(crate) fn set_step_profile(&self, profile: ocrx_inference_api::StepProfile) {
+        self.core.step_profile.set(Some(profile));
     }
 
     fn submit_impl(
@@ -133,7 +139,7 @@ impl InferenceSession for FakeSession {
     }
 
     fn step_profile(&self) -> Option<StepProfile> {
-        None
+        self.core.step_profile.get()
     }
 
     fn submit(
@@ -220,6 +226,7 @@ fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
         resume: false,
         keep_pages: false,
         column_split_enabled: true,
+        max_output_tokens: 16_384,
     }
 }
 
@@ -266,12 +273,89 @@ fn window_fills_use_the_identity_batch_depth_without_backfill() {
     for page in 1..=3_u32 {
         assert!(root.join(format!("page-{page:04}.md")).is_file());
         assert!(root.join(format!("page-{page:04}.checkpoint")).is_file());
+    }
+    // BLK-5: keep_pages=false drops the full-page PNGs (figure crops stay);
+    // the committed bytes were real PNGs before cleanup.
+    for page in 1..=3_u32 {
         assert!(
-            root.join("images")
+            !root
+                .join("images")
                 .join(format!("page-{page:04}.png"))
                 .is_file()
         );
     }
+    assert!(root.join("images").is_dir(), "images dir still exists");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn keep_pages_true_keeps_full_page_pngs_non_empty_and_decodable() {
+    let root = temp_root("keep");
+    let session = FakeSession::with_depth(1);
+    for page in 1..=2_u32 {
+        session.push(page, eos(page));
+    }
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let mut config = config(&compatibility);
+    config.keep_pages = true;
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1, 2],
+        &root,
+        &config,
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 2);
+    // BLK-1: the committed full-page PNG is real (non-empty, decodable PNG).
+    for page in 1..=2_u32 {
+        let path = root.join("images").join(format!("page-{page:04}.png"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|error| {
+            panic!("page-{page} png must exist: {error}");
+        });
+        assert!(!bytes.is_empty(), "page-{page} png must not be empty");
+        let decoded = image::load_from_memory(&bytes)
+            .unwrap_or_else(|error| panic!("page-{page} png must decode: {error}"));
+        assert_eq!(
+            (decoded.width(), decoded.height()),
+            (1, 1),
+            "render was 1x1"
+        );
+    }
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn max_output_tokens_rides_every_request_blk3() {
+    let root = temp_root("budget");
+    let session = FakeSession::with_depth(1);
+    session.push(1, eos(1));
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let mut cfg = config(&compatibility);
+    cfg.max_output_tokens = 128; // non-default budget
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &cfg,
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    let captured = session.core.captured.borrow();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        captured[0].generation.max_output_tokens, 128,
+        "the user budget must reach the actual request, not just the checkpoint"
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 

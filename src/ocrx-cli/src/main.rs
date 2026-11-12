@@ -1397,8 +1397,6 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
     };
     let cancelled = outcome.cancelled;
     let mut doc_results: Vec<(PathBuf, i32)> = Vec::new();
-    let mut any_failure = false;
-    let mut any_partial = false;
     for document in &outcome.documents {
         if let Some(failure) = &document.failure {
             // Document-level failure: an Err VALUE (the orchestrator skips
@@ -1414,7 +1412,6 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
                 report_format,
             );
             doc_results.push((document.input.clone(), i32::from(failure.code)));
-            any_failure = true;
             continue;
         }
         let result_json = serialize_scan_result(&ScanResultFields {
@@ -1463,7 +1460,6 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
                 report_format,
             );
             doc_results.push((document.input.clone(), 5));
-            any_failure = true;
             continue;
         }
         if report_format == ReportFormat::Json {
@@ -1481,16 +1477,10 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
                 document.routing_counts.fallback
             ));
         }
-        let exit = if cancelled {
-            130
-        } else if document.summary.failed_pages > 0 {
-            3
-        } else if document.summary.truncated_pages > 0 || document.summary.degenerated_pages > 0 {
-            any_partial = true;
-            10
-        } else {
-            0
-        };
+        // BLK-7: the frozen per-document mapping — page-level failures are
+        // PARTIAL (10, real_scan_fault_injection contract), not document
+        // failures (3). Document-level failures keep their own code.
+        let exit = document_exit_code(document, cancelled);
         doc_results.push((document.input.clone(), exit));
     }
     // Multi-input: scan-summary.json + aggregate exit (X1.3/X1.4).
@@ -1529,16 +1519,36 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
         }
     }
     emit_reporter(&mut reporter);
-    if cancelled {
-        std::process::exit(130);
+    let codes: Vec<i32> = doc_results.iter().map(|(_, exit)| *exit).collect();
+    if multi {
+        // X1.4 frozen aggregation over per-document codes
+        // (130 > document failure 3 > partial 10 > 0).
+        std::process::exit(aggregate_scan_exit(&codes));
     }
-    if any_failure {
-        std::process::exit(3);
+    // Single input keeps the document's own structured code (usage 2, page
+    // failures 10, cancel 130, clean 0) — the historical single-document
+    // shape must not collapse usage errors into 3.
+    std::process::exit(codes.first().copied().unwrap_or(0));
+}
+
+/// Frozen per-document exit mapping (BLK-7): document-level failures carry
+/// their structured code; page-level failures are partial (10); cancel is
+/// 130; a clean document is 0.
+#[must_use]
+fn document_exit_code(document: &ocrx_scan::DocumentOutcome, cancelled: bool) -> i32 {
+    if let Some(failure) = &document.failure {
+        return i32::from(failure.code);
     }
-    if any_partial {
-        std::process::exit(10);
+    if cancelled || document.summary.cancelled {
+        return 130;
     }
-    std::process::exit(0);
+    if document.summary.failed_pages > 0
+        || document.summary.truncated_pages > 0
+        || document.summary.degenerated_pages > 0
+    {
+        return 10;
+    }
+    0
 }
 
 /// Bridge the scan crate's counter type onto the legacy report shape.
@@ -2005,9 +2015,9 @@ mod tests {
     use super::{
         CliCommand, ConfigSource, ResolvedConfig, RoutingCounts, ScanOptions, ScanResultFields,
         ScanSummaryDocument, aggregate_scan_exit, current_platform, doctor_json_report,
-        injected_failure, output_dir_for_doc, parse_command, parse_injected_failure_page,
-        parse_page_selection, parse_scan_args, planned_ocr_pages, resolve_config,
-        resolve_scan_inputs, scan_summary_json,
+        document_exit_code, injected_failure, output_dir_for_doc, parse_command,
+        parse_injected_failure_page, parse_page_selection, parse_scan_args, planned_ocr_pages,
+        resolve_config, resolve_scan_inputs, scan_summary_json,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
@@ -2568,7 +2578,8 @@ mod tests {
                 page_number: 1,
                 status: ocrx_output::V6Status::Complete,
                 compatibility,
-                output_sha256: ocrx_core::sha256(markdown_body.as_bytes()),
+                output_sha256: ocrx_output::artifact_sha256(&root.join("page-0001.md"), &root)
+                    .unwrap(),
                 truncated: true,
                 degenerated: false,
                 attempts: 1,
@@ -3200,5 +3211,104 @@ mod tests {
             Path::new("/work")
         };
         assert!(super::validate_scan_output_policy(input, ancestor, &[cache], cwd).is_err());
+    }
+
+    #[test]
+    fn document_exit_code_maps_page_failures_to_partial_blk7() {
+        let base = || ocrx_scan::DocumentOutcome {
+            input: PathBuf::from("in.pdf"),
+            output_dir: PathBuf::from("out"),
+            summary: ocrx_scan::state::JobSummary {
+                selected_pages: 1,
+                completed_pages: 1,
+                failed_pages: 0,
+                truncated_pages: 0,
+                degenerated_pages: 0,
+                think_blocks_stripped: 0,
+                warnings: Vec::new(),
+                diagnostics: Vec::new(),
+                cancelled: false,
+            },
+            pages: vec![1],
+            backend: None,
+            identity: None,
+            telemetry_delta: None,
+            step_profile_delta: None,
+            markdown_path: None,
+            document_type: "text".to_owned(),
+            routing_counts: ocrx_scan::app::RoutingCounts::default(),
+            pdf_routing: Vec::new(),
+            images_count: 0,
+            elapsed_ms: 0,
+            failure: None,
+        };
+        // Clean document → 0.
+        assert_eq!(document_exit_code(&base(), false), 0);
+        // Page-level failure → PARTIAL 10 (real_scan_fault_injection contract).
+        let mut failed = base();
+        failed.summary.failed_pages = 1;
+        assert_eq!(document_exit_code(&failed, false), 10);
+        // Truncated → 10.
+        let mut truncated = base();
+        truncated.summary.truncated_pages = 1;
+        assert_eq!(document_exit_code(&truncated, false), 10);
+        // Document-level failure → its structured code (3/4/5/9).
+        let mut doc_failed = base();
+        doc_failed.failure = Some(ocrx_scan::DocumentFailure {
+            code: 3,
+            kind: "input".to_owned(),
+            message: "unreadable".to_owned(),
+            cause: None,
+        });
+        assert_eq!(document_exit_code(&doc_failed, false), 3);
+        // Cancel → 130.
+        assert_eq!(document_exit_code(&base(), true), 130);
+        // Final aggregation follows the frozen ladder.
+        assert_eq!(aggregate_scan_exit(&[0, 0]), 0);
+        assert_eq!(aggregate_scan_exit(&[0, 10]), 10);
+        assert_eq!(aggregate_scan_exit(&[10, 3]), 3);
+        assert_eq!(aggregate_scan_exit(&[3, 130]), 130);
+    }
+
+    #[test]
+    fn cli_out_of_range_pages_is_usage_error_blk4() {
+        // BLK-4: an out-of-range --pages selection is a usage error (exit 2),
+        // never a silent empty scan (the app validates the RAW selection
+        // before filtering; page_count runs first per §6.3 step 1).
+        let pdfium_candidate =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/pdfium/bin/pdfium.dll");
+        if !pdfium_candidate.is_file() {
+            eprintln!("skipping: no vendored pdfium available");
+            return;
+        }
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf");
+        let mut command = match std::env::var("CARGO_BIN_EXE_ocrx") {
+            Ok(binary) => std::process::Command::new(binary),
+            Err(_) => {
+                let mut command = std::process::Command::new("cargo");
+                command
+                    .args(["run", "--quiet", "--bin", "ocrx", "--"])
+                    .current_dir(env!("CARGO_MANIFEST_DIR"));
+                command
+            }
+        };
+        let output = command
+            .args([
+                "scan",
+                fixture.to_str().expect("fixture path is utf-8"),
+                "--pages",
+                "2",
+                "--report",
+                "json",
+            ])
+            .env("OCRX_PDFIUM_LIBRARY", &pdfium_candidate)
+            .output()
+            .expect("CLI subprocess should run");
+        assert_eq!(output.status.code(), Some(2));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("\"schema_version\":1"));
+        assert!(stdout.contains("\"code\":2"));
+        assert!(stdout.contains("page selection is out of range"));
     }
 }

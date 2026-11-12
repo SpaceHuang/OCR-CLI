@@ -236,3 +236,47 @@ CommitRecorder sink 全路径接线）。
 4. **T078**：全部 CLI 子进程测试 + 编排 vs 逐个调用一致。
 
 **注意：** Windows link.exe LNK1104 偶发（exe 被占用）——删 target/debug 下对应 exe 重跑即可，非代码问题。
+
+## 评审响应（2026-11-13）：修复代码评审 BLOCK 的 9 项阻断
+
+评审报告：`docs/review/model-backend-extensibility-refactoring-code-review.md`（范围 main@2f6f637...c8ce717）。
+全部 9 项已按"先判别测试、后修复"处理，逐项落点与证据：
+
+- **BLK-1（整页 PNG 零字节）**：window.rs 提交端不再 `unwrap_or_default()`——预编码 artifact 字节
+  非空才用，否则同步 `encode_page_png(image)`（RgbImage→PNG，空输出报错）；编码失败是页级失败而非
+  空文件。测试 `keep_pages_true_keeps_full_page_pngs_non_empty_and_decodable` 断言非空+可解码+尺寸。
+- **BLK-2（终比较失败页丢失）**：app.rs demotion 块重建 `decode_pages = service_pages_from_ocr_queue(&final_queue)`
+  并以 `reuse_stats: HashMap<u32,(u32,bool,Vec<String>)>` 回滚逐页复用统计。测试
+  `final_compare_mismatch_reprocesses_reused_and_pending_pages_blk2`（TwoPageOcrPdf，批深 8→16，
+  断言两页均按新身份完成、checkpoint batch_depth=16、文档无缺页）。
+- **BLK-3（--max-output-tokens 不参与推理）**：WindowConfig 增加 `max_output_tokens`，
+  SessionRecognizer::new 接收并下传全部单页/窗口/重试请求（替换硬编码 DEFAULT_MAX_OUTPUT_TOKENS）。
+  测试 `max_output_tokens_rides_every_request_blk3` 捕获请求断言 128。
+- **BLK-4（越界 --pages 静默过滤）**：app.rs 在过滤前校验原始 selection（越界→usage 2）；CLI 子进程
+  测试 `cli_out_of_range_pages_is_usage_error_blk4` 用真实二进制+vendored pdfium 断言 exit 2 与错误对象。
+  修复过程中发现并修正第二处回归：单输入退出码此前被 aggregate_scan_exit 折叠为 3——现按 X1.4 冻结
+  语义恢复"单输入保留自身结构化错误码（2/3/5/9/10/130），多输入才聚合 130>3>10>0"。
+- **BLK-5（keep_pages 条件写反）**：window.rs 改回 `if !config.keep_pages` 清理；测试覆盖开关两态
+  （默认清理整页 PNG 保留 figure crop；--keep-pages 保留整页且非空）。
+- **BLK-6（校验/写入哈希不一致）**：checkpoint_v6.rs `artifacts_intact` 改用与写入端相同的
+  `artifact_sha256`（md+全部引用图片），并新增页面 JSON 存在性与 raw sidecar 指针校验；
+  ocrx-output/src/lib.rs 将 `artifact_sha256` 置 pub。判别测试：完好含图页可复用、图片缺失/篡改不可复用、
+  JSON 缺失不可复用、md-only 摘要不等于 artifact 摘要。resume.rs/CLI 测试种子同步改用该算法。
+- **BLK-7（页级失败退出码 0/3）**：main.rs 新增 `document_exit_code`（页级失败→10，文档失败→自身码，
+  取消→130，干净→0），多输入经 `aggregate_scan_exit` 聚合；单输入保留文档自身码（见 BLK-4）。
+  单测覆盖页级失败/截断/退化→10、文档失败→3、取消→130 与聚合阶梯。
+- **BLK-8（T1 插桩不写盘）**：app.rs 成功且未取消时逐文档写出 `step-profile.json`（step_profile_delta）
+  与 `commit-profile.json`（recorder.enabled()），finalize 计时入 recorder；run 循环每文档
+  `commit_recorder.reset()` 隔离跨文档串数；disabled 保持 no-op、取消/失败零写盘。
+  测试 `t1_json_files_written_on_success_and_absent_on_disabled_blk8` 断言两文件存在/缺席。
+- **BLK-9（零解码文档借用共享身份）**：app.rs 以 `used_session = has_pending_decode` 生成本文档身份与
+  遥测/step-profile delta——零解码文档 identity=None、无 session delta，与单跑一致（RBLK-8）。
+  测试 `zero_decode_followup_document_reports_no_identity_blk9`。
+
+**门禁复跑（修复后）：** cargo fmt ✓；`cargo clippy --workspace --all-targets --locked -- -D warnings` ✓
+（修正 2 处新测试 lint：cloned_ref_to_slice_refs、IIFE-let-else）；`cargo test --workspace --locked`
+37 个套件全过 0 失败（scan lib 85、output 108、CLI bin 55）；validate-architecture-boundaries.py ✓；
+test-release-scripts.sh ✓；bootstrap-check.sh 中除 4 个既有 Python 漂移失败（T103 注记，主工作区同现）
+外全部通过。清理：删除误跟踪的 wt.log（T104 无日志规则）、恢复被评审复现覆盖的
+benchmarks/fixtures/pdf/normal-1-page-ocr/{document.md,result.json}、去除 ocrx-eval/Cargo.toml EOF 空行
+（`git diff --check` 干净）。

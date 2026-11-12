@@ -510,30 +510,33 @@ pub fn commit_pending_ocr_v6(
 /// Checks whether a committed page's artifacts still match the checkpoint
 /// (T048: a missing or tampered referenced artifact is not reusable).
 #[must_use]
+/// Checks whether a committed page's artifacts still match the checkpoint
+/// (T048/BLK-6): the SAME algorithm the writer used (`artifact_sha256` over
+/// the markdown plus every referenced image), plus the page JSON's presence
+/// and the raw sidecar pointer. A missing or tampered artifact is not
+/// reusable.
 pub fn artifacts_intact(checkpoint: &V6Checkpoint, root: &Path) -> bool {
     if checkpoint.status != V6Status::Complete {
         return false;
     }
     let page = checkpoint.page_number;
     let markdown_path = root.join(format!("page-{page:04}.md"));
-    let Ok(bytes) = std::fs::read(&markdown_path) else {
+    if !markdown_path.is_file() {
+        return false;
+    }
+    // Same integrity algorithm as commit_page_v6's write path: md + all
+    // referenced images (missing/tampered images change the digest).
+    let Ok(digest) = crate::artifact_sha256(&markdown_path, root) else {
         return false;
     };
-    if ocrx_primitives::sha256(&bytes) != checkpoint.output_sha256 {
+    if digest != checkpoint.output_sha256 {
         return false;
     }
-    // Referenced images must exist (bbox crops + the full-page png only
-    // when the page carried one).
-    if root
-        .join("images")
-        .join(format!("page-{page:04}.png"))
-        .exists()
-    {
-        // full-page png present: fine
+    // The page JSON is part of the durable artifact set.
+    if !root.join(format!("page-{page:04}.json")).is_file() {
+        return false;
     }
-    for warning in &checkpoint.warnings {
-        let _ = warning;
-    }
+    // Raw sidecar pointer must resolve when present.
     if let Some(raw) = &checkpoint.raw
         && !root.join(raw).is_file()
     {
@@ -811,5 +814,98 @@ mod tests {
         };
         assert_eq!(loaded.think_blocks_stripped, 3, "count preserved for audit");
         assert_eq!(loaded.compatibility.pdf.platform, "macos");
+    }
+
+    fn seed_committed_page_with_images(root: &std::path::Path) -> V6Checkpoint {
+        // Native-scope checkpoint whose markdown references one figure image;
+        // artifacts (md/json/image) written exactly like commit_page_v6.
+        let compatibility = ScanCompatibility::native_or_empty(
+            "hash",
+            ScanRoute::NativeText,
+            PdfIdentity {
+                pdf_mode: "auto".to_owned(),
+                quality_tier: "l2".to_owned(),
+                classifier_version: "pdf-route-v1".to_owned(),
+                extractor_version: "pdf-text-v1".to_owned(),
+                platform: "windows".to_owned(),
+            },
+        );
+        let markdown = "body\\n\\n![figure](images/page-0001-figure-001.png)\\n";
+        std::fs::create_dir_all(root.join("images")).unwrap();
+        std::fs::write(root.join("images/page-0001-figure-001.png"), b"png-bytes").unwrap();
+        std::fs::write(root.join("page-0001.md"), markdown).unwrap();
+        std::fs::write(root.join("page-0001.json"), "{\"schema_version\":1}").unwrap();
+        V6Checkpoint {
+            page_number: 1,
+            status: V6Status::Complete,
+            compatibility,
+            output_sha256: crate::artifact_sha256(&root.join("page-0001.md"), root).unwrap(),
+            truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
+            warnings: vec![],
+            think_blocks_stripped: 0,
+            audit: None,
+        }
+    }
+
+    #[test]
+    fn intact_page_with_referenced_image_is_reusable() {
+        let root = std::env::temp_dir().join(format!("ocrx-v6-img-ok-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let checkpoint = seed_committed_page_with_images(&root);
+        assert!(artifacts_intact(&checkpoint, &root));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn missing_or_tampered_referenced_image_is_not_reusable() {
+        let root = std::env::temp_dir().join(format!("ocrx-v6-img-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let checkpoint = seed_committed_page_with_images(&root);
+        // Missing image.
+        std::fs::remove_file(root.join("images/page-0001-figure-001.png")).unwrap();
+        assert!(!artifacts_intact(&checkpoint, &root));
+        // Tampered image (digest changes).
+        std::fs::write(root.join("images/page-0001-figure-001.png"), b"tampered").unwrap();
+        assert!(!artifacts_intact(&checkpoint, &root));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn missing_or_tampered_page_json_is_not_reusable() {
+        let root = std::env::temp_dir().join(format!("ocrx-v6-json-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let checkpoint = seed_committed_page_with_images(&root);
+        std::fs::remove_file(root.join("page-0001.json")).unwrap();
+        assert!(!artifacts_intact(&checkpoint, &root));
+        std::fs::write(root.join("page-0001.json"), "{}").unwrap();
+        assert!(
+            artifacts_intact(&checkpoint, &root),
+            "json back in place restores integrity"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn markdown_only_digest_is_not_the_artifact_digest() {
+        // BLK-6 regression: the write path hashes md + referenced images;
+        // a verifier that only hashes the md bytes would wrongly accept a
+        // page whose image was tampered.
+        let root = std::env::temp_dir().join(format!("ocrx-v6-digest-diff-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let checkpoint = seed_committed_page_with_images(&root);
+        let md_bytes = std::fs::read(root.join("page-0001.md")).unwrap();
+        assert_ne!(
+            ocrx_primitives::sha256(&md_bytes),
+            checkpoint.output_sha256,
+            "md-only digest must differ from the artifact digest when images are referenced"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

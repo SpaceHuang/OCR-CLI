@@ -21,8 +21,8 @@ use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use super::markdown::{drop_invalid_markdown_image_links, replace_bbox_images};
 use super::parser::{DegenerateTailCrop, build_page_document, degenerate_tail_crop};
+use crate::ladder;
 use crate::state::{DegenerationRetryStep, PageArtifactResult, RenderedPage};
-use crate::{ladder, ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS};
 
 /// Why one recognition attempt failed (the window loop answers batch-level
 /// failures with a depth-1 resubmission; everything else is per-page).
@@ -164,10 +164,11 @@ impl<'s> SessionRecognizer<'s> {
     pub fn new(
         session: &'s mut dyn InferenceSession,
         output_root: impl Into<std::path::PathBuf>,
+        max_output_tokens: u32,
     ) -> Self {
         Self {
             session,
-            max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
+            max_output_tokens,
             output_root: output_root.into(),
         }
     }

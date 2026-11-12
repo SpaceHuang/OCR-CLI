@@ -2385,7 +2385,7 @@ impl PageCheckpoint {
     }
 }
 
-fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
+pub fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
     let content = fs::read_to_string(markdown)?;
     let mut files = vec![markdown.to_path_buf()];
     for start in content.match_indices("images/").map(|(start, _)| start) {
