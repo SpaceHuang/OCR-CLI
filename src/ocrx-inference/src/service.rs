@@ -135,6 +135,14 @@ impl InferenceService for InferenceServiceImpl {
                 interaction,
             )?;
         }
+        // Review BLK-2 observability (upstream contract): one stderr line
+        // per full asset resolution+verification, gated by the established
+        // debug channel so the gated orchestration test can assert
+        // verify-once-per-invocation. prepare runs once per invocation —
+        // documents after the first reuse the prepared session untouched.
+        if ocrx_inference_api::StepProfile::env_enabled() {
+            eprintln!("[model] resolved and verified profile={profile}");
+        }
         // 5. Load the runtime; GPU initialization failure falls back to CPU
         // with a warning and the re-selected floor depth.
         let mut warnings = Vec::new();

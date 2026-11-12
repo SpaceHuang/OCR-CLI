@@ -662,8 +662,13 @@ fn fallback_auto_resume_reuses_native_fallback_page() {
     let seam_env = [("OCRX_E2E_FORCE_RUNTIME_FALLBACK", "1")];
 
     // PASS 1: fresh scan; page 2 fails native validation and is OCR'd.
-    let (code1, _stdout1, stderr1) = run_scan_full(&[&doc], &output, &scan_args, &seam_env);
-    if code1 == 6 && stderr1.contains("requested device is unavailable") {
+    let (code1, stdout1, stderr1) = run_scan_full(&[&doc], &output, &scan_args, &seam_env);
+    // The device refusal surfaces through the report channel (stdout under
+    // `--report json` single-input; stderr in text mode).
+    if code1 == 6
+        && (stdout1.contains("requested device is unavailable")
+            || stderr1.contains("requested device is unavailable"))
+    {
         eprintln!(
             "skip: this binary/hardware cannot attempt vulkan, so the \
              GPU->CPU fallback scenario cannot run here"
