@@ -7,6 +7,7 @@ pub mod ocr;
 pub mod state;
 pub mod window;
 pub mod compatibility;
+pub mod native;
 pub mod plan;
 pub mod render;
 pub mod resume;

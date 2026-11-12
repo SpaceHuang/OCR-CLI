@@ -1409,8 +1409,8 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [ ] T053（T052）迁移输入、页范围、数值参数和输出预检；完成判定：PDF 先于模型报错、路径保护、resume/overwrite 互斥、历史退出类别、多输入位置参数（选项可交错）、目录展开（排序 `*.pdf` 不递归）/canonical 去重/缺失或目录无 PDF 报用法错误、多输入 `--output-dir` 必填测试通过。
 - [ ] T054（T052）迁移页面分析、auto/text/ocr 初始计划和路由诊断；完成判定：现有分类输入对应相同队列和 planned/actual/fallback 元数据。
 - [x] T055（T045、T047、T052）实现扫描恢复计划（含两阶段 OCR 复用协议）；完成判定：v6/v5、完整复用、pending、重处理和 selected pages 限制测试通过；两阶段专项（RBLK-2/RBLK-4/RBLK-6/RBLK-8）——完全复用（全部候选通过预比较且无待解码页）不 prepare、不加载模型，**默认 `auto` 请求同样零加载**（预比较经 `static_identity()` 按 §2.3 冻结内存规则解析 auto 为具体档位后与 checkpoint 比对），多文档编排下后续文档同样适用、不因共享 session 存在而重处理（RBLK-8）；`auto` 解析结果变化（内存规则输出不同档位）时预比较失败、重处理；manifest 资产元数据/runtime 绑定/adapter 版本任一静态身份变化时预比较失败、重处理；存在待解码页时 prepare 后以 session 完整执行身份做终比较（仅限该文档，RBLK-8），**auto 在预比较后、prepare 时改选 profile 的专项测试：不一致候选全部重处理，同文档绝不混用两个 profile 的页面（RBLK-6）**；**display 区分性测试（RBLK-7）：仅展示元数据变化（display_name 文案/量化展示名）不触发重处理，执行字段变化才触发**；请求 GPU 但回退 CPU 所写的 checkpoint 在本次实际仍为 CPU 时即使请求设备不同也复用，实际执行形态变化（backend 或批深分层）时重处理；跨批深/跨解码代次不互恢复专项通过。
-- [ ] T056（T052、T055）迁移 native-first、text 失败、auto fallback 和 empty 提交；完成判定：native/empty 路径不调用 prepare，产物 golden 与 T004 一致。
-- [ ] T057（T056）实现最终 OCR 队列合并和按需 prepare；完成判定：队列为 0 时模型/设备 prepare 为 0（含默认 `auto` 的完全复用路径——仅执行只读 `static_identity()` 预比较，零资产校验/零安装/零加载，RBLK-4），非 0 时只 prepare 一次。
+- [x] T056（T052、T055）迁移 native-first、text 失败、auto fallback 和 empty 提交；完成判定：native/empty 路径不调用 prepare，产物 golden 与 T004 一致。
+- [x] T057（T056）实现最终 OCR 队列合并和按需 prepare；完成判定：队列为 0 时模型/设备 prepare 为 0（含默认 `auto` 的完全复用路径——仅执行只读 `static_identity()` 预比较，零资产校验/零安装/零加载，RBLK-4），非 0 时只 prepare 一次。
 - [x] T058（T052）迁移 PDFium 与 worker renderer、PdfiumOwner 线程所有权、预取协议、扰动渲染转发（P3）与跨文档 `SwitchDocument` 协议（清预取缓存、重置 `next_prefetch`、文档级 Err 值不中毒 owner）、像素缩放和 render audit；完成判定：DPI、分段、尺寸校验、2880² 预算、scale ratio、预取与故障注入测试保持，PDFium 入口安全不变式不回退，SwitchDocument 既有单测（同一线程、预取重置、Err 值跳过、poison fail-loud）随迁通过。
 - [ ] T059（T006、T052）在 `ocr/prompt.rs` 写入完整 `ocr-markdown-v1` prompt 和构造器；完成判定：T006 字节 golden 通过，扫描生成的 TaskRequest prompt 与冻结文本一致。
 - [ ] T060（T037、T059）迁移 Ovis 文本到 PageDocument 的解析；完成判定：公式、表格、bbox、CRLF、重复尾部、空输出、EOS/stop/max_tokens golden 全通过。
