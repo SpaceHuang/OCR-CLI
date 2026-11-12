@@ -125,6 +125,7 @@ pub fn run_pages_with_session(
     page_numbers: &[u32],
     output_root: &Path,
     config: &WindowConfig<'_>,
+    commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     cancellation: &CancellationToken,
     heartbeat: &mut dyn FnMut(u32, GenerationProgress),
 ) -> std::io::Result<JobSummary> {
@@ -212,6 +213,7 @@ pub fn run_pages_with_session(
                 renderer,
                 root,
                 config,
+                commit_recorder,
                 page,
                 1,
                 cancellation,
@@ -239,6 +241,7 @@ pub fn run_pages_with_session(
                 &terminal,
                 root,
                 config.compatibility,
+                commit_recorder,
                 cancellation,
                 &mut completed,
                 &mut failed,
@@ -258,7 +261,16 @@ pub fn run_pages_with_session(
         let mut render_failed: std::collections::BTreeMap<u32, bool> =
             std::collections::BTreeMap::new();
         for &page in &window {
-            match renderer.render(page) {
+            // T1: one render row per attempt-1 batch member.
+            let generation = commit_recorder.begin_render(page);
+            let render_started = std::time::Instant::now();
+            let outcome = renderer.render(page);
+            commit_recorder.record_render_wait(
+                page,
+                generation,
+                u64::try_from(render_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            );
+            match outcome {
                 Ok(image) => images.push((page, image)),
                 Err(_) => {
                     render_failed.insert(page, cancellation.is_cancelled());
@@ -315,6 +327,7 @@ pub fn run_pages_with_session(
                                 renderer,
                                 root,
                                 config,
+                                commit_recorder,
                                 pending,
                                 1,
                                 cancellation,
@@ -359,6 +372,7 @@ pub fn run_pages_with_session(
                     renderer,
                     root,
                     config,
+                    commit_recorder,
                     page,
                     2,
                     cancellation,
@@ -402,6 +416,7 @@ pub fn run_pages_with_session(
             &terminal,
             root,
             config.compatibility,
+            commit_recorder,
             cancellation,
             &mut completed,
             &mut failed,
@@ -473,6 +488,7 @@ fn serial_attempt_outcome(
     renderer: &mut dyn PageRenderer,
     root: &Path,
     config: &WindowConfig<'_>,
+    commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     page: u32,
     start_attempt: u32,
     cancellation: &CancellationToken,
@@ -487,12 +503,21 @@ fn serial_attempt_outcome(
             let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
             DEGENERATION_RETRY_LADDER.get(ladder_index)
         };
+        // T1: the caller-side render wait is the recorder's R input; every
+        // attempt (retry perturbations included) gets its own row.
+        let generation = commit_recorder.begin_render(page);
+        let render_started = std::time::Instant::now();
         let image = match step.and_then(|rung| rung.perturbed) {
             Some((numerator, denominator)) => {
                 renderer.render_perturbed(page, numerator, denominator)
             }
             None => renderer.render(page),
         };
+        commit_recorder.record_render_wait(
+            page,
+            generation,
+            u64::try_from(render_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        );
         let image = match image {
             Ok(image) => image,
             Err(_) => {
@@ -539,6 +564,7 @@ fn commit_terminal(
     terminal: &[TerminalPage],
     root: &Path,
     compatibility: &ScanCompatibility,
+    commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     cancellation: &CancellationToken,
     completed: &mut u32,
     failed: &mut u32,
@@ -601,6 +627,9 @@ fn commit_terminal(
                     think_blocks_stripped: artifact.think_blocks_stripped,
                     audit: Some(image.audit),
                 };
+                // T1: the write span covers the atomic writes through the
+                // checkpoint rename inside commit_page_v6.
+                let write_started = std::time::Instant::now();
                 let png_bytes = artifact.png.clone().unwrap_or_default();
                 match commit_page_v6(
                     root,
@@ -611,6 +640,12 @@ fn commit_terminal(
                     &checkpoint,
                 ) {
                     Ok(()) => {
+                        commit_recorder.record_commit_write(
+                            page,
+                            u64::try_from(write_started.elapsed().as_micros())
+                                .unwrap_or(u64::MAX),
+                        );
+                        commit_recorder.mark_terminal(page);
                         diagnostics.push(PageDiagnostic {
                             page,
                             status: "completed".to_owned(),
@@ -639,6 +674,7 @@ fn commit_terminal(
             TerminalPage::RenderFailed { page, cancelled } => {
                 let page = *page;
                 let cancelled = *cancelled;
+                commit_recorder.mark_terminal(page);
                 if !cancelled {
                     *failed += 1;
                 }
@@ -660,6 +696,7 @@ fn commit_terminal(
                 let page = *page;
                 let audit = *audit;
                 let cancelled = cancellation.is_cancelled();
+                commit_recorder.mark_terminal(page);
                 if !cancelled {
                     *failed += 1;
                 }

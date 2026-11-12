@@ -16,6 +16,8 @@ use ocrx_inference_api::{
 use ocrx_output::{PdfIdentity, ScanCompatibility, ScanRoute};
 use ocrx_primitives::{CancellationToken, GenerationProgress};
 
+use ocrx_output::commit_profile::CommitRecorder;
+
 use crate::state::RenderedPage;
 use crate::test_support::identity;
 use crate::window::{run_pages_with_session, PageRenderer, WindowConfig};
@@ -38,6 +40,8 @@ pub(crate) struct Core {
     window_calls: std::cell::Cell<usize>,
     single_calls: std::cell::Cell<usize>,
     fail_next_window: std::cell::Cell<bool>,
+    /// Cumulative generated tokens (T1 telemetry accumulation).
+    generated_tokens: std::cell::Cell<u64>,
 }
 
 impl Core {
@@ -77,6 +81,9 @@ impl FakeSession {
         cancellation: &CancellationToken,
     ) -> Result<TaskResponse, InferenceError> {
         self.core.single_calls.set(self.core.single_calls.get() + 1);
+        self.core
+            .generated_tokens
+            .set(self.core.generated_tokens.get() + 1);
         self.core.captured.borrow_mut().push(request);
         if cancellation.is_cancelled() {
             return Err(InferenceError::Cancelled);
@@ -119,7 +126,10 @@ impl InferenceSession for FakeSession {
     }
 
     fn telemetry(&self) -> RuntimeTelemetry {
-        RuntimeTelemetry::default()
+        RuntimeTelemetry {
+            generated_tokens: self.core.generated_tokens.get(),
+            ..RuntimeTelemetry::default()
+        }
     }
 
     fn step_profile(&self) -> Option<StepProfile> {
@@ -244,6 +254,7 @@ fn window_fills_use_the_identity_batch_depth_without_backfill() {
         &[1, 2, 3],
         &root,
         &config(&compatibility),
+        &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
     )
@@ -281,6 +292,7 @@ fn render_failures_record_diagnostics_and_continue() {
         &[1, 2],
         &root,
         &config(&compatibility),
+        &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
     )
@@ -309,6 +321,7 @@ fn cancelled_windows_commit_nothing_mechanism_a() {
         &[1],
         &root,
         &config(&compatibility),
+        &CommitRecorder::disabled(),
         &cancellation,
         &mut |_, _| {},
     )
@@ -353,6 +366,7 @@ fn degenerated_pages_retry_through_the_frozen_ladder() {
         &[1, 2],
         &root,
         &config(&compatibility),
+        &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
     )
@@ -385,6 +399,7 @@ fn window_batch_failure_falls_back_to_depth_one() {
         &[1, 2],
         &root,
         &config(&compatibility),
+        &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
     )

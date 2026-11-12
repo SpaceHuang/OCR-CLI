@@ -132,6 +132,12 @@ pub struct DocumentOutcome {
     pub backend: Option<String>,
     /// Actual inference identity (empty for zero-load scans).
     pub identity: Option<ocrx_inference_api::InferenceIdentity>,
+    /// T1 per-document telemetry delta (X1: snapshot - invocation
+    /// baseline); `None` when no session loaded for this document.
+    pub telemetry_delta: Option<ocrx_inference_api::RuntimeTelemetry>,
+    /// T1 per-document step-profile delta (same baseline rule); `None`
+    /// when the channel is disabled or no session loaded.
+    pub step_profile_delta: Option<ocrx_inference_api::StepProfile>,
     /// Structured failure (`kind`/`message`/`cause`) when the document
     /// aborted before producing a summary.
     pub failure: Option<DocumentFailure>,
@@ -182,6 +188,7 @@ impl ScanApplication {
         pdf: &mut dyn PdfDocumentAccess,
         renderer: &mut dyn PageRenderer,
         service: &mut dyn InferenceService,
+        commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
         cancellation: &CancellationToken,
         emit: &mut dyn FnMut(ScanEvent),
     ) -> std::io::Result<ScanOutcome> {
@@ -200,6 +207,10 @@ impl ScanApplication {
         let mut shared: Option<PreparedRun> = None;
         let mut session: Option<Box<dyn ocrx_inference_api::InferenceSession>> = None;
         let mut identity: Option<ocrx_inference_api::InferenceIdentity> = None;
+        // T1 baselines: the per-document deltas report snapshot - baseline
+        // (delta_from saturates; first_token passes through).
+        let mut telemetry_base = ocrx_inference_api::RuntimeTelemetry::default();
+        let mut step_profile_base = ocrx_inference_api::StepProfile::default();
         for input in inputs {
             if cancellation.is_cancelled() {
                 cancelled = true;
@@ -220,6 +231,9 @@ impl ScanApplication {
                 &mut session,
                 &mut identity,
                 &mut shared,
+                commit_recorder,
+                &mut telemetry_base,
+                &mut step_profile_base,
                 cancellation,
                 emit,
             )?;
@@ -248,6 +262,7 @@ impl ScanApplication {
     /// [`DocumentFailure`] values; page-number conversion saturates.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::fn_params_excessive_bools)]
+    #[allow(clippy::too_many_arguments)]
     pub fn run_document(
         &mut self,
         input: &Path,
@@ -259,6 +274,9 @@ impl ScanApplication {
         session: &mut Option<Box<dyn ocrx_inference_api::InferenceSession>>,
         identity: &mut Option<ocrx_inference_api::InferenceIdentity>,
         shared_prepared: &mut Option<PreparedRun>,
+        commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
+        telemetry_base: &mut ocrx_inference_api::RuntimeTelemetry,
+        step_profile_base: &mut ocrx_inference_api::StepProfile,
         cancellation: &CancellationToken,
         emit: &mut dyn FnMut(ScanEvent),
     ) -> std::io::Result<DocumentOutcome> {
@@ -279,6 +297,8 @@ impl ScanApplication {
             pages: Vec::new(),
             backend: None,
             identity: None,
+            telemetry_delta: None,
+            step_profile_delta: None,
             failure: Some(DocumentFailure {
                 code,
                 kind: kind.to_owned(),
@@ -758,8 +778,9 @@ impl ScanApplication {
                 &decode_pages,
                 output,
                 &config,
+                commit_recorder,
                 cancellation,
-                &mut |page, event| {
+                &mut |page: u32, event| {
                     slot_events.push((page, event.generated_tokens, event.elapsed_seconds));
                 },
             )?;
@@ -862,6 +883,24 @@ impl ScanApplication {
         summary.warnings.extend(ocr_summary.warnings.clone());
         summary.diagnostics.clone_from(&ocr_summary.diagnostics);
         summary.cancelled |= ocr_summary.cancelled;
+        // T1: per-document delta (None without a session - no misleading
+        // zero rows for native-only/fully-reused documents).
+        let (telemetry_delta, step_profile_delta) = match session.as_ref() {
+            Some(executing) => {
+                let telemetry_now = executing.telemetry();
+                let step_now = executing.step_profile();
+                let telemetry_delta = telemetry_now.delta_from(telemetry_base);
+                let step_profile_delta =
+                    step_now.map(|profile| profile.delta_from(step_profile_base));
+                // The NEXT document's baseline is this document's snapshot.
+                *telemetry_base = telemetry_now;
+                if let Some(profile) = step_now {
+                    *step_profile_base = profile;
+                }
+                (Some(telemetry_delta), step_profile_delta)
+            }
+            None => (None, None),
+        };
         let _ = PageStatus::Pending;
         let _ = PageDiagnostic {
             page: 0,
@@ -879,6 +918,8 @@ impl ScanApplication {
             pages: pages.iter().map(|page| u32::try_from(*page).unwrap_or(0)).collect(),
             backend: identity.as_ref().map(|identity| identity.backend.to_string()),
             identity: identity.clone(),
+            telemetry_delta,
+            step_profile_delta,
             failure: None,
         })
     }
@@ -1044,6 +1085,8 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    use ocrx_output::commit_profile::CommitRecorder;
+
     /// Fake PDF: a 3-page doc, page 1 native-clean, page 2 native-invalid
     /// (falls back), page 3 empty.
     struct FakePdf {
@@ -1175,12 +1218,13 @@ mod tests {
         let mut app = ScanApplication::new();
         let outcome = app
             .run(
-                &[input.clone()][..],
+                std::slice::from_ref(&input),
                 &|_| output.clone(),
                 &options(),
                 &mut pdf,
                 &mut renderer,
                 &mut service,
+                &CommitRecorder::disabled(),
                 &CancellationToken::new(),
                 &mut |_| {},
             )
@@ -1228,12 +1272,13 @@ mod tests {
         let mut app = ScanApplication::new();
         let outcome = app
             .run(
-                &[input.clone()][..],
+                std::slice::from_ref(&input),
                 &|_| output.clone(),
                 &options(),
                 &mut pdf,
                 &mut renderer,
                 &mut service,
+                &CommitRecorder::disabled(),
                 &CancellationToken::new(),
                 &mut |_| {},
             )
@@ -1301,6 +1346,7 @@ mod tests {
                 &mut { pdf },
                 &mut renderer,
                 &mut service,
+                &CommitRecorder::disabled(),
                 &CancellationToken::new(),
                 &mut |_| {},
             )
@@ -1350,5 +1396,154 @@ mod tests {
                 signals: empty_signals(),
             })
         }
+    }
+
+    /// A service whose static identity resolves but whose prepare always
+    /// fails (model unavailable) — the T068 fixture.
+    struct FailingPrepareService {
+        session: crate::window_tests::FakeSession,
+    }
+
+    impl InferenceService for FailingPrepareService {
+        fn prepare(
+            &mut self,
+            _request: PrepareRequest,
+            _interaction: &mut dyn ocrx_inference_api::InstallInteraction,
+        ) -> Result<ocrx_inference_api::PreparedInference, ocrx_inference_api::InferenceError> {
+            Err(ocrx_inference_api::InferenceError::RuntimeInitialization(
+                "model load failed".into(),
+            ))
+        }
+
+        fn decode_generation(&self) -> u32 {
+            2
+        }
+
+        fn static_identity(
+            &self,
+            _model: &ocrx_inference_api::ModelId,
+            _requested_profile: &str,
+        ) -> Result<StaticInferenceIdentity, ocrx_inference_api::InferenceError> {
+            Ok(StaticInferenceIdentity::from_execution(&identity()))
+        }
+    }
+
+    #[test]
+    fn prepare_failure_keeps_recoverable_pending_and_committed_pages() {
+        let root = std::env::temp_dir().join(format!("ocrx-app-t068-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input = root.join("doc.pdf");
+        std::fs::write(&input, b"pdf-bytes").unwrap();
+        let output = root.join("out");
+        // auto mode: page 2 native validation fails -> OCR fallback; prepare
+        // then fails (model unavailable). Page 1 (native) and page 3 (empty)
+        // must survive committed; page 2 keeps recoverable pending state.
+        let mut pdf = FakePdf::new();
+        let session = crate::window_tests::FakeSession::with_depth(1);
+        let mut service = FailingPrepareService { session };
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let outcome = app
+            .run(
+                std::slice::from_ref(&input),
+                &|_| output.clone(),
+                &options(),
+                &mut pdf,
+                &mut renderer,
+                &mut service,
+                &CommitRecorder::disabled(),
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        let document = &outcome.documents[0];
+        let failure = document.failure.as_ref().expect("prepare failure surfaces");
+        assert_eq!(failure.code, 4);
+        assert_eq!(failure.kind, "model");
+        // Committed native/empty pages survive.
+        assert!(output.join("page-0001.md").is_file());
+        assert!(output.join("page-0003.md").is_file());
+        // Page 2 keeps a recoverable pending checkpoint (resume handoff).
+        let pending_path = output.join("page-0002.checkpoint");
+        assert!(pending_path.is_file());
+        let file = ocrx_output::read_any(&pending_path).unwrap();
+        match file {
+            ocrx_output::CheckpointFile::V6(checkpoint) => {
+                assert_eq!(checkpoint.status, ocrx_output::V6Status::PendingOcr);
+                assert!(checkpoint
+                    .warnings
+                    .iter()
+                    .any(|warning| warning == "ocr_required_but_unavailable"));
+            }
+            other => panic!("expected v6 pending, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn per_document_telemetry_delta_isolates_contributions() {
+        // Two OCR documents share one session; each document's delta covers
+        // only its own tokens (snapshot - baseline, X1 semantics).
+        let root = std::env::temp_dir().join(format!("ocrx-app-t067-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input_a = root.join("a.pdf");
+        let input_b = root.join("b.pdf");
+        std::fs::write(&input_a, b"a").unwrap();
+        std::fs::write(&input_b, b"b").unwrap();
+        let output_root = root.join("outs");
+        let pdf = FakeMultiPdf;
+        let session = crate::window_tests::FakeSession::with_depth(1);
+        session.core.push(1, crate::window_tests::Program {
+            text: "doc a body".into(),
+            finish: ocrx_inference_api::FinishReason::Eos,
+        });
+        session.core.push(1, crate::window_tests::Program {
+            text: "doc b body".into(),
+            finish: ocrx_inference_api::FinishReason::Eos,
+        });
+        let prepares = Rc::new(RefCell::new(0_usize));
+        let mut service = FakeService {
+            prepares: Rc::clone(&prepares),
+            session,
+        };
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let options = DocumentOptions {
+            pdf_mode: "ocr".to_owned(),
+            ..DocumentOptions::default()
+        };
+        let outcome = app
+            .run(
+                &[input_a, input_b],
+                &|input| {
+                    let stem = input.file_stem().unwrap().to_string_lossy().into_owned();
+                    output_root.join(stem)
+                },
+                &options,
+                &mut { pdf },
+                &mut renderer,
+                &mut service,
+                &CommitRecorder::disabled(),
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        // Each document's telemetry delta covers exactly its own submit (+1
+        // generated token per page; the fake bumps one token per submit).
+        let a = &outcome.documents[0];
+        let b = &outcome.documents[1];
+        assert_eq!(
+            a.telemetry_delta.as_ref().map(|delta| delta.generated_tokens),
+            Some(1),
+            "document A's delta covers only its own page"
+        );
+        assert_eq!(
+            b.telemetry_delta.as_ref().map(|delta| delta.generated_tokens),
+            Some(1),
+            "document B's delta covers only its own page (baseline advanced)"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

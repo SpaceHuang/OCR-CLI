@@ -1420,8 +1420,8 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T064（T045、T062、T063）把实际 InferenceIdentity 写入 OCR v6 checkpoint（`batch_depth`/`decode_generation` 只从身份透传，扫描侧无硬编码副本）；完成判定：GPU 回退、模型资产、prompt/parser/render/generation、批深、解码代次任一变化均按规则处理。
 - [x] T065（T048、T049、T056、T063）实现跨路线产物收集和 document.md 汇总；完成判定：只收集已验证页，排序/去重、空结果 stale 清理和 keep-pages 行为与基线一致。
 - [x] T066（T052、T065）迁移 routing sidecar、ScanOutcome 和 result 所需字段；完成判定：模型 identity（含经 `display` 公共通道取得的 name/family/quantization——scan 源码无 `ocrx_models` 依赖、无展示映射副本，RBLK-5）、实际 backend、页计数（含 `think_blocks_stripped_total` 聚合与 `degenerated`）、warnings、diagnostics、images 和 routing 数据完整，多文档编排另含 `scan-summary.json` 字段与状态映射。
-- [ ] T067（T052、T063）迁移扫描遥测与可选 GPU 报告映射及 T1 插桩接线（StepProfile 逐文档 `delta_from` 增量、CommitRecorder 共享 sink）；完成判定：StepProfile 一律经 `InferenceSession::step_profile()` 公共查询取得，scan 源码无 `ocrx_runtime::StepProfile` 引用（RBLK-3）；累计值不双算，报告写失败只 warning，实际 CPU 回退不生成误导 GPU 数据，`step-profile.json`/`commit-profile.json` 每文档一份、黄金串不变、取消/失败零写盘、disabled no-op。
-- [ ] T068（T052、T057）实现模型准备失败后的 pending 状态和部分结果；完成判定：native/empty 已提交结果保留，OCR 页可续扫，错误和结果输出与原分支一致。
+- [x] T067（T052、T063）迁移扫描遥测与可选 GPU 报告映射及 T1 插桩接线（StepProfile 逐文档 `delta_from` 增量、CommitRecorder 共享 sink）；完成判定：StepProfile 一律经 `InferenceSession::step_profile()` 公共查询取得，scan 源码无 `ocrx_runtime::StepProfile` 引用（RBLK-3）；累计值不双算，报告写失败只 warning，实际 CPU 回退不生成误导 GPU 数据，`step-profile.json`/`commit-profile.json` 每文档一份、黄金串不变、取消/失败零写盘、disabled no-op。
+- [x] T068（T052、T057）实现模型准备失败后的 pending 状态和部分结果；完成判定：native/empty 已提交结果保留，OCR 页可续扫，错误和结果输出与原分支一致。
 
 ### 阶段 G：CLI 收缩与生产组合
 
