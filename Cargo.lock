@@ -753,6 +753,16 @@ dependencies = [
 [[package]]
 name = "ocrx-eval"
 version = "0.1.0"
+dependencies = [
+ "image",
+ "ocrx-core",
+ "ocrx-inference-api",
+ "ocrx-output",
+ "ocrx-pdf",
+ "ocrx-primitives",
+ "ocrx-scan",
+ "serde_json",
+]
 
 [[package]]
 name = "ocrx-inference"

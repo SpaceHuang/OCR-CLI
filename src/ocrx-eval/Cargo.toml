@@ -7,3 +7,16 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+ocrx-core = { path = "../ocrx-core" }
+ocrx-pdf = { path = "../ocrx-pdf" }
+ocrx-inference-api = { path = "../ocrx-inference-api" }
+ocrx-output = { path = "../ocrx-output" }
+ocrx-primitives = { path = "../ocrx-primitives" }
+ocrx-scan = { path = "../ocrx-scan" }
+serde_json.workspace = true
+
+[dev-dependencies]
+image = { version = "=0.25.10", default-features = false }
+

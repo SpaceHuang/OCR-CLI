@@ -1438,10 +1438,10 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 H：质量评估独立化与脚本适配
 
-- [ ] T079（T008、T009）将质量 manifest 类型、加载和输入 hash 校验复制到 `ocrx-eval/manifest.rs`，暂留 PDF 过渡 re-export；完成判定：原合法/非法 TSV 用例结果一致，新实现归 eval 所有，旧导出在 T083 前保持编译兼容。
-- [ ] T080（T079）将 NED、block、bbox、阅读顺序和路由指标复制到 `ocrx-eval/metrics.rs`，暂留 PDF 过渡 re-export；完成判定：同一组数值 fixture 的每个浮点/计数结果与迁移前一致。
-- [ ] T081（T079、T080）将 native/performance/release 门禁和报告复制到 eval，暂留 PDF 过渡 re-export；完成判定：阈值、失败列表和 JSON golden 完全不变。
-- [ ] T082（T014、T052、T079）实现评估执行身份、两种公开执行入口和“同参重扫逐字节比对”原语（§3.5 第 10 条/§8.12）；完成判定：端到端入口调用 ScanApplication，专项入口调用 InferenceService，均记录 set/truth/inference/prompt/render 版本；原语以 fake 双跑通过（同输入同参逐字节一致、注入差异时能检出）。
+- [x] T079（T008、T009）将质量 manifest 类型、加载和输入 hash 校验复制到 `ocrx-eval/manifest.rs`，暂留 PDF 过渡 re-export；完成判定：原合法/非法 TSV 用例结果一致，新实现归 eval 所有，旧导出在 T083 前保持编译兼容。
+- [x] T080（T079）将 NED、block、bbox、阅读顺序和路由指标复制到 `ocrx-eval/metrics.rs`，暂留 PDF 过渡 re-export；完成判定：同一组数值 fixture 的每个浮点/计数结果与迁移前一致。
+- [x] T081（T079、T080）将 native/performance/release 门禁和报告复制到 eval，暂留 PDF 过渡 re-export；完成判定：阈值、失败列表和 JSON golden 完全不变。
+- [x] T082（T014、T052、T079）实现评估执行身份、两种公开执行入口和“同参重扫逐字节比对”原语（§3.5 第 10 条/§8.12）；完成判定：端到端入口调用 ScanApplication，专项入口调用 InferenceService，均记录 set/truth/inference/prompt/render 版本；原语以 fake 双跑通过（同输入同参逐字节一致、注入差异时能检出）。
 - [ ] T083（T079、T080、T081）调整 Rust 调用方和测试到 eval 新路径并删除 PDF 过渡 re-export；完成判定：无 `ocrx_pdf::Quality*` 等旧引用，未通过删除质量测试解决编译，`cargo check --workspace` 返回 0。
 - [ ] T084（T082）核对并适配 Python 工具的公开 CLI/文件契约；完成判定：现有 regression manifest/truth/prediction/report schema 和路径不变，无脚本复制资产或设备逻辑。
 - [ ] T085（T084）运行 Python 单元测试和固定小样评分对比；完成判定：迁移前后 score/quality/native 报告数值一致，未修改真值或阈值。
