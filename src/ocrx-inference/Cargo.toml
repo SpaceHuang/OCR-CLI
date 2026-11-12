@@ -20,4 +20,5 @@ vulkano = { version = "=0.35.2", optional = true }
 
 [features]
 default = []
-vulkan = ["dep:vulkano"]
+vulkan = ["dep:vulkano", "ocrx-runtime/vulkan"]
+cuda = ["ocrx-runtime/cuda"]

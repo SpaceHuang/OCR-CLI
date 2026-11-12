@@ -13,6 +13,11 @@ pub mod native;
 pub mod ocr;
 pub mod plan;
 pub mod render;
+
+/// PDF-foundation types the scan contract carries across its boundary.
+pub use ocrx_pdf::{
+    DocumentType, PdfErrorKind, RenderOptions, classify_pdf_error, plan_page_checked,
+};
 pub mod report;
 pub mod resume;
 pub mod state;

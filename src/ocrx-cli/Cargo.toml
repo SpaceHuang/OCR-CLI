@@ -13,20 +13,15 @@ ocrx-core = { path = "../ocrx-core" }
 ocrx-inference = { path = "../ocrx-inference" }
 ocrx-inference-api = { path = "../ocrx-inference-api" }
 ocrx-scan = { path = "../ocrx-scan" }
-ocrx-runtime = { path = "../ocrx-runtime" }
-ocrx-models = { path = "../ocrx-models" }
 ocrx-output = { path = "../ocrx-output" }
 ocrx-skill = { path = "../ocrx-skill" }
-ocrx-pdf = { path = "../ocrx-pdf" }
-ocrx-ovisocr2 = { path = "../ocrx-ovisocr2" }
-image = { version = "=0.25.10", default-features = false, features = ["png"] }
 ctrlc = "3.5.2"
 vulkano = { version = "=0.35.2", optional = true }
 
 [features]
 default = []
-vulkan = ["ocrx-runtime/vulkan", "dep:vulkano"]
-cuda = ["ocrx-runtime/cuda"]
+vulkan = ["ocrx-inference/vulkan", "dep:vulkano"]
+cuda = ["ocrx-inference/cuda"]
 
 [dev-dependencies]
 serde_json = { workspace = true }

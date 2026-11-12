@@ -11,8 +11,8 @@
 
 use std::path::PathBuf;
 
+use ocrx_inference::{CurlTransport, ModelManagerImpl};
 use ocrx_inference::{DeviceManagerImpl, InferenceServiceImpl, RealSystemProbe, RegistryVerifier};
-use ocrx_models::{CurlTransport, ModelManagerImpl};
 use ocrx_scan::ScanApplication;
 
 /// One assembled production context (all services behind their ports).
@@ -37,7 +37,7 @@ pub fn compose(model_cache: Option<PathBuf>) -> Composed {
     //    registry itself — RBLK-9).
     // 6. InferenceServiceImpl over the manager + devices + factory.
     // 7. ScanApplication (port-driven).
-    let cache_root = model_cache.unwrap_or_else(ocrx_models::default_cache_root);
+    let cache_root = model_cache.unwrap_or_else(ocrx_inference::default_cache_root);
     let manager = ModelManagerImpl::new(
         cache_root.clone(),
         Box::new(RegistryVerifier),
@@ -54,7 +54,7 @@ pub fn compose(model_cache: Option<PathBuf>) -> Composed {
     let inference = InferenceServiceImpl::new(
         manager,
         devices,
-        Box::new(ocrx_runtime::LlamaRuntimeFactory),
+        Box::new(ocrx_inference::LlamaRuntimeFactory),
     );
     let scan = ScanApplication::new();
     Composed {

@@ -10,6 +10,10 @@ pub mod registry;
 pub mod service;
 pub mod telemetry;
 
+// Runtime factory re-export: the CLI composition root builds the llama
+// factory without a direct runtime dependency (plan §8.13).
+pub use ocrx_runtime::LlamaRuntimeFactory;
+
 pub use device::DeviceManagerImpl;
 
 #[cfg(test)]
@@ -20,3 +24,19 @@ pub use probe::{FakeSystemProbe, RealSystemProbe, SystemProbe};
 pub use registry::RegistryVerifier;
 pub use service::{InferenceServiceImpl, InferenceSessionImpl};
 pub use telemetry::{start_vram_sampler, stop_vram_sampler};
+
+// Composition-root conveniences: the CLI is the only production root and
+// must not depend on the models crate directly (plan §8.13).
+pub use ocrx_models::default_cache_root;
+pub mod builtin {
+    pub use ocrx_models::builtin::ovisocr2::*;
+}
+pub use ocrx_models::{
+    COMMUNITY_REVISION, CurlTransport, ModelManagerImpl, recommend as recommend_module,
+};
+pub mod recommend {
+    pub use ocrx_models::recommend::*;
+}
+pub mod verify {
+    pub use ocrx_models::verify::*;
+}

@@ -731,15 +731,10 @@ name = "ocrx"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
- "image",
  "ocrx-core",
  "ocrx-inference",
  "ocrx-inference-api",
- "ocrx-models",
  "ocrx-output",
- "ocrx-ovisocr2",
- "ocrx-pdf",
- "ocrx-runtime",
  "ocrx-scan",
  "ocrx-skill",
  "serde_json",
