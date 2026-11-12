@@ -313,3 +313,19 @@ benchmarks/fixtures/pdf/normal-1-page-ocr/{document.md,result.json}、去除 ocr
 `cargo test --workspace --locked` 37 套件全过 0 失败（scan 89、output 108、CLI bin 56、
 runtime 45）；architecture ✓；release-scripts ✓；`git diff --check` 干净；bootstrap-check.sh
 仅余 4 个既有 Python 漂移失败（T103 注记，主工作区同现）。
+
+## 评审闭环（2026-11-13）：第二轮重审 PASS
+
+第二轮重审（`d79ecf6`）结论 **PASS**：RBLK-1～4 均确认修复，未发现新增合并阻断
+（报告：`docs/review/model-backend-extensibility-refactoring-code-review.md`）。评审复核要点：
+基线摘要算法（md+页 JSON+visual_region 图片）写入/校验同源；T1 环境门控/失败零写盘/写失败
+降级/逐文档 reset+finalize 全部接线并有判别测试；取消 130 在文档映射与终出口均为最高优先
+（含零文档启动）；PNG 编码失败为页级失败不中断扫描。评审验证：工作区测试、严格 Clippy、
+格式、架构边界、release 脚本、`git diff --check`、真实 CLI 越界页码（exit 2）全部通过。
+
+**验证边界（评审明示）：** 未运行真实模型/GPU/环境门控 E2E——PASS 表示代码审查及上述验证
+范围，不扩大为环境证据。该边界与 T106/T107（可选、需 OCRX_E2E_MODEL+真实资产）注记一致。
+
+分支状态：`refactor/model-backend-extensibility`，评审链 c8ce717（初评 BLOCK，9 项）→
+4e65fe2（修复 9 项）→ d79ecf6（闭环 4 项）→ PASS。计划任务 102/108 完成（T103/T105 既有
+环境漂移注记；T106/T107 可选 E2E；T108 后续独立立项），合并待用户决定。
