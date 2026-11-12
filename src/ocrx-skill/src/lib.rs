@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::io;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const SKILL_ID: &str = "ocrx";
@@ -94,7 +93,7 @@ pub fn parse_target(target: &str) -> io::Result<Vec<SkillTarget>> {
 }
 
 /// Installs the skill for every selected target under the scope's root. The
-/// write is atomic (`.part` + rename) and source-marked so only this version's
+/// write is atomic and source-marked so only this version's
 /// files are ever touched; unrelated user files in the directory are preserved.
 pub fn install(
     target: &str,
@@ -127,20 +126,7 @@ pub fn install(
         let directory = target.directory(&root);
         fs::create_dir_all(&directory)?;
         let path = directory.join("SKILL.md");
-        let temporary = directory.join(".SKILL.md.part");
-        // Write + sync + rename mirrors ocrx-output::atomic_write (review
-        // m11): the sync guarantees the marker file survives a crash, and a
-        // failed write must not leave the .part corpse behind.
-        let result = (|| -> io::Result<()> {
-            let mut file = fs::File::create(&temporary)?;
-            file.write_all(marked.as_bytes())?;
-            file.sync_all()?;
-            fs::rename(&temporary, &path)
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temporary);
-        }
-        result?;
+        ocrx_core::atomic_write(&path, marked.as_bytes())?;
         paths.push(path);
     }
     Ok(paths)
@@ -275,6 +261,34 @@ mod tests {
             2
         );
         assert!(home.join(".codex/skills/ocrx/other.txt").is_file());
+        cleanup(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_does_not_follow_preexisting_part_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let home = fresh_dir("part-symlink");
+        let directory = home.join(".codex/skills/ocrx");
+        fs::create_dir_all(&directory).unwrap();
+        let sentinel = home.join("model.gguf");
+        fs::write(&sentinel, b"model sentinel").unwrap();
+        let part = directory.join(".SKILL.md.part");
+        symlink(&sentinel, &part).unwrap();
+
+        install(
+            "codex",
+            SkillScope::User,
+            Some(&home),
+            None,
+            "# safe skill\n",
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&sentinel).unwrap(), b"model sentinel");
+        assert!(directory.join("SKILL.md").is_file());
+        assert!(part.is_symlink());
         cleanup(&home);
     }
 
