@@ -44,6 +44,9 @@ pub enum InferenceError {
     WindowFailed(String),
     /// The adapter could not decode a backend output.
     AdapterDecode(String),
+    /// Another install transaction holds the revision-level lock (review
+    /// upstream hardening): the caller must retry after that install ends.
+    InstallLocked(String),
     /// Cooperative cancellation observed (never a normal finish reason).
     Cancelled,
 }
@@ -69,6 +72,7 @@ impl InferenceError {
             Self::BackendExecution(_) => "backend_execution",
             Self::WindowFailed(_) => "window_failed",
             Self::AdapterDecode(_) => "adapter_decode",
+            Self::InstallLocked(_) => "install_locked",
             Self::Cancelled => "cancelled",
         }
     }
@@ -90,7 +94,8 @@ impl InferenceError {
             | Self::InvalidTask(detail)
             | Self::BackendExecution(detail)
             | Self::WindowFailed(detail)
-            | Self::AdapterDecode(detail) => Some(detail),
+            | Self::AdapterDecode(detail)
+            | Self::InstallLocked(detail) => Some(detail),
             Self::Offline | Self::LicenseRequired | Self::Cancelled => None,
         }
     }

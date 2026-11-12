@@ -329,3 +329,45 @@ runtime 45）；architecture ✓；release-scripts ✓；`git diff --check` 干�
 分支状态：`refactor/model-backend-extensibility`，评审链 c8ce717（初评 BLOCK，9 项）→
 4e65fe2（修复 9 项）→ d79ecf6（闭环 4 项）→ PASS。计划任务 102/108 完成（T103/T105 既有
 环境漂移注记；T106/T107 可选 E2E；T108 后续独立立项），合并待用户决定。
+
+## main 合并（2026-11-13）：同步上游安全加固与协议更新（2f6f637..5e995d0）
+
+`git merge main`（PR #4 CI 门禁 / #5 上游致谢 / #6 输出与 owner 防护 / #7 管线安全加固）。冲突
+7 处全部语义化解决（保留重构形态 + 移植上游加固），自动合入 ocrx-pdf/llama_mtmd/multi_sequence_spike
+及经重命名检测的 scan 侧 pdfium_owner（断连 seam）。逐项：
+
+- **ocrx-core**：取上游硬化版 `atomic_write`（`create_new` 防临时路径符号链接 + `sync_all` +
+  碰撞重试）与 `create_contained_child_dir`（RBLK-1 时我加的重复副本删除）；上游把手写 JSON
+  字符串解析换成 serde_json 结构化解析（`parse_block`/`block_string`/`block_u32`）自动合入；
+  上游新增的旧版 CancellationToken 丢弃（primitives re-export 保持）。
+- **ocrx-output**：`atomic_write` 委托 core 硬化版、`validate_output_root` 在规范化前拒绝父目录
+  穿越、`commit_page` 走受控 images 目录、`is_reusable_at` 显式检查页面 JSON——全部自动落位；
+  `artifact_sha256` 两侧同文（RBLK-1 时即取自上游），保留我们的 pub + 文档注释；测试 mock JSON
+  采用上游 `serde_json::json!` 写法。
+- **ocrx-models**：上游对旧管线的安装事务加固移植进重构版 `install.rs`——补上了重构时丢失的
+  revision 级 `InstallLock`（create_new 原子检测 + 死进程锁回收，含 Windows tasklist CSV 探活），
+  在任何磁盘变更前获取；新增 `InferenceError::InstallLocked`（kind `install_locked`）；判别测试：
+  持锁并发安装被拒且活跃事务文件逐字节无损、不触网。上游 URL 方案拒绝已由 transport 层 https
+  守卫覆盖。
+- **ocrx-inference-api**：`DECODE_GENERATION` 2→3（上游 token 分片按字节累积后再 UTF-8 解码；
+  llama_mtmd 相关改动自动合入），常量单一来源在 inference-api，runtime 桥接保留。
+- **ocrx-cli**（取我方骨架 + 移植四段上游语义）：① pdfium 解析 env→可执行文件同目录捆绑
+  （Windows pdfium.dll / macOS ../lib/libpdfium.dylib / Linux ../lib/libpdfium.so）→"."，含 doctor
+  布局测试；② 生产路由版本升 `pdf-route-v2/pdf-text-v2`（scan app 侧，旧 checkpoint 按设计失配
+  重扫）；③ 多输入在 owner 启动前校验聚合输出根 + scan-summary.json 存在需 --resume/--overwrite
+  （exit 9）；④ X1.2 owner fail-loud——`OwnerPdfAccess::poisoned()` 公开 + CLI 在调用级以
+  "scan aborted: pdfium owner failed"（exit 3）中止，永不降级为逐文档跳过。
+- **协议对齐**：`PdfDocumentAccess` 增加 `begin_document`（每文档边界一次，含首文档——上游的
+  switch-at-every-boundary 协议），OwnerPdfAccess 覆写为无条件 switch，断连 seam 测试由此按
+  预期触发毒化。
+- **上游新契约的跟进修正**：`PageSignals.non_text_objects`（空页判定需 image+non-text 全零）
+  补 scan 测试字面量；`validate_output_root` 拒绝原始 `..` 后，CLI 测试的
+  `CARGO_MANIFEST_DIR/../..` fixture 拼写全部改 canonicalize（blk4/cli_subprocess）；resume 种子
+  兼容键同步 v2+decode 3；compose 断言 generation 3。
+- **架构白名单**：`ocrx-skill → ocrx-core` 放行（上游加固复用受控目录/原子写原语）。
+
+**门禁复跑（合并后）：** `cargo test --workspace --locked` 37 套件全过 0 失败（含上游新增
+multi_input_contract 契约测试与断连 seam 测试）；fmt/clippy `-D warnings` ✓；架构校验 ✓；
+release-scripts ✓；`git diff --check` 干净；bootstrap-check.sh 仅余 4 个既有 Python 漂移失败。
+（一次 LNK1104 偶发按备忘删 exe 重跑即过。）route v2 + decode 3 的组合意味着 main 时代与更早
+的 checkpoint 不再复用——与上游"版本升级即重扫"的兼容键语义一致。

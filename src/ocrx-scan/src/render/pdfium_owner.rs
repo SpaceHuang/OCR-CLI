@@ -329,6 +329,11 @@ impl PdfiumOwnerHandle {
                     prefetch_us: BTreeMap::new(),
                     prefetch_depth,
                 };
+                // Subprocess regression seam: disconnect at a document boundary.
+                let disconnect_on_switch = std::env::var("OCRX_E2E_OWNER_DISCONNECT_ON_SWITCH")
+                    .ok()
+                    .and_then(|value| value.parse::<usize>().ok());
+                let mut switches = 0;
                 for request in requests_rx {
                     let mut pending_prefetch: Option<u32> = None;
                     let response = match request {
@@ -367,6 +372,10 @@ impl PdfiumOwnerHandle {
                             PdfResponse::Render(rendered.map(|page| (page, owner_us)))
                         }
                         PdfRequest::SwitchDocument { input } => {
+                            switches += 1;
+                            if disconnect_on_switch == Some(switches) {
+                                break;
+                            }
                             // BLK-2 §3-3: switching is only legal at a
                             // scheduling boundary (the orchestrator
                             // serializes), so the prefetch window of the
@@ -554,6 +563,14 @@ impl OwnerPdfAccess {
         }
     }
 
+    /// The structured failure when the owner is poisoned (library missing,
+    /// terminated, timed out), if it is — the caller aborts the invocation
+    /// fail-loud instead of skipping documents (X1.2 owner contract).
+    #[must_use]
+    pub fn poisoned(&self) -> Option<String> {
+        self.handle.borrow().poisoned()
+    }
+
     /// Builds the window-loop renderer over the SAME owner (shared handle).
     #[must_use]
     pub fn renderer(
@@ -589,6 +606,14 @@ impl OwnerPdfAccess {
 }
 
 impl crate::app::PdfDocumentAccess for OwnerPdfAccess {
+    fn begin_document(&mut self, input: &Path) {
+        // Every document boundary switches — including a repeat of the
+        // spawn input — so the protocol matches the baseline (the boundary
+        // swap clears prefetch state; owner poison surfaces on this call or
+        // the next port call).
+        let _ = self.switch_document(input);
+    }
+
     fn page_count(&mut self, input: &Path) -> std::io::Result<usize> {
         self.ensure_document(input)?;
         self.handle.borrow_mut().page_count()

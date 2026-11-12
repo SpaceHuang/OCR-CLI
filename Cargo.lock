@@ -860,6 +860,9 @@ dependencies = [
 [[package]]
 name = "ocrx-skill"
 version = "0.1.0"
+dependencies = [
+ "ocrx-core",
+]
 
 [[package]]
 name = "once_cell"

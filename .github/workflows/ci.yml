@@ -53,3 +53,17 @@ jobs:
       # artifacts. Model-gated E2E tests are #[ignore]d.
       - name: test
         run: cargo test --workspace --locked
+
+  # Contract checks for the release/install packaging scripts: bash/PowerShell
+  # syntax, privacy gates (never bundle or download models), skill-root
+  # layout, GPU build/launch chain shape, plus the functional installer smoke
+  # matrix. windows-latest because the smoke drives install.ps1 end-to-end and
+  # its platform guards need a real Windows shell; the job compiles nothing.
+  release-scripts:
+    name: release-scripts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: contract checks + installer smoke matrix
+        shell: bash
+        run: bash scripts/test-release-scripts.sh

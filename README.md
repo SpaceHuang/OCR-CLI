@@ -153,7 +153,7 @@ OCR-CLI does not bundle model weights in its release archive. The current manife
 | OvisOCR2 base model | [ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) | Apache-2.0 as declared by the model card |
 | GGUF quantization | [Abiray/OvisOCR2-GGUF](https://huggingface.co/Abiray/OvisOCR2-GGUF), revision `8a22290a0c42dbcf84739d6d4c2763f877494ae0` | Apache-2.0 as declared by the model repository; verify the upstream terms before redistribution |
 | Multimodal projector | `mmproj-F16.gguf` from the selected GGUF repository | Must be kept with its source and license metadata |
-| Base-model lineage | [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen) | Refer to the applicable upstream model card and license |
+| Base-model lineage | [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | Refer to the upstream model card and license |
 
 The machine-readable manifest, including profile sizes, source URLs, and SHA-256 values, is stored at [`assets/manifests/ovisocr2/`](assets/manifests/ovisocr2/). A model license is separate from the OCR-CLI source-code license. Users and distributors are responsible for complying with the terms that apply to each model file they download or redistribute.
 
@@ -161,7 +161,7 @@ The machine-readable manifest, including profile sizes, source URLs, and SHA-256
 
 OCR-CLI uses the following important upstream components:
 
-- [PDFium](https://github.com/chromium/pdfium), accessed through [`pdfium-render`](https://crates.io/crates/pdfium-render), for PDF rendering;
+- [PDFium](https://github.com/chromium/pdfium), accessed through the [`pdfium-render`](https://github.com/ajrcarey/pdfium-render) Rust wrapper, for PDF rendering. The recorded macOS/Windows packaging baseline uses community-built binaries from [`bblanchon/pdfium-binaries`](https://github.com/bblanchon/pdfium-binaries) based on Chromium PDFium; check the release manifest for the exact binary revision and notices;
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) and its [multimodal/libmtmd support](https://github.com/ggml-org/llama.cpp/blob/master/tools/mtmd/README.md), accessed through Rust bindings, for local multimodal inference;
 - Rust ecosystem dependencies listed in [`Cargo.toml`](Cargo.toml) and [`Cargo.lock`](Cargo.lock).
 
@@ -211,10 +211,12 @@ OCR-CLI would not be possible without the following projects and contributors:
 
 - [ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) and the authors of the [OvisOCR2 technical report](https://arxiv.org/abs/2607.13639);
 - [Abiray/OvisOCR2-GGUF](https://huggingface.co/Abiray/OvisOCR2-GGUF) for the selected GGUF quantization and multimodal projector distribution;
-- [Qwen](https://huggingface.co/Qwen) for the base-model lineage used by OvisOCR2;
+- [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) for the base-model lineage identified for OvisOCR2;
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) and its contributors for local inference and libmtmd;
-- [PDFium](https://github.com/chromium/pdfium), Chromium contributors, and the [`pdfium-render`](https://crates.io/crates/pdfium-render) project;
+- [PDFium](https://github.com/chromium/pdfium) and Chromium contributors, the [`pdfium-render`](https://github.com/ajrcarey/pdfium-render) Rust wrapper, and [`bblanchon/pdfium-binaries`](https://github.com/bblanchon/pdfium-binaries) for the community-built PDFium binaries used by the recorded packaging baseline;
 - the Rust compiler, Cargo, and the open-source crates listed in the project dependency metadata.
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for principal dependency links and release attribution requirements. It is a summary; binary releases still need a complete, version-specific inventory of bundled software and applicable notices.
 
 If you use OvisOCR2 in academic work, please cite the technical report using the citation provided by the [official model card](https://huggingface.co/ATH-MaaS/OvisOCR2#citation).
 

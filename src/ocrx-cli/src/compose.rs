@@ -91,7 +91,9 @@ mod tests {
             .static_identity(&ModelId::new("ovisocr2").unwrap(), "auto")
             .unwrap();
         assert_eq!(statik.runtime.runtime.as_str(), "llama.cpp");
-        assert_eq!(statik.decode_generation, 2);
+        // Upstream main bumped the decode generation to 3 (token pieces
+        // accumulate as bytes before UTF-8 decoding); identity must match.
+        assert_eq!(statik.decode_generation, 3);
         let _ = std::fs::remove_dir_all(root);
     }
 }

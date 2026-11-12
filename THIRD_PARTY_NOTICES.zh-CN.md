@@ -17,7 +17,7 @@ OCR-CLI 使用 OvisOCR2 作为 v0.1 唯一正式支持的 OCR 模型。
 
 GGUF 模型和 `mmproj` 文件不属于 OCR-CLI 源代码许可的范围。用户和分发者必须保留上游模型元数据，并遵守所使用具体模型版本的条款。除非已针对该发布版本审查了模型文件的来源、许可和再分发状态，否则不得随 OCR-CLI 发布版本一同再分发模型文件。
 
-OvisOCR2 基于 Qwen 模型家族。请参阅 [Qwen 组织](https://huggingface.co/Qwen) 以及对应上游基础模型卡，了解适用于相关模型谱系的许可和条款。
+OvisOCR2 清单将 [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) 标识为其基础模型谱系。再分发前，请核对确切模型版本对应的模型卡和条款。
 
 ## llama.cpp 与 libmtmd
 
@@ -37,7 +37,8 @@ OCR-CLI 通过 [`pdfium-render`](https://crates.io/crates/pdfium-render) Rust cr
 - 项目：[Chromium PDFium](https://github.com/chromium/pdfium)
 - 许可：[PDFium `LICENSE`](https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/2028/LICENSE)
 - Chromium 第三方许可指南：[Chromium 开源许可证](https://www.chromium.org/chromium-projects/)
-- Rust 封装：[`pdfium-render`](https://crates.io/crates/pdfium-render)
+- Rust 封装：[`pdfium-render`](https://github.com/ajrcarey/pdfium-render)（crate 版本 `0.9.3`）
+- 已记录的二进制打包来源：[`bblanchon/pdfium-binaries`](https://github.com/bblanchon/pdfium-binaries)；仓库中的 macOS 基线记录了 `chromium/7961` arm64 工件，Windows 打包文档也记录了同一来源项目。每次发布均须确认实际使用的工件及其附带声明。
 
 再分发 PDFium 时，必须在源码和二进制分发中保留适用的版权声明、许可条件和免责声明。由于 PDFium 与 Chromium 依赖树相关联，包含 `libpdfium.dylib` 的发布版本必须附带适用于该 PDFium 构建版本和修订版的所有声明。二进制文件的修订版本和 SHA-256 必须记录在发布制品中。
 
@@ -47,11 +48,11 @@ OCR-CLI 使用 Cargo 构建。直接依赖项在工作区和 crate 清单中声�
 
 - [`image`](https://crates.io/crates/image)
 - [`ctrlc`](https://crates.io/crates/ctrlc)
-- [`pdfium-render`](https://crates.io/crates/pdfium-render)
+- [`pdfium-render`](https://github.com/ajrcarey/pdfium-render)
 - [`llama-cpp-2`](https://crates.io/crates/llama-cpp-2)
 - [`llama-cpp-sys-2`](https://crates.io/crates/llama-cpp-sys-2)
 
-每个 crate 及其传递依赖项均保留各自的许可条款。构建的权威依赖版本锁定在 [`Cargo.lock`](Cargo.lock) 中。发布流程必须生成或审查完整的 Cargo 依赖项许可清单（包括传递依赖项），并将该清单随发布制品一并提供。
+每个 crate 及其传递依赖项均保留各自的许可条款。构建的权威依赖版本锁定在 [`Cargo.lock`](Cargo.lock) 中。本列表并非完整依赖清单。发布流程必须生成或审查完整的 Cargo 依赖项许可清单（包括传递依赖项），并将该清单随发布制品一并提供。
 
 ## 发布检查清单
 

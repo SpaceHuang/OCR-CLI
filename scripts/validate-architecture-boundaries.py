@@ -53,7 +53,11 @@ ALLOWED_DEPS: dict[str, set[str]] = {
         "ocrx-output",
         "ocrx-scan",
     },
-    "ocrx-skill": set(),
+    # Upstream security hardening (main 8b8bef4) installs skill files with
+    # the shared contained-dir/atomic-write primitives.
+    "ocrx-skill": {
+        "ocrx-core",
+    },
     "ocrx": {
         "ocrx-core",
         "ocrx-inference",

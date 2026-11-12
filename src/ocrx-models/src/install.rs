@@ -95,6 +95,18 @@ pub fn install(context: InstallContext<'_>) -> Result<InstallReceipt, InferenceE
         }
     }
     // 5. Transaction: stage → verify → backup → commit → receipt last.
+    // Revision-level lock over the WHOLE transaction (upstream hardening):
+    // the shared projector and its transaction files live at revision scope,
+    // so concurrent installs of sibling profiles must serialize here — a
+    // rejected contender must never clean the active transaction's files.
+    let revision_dir = cache_root
+        .join("ocrx")
+        .join("models")
+        .join(manifest.model.as_str())
+        .join(&manifest.source_revision);
+    std::fs::create_dir_all(&revision_dir)
+        .map_err(|error| InferenceError::InsufficientDisk(error.to_string()))?;
+    let _lock = InstallLock::acquire(&revision_dir)?;
     let targets: Vec<_> = manifest_asset_paths(cache_root, manifest)?;
     let mut directories = std::collections::BTreeSet::new();
     for (_, path) in &targets {
@@ -151,6 +163,112 @@ pub fn install(context: InstallContext<'_>) -> Result<InstallReceipt, InferenceE
     }
     write_receipt(cache_root, manifest)?;
     receipt(cache_root, manifest, !pending.is_empty())
+}
+
+/// Advisory revision-level install lock (upstream hardening): `create_new`
+/// means a holder is detected atomically; a lock whose recorded PID is no
+/// longer alive is reclaimed. The holder PID is written into the file so a
+/// crashed process's lock is distinguishable from a live one.
+struct InstallLock {
+    path: std::path::PathBuf,
+    owner: String,
+    file: std::fs::File,
+}
+
+impl InstallLock {
+    fn acquire(directory: &std::path::Path) -> Result<Self, InferenceError> {
+        let path = directory.join(".install.lock");
+        let create = || {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+        };
+        let owner = std::process::id().to_string();
+        let file = if let Ok(file) = create() {
+            file
+        } else {
+            let holder = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|value| value.trim().parse::<u32>().ok());
+            let stale = holder.is_some_and(|pid| process_liveness(pid) == ProcessLiveness::Dead);
+            if stale {
+                std::fs::remove_file(&path).map_err(|_| {
+                    InferenceError::InstallLocked(path.to_string_lossy().into_owned())
+                })?;
+                create().map_err(|_| {
+                    InferenceError::InstallLocked(path.to_string_lossy().into_owned())
+                })?
+            } else {
+                return Err(InferenceError::InstallLocked(format!(
+                    "another install holds {}",
+                    path.display()
+                )));
+            }
+        };
+        use std::io::Write;
+        let mut file = file;
+        file.write_all(owner.as_bytes())
+            .map_err(|_| InferenceError::InstallLocked(path.to_string_lossy().into_owned()))?;
+        file.flush()
+            .map_err(|_| InferenceError::InstallLocked(path.to_string_lossy().into_owned()))?;
+        Ok(Self { path, owner, file })
+    }
+}
+
+impl Drop for InstallLock {
+    fn drop(&mut self) {
+        if std::fs::read_to_string(&self.path).is_ok_and(|contents| contents == self.owner) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn process_liveness(pid: u32) -> ProcessLiveness {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map_or(ProcessLiveness::Unknown, |status| {
+            if status.success() {
+                ProcessLiveness::Alive
+            } else {
+                ProcessLiveness::Dead
+            }
+        })
+}
+
+#[cfg(not(unix))]
+fn process_liveness(pid: u32) -> ProcessLiveness {
+    // /FO CSV keeps fields quoted and comma-separated; the default
+    // whitespace split misparsed image names containing spaces and could
+    // declare a live holder dead (review m10).
+    let output = match std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return ProcessLiveness::Unknown,
+    };
+    if String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+        // CSV row: "name","pid",... — second quoted field is the PID.
+        line.split("\",\"")
+            .nth(1)
+            .map(|field| field.trim_matches('"').parse::<u32>().ok())
+            .unwrap_or(None)
+            == Some(pid)
+    }) {
+        ProcessLiveness::Alive
+    } else {
+        ProcessLiveness::Dead
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessLiveness {
+    Alive,
+    Dead,
+    Unknown,
 }
 
 /// Roles whose on-disk content is not already correct.
@@ -688,6 +806,74 @@ mod tests {
         );
         assert_eq!(interaction.confirmations, 1);
         assert!(transport.requested_urls().is_empty(), "declined = no fetch");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn contended_revision_lock_rejects_and_spares_active_transaction_files() {
+        // Upstream hardening (main 0149d65/5388e76 lineage): a second install
+        // whose revision lock is held by a LIVE other process is rejected
+        // with InstallLocked, and — because the rejected transaction never
+        // enters its cleanup — the holder's active .part/.bak files survive
+        // byte-for-byte. With an unknown/dead holder the lock is reclaimed.
+        let root = std::env::temp_dir().join(format!("ocrx-install-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let manifest = tiny_manifest();
+        let transport = FakeTransport::new();
+        transport.serve("https://example.invalid/", b"model-bytes");
+        transport.responses.lock().unwrap().push((
+            "https://example.invalid/mmproj".into(),
+            Ok(b"mmproj-bytes".to_vec()),
+        ));
+        let revision_dir = root
+            .join("ocrx")
+            .join("models")
+            .join("ovisocr2")
+            .join("rev-test-1");
+        std::fs::create_dir_all(&revision_dir).unwrap();
+        // A live foreign holder: this test process's own PID would be
+        // "stale-reclaimable" only if dead, so use a PID that cannot exist.
+        let foreign_holder = u32::MAX - 1;
+        std::fs::write(
+            revision_dir.join(".install.lock"),
+            foreign_holder.to_string(),
+        )
+        .unwrap();
+        // Active transaction files belonging to the holder.
+        let profile_dir = revision_dir.join("compact");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let active_part = profile_dir.join("model.active.part");
+        let shared_part = revision_dir.join("mmproj.active.part");
+        for path in [&active_part, &shared_part] {
+            std::fs::write(path, b"active transaction").unwrap();
+        }
+        let mut interaction = RecordingInteraction::accepting();
+        let error = install(ctx(
+            &manifest,
+            &root,
+            &transport,
+            &mut interaction,
+            InstallPolicy {
+                offline: false,
+                non_interactive: true,
+                license_accepted: true,
+            },
+            Some(u64::MAX),
+        ))
+        .expect_err("a held lock must reject the install");
+        assert_eq!(error.kind(), "install_locked", "unexpected: {error}");
+        // The rejected install touched nothing.
+        for path in [&active_part, &shared_part] {
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                b"active transaction",
+                "active transaction file was disturbed: {path:?}"
+            );
+        }
+        assert!(
+            transport.requested_urls().is_empty(),
+            "a locked install must not reach the network"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

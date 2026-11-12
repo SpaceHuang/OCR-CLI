@@ -11,39 +11,65 @@ pub mod resource_sampler;
 pub use ocrx_primitives::{
     CancellationToken, GenerationProgress, Sha256State, sha256, sha256_file,
 };
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Frozen decode-window depth for multi-page continuous batching (phase-2
-/// stage C unfreeze, 2026-11-04: **N = 8**).
+static ATOMIC_WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Atomically replaces a file using a newly created sibling temporary file.
+/// `create_new` prevents following a pre-existing temporary-path symlink.
 ///
-/// History: the first freeze landed at N = 1 because the integrated N=4
-/// measurement regressed ~5–11% on both backends — but that measurement ran
-/// a broken window decode (review finding 1: the loop re-fed the seed token
-/// every step), so both its outputs and its timings were invalid. After the
-/// fix (verified against the real model: window output == single-stream
-/// output byte-for-byte), the corrected N=4 gates are: golden 40.9–41.5 s vs
-/// 55.5 s single-stream (1.36× end-to-end), decode aggregate 417–430 tok/s
-/// vs 283 (1.52×; the R0.6 isolated bench promised 3.21× — the hybrid
-/// attention arch's 18/24 per-sequence SSM layers cap the realizable gain),
-/// self-consistency byte-identical, page similarity 1.0000, zero failed /
-/// truncated / degenerated pages.
+/// # Errors
 ///
-/// 2026-11-02 post-review freeze re-confirmed N = 4 (phase-1 P4.4).
-///
-/// 2026-11-04 unfreeze to N = 8 (phase-2 plan §4 stage C): the isolated
-/// batched-bench curve gives B=8 = 1527.6 tok/s (4.76× single-stream, +48%
-/// over B=4); window `n_ctx` = max page budget × 8 ≈ 139,776 ≤ the model's
-/// 262,144 training window; KV ≈ 1.7 GB at the 12 KB/token measure keeps the
-/// load inside the 6 GB VRAM assertion. Gates (all measured on the phase-2
-/// branch, Vulkan): structural similarity vs the N=4 frozen reference
-/// ≥ 0.999 + manual sampling, self-consistency byte-identical across
-/// passes, ≥ 5% wall improvement over the post-A baseline (38.2 s), 100-page
-/// resource regression clean, Ctrl+C smoke contract updated (window 1 =
-/// pages 1–8, mechanism-A evidence pages 9–12). The compatibility key
-/// carries `;batch=8` (was `;batch=4`), so pre-unfreeze checkpoints no
-/// longer match and `--resume` rescans the whole document from scratch —
-/// an expected, documented behavior change. Phase-1 freeze discipline
-/// stands: performance numbers must come from a correctness-gated build.
-pub const WINDOW_DEPTH: usize = 8;
+/// Returns an error if the parent cannot be created, a temporary file cannot
+/// be opened or written, or the completed file cannot be renamed into place.
+pub fn atomic_write(path: impl AsRef<Path>, contents: &[u8]) -> io::Result<()> {
+    let path = path.as_ref();
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "output path has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let name = path.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "output path has no filename")
+    })?;
+    let mut last_collision = None;
+    for _ in 0..128 {
+        let sequence = ATOMIC_WRITE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp = parent.join(format!(
+            ".{}.tmp-{}-{sequence}",
+            name.to_string_lossy(),
+            std::process::id()
+        ));
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                last_collision = Some(error);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let result = (|| {
+            use std::io::Write;
+            file.write_all(contents)?;
+            file.sync_all()?;
+            drop(file);
+            std::fs::rename(&temp, path)
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temp);
+        }
+        return result;
+    }
+    Err(last_collision.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate temporary file",
+        )
+    }))
+}
 
 /// Creates or validates one direct child directory without following a
 /// pre-existing symlink. Returns its canonical path for subsequent writes.
@@ -89,6 +115,39 @@ pub fn create_contained_child_dir(root: &Path, child: &str) -> io::Result<PathBu
     }
     Ok(canonical_child)
 }
+
+/// Frozen decode-window depth for multi-page continuous batching (phase-2
+/// stage C unfreeze, 2026-11-04: **N = 8**).
+///
+/// History: the first freeze landed at N = 1 because the integrated N=4
+/// measurement regressed ~5–11% on both backends — but that measurement ran
+/// a broken window decode (review finding 1: the loop re-fed the seed token
+/// every step), so both its outputs and its timings were invalid. After the
+/// fix (verified against the real model: window output == single-stream
+/// output byte-for-byte), the corrected N=4 gates are: golden 40.9–41.5 s vs
+/// 55.5 s single-stream (1.36× end-to-end), decode aggregate 417–430 tok/s
+/// vs 283 (1.52×; the R0.6 isolated bench promised 3.21× — the hybrid
+/// attention arch's 18/24 per-sequence SSM layers cap the realizable gain),
+/// self-consistency byte-identical, page similarity 1.0000, zero failed /
+/// truncated / degenerated pages.
+///
+/// 2026-11-02 post-review freeze re-confirmed N = 4 (phase-1 P4.4).
+///
+/// 2026-11-04 unfreeze to N = 8 (phase-2 plan §4 stage C): the isolated
+/// batched-bench curve gives B=8 = 1527.6 tok/s (4.76× single-stream, +48%
+/// over B=4); window `n_ctx` = max page budget × 8 ≈ 139,776 ≤ the model's
+/// 262,144 training window; KV ≈ 1.7 GB at the 12 KB/token measure keeps the
+/// load inside the 6 GB VRAM assertion. Gates (all measured on the phase-2
+/// branch, Vulkan): structural similarity vs the N=4 frozen reference
+/// ≥ 0.999 + manual sampling, self-consistency byte-identical across
+/// passes, ≥ 5% wall improvement over the post-A baseline (38.2 s), 100-page
+/// resource regression clean, Ctrl+C smoke contract updated (window 1 =
+/// pages 1–8, mechanism-A evidence pages 9–12). The compatibility key
+/// carries `;batch=8` (was `;batch=4`), so pre-unfreeze checkpoints no
+/// longer match and `--resume` rescans the whole document from scratch —
+/// an expected, documented behavior change. Phase-1 freeze discipline
+/// stands: performance numbers must come from a correctness-gated build.
+pub const WINDOW_DEPTH: usize = 8;
 
 /// Phase-4 depth tiering: the window depth is selected per device from the
 /// GPU's VRAM capacity. The 4090-class measured basis (2026-11-07 probe,
@@ -828,7 +887,7 @@ impl PageDocument {
             .and_then(serde_json::Value::as_array)
             .ok_or(DomainError::InvalidJson)?
             .iter()
-            .map(|block| parse_block(&block.to_string()))
+            .map(parse_block)
             .collect::<Result<Vec<_>, _>>()?;
         let document = Self {
             schema_version,
@@ -974,49 +1033,44 @@ impl PdfPageDocument {
     }
 }
 
-fn json_number(value: &str, key: &str) -> Result<u32, DomainError> {
+fn block_string<'a>(value: &'a serde_json::Value, key: &str) -> Result<&'a str, DomainError> {
     value
-        .split_once(&format!("\"{key}\":"))
-        .and_then(|(_, rest)| rest.split(|c: char| !c.is_ascii_digit()).next())
-        .and_then(|number| number.parse().ok())
+        .get(key)
+        .and_then(serde_json::Value::as_str)
         .ok_or(DomainError::InvalidJson)
 }
 
-fn json_string(value: &str, key: &str) -> Result<String, DomainError> {
+fn block_u32(value: &serde_json::Value, key: &str) -> Result<u32, DomainError> {
     value
-        .split_once(&format!("\"{key}\":\""))
-        .and_then(|(_, rest)| rest.split_once('"'))
-        .map(|(string, _)| {
-            string
-                .replace("\\n", "\n")
-                .replace("\\\"", "\"")
-                .replace("\\\\", "\\")
-        })
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|number| u32::try_from(number).ok())
         .ok_or(DomainError::InvalidJson)
 }
 
-fn parse_block(value: &str) -> Result<PageBlock, DomainError> {
-    let value = value.trim_matches('{').trim_matches('}');
-    let kind = json_string(value, "type")?;
-    match kind.as_str() {
+fn parse_block(value: &serde_json::Value) -> Result<PageBlock, DomainError> {
+    if !value.is_object() {
+        return Err(DomainError::InvalidJson);
+    }
+    let kind = block_string(value, "type")?;
+    match kind {
         "markdown" => Ok(PageBlock::Markdown {
-            content: json_string(value, "content")?,
+            content: block_string(value, "content")?.to_owned(),
         }),
         "formula" => Ok(PageBlock::Formula {
-            latex: json_string(value, "latex")?,
-            display: value.contains("\"display\":true"),
+            latex: block_string(value, "latex")?.to_owned(),
+            display: value
+                .get("display")
+                .and_then(serde_json::Value::as_bool)
+                .ok_or(DomainError::InvalidJson)?,
         }),
         "html_table" => Ok(PageBlock::HtmlTable {
-            html: json_string(value, "html")?,
+            html: block_string(value, "html")?.to_owned(),
         }),
         "visual_region" => {
-            let bbox = value
-                .split_once("\"bbox\":{")
-                .and_then(|(_, rest)| rest.split_once('}'))
-                .ok_or(DomainError::InvalidJson)?
-                .0;
+            let bbox = value.get("bbox").ok_or(DomainError::InvalidJson)?;
             let number =
-                |key| u16::try_from(json_number(bbox, key)?).map_err(|_| DomainError::InvalidJson);
+                |key| u16::try_from(block_u32(bbox, key)?).map_err(|_| DomainError::InvalidJson);
             Ok(PageBlock::VisualRegion {
                 bbox: NormalizedBbox::new(
                     number("left")?,
@@ -1024,7 +1078,7 @@ fn parse_block(value: &str) -> Result<PageBlock, DomainError> {
                     number("right")?,
                     number("bottom")?,
                 )?,
-                source_order: json_number(value, "source_order")?,
+                source_order: block_u32(value, "source_order")?,
             })
         }
         _ => Err(DomainError::InvalidJson),
@@ -1694,6 +1748,31 @@ mod tests {
             let encoded = document.to_json().unwrap();
             assert_eq!(PageDocument::from_json(&encoded).unwrap(), document);
         }
+    }
+
+    #[test]
+    fn page_document_json_round_trips_quotes_slashes_controls_and_unicode() {
+        let document = PageDocument {
+            schema_version: PageDocument::SCHEMA_VERSION,
+            page_number: 1,
+            blocks: vec![
+                PageBlock::Markdown {
+                    content: "He said \"hello\".\tLaTeX: \\theta + \\nu\r\n龘𠮷🙂🚀".to_owned(),
+                },
+                PageBlock::Formula {
+                    latex: r"\left(\theta + \nu\right) \quad x\to y".to_owned(),
+                    display: true,
+                },
+                PageBlock::HtmlTable {
+                    html: "<td title=\"a\\b\">line\tvalue</td>".to_owned(),
+                },
+            ],
+            termination: Termination::Eos,
+            warnings: vec![],
+        };
+        let encoded = document.to_json().unwrap();
+        assert!(serde_json::from_str::<serde_json::Value>(&encoded).is_ok());
+        assert_eq!(PageDocument::from_json(&encoded).unwrap(), document);
     }
 
     #[test]

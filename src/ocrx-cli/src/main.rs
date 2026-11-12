@@ -1133,6 +1133,39 @@ fn probe_cuda_vram_bytes() -> Option<u64> {
 /// Phase-4 BLK-2: the batch depth that actually takes effect. The 16 tier
 /// is a GPU-VRAM decision; a CPU runtime (requested or GPU->CPU fallback)
 /// always runs the compiled floor.
+/// Resolves the PDFium library location (upstream hardening, main 2a415a4):
+/// the explicit `OCRX_PDFIUM_LIBRARY` override wins; otherwise the library
+/// shipped next to the installed executable (Windows `pdfium.dll`, macOS
+/// `../lib/libpdfium.dylib`, Linux `../lib/libpdfium.so`) is used so installs
+/// keep working after the vendored copy is laid out by the install scripts;
+/// the historical `"."` fallback comes last.
+fn pdfium_library_from_environment() -> PathBuf {
+    std::env::var_os("OCRX_PDFIUM_LIBRARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(default_pdfium_library)
+}
+
+fn default_pdfium_library() -> PathBuf {
+    if let Ok(executable) = std::env::current_exe() {
+        let bundled = bundled_pdfium_path(&executable);
+        if bundled.is_file() {
+            return bundled;
+        }
+    }
+    PathBuf::from(".")
+}
+
+fn bundled_pdfium_path(executable: &Path) -> PathBuf {
+    let directory = executable.parent().unwrap_or_else(|| Path::new("."));
+    #[cfg(target_os = "macos")]
+    let bundled = directory.join("../lib/libpdfium.dylib");
+    #[cfg(target_os = "windows")]
+    let bundled = directory.join("pdfium.dll");
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let bundled = directory.join("../lib/libpdfium.so");
+    bundled
+}
+
 fn resolve_window_depth(requested_device: &str) -> usize {
     // The composed device manager owns select + VRAM probe + tiering.
     let composed = compose::compose(None);
@@ -1297,11 +1330,54 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             }
         }
     }
+    // Multi-input aggregate policy (upstream hardening, main 4376 hunk): the
+    // aggregate ROOT is validated against every input BEFORE the owner or any
+    // document starts — child-directory checks cannot protect
+    // scan-summary.json on failure paths — and an existing summary requires
+    // an explicit --resume or --overwrite.
+    if multi && let Some(root) = &output_root {
+        let policy_error = (|| -> Option<String> {
+            for input in &resolved_inputs {
+                if let Err(error) = validate_scan_output_policy(
+                    input,
+                    root,
+                    &[
+                        cache_root.join("ocrx").join("models").as_path(),
+                        cache_root.join("ovisocr2").as_path(),
+                    ],
+                    &working_directory,
+                ) {
+                    return Some(error);
+                }
+            }
+            if root.join("scan-summary.json").exists() && !options.overwrite && !options.resume {
+                return Some(
+                    "scan-summary.json already exists; use --resume or --overwrite".to_owned(),
+                );
+            }
+            None
+        })();
+        if let Some(error) = policy_error {
+            reporter.error(
+                &ErrorReport {
+                    code: 9,
+                    kind: "output".to_owned(),
+                    message: "output directory refused by the output policy".to_owned(),
+                    cause: Some(error),
+                    suggestion: Some(
+                        "choose a dedicated output directory; use --resume or --overwrite for existing results"
+                            .to_owned(),
+                    ),
+                },
+                report_format,
+            );
+            emit_reporter(&mut reporter);
+            std::process::exit(9);
+        }
+    }
     let dpi = u16::try_from(options.dpi.unwrap_or(300)).unwrap_or(300);
     let window_depth = resolve_window_depth(&options.device);
-    let pdfium_dir = std::env::var_os("OCRX_PDFIUM_LIBRARY")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let pdfium_dir = pdfium_library_from_environment();
     let mut composed = compose::compose(None);
     let app_options = ocrx_scan::DocumentOptions {
         pdf_mode: options.pdf_mode.clone(),
@@ -1389,6 +1465,27 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             }
             ocrx_scan::ScanEvent::DocumentFinished { .. } => {}
         }
+    }
+    // X1.2 owner contract (fail-loud): a poisoned owner — missing library,
+    // terminated or timed-out worker — aborts the whole invocation with the
+    // structured "pdfium owner failed" error, it never degrades into
+    // per-document skips.
+    if let Some(cause) = pdf_access.poisoned() {
+        reporter.error(
+            &ErrorReport {
+                code: 3,
+                kind: "pdf".to_owned(),
+                message: "scan aborted: pdfium owner failed".to_owned(),
+                cause: Some(cause),
+                suggestion: Some(
+                    "check the PDFium library location (OCRX_PDFIUM_LIBRARY or the bundled copy)"
+                        .to_owned(),
+                ),
+            },
+            report_format,
+        );
+        emit_reporter(&mut reporter);
+        std::process::exit(3);
     }
     let Ok(outcome) = outcome else {
         // Whole-invocation infrastructure failure (rare: I/O abort).
@@ -2543,7 +2640,7 @@ mod tests {
                 version: "0.1.0".to_owned(),
             },
             backend: ocrx_inference_api::BackendId::new("cpu").unwrap(),
-            decode_generation: 2,
+            decode_generation: 3,
             batch_depth: 8,
             display: ocrx_inference_api::ModelDisplayMeta {
                 display_name: "OvisOCR2".to_owned(),
@@ -2556,8 +2653,8 @@ mod tests {
             ocrx_output::PdfIdentity {
                 pdf_mode: "ocr".to_owned(),
                 quality_tier: "l2".to_owned(),
-                classifier_version: "pdf-route-v1".to_owned(),
-                extractor_version: "pdf-text-v1".to_owned(),
+                classifier_version: "pdf-route-v2".to_owned(),
+                extractor_version: "pdf-text-v2".to_owned(),
                 platform: current_platform().to_owned(),
             },
             ocrx_output::OcrIdentity {
@@ -2570,7 +2667,7 @@ mod tests {
                 max_output_tokens: 16_384,
                 context_size: 20_480,
                 batch_depth: 8,
-                decode_generation: 2,
+                decode_generation: 3,
                 pixel_width_budget: 2880,
                 pixel_height_budget: 2880,
                 page_parser_version: "ovis-page-v1".to_owned(),
@@ -2663,6 +2760,35 @@ mod tests {
     // which spawns the binary directly. A `cargo run`-based twin here
     // intermittently captured cargo's own "Blocking waiting for file lock"
     // stderr chatter under parallel test load and false-failed.
+
+    #[test]
+    fn bundled_pdfium_is_resolved_from_installed_executable_layout() {
+        // Upstream hardening (main 2a415a4): the install layout keeps pdfium
+        // beside the executable (Windows) or under ../lib (macOS/Linux), and
+        // the default resolution must find it without OCRX_PDFIUM_LIBRARY.
+        let root = std::env::temp_dir().join(format!("ocrx-bundled-pdfium-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = root.join("bin");
+        let lib = root.join("lib");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&lib).unwrap();
+        let executable = bin.join(if cfg!(windows) { "ocrx.exe" } else { "ocrx" });
+        std::fs::write(&executable, b"binary").unwrap();
+        #[cfg(target_os = "macos")]
+        let library = lib.join("libpdfium.dylib");
+        #[cfg(target_os = "windows")]
+        let library = bin.join("pdfium.dll");
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        let library = lib.join("libpdfium.so");
+        std::fs::write(&library, b"pdfium").unwrap();
+        assert_eq!(
+            super::bundled_pdfium_path(&executable)
+                .canonicalize()
+                .unwrap(),
+            library.canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
@@ -3319,8 +3445,14 @@ mod tests {
             eprintln!("skipping: no vendored pdfium available");
             return;
         }
+        // Canonical spelling: the upstream hardened output policy refuses a
+        // raw `..` before lexical normalization, so the historical
+        // manifest-relative spelling would be refused before the pages
+        // validation this test targets.
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf");
+            .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf")
+            .canonicalize()
+            .expect("fixture resolves");
         let mut command = match std::env::var("CARGO_BIN_EXE_ocrx") {
             Ok(binary) => std::process::Command::new(binary),
             Err(_) => {

@@ -35,6 +35,13 @@ use crate::window::{PageRenderer, WindowConfig, run_pages_with_session, write_pe
 /// PDF facts the application needs (plan §6.3 steps 1–2). The production
 /// implementation routes through the PdfiumOwner; tests inject fakes.
 pub trait PdfDocumentAccess {
+    /// Marks a document scheduling boundary (X1 protocol ③/④): issued once
+    /// per document BEFORE any page work, including the first document —
+    /// an owner-backed implementation swaps the active document there
+    /// (prefetch cache cleared, `next_prefetch` reset), mirroring the
+    /// baseline switch-at-every-boundary protocol.
+    fn begin_document(&mut self, _input: &Path) {}
+
     /// Page count (fails for missing/corrupt/encrypted PDFs).
     ///
     /// # Errors
@@ -339,6 +346,9 @@ impl ScanApplication {
                     cause,
                 }),
             };
+        // X1 protocol ③/④: the document scheduling boundary (the first
+        // document included — the owner swap clears prefetch state).
+        pdf.begin_document(input);
         // Step 1: page count (PDF errors surface before any model work).
         let page_count = match pdf.page_count(input) {
             Ok(count) => count,
@@ -407,8 +417,12 @@ impl ScanApplication {
         let pdf_identity = PdfIdentity {
             pdf_mode: options.pdf_mode.clone(),
             quality_tier: options.quality_tier.clone(),
-            classifier_version: "pdf-route-v1".to_owned(),
-            extractor_version: "pdf-text-v1".to_owned(),
+            // Upstream bumped the routing/extractor contract (main 2921/2946
+            // hunk): v2 signals ride the same wire format; the version bump
+            // intentionally invalidates older checkpoints so pages produced
+            // under v1 routing are reprocessed.
+            classifier_version: "pdf-route-v2".to_owned(),
+            extractor_version: "pdf-text-v2".to_owned(),
             platform: current_platform(),
         };
         let native_compatibility = ScanCompatibility::native_or_empty(
@@ -1212,6 +1226,7 @@ pub fn empty_signals() -> ocrx_pdf::PageSignals {
         page_width: 0.0,
         page_height: 0.0,
         image_objects: 0,
+        non_text_objects: 0,
         text_bbox_coverage: 0.0,
         visible_characters: 0,
         unicode_validity: 0.0,
@@ -1245,6 +1260,7 @@ pub(crate) fn valid_native_page(page: u32) -> NativePage {
             page_width: 612.0,
             page_height: 792.0,
             image_objects: 0,
+            non_text_objects: 0,
             text_bbox_coverage: 0.30,
             visible_characters: 14,
             unicode_validity: 1.0,

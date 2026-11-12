@@ -19,12 +19,12 @@ pub const WINDOW_DEPTH: usize = 8;
 /// High-VRAM window depth tier (phase-4 tiering).
 pub const WINDOW_DEPTH_HIGH_VRAM: usize = 16;
 
-/// Decode-generation marker for checkpoint compatibility (quality plan
-/// Q1.3 / D-15): the wrapper era that produced a page. Generation 1 =
-/// llama.cpp wrapper 0.1.152/0.1.153; generation 2 = 0.1.161 (sampler-
-/// capable decode). The platform produces the value through the identity
-/// API; the scan writes `decode=<gen>` from the identity, never hardcoded.
-pub const DECODE_GENERATION: u32 = 2;
+/// Decode-generation marker for checkpoint compatibility: generation 1 =
+/// llama.cpp wrapper 0.1.152/0.1.153; generation 2 = 0.1.161 sampler-capable
+/// decode; generation 3 = token pieces are accumulated as bytes before UTF-8
+/// decoding. The scan writes `decode=<gen>` into checkpoint compatibility
+/// parameters so results produced by a different generation are reprocessed.
+pub const DECODE_GENERATION: u32 = 3;
 
 /// MTMD token-grid bindings the platform accepts for
 /// `image_tokens_override` (frozen ladder uses 2048 only; `None` = the

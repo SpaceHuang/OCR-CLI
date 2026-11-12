@@ -33,6 +33,12 @@ const LEGACY_PROMPT: &str = "\nExtract all readable content from the image in na
 const RING_WINDOW: usize = 256;
 const MAX_PERIOD: usize = 64;
 
+/// Decode token pieces only after the complete page/slot byte stream exists.
+/// Token boundaries may split a multibyte UTF-8 character.
+fn decode_token_bytes(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
 /// Required trailing repetitions per candidate period (plan §3.2.1 table).
 const fn required_repeats(period: usize) -> usize {
     if period == 1 {
@@ -685,7 +691,7 @@ struct WindowSlot {
     /// Next input token for the decode loop.
     last: LlamaToken,
     position: i32,
-    output: String,
+    output: Vec<u8>,
     /// This page's own output budget (review round 3): the shared loop runs
     /// for the window's MAXIMUM budget, so each slot enforces its own limit.
     budget: u32,
@@ -771,7 +777,7 @@ fn generate_window_pages<'a>(
                 request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
-                output: String::new(),
+                output: Vec::new(),
                 budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
@@ -787,7 +793,7 @@ fn generate_window_pages<'a>(
                 request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
-                output: String::new(),
+                output: Vec::new(),
                 budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
@@ -807,7 +813,7 @@ fn generate_window_pages<'a>(
                         request_slot: request.slot,
                         last: LlamaToken::new(0),
                         position: 0,
-                        output: String::new(),
+                        output: Vec::new(),
                         budget: request.max_output_tokens,
                         generated: 0,
                         first_token_ms: 0,
@@ -836,7 +842,7 @@ fn generate_window_pages<'a>(
                     request_slot: request.slot,
                     last: LlamaToken::new(0),
                     position: 0,
-                    output: String::new(),
+                    output: Vec::new(),
                     budget: request.max_output_tokens,
                     generated: 0,
                     first_token_ms: 0,
@@ -854,7 +860,7 @@ fn generate_window_pages<'a>(
                 request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
-                output: String::new(),
+                output: Vec::new(),
                 budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
@@ -876,7 +882,7 @@ fn generate_window_pages<'a>(
                     request_slot: request.slot,
                     last: LlamaToken::new(0),
                     position: 0,
-                    output: String::new(),
+                    output: Vec::new(),
                     budget: request.max_output_tokens,
                     generated: 0,
                     first_token_ms: 0,
@@ -898,7 +904,7 @@ fn generate_window_pages<'a>(
                 request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
-                output: String::new(),
+                output: Vec::new(),
                 budget: request.max_output_tokens,
                 generated: 0,
                 first_token_ms: 0,
@@ -926,7 +932,7 @@ fn generate_window_pages<'a>(
             request_slot: request.slot,
             last: seed_token,
             position,
-            output: String::new(),
+            output: Vec::new(),
             budget: request.max_output_tokens,
             generated: 0,
             first_token_ms,
@@ -943,9 +949,9 @@ fn generate_window_pages<'a>(
             }));
         } else {
             // 0.1.161: token_to_piece infallibly returns the piece bytes.
-            seed_slot.output.push_str(&String::from_utf8_lossy(
-                &model.vocab().token_to_piece(seed_token, false, None),
-            ));
+            seed_slot
+                .output
+                .extend_from_slice(&model.vocab().token_to_piece(seed_token, false, None));
             if !seed_slot.finished {
                 seed_slot.generated = 1;
                 // A single token cannot satisfy the detector's minimum tail;
@@ -975,7 +981,7 @@ fn generate_window_pages<'a>(
                 if !slot.finished {
                     slot.finished = true;
                     slot.response = Some(Ok(InferenceResponse {
-                        raw_output: slot.output.clone(),
+                        raw_output: decode_token_bytes(&slot.output),
                         finish_reason: "cancelled".to_owned(),
                     }));
                 }
@@ -997,7 +1003,7 @@ fn generate_window_pages<'a>(
             // a mixed-budget window caps each page at its own request.
             if slot.generated >= u64::from(slot.budget) {
                 slot.finished = true;
-                let output = std::mem::take(&mut slot.output);
+                let output = decode_token_bytes(&std::mem::take(&mut slot.output));
                 slot.response = Some(Ok(InferenceResponse {
                     raw_output: output,
                     finish_reason: "max_tokens".to_owned(),
@@ -1068,7 +1074,7 @@ fn generate_window_pages<'a>(
             let token = LlamaToken::new(best);
             if model.vocab().is_eog(token) {
                 slot.finished = true;
-                let output = std::mem::take(&mut slot.output);
+                let output = decode_token_bytes(&std::mem::take(&mut slot.output));
                 slot.response = Some(Ok(InferenceResponse {
                     raw_output: output,
                     finish_reason: "eos".to_owned(),
@@ -1080,7 +1086,7 @@ fn generate_window_pages<'a>(
                 Ok(model.vocab().token_to_piece(token, false, None));
             profiler.end(Segment::Detokenize);
             match piece_result {
-                Ok(piece) => slot.output.push_str(&String::from_utf8_lossy(&piece)),
+                Ok(piece) => slot.output.extend_from_slice(&piece),
                 Err(error) => {
                     slot.finished = true;
                     slot.response = Some(Err(error.clone()));
@@ -1098,7 +1104,7 @@ fn generate_window_pages<'a>(
             profiler.end(Segment::Ring);
             if loop_detected {
                 slot.finished = true;
-                let output = std::mem::take(&mut slot.output);
+                let output = decode_token_bytes(&std::mem::take(&mut slot.output));
                 slot.response = Some(Ok(InferenceResponse {
                     raw_output: output,
                     finish_reason: "repetition_loop".to_owned(),
@@ -1125,7 +1131,7 @@ fn generate_window_pages<'a>(
         };
         results.push(slot.response.unwrap_or_else(|| {
             Ok(InferenceResponse {
-                raw_output: slot.output,
+                raw_output: decode_token_bytes(&slot.output),
                 finish_reason: "max_tokens".to_owned(),
             })
         }));
@@ -1220,7 +1226,7 @@ fn generate_one_page(
         record(telemetry, 0, started.elapsed().as_millis() as u64, 0);
         return Err("cancelled".to_owned());
     }
-    let mut output = String::new();
+    let mut output = Vec::new();
     let mut last_emitted_second = None;
     let mut generated_tokens = 0_u64;
     let mut first_token_ms = 0_u64;
@@ -1237,7 +1243,7 @@ fn generate_one_page(
                 first_token_ms,
             );
             return Ok(InferenceResponse {
-                raw_output: output,
+                raw_output: decode_token_bytes(&output),
                 finish_reason: "cancelled".to_owned(),
             });
         }
@@ -1290,14 +1296,12 @@ fn generate_one_page(
                 first_token_ms,
             );
             return Ok(InferenceResponse {
-                raw_output: output,
+                raw_output: decode_token_bytes(&output),
                 finish_reason: "eos".to_owned(),
             });
         }
         let decode_step = (|| -> Result<(), String> {
-            output.push_str(&String::from_utf8_lossy(
-                &model.vocab().token_to_piece(token, false, None),
-            ));
+            output.extend_from_slice(&model.vocab().token_to_piece(token, false, None));
             let mut batch = LlamaBatch::new(1, 1);
             let token_position = position
                 + i32::try_from(generated)
@@ -1331,7 +1335,7 @@ fn generate_one_page(
                 first_token_ms,
             );
             return Ok(InferenceResponse {
-                raw_output: output,
+                raw_output: decode_token_bytes(&output),
                 finish_reason: "repetition_loop".to_owned(),
             });
         }
@@ -1343,7 +1347,7 @@ fn generate_one_page(
         first_token_ms,
     );
     Ok(InferenceResponse {
-        raw_output: output,
+        raw_output: decode_token_bytes(&output),
         finish_reason: "max_tokens".to_owned(),
     })
 }
@@ -1455,6 +1459,23 @@ impl Runtime for LlamaMtmdRuntime {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn token_piece_bytes_decode_after_multibyte_sequences_are_complete() {
+        let source = "髙橋さん 中文测试：龘𠮷🙂🚀🧬🦄🇨🇳";
+        let bytes = source.as_bytes();
+        for first_split in 1..bytes.len() {
+            for second_split in first_split + 1..=bytes.len() {
+                let pieces = [
+                    &bytes[..first_split],
+                    &bytes[first_split..second_split],
+                    &bytes[second_split..],
+                ];
+                let slot_bytes: Vec<u8> = pieces.into_iter().flatten().copied().collect();
+                assert_eq!(super::decode_token_bytes(&slot_bytes), source);
+            }
+        }
+    }
+
     use super::{RepetitionLoopDetector, argmax_total_cmp};
 
     /// Feeds `tokens` one by one and reports whether the detector fired.
