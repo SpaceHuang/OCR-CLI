@@ -19,8 +19,7 @@ use crate::verify::is_installed;
 /// Installed-state predicate (the real check is `verify::is_installed`
 /// bound to the removal's cache root; tests inject a cheap fake so
 /// shared-asset semantics stay offline).
-pub type InstalledPredicate<'a> =
-    &'a dyn Fn(&ModelManifest) -> Result<bool, InferenceError>;
+pub type InstalledPredicate<'a> = &'a dyn Fn(&ModelManifest) -> Result<bool, InferenceError>;
 
 /// Removes one profile and reports which roles were removed or kept.
 ///
@@ -114,10 +113,7 @@ pub fn remove_profile_with(
     })
 }
 
-fn installed_at(
-    cache_root: &Path,
-    manifest: &ModelManifest,
-) -> Result<bool, InferenceError> {
+fn installed_at(cache_root: &Path, manifest: &ModelManifest) -> Result<bool, InferenceError> {
     is_installed(cache_root, manifest)
 }
 
@@ -172,9 +168,7 @@ mod tests {
     type FakeInstalled = Box<dyn Fn(&ModelManifest) -> Result<bool, InferenceError>>;
 
     /// Fake installed predicate: reports installed profiles by name.
-    fn fake_installed(
-        installed_profiles: &'static [&'static str],
-    ) -> FakeInstalled {
+    fn fake_installed(installed_profiles: &'static [&'static str]) -> FakeInstalled {
         Box::new(move |manifest: &ModelManifest| {
             Ok(installed_profiles.contains(&manifest.profile.as_str()))
         })

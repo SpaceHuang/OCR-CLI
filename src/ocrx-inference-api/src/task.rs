@@ -9,8 +9,8 @@ use ocrx_primitives::GenerationProgress;
 use serde::{Deserialize, Serialize};
 
 use crate::error::InferenceError;
-use crate::identity::StepProfile;
 use crate::id::BackendId;
+use crate::identity::StepProfile;
 
 /// Frozen floor window depth for multi-page continuous batching (phase-2/4:
 /// the low tier of the {8, 16} ladder; also the post-fallback depth).
@@ -212,7 +212,9 @@ impl TaskRequest {
     /// See [`TaskRequest::new`].
     pub fn validate(&self) -> Result<(), InferenceError> {
         if self.prompt.trim().is_empty() {
-            return Err(InferenceError::InvalidTask("prompt must be non-empty".into()));
+            return Err(InferenceError::InvalidTask(
+                "prompt must be non-empty".into(),
+            ));
         }
         if self.generation.max_output_tokens == 0 {
             return Err(InferenceError::InvalidTask(
@@ -356,7 +358,13 @@ mod tests {
         // Structural check: the public type's Debug shape must not contain
         // forbidden field names.
         let debug = format!("{request:?}");
-        for forbidden in ["page", "pdf", "output_root", "checkpoint", "PageClassification"] {
+        for forbidden in [
+            "page",
+            "pdf",
+            "output_root",
+            "checkpoint",
+            "PageClassification",
+        ] {
             assert!(
                 !debug.contains(forbidden),
                 "TaskRequest must not carry {forbidden}"
@@ -371,11 +379,15 @@ mod tests {
             Err(InferenceError::InvalidTask(_))
         ));
         assert!(matches!(
-            TaskRequest::new("p", vec![], GenerationParams {
-                max_output_tokens: 0,
-                temperature_milli: 0,
-                thinking: false
-            }),
+            TaskRequest::new(
+                "p",
+                vec![],
+                GenerationParams {
+                    max_output_tokens: 0,
+                    temperature_milli: 0,
+                    thinking: false
+                }
+            ),
             Err(InferenceError::InvalidTask(_))
         ));
         // Duplicate image ids are rejected (API-level uniqueness).
@@ -386,7 +398,10 @@ mod tests {
             image_tokens_override: None,
             retry_sampling: None,
         };
-        assert!(matches!(duplicate.validate(), Err(InferenceError::InvalidTask(_))));
+        assert!(matches!(
+            duplicate.validate(),
+            Err(InferenceError::InvalidTask(_))
+        ));
         // Bad grid override rejected.
         let bad_grid = TaskRequest::new("p", vec![image("a")], params())
             .unwrap()
@@ -394,10 +409,12 @@ mod tests {
             .unwrap_err();
         assert!(matches!(bad_grid, InferenceError::InvalidTask(_)));
         // Supported grid accepted.
-        assert!(TaskRequest::new("p", vec![image("a")], params())
-            .unwrap()
-            .with_image_tokens_override(2048)
-            .is_ok());
+        assert!(
+            TaskRequest::new("p", vec![image("a")], params())
+                .unwrap()
+                .with_image_tokens_override(2048)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -455,10 +472,13 @@ mod tests {
 
     #[test]
     fn decode_echo_defaults_to_none_for_both_variants() {
-        assert_eq!(DecodeEcho::default(), DecodeEcho {
-            image_tokens: None,
-            sampling: None,
-        });
+        assert_eq!(
+            DecodeEcho::default(),
+            DecodeEcho {
+                image_tokens: None,
+                sampling: None,
+            }
+        );
         assert_eq!(window_depth_summary(8), "window-depth=8");
     }
 }

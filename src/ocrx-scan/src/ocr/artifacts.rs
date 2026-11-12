@@ -20,9 +20,7 @@ use ocrx_inference_api::{
 use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use super::markdown::{drop_invalid_markdown_image_links, replace_bbox_images};
-use super::parser::{
-    build_page_document, degenerate_tail_crop, DegenerateTailCrop,
-};
+use super::parser::{DegenerateTailCrop, build_page_document, degenerate_tail_crop};
 use crate::state::{DegenerationRetryStep, PageArtifactResult, RenderedPage};
 use crate::{ladder, ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS};
 
@@ -95,8 +93,7 @@ fn assemble(
     // `<think>`; the tail crop runs once here and the cropped text drives
     // every downstream artifact.
     let crop = degenerate_tail_crop(&response.text);
-    let degenerated =
-        crop.degenerated || response.finish_reason == FinishReason::RepetitionLoop;
+    let degenerated = crop.degenerated || response.finish_reason == FinishReason::RepetitionLoop;
     // The adapter owns the nonempty-strip knowledge (single source); the
     // page document reproduces the baseline ThinkRemoved warning from it.
     let think_nonempty = usize::from(response.warnings.iter().any(|w| w == "think_removed"));
@@ -109,8 +106,9 @@ fn assemble(
         think_nonempty,
     )
     .map_err(|error| std::io::Error::other(format!("adapter: {error:?}")))?;
-    let image = RgbImage::from_raw(width, height, rgb8.to_vec())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid RGB8 image shape"))?;
+    let image = RgbImage::from_raw(width, height, rgb8.to_vec()).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid RGB8 image shape")
+    })?;
     let boxes = document
         .blocks
         .iter()
@@ -163,7 +161,10 @@ pub struct SessionRecognizer<'s> {
 
 impl<'s> SessionRecognizer<'s> {
     #[must_use]
-    pub fn new(session: &'s mut dyn InferenceSession, output_root: impl Into<std::path::PathBuf>) -> Self {
+    pub fn new(
+        session: &'s mut dyn InferenceSession,
+        output_root: impl Into<std::path::PathBuf>,
+    ) -> Self {
         Self {
             session,
             max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
@@ -184,15 +185,18 @@ impl<'s> SessionRecognizer<'s> {
             temperature_milli: 0,
             thinking: false,
         };
-        let image = ImageInput::new(id, width, height, rgb8)
-            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+        let image = ImageInput::new(id, width, height, rgb8).map_err(|error| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+        })?;
         let mut request = TaskRequest::new(super::prompt::OCR_MARKDOWN_V1, vec![image], generation)
-            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+            .map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+            })?;
         if let Some(step) = step {
             if let Some(grid) = step.image_tokens {
-                request = request
-                    .with_image_tokens_override(grid)
-                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+                request = request.with_image_tokens_override(grid).map_err(|error| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+                })?;
             }
             if let Some(sampling) = step.sampling {
                 request = request.with_retry_sampling(sampling);
@@ -214,8 +218,13 @@ impl<'s> SessionRecognizer<'s> {
         cancellation: &CancellationToken,
         heartbeat: &mut dyn FnMut(GenerationProgress),
     ) -> Result<PageArtifactResult, RecognizeError> {
-        let request = self
-            .request(&format!("page-{page}"), image.width, image.height, image.rgb8.clone(), None)?;
+        let request = self.request(
+            &format!("page-{page}"),
+            image.width,
+            image.height,
+            image.rgb8.clone(),
+            None,
+        )?;
         let response = self
             .session
             .submit(request, cancellation, heartbeat)
@@ -223,8 +232,15 @@ impl<'s> SessionRecognizer<'s> {
         if cancellation.is_cancelled() {
             return Err(RecognizeError::cancelled());
         }
-        assemble(page, image.width, image.height, &image.rgb8, &response, &self.output_root)
-            .map_err(RecognizeError::Failed)
+        assemble(
+            page,
+            image.width,
+            image.height,
+            &image.rgb8,
+            &response,
+            &self.output_root,
+        )
+        .map_err(RecognizeError::Failed)
     }
 
     /// Degeneration-retry recognition (attempts >= 2): the ladder rung's
@@ -258,8 +274,15 @@ impl<'s> SessionRecognizer<'s> {
         if cancellation.is_cancelled() {
             return Err(RecognizeError::cancelled());
         }
-        assemble(page, image.width, image.height, &image.rgb8, &response, &self.output_root)
-            .map_err(RecognizeError::Failed)
+        assemble(
+            page,
+            image.width,
+            image.height,
+            &image.rgb8,
+            &response,
+            &self.output_root,
+        )
+        .map_err(RecognizeError::Failed)
     }
 
     /// Rung 3 (column split): decomposes the page into N band sub-requests
@@ -313,8 +336,8 @@ impl<'s> SessionRecognizer<'s> {
                 truncated = true;
             }
             merged_raw.push_str(&response.raw_text);
-            think_blocks_stripped = think_blocks_stripped
-                .saturating_add(response.think_blocks_stripped);
+            think_blocks_stripped =
+                think_blocks_stripped.saturating_add(response.think_blocks_stripped);
             // Band-level crop on the (already stripped) band text.
             let band_crop = degenerate_tail_crop(&response.text);
             if band_crop.degenerated || response.finish_reason == FinishReason::RepetitionLoop {
@@ -335,7 +358,9 @@ impl<'s> SessionRecognizer<'s> {
         let crop = DegenerateTailCrop {
             text: merged_text.clone(),
             degenerated,
-            repetition_removed: warnings.iter().any(|warning| warning == "repetition_removed"),
+            repetition_removed: warnings
+                .iter()
+                .any(|warning| warning == "repetition_removed"),
         };
         let think_nonempty = 0_usize; // band texts were already stripped
         let document = build_page_document(
@@ -395,32 +420,37 @@ impl<'s> SessionRecognizer<'s> {
                 Err(error) => {
                     // Request construction failure: the window never started.
                     return (0..pages.len())
-                        .map(|_| Err(RecognizeError::Failed(std::io::Error::new(error.kind(), error.to_string()))))
+                        .map(|_| {
+                            Err(RecognizeError::Failed(std::io::Error::new(
+                                error.kind(),
+                                error.to_string(),
+                            )))
+                        })
                         .collect();
                 }
             }
         }
-        let responses = self.session.submit_window(requests, cancellation, heartbeat);
+        let responses = self
+            .session
+            .submit_window(requests, cancellation, heartbeat);
         responses
             .into_iter()
             .zip(pages.iter())
             .map(|(result, (page, image))| {
-                result
-                    .map_err(map_inference_error)
-                    .and_then(|response| {
-                        if cancellation.is_cancelled() {
-                            return Err(RecognizeError::cancelled());
-                        }
-                        assemble(
-                            *page,
-                            image.width,
-                            image.height,
-                            &image.rgb8,
-                            &response,
-                            &self.output_root,
-                        )
-                        .map_err(RecognizeError::Failed)
-                    })
+                result.map_err(map_inference_error).and_then(|response| {
+                    if cancellation.is_cancelled() {
+                        return Err(RecognizeError::cancelled());
+                    }
+                    assemble(
+                        *page,
+                        image.width,
+                        image.height,
+                        &image.rgb8,
+                        &response,
+                        &self.output_root,
+                    )
+                    .map_err(RecognizeError::Failed)
+                })
             })
             .collect()
     }

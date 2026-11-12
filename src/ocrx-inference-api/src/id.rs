@@ -111,10 +111,7 @@ mod tests {
             profiles.iter().map(ProfileId::as_str).collect::<Vec<_>>(),
             ["compact", "quality"]
         );
-        assert_eq!(
-            BackendId::new("cpu").unwrap().to_string(),
-            "cpu"
-        );
+        assert_eq!(BackendId::new("cpu").unwrap().to_string(), "cpu");
     }
 
     #[test]

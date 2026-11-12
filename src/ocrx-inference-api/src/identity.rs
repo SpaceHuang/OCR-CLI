@@ -349,13 +349,15 @@ mod tests {
             .map(|asset| asset.role.as_str())
             .collect();
         assert_eq!(roles, ["mmproj", "model"], "assets sorted by role");
-        assert!(ModelIdentity::new(
-            ModelId::new("ovisocr2").unwrap(),
-            ProfileId::new("compact").unwrap(),
-            "rev",
-            vec![asset("model"), asset("model")],
-        )
-        .is_err());
+        assert!(
+            ModelIdentity::new(
+                ModelId::new("ovisocr2").unwrap(),
+                ProfileId::new("compact").unwrap(),
+                "rev",
+                vec![asset("model"), asset("model")],
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -470,9 +472,10 @@ mod tests {
         assert!(!enabled_from(Some(std::ffi::OsStr::new(""))));
         assert!(enabled_from(Some(std::ffi::OsStr::new("1"))));
         assert!(enabled_from(Some(std::ffi::OsStr::new("true"))));
-        assert!(StepProfile::env_enabled() == enabled_from(
-            std::env::var_os(STEP_PROFILE_ENV).as_deref()
-        ));
+        assert!(
+            StepProfile::env_enabled()
+                == enabled_from(std::env::var_os(STEP_PROFILE_ENV).as_deref())
+        );
     }
 
     #[test]

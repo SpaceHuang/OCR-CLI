@@ -12,15 +12,15 @@ use std::path::Path;
 
 use ocrx_inference_api::InferenceSession;
 use ocrx_output::{
-    atomic_write, cleanup_full_page_images, commit_page_v6, read_any, write_render_audit,
-    write_v6, ScanCompatibility, ScanOcrSide, V6Checkpoint, V6Status,
+    ScanCompatibility, ScanOcrSide, V6Checkpoint, V6Status, atomic_write, cleanup_full_page_images,
+    commit_page_v6, read_any, write_render_audit, write_v6,
 };
 use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use crate::ocr::artifacts::{RecognizeError, SessionRecognizer};
 use crate::state::{
-    JobSummary, PageArtifactResult, PageDiagnostic, RenderAudit, RenderedPage,
-    DEGENERATION_RETRY_LADDER, DegenerationRetryStep,
+    DEGENERATION_RETRY_LADDER, DegenerationRetryStep, JobSummary, PageArtifactResult,
+    PageDiagnostic, RenderAudit, RenderedPage,
 };
 
 /// Render port for the OCR pipeline (the legacy `PageRenderer` trait,
@@ -208,30 +208,32 @@ pub fn run_pages_with_session(
         // pre-batching loop, no window context allocated).
         if window.len() == 1 {
             let page = window[0];
-            terminal.push(match serial_attempt_outcome(
-                session,
-                renderer,
-                root,
-                config,
-                commit_recorder,
-                page,
-                1,
-                cancellation,
-                &mut |event| heartbeat(page, event),
-            ) {
-                SerialOutcome::RenderFailed { cancelled } => {
-                    TerminalPage::RenderFailed { page, cancelled }
-                }
-                SerialOutcome::Terminal(outcome) => match outcome {
-                    Ok((image, artifact, attempts)) => TerminalPage::Committed {
-                        page,
-                        image,
-                        artifact,
-                        attempts,
+            terminal.push(
+                match serial_attempt_outcome(
+                    session,
+                    renderer,
+                    root,
+                    config,
+                    commit_recorder,
+                    page,
+                    1,
+                    cancellation,
+                    &mut |event| heartbeat(page, event),
+                ) {
+                    SerialOutcome::RenderFailed { cancelled } => {
+                        TerminalPage::RenderFailed { page, cancelled }
+                    }
+                    SerialOutcome::Terminal(outcome) => match outcome {
+                        Ok((image, artifact, attempts)) => TerminalPage::Committed {
+                            page,
+                            image,
+                            artifact,
+                            attempts,
+                        },
+                        Err((audit, error)) => TerminalPage::RecognizeFailed { page, audit, error },
                     },
-                    Err((audit, error)) => TerminalPage::RecognizeFailed { page, audit, error },
                 },
-            });
+            );
             if cancellation.is_cancelled() {
                 // A cancelled window commits nothing (mechanism A).
                 terminal.clear();
@@ -285,10 +287,9 @@ pub fn run_pages_with_session(
         > = std::collections::BTreeMap::new();
         if !images.is_empty() {
             let mut recognizer = SessionRecognizer::new(session, root);
-            let results =
-                recognizer.recognize_window(&images, cancellation, &mut |slot, event| {
-                    heartbeat(u32::try_from(slot).unwrap_or(u32::MAX), event);
-                });
+            let results = recognizer.recognize_window(&images, cancellation, &mut |slot, event| {
+                heartbeat(u32::try_from(slot).unwrap_or(u32::MAX), event);
+            });
             for ((page, _), result) in images.iter().zip(results) {
                 batch_results.insert(*page, result);
             }
@@ -322,37 +323,41 @@ pub fn run_pages_with_session(
                                 continue;
                             }
                             batch_results.remove(&pending);
-                            terminal.push(match serial_attempt_outcome(
-                                session,
-                                renderer,
-                                root,
-                                config,
-                                commit_recorder,
-                                pending,
-                                1,
-                                cancellation,
-                                &mut |event| heartbeat(pending, event),
-                            ) {
-                                SerialOutcome::RenderFailed { cancelled } => {
-                                    TerminalPage::RenderFailed {
-                                        page: pending,
-                                        cancelled,
+                            terminal.push(
+                                match serial_attempt_outcome(
+                                    session,
+                                    renderer,
+                                    root,
+                                    config,
+                                    commit_recorder,
+                                    pending,
+                                    1,
+                                    cancellation,
+                                    &mut |event| heartbeat(pending, event),
+                                ) {
+                                    SerialOutcome::RenderFailed { cancelled } => {
+                                        TerminalPage::RenderFailed {
+                                            page: pending,
+                                            cancelled,
+                                        }
                                     }
-                                }
-                                SerialOutcome::Terminal(outcome) => match outcome {
-                                    Ok((image, artifact, attempts)) => TerminalPage::Committed {
-                                        page: pending,
-                                        image,
-                                        artifact,
-                                        attempts,
-                                    },
-                                    Err((audit, msg)) => TerminalPage::RecognizeFailed {
-                                        page: pending,
-                                        audit,
-                                        error: msg,
+                                    SerialOutcome::Terminal(outcome) => match outcome {
+                                        Ok((image, artifact, attempts)) => {
+                                            TerminalPage::Committed {
+                                                page: pending,
+                                                image,
+                                                artifact,
+                                                attempts,
+                                            }
+                                        }
+                                        Err((audit, msg)) => TerminalPage::RecognizeFailed {
+                                            page: pending,
+                                            audit,
+                                            error: msg,
+                                        },
                                     },
                                 },
-                            });
+                            );
                         }
                         break;
                     }
@@ -642,8 +647,7 @@ fn commit_terminal(
                     Ok(()) => {
                         commit_recorder.record_commit_write(
                             page,
-                            u64::try_from(write_started.elapsed().as_micros())
-                                .unwrap_or(u64::MAX),
+                            u64::try_from(write_started.elapsed().as_micros()).unwrap_or(u64::MAX),
                         );
                         commit_recorder.mark_terminal(page);
                         diagnostics.push(PageDiagnostic {

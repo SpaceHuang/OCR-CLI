@@ -77,9 +77,8 @@ pub fn verify_content(cache_root: &Path, manifest: &ModelManifest) -> Result<(),
                 descriptor.byte_len
             )));
         }
-        let hash = sha256_file(&path).map_err(|_| {
-            InferenceError::MissingAsset(path.to_string_lossy().into_owned())
-        })?;
+        let hash = sha256_file(&path)
+            .map_err(|_| InferenceError::MissingAsset(path.to_string_lossy().into_owned()))?;
         if hash != descriptor.sha256.to_ascii_lowercase() {
             return Err(InferenceError::HashMismatch(format!("asset {role}")));
         }
@@ -242,10 +241,8 @@ mod tests {
 
     #[test]
     fn verify_content_checks_sizes_hashes_and_passes_receipt_free_installs() {
-        let root = std::env::temp_dir().join(format!(
-            "ocrx-models-verify-content-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("ocrx-models-verify-content-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let mut manifest = tiny_manifest();
         // Build a tiny install whose content defines the pinned hashes.
@@ -266,7 +263,8 @@ mod tests {
     fn real_ovis_manifest_paths_resolve_without_materializing_bytes() {
         // The real four-profile manifests still resolve under the frozen
         // layout (structure only — no bytes are written).
-        let root = std::env::temp_dir().join(format!("ocrx-models-verify-ovis-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ocrx-models-verify-ovis-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let manifest = ovisocr2_manifest("reference").unwrap();
         let states = presence(&root, &manifest).unwrap();
@@ -277,10 +275,8 @@ mod tests {
 
     #[test]
     fn verify_profile_surfaces_missing_assets_and_binding_failures() {
-        let root = std::env::temp_dir().join(format!(
-            "ocrx-models-verify-missing-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("ocrx-models-verify-missing-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let manifest = tiny_manifest();
         assert!(matches!(

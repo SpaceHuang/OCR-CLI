@@ -184,7 +184,6 @@ impl SystemProbe for FakeSystemProbe {
 mod tests {
     use super::*;
 
-
     #[test]
     fn real_probe_reports_cpu_available_on_every_platform() {
         // The CPU backend is unconditionally compilable; the real probe must

@@ -24,8 +24,7 @@ mod tests {
     fn prompt_bytes_are_frozen_including_leading_and_middle_newlines() {
         // T006 golden: byte equality guards the model input.
         assert!(OCR_MARKDOWN_V1.starts_with('\n'));
-        assert!(OCR_MARKDOWN_V1
-            .contains("standard Markdown.\nPreserve the original text"));
+        assert!(OCR_MARKDOWN_V1.contains("standard Markdown.\nPreserve the original text"));
         assert!(!OCR_MARKDOWN_V1.ends_with('\n'));
         assert_eq!(
             OCR_MARKDOWN_V1,

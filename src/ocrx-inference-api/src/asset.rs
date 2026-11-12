@@ -266,7 +266,10 @@ pub trait InstallInteraction {
 pub struct NonInteractive;
 
 impl InstallInteraction for NonInteractive {
-    fn confirm_download(&mut self, _proposals: &[DownloadProposal]) -> Result<bool, InferenceError> {
+    fn confirm_download(
+        &mut self,
+        _proposals: &[DownloadProposal],
+    ) -> Result<bool, InferenceError> {
         Ok(false)
     }
 }
@@ -336,7 +339,13 @@ mod tests {
             duplicate.validate(),
             Err(InferenceError::InvalidManifest(_))
         ));
-        for bad_path in ["../escape.gguf", "/abs/model.gguf", "a/b.gguf", "", "a\\b.gguf"] {
+        for bad_path in [
+            "../escape.gguf",
+            "/abs/model.gguf",
+            "a/b.gguf",
+            "",
+            "a\\b.gguf",
+        ] {
             let invalid = manifest(vec![descriptor("model", bad_path, AssetScope::Profile)]);
             assert!(matches!(
                 invalid.validate(),

@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use ocrx_inference_api::{
-    DownloadProposal, InstallPolicy, InferenceError, InstallReceipt, ModelManifest,
+    DownloadProposal, InferenceError, InstallPolicy, InstallReceipt, ModelManifest,
 };
 use ocrx_primitives::sha256_file;
 use serde::Serialize;
@@ -89,9 +89,7 @@ pub fn install(context: InstallContext<'_>) -> Result<InstallReceipt, InferenceE
                 })
             })
             .collect();
-        if !proposals.is_empty()
-            && !context.interaction.confirm_download(&proposals)?
-        {
+        if !proposals.is_empty() && !context.interaction.confirm_download(&proposals)? {
             // A declined proposal means no download may happen.
             return Err(InferenceError::Offline);
         }
@@ -124,12 +122,12 @@ pub fn install(context: InstallContext<'_>) -> Result<InstallReceipt, InferenceE
             if file_matches(manifest, role, path)? {
                 continue; // already correct on disk
             }
-            let descriptor = manifest.asset(role).ok_or_else(|| {
-                InferenceError::InvalidManifest(format!("role {role} vanished"))
-            })?;
+            let descriptor = manifest
+                .asset(role)
+                .ok_or_else(|| InferenceError::InvalidManifest(format!("role {role} vanished")))?;
             context.transport.download(&descriptor.source_url, part)?;
-            let hash = sha256_file(part)
-                .map_err(|error| InferenceError::Transport(error.to_string()))?;
+            let hash =
+                sha256_file(part).map_err(|error| InferenceError::Transport(error.to_string()))?;
             if hash != descriptor.sha256.to_ascii_lowercase() {
                 return Err(InferenceError::HashMismatch(format!("asset {role}")));
             }
@@ -174,23 +172,28 @@ fn file_matches(
     role: &ocrx_inference_api::AssetRole,
     path: &Path,
 ) -> Result<bool, InferenceError> {
-    let descriptor = manifest.asset(role).ok_or_else(|| {
-        InferenceError::InvalidManifest(format!("role {role} vanished"))
-    })?;
+    let descriptor = manifest
+        .asset(role)
+        .ok_or_else(|| InferenceError::InvalidManifest(format!("role {role} vanished")))?;
     let Ok(metadata) = std::fs::metadata(path) else {
         return Ok(false);
     };
     if metadata.len() != descriptor.byte_len {
         return Ok(false);
     }
-    let hash = sha256_file(path).map_err(|_| InferenceError::MissingAsset(path.to_string_lossy().into_owned()))?;
+    let hash = sha256_file(path)
+        .map_err(|_| InferenceError::MissingAsset(path.to_string_lossy().into_owned()))?;
     Ok(hash == descriptor.sha256.to_ascii_lowercase())
 }
 
 /// Backs up existing targets, renames staged parts into place, and rolls
 /// back in reverse order on any failure.
 fn commit_group(
-    staged: &[(ocrx_inference_api::AssetRole, std::path::PathBuf, std::path::PathBuf)],
+    staged: &[(
+        ocrx_inference_api::AssetRole,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    )],
     transaction: &str,
 ) -> Result<(), InferenceError> {
     let backups: Vec<_> = staged
@@ -232,7 +235,9 @@ fn commit_group(
                         "commit failed and rollback was incomplete".into(),
                     ));
                 }
-                return Err(InferenceError::InsufficientDisk("commit rename failed".into()));
+                return Err(InferenceError::InsufficientDisk(
+                    "commit rename failed".into(),
+                ));
             }
         }
     }
@@ -279,10 +284,12 @@ fn receipt_path(
     cache_root: &Path,
     manifest: &ModelManifest,
 ) -> Result<std::path::PathBuf, InferenceError> {
-    Ok(asset_cache_path(cache_root, manifest, &manifest.assets[0].role)?
-        .parent()
-        .ok_or_else(|| InferenceError::InvalidManifest("asset path has no parent".into()))?
-        .join(RECEIPT_FILE_NAME))
+    Ok(
+        asset_cache_path(cache_root, manifest, &manifest.assets[0].role)?
+            .parent()
+            .ok_or_else(|| InferenceError::InvalidManifest("asset path has no parent".into()))?
+            .join(RECEIPT_FILE_NAME),
+    )
 }
 
 #[derive(Serialize)]
@@ -497,20 +504,18 @@ mod tests {
         // Both assets verify on disk.
         assert_eq!(verify_content(&root, &manifest), Ok(()));
         // Receipt file exists and is deterministic JSON.
-        let receipt_path = root
-            .join("ocrx/models/ovisocr2/rev-test-1/compact/install-receipt.json");
+        let receipt_path =
+            root.join("ocrx/models/ovisocr2/rev-test-1/compact/install-receipt.json");
         let json = std::fs::read_to_string(&receipt_path).unwrap();
         assert!(json.contains("\"schema_version\":1"));
         assert!(json.contains("\"role\":\"model\""));
         assert!(json.contains("d81235049384534c167caea52b85a694f6103d14"));
         // No transaction residue survives.
         let profile_dir = receipt_path.parent().unwrap();
-        assert!(!profile_dir
-            .read_dir()
-            .unwrap()
-            .flatten()
-            .any(|entry| entry.file_name().to_string_lossy().contains(".part")
-                || entry.file_name().to_string_lossy().contains(".bak")));
+        assert!(!profile_dir.read_dir().unwrap().flatten().any(|entry| {
+            entry.file_name().to_string_lossy().contains(".part")
+                || entry.file_name().to_string_lossy().contains(".bak")
+        }));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -523,11 +528,14 @@ mod tests {
         for asset in &manifest.assets {
             let path = asset_cache_path(&root, &manifest, &asset.role).unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, if asset.role.as_str() == "model" {
-                &b"model-bytes"[..]
-            } else {
-                &b"mmproj-bytes"[..]
-            })
+            std::fs::write(
+                &path,
+                if asset.role.as_str() == "model" {
+                    &b"model-bytes"[..]
+                } else {
+                    &b"mmproj-bytes"[..]
+                },
+            )
             .unwrap();
         }
         let transport = FakeTransport::new();
@@ -548,8 +556,8 @@ mod tests {
         assert!(!receipt.downloaded);
         assert!(transport.requested_urls().is_empty(), "no network");
         // A missing receipt is backfilled without downloading.
-        let receipt_path = root
-            .join("ocrx/models/ovisocr2/rev-test-1/compact/install-receipt.json");
+        let receipt_path =
+            root.join("ocrx/models/ovisocr2/rev-test-1/compact/install-receipt.json");
         assert!(receipt_path.is_file());
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -640,18 +648,21 @@ mod tests {
         // No .part residue.
         let profile_dir = root.join("ocrx/models/ovisocr2/rev-test-1/compact");
         if profile_dir.exists() {
-            assert!(!profile_dir
-                .read_dir()
-                .unwrap()
-                .flatten()
-                .any(|entry| entry.file_name().to_string_lossy().contains(".part")));
+            assert!(
+                !profile_dir
+                    .read_dir()
+                    .unwrap()
+                    .flatten()
+                    .any(|entry| entry.file_name().to_string_lossy().contains(".part"))
+            );
         }
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn declined_interactive_confirmation_aborts_without_downloads() {
-        let root = std::env::temp_dir().join(format!("ocrx-install-declined-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ocrx-install-declined-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let manifest = tiny_manifest();
         let transport = FakeTransport::new();

@@ -10,5 +10,5 @@ pub mod hash;
 pub mod progress;
 
 pub use cancellation::CancellationToken;
-pub use hash::{sha256, sha256_file, Sha256State};
+pub use hash::{Sha256State, sha256, sha256_file};
 pub use progress::GenerationProgress;

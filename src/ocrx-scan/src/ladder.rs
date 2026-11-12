@@ -101,7 +101,6 @@ pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(
     Some(bands)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,7 +140,6 @@ mod tests {
         assert!(bands[1].1 >= 540);
     }
 
-
     #[test]
     fn detect_column_bands_returns_none_for_uniform_page() {
         let width = 600_u32;
@@ -149,5 +147,4 @@ mod tests {
         let rgb8 = vec![255_u8; (width * height * 3) as usize];
         assert_eq!(detect_column_bands(width, height, &rgb8), None);
     }
-
 }

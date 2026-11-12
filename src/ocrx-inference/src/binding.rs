@@ -5,9 +5,7 @@
 //! `model verify`) and the `prepare` path — identical semantics by
 //! construction.
 
-use ocrx_inference_api::{
-    AdapterIdentity, InferenceError, ModelManifest, RuntimeIdentity,
-};
+use ocrx_inference_api::{AdapterIdentity, InferenceError, ModelManifest, RuntimeIdentity};
 
 /// Strictly compares the manifest's binding requirements against the
 /// registry's actual runtime/adapter identities and the supported asset
@@ -23,9 +21,7 @@ pub fn check_binding(
     runtime: &RuntimeIdentity,
     adapter: &AdapterIdentity,
 ) -> Result<(), InferenceError> {
-    let mismatch = |field: &str| {
-        Err(InferenceError::IncompatibleBinding(field.to_owned()))
-    };
+    let mismatch = |field: &str| Err(InferenceError::IncompatibleBinding(field.to_owned()));
     if manifest.runtime_binding.runtime != runtime.runtime {
         return mismatch("runtime id");
     }
@@ -74,8 +70,7 @@ mod tests {
         let runtime = crate::registry::runtime_identity();
         let adapter = crate::registry::adapter_identity();
         let mut manifest = builtin_test_manifest();
-        manifest.runtime_binding.runtime =
-            ocrx_inference_api::RuntimeId::new("other.cpp").unwrap();
+        manifest.runtime_binding.runtime = ocrx_inference_api::RuntimeId::new("other.cpp").unwrap();
         assert!(matches!(
             check_binding(&manifest, &runtime, &adapter),
             Err(InferenceError::IncompatibleBinding(field)) if field == "runtime id"
@@ -93,8 +88,7 @@ mod tests {
             Err(InferenceError::IncompatibleBinding(field)) if field == "runtime upstream revision"
         ));
         let mut manifest = builtin_test_manifest();
-        manifest.adapter_binding.adapter =
-            ocrx_inference_api::AdapterId::new("qwen").unwrap();
+        manifest.adapter_binding.adapter = ocrx_inference_api::AdapterId::new("qwen").unwrap();
         assert!(matches!(
             check_binding(&manifest, &runtime, &adapter),
             Err(InferenceError::IncompatibleBinding(field)) if field == "adapter id"

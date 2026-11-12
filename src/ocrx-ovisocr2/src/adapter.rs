@@ -10,7 +10,7 @@
 //! here.
 
 use ocrx_inference_api::{
-    AdapterIdentity, AdapterId, BackendOutput, EncodedTask, FinishReason, ImagePlacement,
+    AdapterId, AdapterIdentity, BackendOutput, EncodedTask, FinishReason, ImagePlacement,
     InferenceError, NativeFinishReason, ProtocolAdapter, TaskRequest, TaskResponse,
 };
 
@@ -275,10 +275,13 @@ mod tests {
         // would have been None — proving the RBLK-1 channel direction.
         assert_eq!(response.decode_echo, echo);
         assert_eq!(response.finish_reason, FinishReason::RepetitionLoop);
-        assert_eq!(response.usage, TokenUsage {
-            input_tokens: Some(9),
-            output_tokens: 4,
-        });
+        assert_eq!(
+            response.usage,
+            TokenUsage {
+                input_tokens: Some(9),
+                output_tokens: 4,
+            }
+        );
     }
 
     #[test]

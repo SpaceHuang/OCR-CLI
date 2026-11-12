@@ -405,9 +405,11 @@ mod tests {
         // Rung 3: column split, final position only.
         assert!(DEGENERATION_RETRY_LADDER[2].column_split);
         // No perturbation rungs survive in the frozen table.
-        assert!(DEGENERATION_RETRY_LADDER
-            .iter()
-            .all(|rung| rung.perturbed.is_none()));
+        assert!(
+            DEGENERATION_RETRY_LADDER
+                .iter()
+                .all(|rung| rung.perturbed.is_none())
+        );
     }
 
     #[test]
@@ -451,11 +453,7 @@ mod tests {
         // Fallback-only entries carry their reason.
         assert_eq!(merged[1].fallback_reason.as_deref(), Some("low coverage"));
 
-        let candidates = vec![
-            (5, Err("no text".to_owned())),
-            (5, Ok(())),
-            (4, Ok(())),
-        ];
+        let candidates = vec![(5, Err("no text".to_owned())), (5, Ok(())), (4, Ok(()))];
         let queue = native_fallback_queue(&candidates);
         assert_eq!(queue.len(), 1);
         assert_eq!(queue[0].page, 5);
@@ -475,18 +473,22 @@ mod tests {
             eta_seconds: Some(5),
         };
         assert!(controller.heartbeat(snapshot).is_some());
-        assert!(controller
-            .heartbeat(ProgressSnapshot {
-                elapsed_seconds: 5,
-                ..snapshot
-            })
-            .is_none());
-        assert!(controller
-            .heartbeat(ProgressSnapshot {
-                elapsed_seconds: 6,
-                ..snapshot
-            })
-            .is_some());
+        assert!(
+            controller
+                .heartbeat(ProgressSnapshot {
+                    elapsed_seconds: 5,
+                    ..snapshot
+                })
+                .is_none()
+        );
+        assert!(
+            controller
+                .heartbeat(ProgressSnapshot {
+                    elapsed_seconds: 6,
+                    ..snapshot
+                })
+                .is_some()
+        );
     }
 
     #[test]
@@ -501,10 +503,12 @@ mod tests {
             ..audit
         });
         assert_eq!(audited.audit.original_width, 100);
-        assert!(audited
-            .audit
-            .as_checkpoint_fragment()
-            .starts_with("original=100x"));
+        assert!(
+            audited
+                .audit
+                .as_checkpoint_fragment()
+                .starts_with("original=100x")
+        );
     }
 
     #[test]

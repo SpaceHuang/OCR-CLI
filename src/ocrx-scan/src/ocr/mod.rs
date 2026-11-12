@@ -33,7 +33,6 @@ pub fn try_request(max_output_tokens: u32) -> Result<OvisRequest, &'static str> 
     Ok(request(max_output_tokens))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,11 +49,9 @@ mod tests {
         );
     }
 
-
     #[test]
     fn request_rejects_tokens_above_manifest_limit() {
         assert!(try_request(MAX_OUTPUT_TOKENS).is_ok());
         assert!(try_request(MAX_OUTPUT_TOKENS + 1).is_err());
     }
-
 }

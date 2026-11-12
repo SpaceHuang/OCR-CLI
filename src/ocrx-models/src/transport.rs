@@ -143,9 +143,8 @@ impl Transport for FakeTransport {
         match response {
             Ok(bytes) => {
                 if let Some(parent) = destination.parent() {
-                    std::fs::create_dir_all(parent).map_err(|error| {
-                        InferenceError::Transport(error.to_string())
-                    })?;
+                    std::fs::create_dir_all(parent)
+                        .map_err(|error| InferenceError::Transport(error.to_string()))?;
                 }
                 std::fs::write(destination, bytes)
                     .map_err(|error| InferenceError::Transport(error.to_string()))
@@ -167,9 +166,11 @@ mod tests {
             .download("http://example.invalid/model.gguf", &destination)
             .unwrap_err();
         assert!(matches!(error, InferenceError::Transport(detail) if detail.contains("non-HTTPS")));
-        assert!(transport
-            .download("file:///tmp/model", &destination)
-            .is_err());
+        assert!(
+            transport
+                .download("file:///tmp/model", &destination)
+                .is_err()
+        );
         assert!(!destination.exists(), "no process may have run");
     }
 
@@ -177,7 +178,8 @@ mod tests {
     fn fake_transport_replays_bytes_and_records_requests() {
         let transport = FakeTransport::new();
         transport.serve("https://example.invalid/", b"asset-bytes");
-        let destination = std::env::temp_dir().join(format!("ocrx-fake-transport-{}.part", std::process::id()));
+        let destination =
+            std::env::temp_dir().join(format!("ocrx-fake-transport-{}.part", std::process::id()));
         transport
             .download("https://example.invalid/model.gguf", &destination)
             .unwrap();
@@ -201,8 +203,10 @@ mod tests {
             Err(InferenceError::Transport(detail)) => assert_eq!(detail, "boom"),
             other => panic!("expected transport failure, got {other:?}"),
         }
-        assert!(transport
-            .download("https://unrouted.invalid/model", &destination)
-            .is_err());
+        assert!(
+            transport
+                .download("https://unrouted.invalid/model", &destination)
+                .is_err()
+        );
     }
 }

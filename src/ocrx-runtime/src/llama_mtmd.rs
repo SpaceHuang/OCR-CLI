@@ -270,9 +270,10 @@ impl LlamaMtmdRuntime {
         }
         loop {
             match self.messages.recv() {
-                Ok(WorkerMessage::Progress { slot, progress: event }) => {
-                    progress(slot, event)
-                }
+                Ok(WorkerMessage::Progress {
+                    slot,
+                    progress: event,
+                }) => progress(slot, event),
                 Ok(WorkerMessage::Generated(result)) => return result,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
                 Ok(
@@ -668,11 +669,7 @@ fn page_context_budget(image_tokens: u32, request: &WorkerTask) -> u32 {
 /// first request's budget. Equal-budget windows get budget x depth exactly;
 /// mixed-budget windows over-provision the low-budget slots, which keeps
 /// every page inside its own context for the whole window.
-fn window_context_capacity(
-    image_tokens: u32,
-    requests: &[WorkerTask],
-    window_depth: usize,
-) -> u32 {
+fn window_context_capacity(image_tokens: u32, requests: &[WorkerTask], window_depth: usize) -> u32 {
     let depth = requests.len().max(window_depth) as u64;
     let max_budget = requests
         .iter()
@@ -1434,9 +1431,7 @@ impl Runtime for LlamaMtmdRuntime {
     ) -> Result<InferenceResponse, String> {
         // The frozen prompt rides only in this legacy bridge (T087 deletes it).
         let task = legacy_task(0, &request);
-        self.generate_task(task, cancellation, &mut |_slot, event| {
-            progress(event)
-        })
+        self.generate_task(task, cancellation, &mut |_slot, event| progress(event))
     }
 
     fn generate_window(
@@ -1616,8 +1611,9 @@ mod tests {
     // --- P4.1 actor protocol (plan §4): handle side without a model. -------
 
     use super::{
-        CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse, WorkerTask,
+        CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse,
         LlamaMtmdRuntime, Runtime, RuntimeInfo, RuntimeTelemetry, WorkerMessage, WorkerRequest,
+        WorkerTask,
     };
     use crate::Backend;
     use std::sync::mpsc::{self, Receiver, Sender};

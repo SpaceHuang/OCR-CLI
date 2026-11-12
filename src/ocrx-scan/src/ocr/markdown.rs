@@ -132,7 +132,6 @@ pub(crate) fn replace_bbox_images(raw: &str, page: u32, count: usize) -> String 
     output
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,7 +147,6 @@ mod tests {
             "x  y"
         );
     }
-
 
     #[test]
     fn invalid_and_missing_image_links_are_dropped_not_page_fatal() {
@@ -192,5 +190,4 @@ mod tests {
         assert_eq!(dropped, 1);
         let _ = std::fs::remove_dir_all(root);
     }
-
 }

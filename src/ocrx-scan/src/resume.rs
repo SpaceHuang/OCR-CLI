@@ -12,8 +12,8 @@ use std::path::Path;
 
 use ocrx_inference_api::{InferenceIdentity, StaticInferenceIdentity};
 use ocrx_output::{
-    artifacts_intact, ocr_final_compare, ocr_pre_compare, CheckpointFile, PdfIdentity,
-    ScanCompatibility, ScanOcrSide, ScanRoute, V5Disposition, V6Checkpoint, V6Status,
+    CheckpointFile, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute, V5Disposition,
+    V6Checkpoint, V6Status, artifacts_intact, ocr_final_compare, ocr_pre_compare,
 };
 
 /// What the resume planner decided for one checkpoint on disk.
@@ -77,7 +77,10 @@ fn classify_v5(
         V5Disposition::PendingOcr(checkpoint) => {
             // Pending pages are recoverable when the public PDF identity is
             // compatible; execution happens under the fresh v6 identity.
-            if checkpoint.compatibility.matches_native(&expected_compat(context)) {
+            if checkpoint
+                .compatibility
+                .matches_native(&expected_compat(context))
+            {
                 PageDisposition::PendingOcr
             } else {
                 PageDisposition::Reprocess {
@@ -103,7 +106,10 @@ fn classify_v6(
 ) -> PageDisposition {
     match checkpoint.status {
         V6Status::PendingOcr => {
-            if checkpoint.compatibility.matches_native(&expected_compat(context)) {
+            if checkpoint
+                .compatibility
+                .matches_native(&expected_compat(context))
+            {
                 PageDisposition::PendingOcr
             } else {
                 PageDisposition::Reprocess {
@@ -129,7 +135,9 @@ fn classify_v6_complete(
     // Route-scoped identity check first: native/empty use the frozen
     // five-field scope; OCR pages go through the two-phase protocol.
     if checkpoint.compatibility.route != ScanRoute::Ocr {
-        if checkpoint.compatibility.matches_native(&expected_compat(context))
+        if checkpoint
+            .compatibility
+            .matches_native(&expected_compat(context))
             && artifacts_intact(checkpoint, root)
         {
             return PageDisposition::Reuse {
@@ -254,8 +262,11 @@ mod tests {
         let current = identity();
         let statik = StaticInferenceIdentity::from_execution(&current);
         // Native reuse ignores the OCR session entirely.
-        let disposition =
-            classify(&CheckpointFile::V6(checkpoint), &root, &context(Some(&statik), None, false));
+        let disposition = classify(
+            &CheckpointFile::V6(checkpoint),
+            &root,
+            &context(Some(&statik), None, false),
+        );
         assert!(matches!(disposition, PageDisposition::Reuse { .. }));
         // Damaged artifact (hash mismatch) → reprocess.
         std::fs::write(root.join("page-0001.md"), "tampered").unwrap();
@@ -280,7 +291,9 @@ mod tests {
                 &root,
                 &context(Some(&statik), Some(&current), false)
             ),
-            PageDisposition::Reprocess { reason: "degenerated page" }
+            PageDisposition::Reprocess {
+                reason: "degenerated page"
+            }
         ));
     }
 
@@ -312,26 +325,44 @@ mod tests {
         let statik = StaticInferenceIdentity::from_execution(&current);
         // Pending decode but no session yet → reprocess (cannot authorize).
         assert!(matches!(
-            classify(&CheckpointFile::V6(checkpoint.clone()), &root, &context(Some(&statik), None, true)),
+            classify(
+                &CheckpointFile::V6(checkpoint.clone()),
+                &root,
+                &context(Some(&statik), None, true)
+            ),
             PageDisposition::Reprocess { .. }
         ));
         // Matching session identity → reuse.
         assert!(matches!(
-            classify(&CheckpointFile::V6(checkpoint.clone()), &root, &context(Some(&statik), Some(&current), true)),
+            classify(
+                &CheckpointFile::V6(checkpoint.clone()),
+                &root,
+                &context(Some(&statik), Some(&current), true)
+            ),
             PageDisposition::Reuse { .. }
         ));
         // Actual execution change (batch depth 16 run) → reprocess (RBLK-6).
         let mut drifted = identity();
         drifted.batch_depth = 16;
         assert!(matches!(
-            classify(&CheckpointFile::V6(checkpoint.clone()), &root, &context(Some(&statik), Some(&drifted), true)),
-            PageDisposition::Reprocess { reason: "final execution identity mismatch" }
+            classify(
+                &CheckpointFile::V6(checkpoint.clone()),
+                &root,
+                &context(Some(&statik), Some(&drifted), true)
+            ),
+            PageDisposition::Reprocess {
+                reason: "final execution identity mismatch"
+            }
         ));
         // Display-only change → still reuse (RBLK-7 discriminating test).
         let mut relabeled = identity();
         relabeled.display.quantization = "Q4_K_X".to_owned();
         assert!(matches!(
-            classify(&CheckpointFile::V6(checkpoint), &root, &context(Some(&statik), Some(&relabeled), true)),
+            classify(
+                &CheckpointFile::V6(checkpoint),
+                &root,
+                &context(Some(&statik), Some(&relabeled), true)
+            ),
             PageDisposition::Reuse { .. }
         ));
         let _ = std::fs::remove_dir_all(root);
@@ -344,14 +375,16 @@ mod tests {
             classify(
                 &CheckpointFile::V5(v5_ocr_complete(3)),
                 &root,
-                &context(None, None, true)),
+                &context(None, None, true)
+            ),
             PageDisposition::Reprocess { .. }
         ));
         assert!(matches!(
             classify(
                 &CheckpointFile::V5(v5_pending(4)),
                 &root,
-                &context(None, None, true)),
+                &context(None, None, true)
+            ),
             PageDisposition::PendingOcr
         ));
     }
@@ -365,7 +398,9 @@ mod tests {
                 &root,
                 &context(None, None, false)
             ),
-            PageDisposition::Reprocess { reason: "unsupported checkpoint version" }
+            PageDisposition::Reprocess {
+                reason: "unsupported checkpoint version"
+            }
         ));
     }
 }

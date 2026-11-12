@@ -20,7 +20,7 @@ use ocrx_output::commit_profile::CommitRecorder;
 
 use crate::state::RenderedPage;
 use crate::test_support::identity;
-use crate::window::{run_pages_with_session, PageRenderer, WindowConfig};
+use crate::window::{PageRenderer, WindowConfig, run_pages_with_session};
 
 /// One programmed per-page response.
 #[derive(Debug, Clone)]
@@ -151,9 +151,7 @@ impl InferenceSession for FakeSession {
         cancellation: &CancellationToken,
         _progress: &mut dyn FnMut(usize, GenerationProgress),
     ) -> Vec<Result<TaskResponse, InferenceError>> {
-        self.core
-            .window_calls
-            .set(self.core.window_calls.get() + 1);
+        self.core.window_calls.set(self.core.window_calls.get() + 1);
         if self.core.fail_next_window.replace(false) {
             return std::iter::repeat_n(
                 Err(InferenceError::WindowFailed("ctx".into())),
@@ -299,10 +297,12 @@ fn render_failures_record_diagnostics_and_continue() {
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
     assert_eq!(summary.failed_pages, 1);
-    assert!(summary
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.stage == "render"));
+    assert!(
+        summary
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.stage == "render")
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 

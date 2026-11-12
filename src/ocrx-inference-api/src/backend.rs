@@ -153,9 +153,7 @@ pub trait RuntimeBackend {
     ) -> Vec<Result<BackendOutput, InferenceError>> {
         let mut results = Vec::with_capacity(tasks.len());
         for (slot, task) in tasks.into_iter().enumerate() {
-            results.push(self.generate(task, cancellation, &mut |event| {
-                progress(slot, event)
-            }));
+            results.push(self.generate(task, cancellation, &mut |event| progress(slot, event)));
         }
         results
     }

@@ -330,7 +330,8 @@ mod tests {
             extractor_version: "pdf-text-v1".to_owned(),
             platform: platform.to_owned(),
         };
-        let native = ScanCompatibility::native_or_empty("in", ScanRoute::NativeText, pdf("windows"));
+        let native =
+            ScanCompatibility::native_or_empty("in", ScanRoute::NativeText, pdf("windows"));
         assert!(native.matches_native(&native));
         // OCR-only fields do not exist on native identities at all.
         let empty = ScanCompatibility::native_or_empty("in", ScanRoute::Empty, pdf("windows"));
@@ -387,7 +388,11 @@ mod tests {
         // Decode generation change.
         let mut generation_drift = identity("cpu", 8, "Q4_K_M");
         generation_drift.decode_generation = 3;
-        assert!(!ocr_pre_compare(&stored(&generation_drift), &statik, &side()));
+        assert!(!ocr_pre_compare(
+            &stored(&generation_drift),
+            &statik,
+            &side()
+        ));
         // Scan-side change (dpi).
         let mut dpi_side = side();
         dpi_side.dpi = 200;

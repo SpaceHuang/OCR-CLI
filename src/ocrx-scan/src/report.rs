@@ -148,7 +148,8 @@ pub fn write_routing_checkpoint_sidecars_with_states(
         pending_pages,
         unavailable_pages,
     )) {
-        let sidecar = format!("{{\"schema\":\"ocrx-routing-checkpoint-v1\",\"routing\":{routing}}}");
+        let sidecar =
+            format!("{{\"schema\":\"ocrx-routing-checkpoint-v1\",\"routing\":{routing}}}");
         ocrx_output::atomic_write(
             output.join(format!("page-{page:04}.routing.json")),
             sidecar.as_bytes(),
@@ -192,7 +193,9 @@ mod tests {
         )
         .unwrap();
         let first = std::fs::read_to_string(root.join("page-0001.routing.json")).unwrap();
-        assert!(first.starts_with("{\"schema\":\"ocrx-routing-checkpoint-v1\",\"routing\":{\"page\":1"));
+        assert!(
+            first.starts_with("{\"schema\":\"ocrx-routing-checkpoint-v1\",\"routing\":{\"page\":1")
+        );
         assert!(first.contains("\"planned_method\":\"native_text\""));
         let second = std::fs::read_to_string(root.join("page-0002.routing.json")).unwrap();
         assert!(second.contains("\"planned_method\":\"ocr\""));

@@ -5,9 +5,7 @@
 //! and the Q3.1 think-strip semantics are scan-application rules, not model
 //! transport. The legacy originals stay in `ocrx-ovisocr2` until T087.
 
-use ocrx_core::{
-    NormalizedBbox, PageBlock, PageDocument, PageWarning, Termination,
-};
+use ocrx_core::{NormalizedBbox, PageBlock, PageDocument, PageWarning, Termination};
 
 /// Result of stripping leaked reasoning blocks from a raw model output
 /// (quality plan Q3). The strip semantics mirror the export script's
@@ -33,7 +31,6 @@ impl ThinkStrip {
         self.nonempty + self.empty + self.strays
     }
 }
-
 
 /// Strips leaked `<think>` reasoning blocks from a raw model output. Runs
 /// once at the artifact entry so page .md, page.json and bbox extraction all
@@ -592,7 +589,6 @@ fn extract_bboxes(raw: &str) -> Vec<NormalizedBbox> {
     result
 }
 
-
 /// Newline normalization shared with the adapter decode (`\r\n` and stray
 /// `\r` fold to `\n`).
 #[cfg(test)]
@@ -608,7 +604,6 @@ mod tests {
         assert!(!uncertain.warnings.contains(&PageWarning::RepetitionRemoved));
     }
 
-
     #[test]
     fn parser_preserves_markdown_and_marks_truncation() {
         let page = parse_page(1, "# heading", true).unwrap();
@@ -616,7 +611,6 @@ mod tests {
         assert_eq!(page.warnings, vec![PageWarning::Truncated]);
         assert!(matches!(page.blocks[0], PageBlock::Markdown { .. }));
     }
-
 
     #[test]
     fn parser_maps_formula_and_html_table_to_core_blocks() {
@@ -636,7 +630,6 @@ mod tests {
         )));
     }
 
-
     #[test]
     fn parser_maps_inline_formula_delimiters_to_formula_blocks() {
         let page = parse_page(1, "before $\\angle A=30^\\circ$ after \\(x^2\\)", false).unwrap();
@@ -654,22 +647,15 @@ mod tests {
         );
     }
 
-
     #[test]
     fn adapter_preserves_unclosed_formula_and_maps_stop_token() {
         // The legacy adapt_response glue reduced to parse-with-termination:
         // the raw output flows through the same pipeline with the finish
         // reason mapped by the adapter (stop_token here).
-        let page = parse_page_with_termination(
-            1,
-            "before $$unclosed",
-            "stop",
-        )
-        .unwrap();
+        let page = parse_page_with_termination(1, "before $$unclosed", "stop").unwrap();
         assert_eq!(page.termination, Termination::StopToken);
         assert!(matches!(page.blocks[0], PageBlock::Markdown { .. }));
     }
-
 
     #[test]
     fn parser_maps_bbox_image_tags_to_visual_regions() {
@@ -677,7 +663,6 @@ mod tests {
             parse_page(1, "text <img src=\"images/bbox_10_20_300_400.jpg\">", false).unwrap();
         assert!(page.blocks.iter().any(|block| matches!(block, PageBlock::VisualRegion { bbox, .. } if bbox.left == 10 && bbox.bottom == 400)));
     }
-
 
     #[test]
     fn parser_removes_valid_bbox_image_placeholders_from_markdown() {
@@ -705,7 +690,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn parser_deduplicates_repeated_bbox_regions_in_source_order() {
         let page = parse_page(
@@ -729,7 +713,6 @@ mod tests {
         assert_eq!(regions[1].1, 1);
     }
 
-
     #[test]
     fn reference_raw_fixture_maps_to_stable_page_document_golden() {
         let raw = include_str!("../../tests/fixtures/reference/page-01.raw.md");
@@ -747,7 +730,6 @@ mod tests {
                 if bbox.left == 100 && bbox.bottom == 400
         )));
     }
-
 
     #[test]
     fn parser_handles_empty_output_and_rejects_invalid_bbox_shapes() {
@@ -770,7 +752,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn adapter_preserves_unclosed_table_as_markdown() {
         let page = parse_page(1, "start <table><tr><td>open", false).unwrap();
@@ -787,7 +768,6 @@ mod tests {
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-
     #[test]
     fn crop_line_level_period_keeps_one_block_and_respects_byte_guard() {
         // p=1, r=2 regression of the previous two-line behavior.
@@ -805,7 +785,6 @@ mod tests {
         assert!(!seven.degenerated);
         assert_eq!(seven.text, "x\n1234567\n1234567");
     }
-
 
     #[test]
     fn crop_inline_level_period_handles_incident_shape_and_partial_tail() {
@@ -830,7 +809,6 @@ mod tests {
         assert!(!bbox_loop.repetition_removed);
         assert_eq!(bbox_loop.text, format!("text\n{bbox_tag}"));
     }
-
 
     #[test]
     fn non_ascii_period_with_different_partial_tail_does_not_panic() {
@@ -859,7 +837,6 @@ mod tests {
         assert!(!page.warnings.contains(&PageWarning::Degenerated));
     }
 
-
     #[test]
     fn unrelated_tail_after_repeats_is_never_cropped() {
         // Review round 2 false-positive: three ASCII repeats followed by an
@@ -872,7 +849,6 @@ mod tests {
         assert!(crop.degenerated);
         assert_eq!(crop.text, "abcdefgh");
     }
-
 
     #[test]
     fn loop_after_same_line_prefix_is_detected() {
@@ -897,7 +873,6 @@ mod tests {
         assert!(!second.degenerated);
     }
 
-
     #[test]
     fn crop_ignores_short_legitimate_repetitions() {
         // Adjacent identical table cells, "(1)…(2)…" enumeration, ellipsis —
@@ -915,7 +890,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn crop_is_idempotent_in_text_and_flags() {
         let period = "依次按键 $\\tan^{1}F$ 2 2 1 8";
@@ -926,7 +900,6 @@ mod tests {
         assert!(!second.degenerated);
         assert!(!second.repetition_removed);
     }
-
 
     #[test]
     fn incident_fixture_crops_loop_and_keeps_sources_consistent() {
@@ -963,7 +936,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn bbox_loop_fixture_flags_degenerated_without_repetition_removed() {
         let raw = include_str!("../../tests/fixtures/degeneration/bbox-loop.raw.md");
@@ -971,7 +943,6 @@ mod tests {
         assert!(page.warnings.contains(&PageWarning::Degenerated));
         assert!(!page.warnings.contains(&PageWarning::RepetitionRemoved));
     }
-
 
     #[test]
     fn termination_mapping_accepts_repetition_loop_and_rejects_unknown() {
@@ -988,7 +959,6 @@ mod tests {
         assert_eq!(page("stop_token"), Termination::StopToken);
     }
 
-
     #[test]
     fn repetition_loop_implies_degenerated_even_without_text_hit() {
         // A p=1 token loop of "。" may not present a croppable text tail, yet
@@ -998,7 +968,6 @@ mod tests {
         assert!(page.warnings.contains(&PageWarning::Degenerated));
         assert!(!page.warnings.contains(&PageWarning::Truncated));
     }
-
 
     #[test]
     fn strip_think_blocks_matches_export_script_semantics() {
@@ -1034,7 +1003,6 @@ mod tests {
         assert_eq!(strip.nonempty, 2);
     }
 
-
     #[test]
     fn strip_think_blocks_is_idempotent() {
         let once = strip_think_blocks("<think>\n\n</think>\n\nBody</think> tail");
@@ -1042,5 +1010,4 @@ mod tests {
         assert_eq!(once.text, twice.text);
         assert_eq!(twice.total(), 0);
     }
-
 }

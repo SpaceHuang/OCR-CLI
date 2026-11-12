@@ -94,7 +94,9 @@ pub fn ovisocr2_url_base() -> String {
 ///
 /// Returns [`ocrx_inference_api::InferenceError::UnsupportedProfile`] for a
 /// profile outside the frozen four.
-pub fn ovisocr2_manifest(profile: &str) -> Result<ModelManifest, ocrx_inference_api::InferenceError> {
+pub fn ovisocr2_manifest(
+    profile: &str,
+) -> Result<ModelManifest, ocrx_inference_api::InferenceError> {
     let asset = OVISOCR2_MODEL_ASSETS
         .iter()
         .find(|asset| asset.profile == profile)
@@ -128,25 +130,29 @@ pub fn ovisocr2_manifest(profile: &str) -> Result<ModelManifest, ocrx_inference_
     ];
     let manifest = ModelManifest {
         schema_version: ModelManifest::SCHEMA_VERSION,
-        model: ModelId::new("ovisocr2")
-            .map_err(|error| ocrx_inference_api::InferenceError::InvalidManifest(error.to_string()))?,
-        profile: ProfileId::new(profile)
-            .map_err(|error| ocrx_inference_api::InferenceError::InvalidManifest(error.to_string()))?,
+        model: ModelId::new("ovisocr2").map_err(|error| {
+            ocrx_inference_api::InferenceError::InvalidManifest(error.to_string())
+        })?,
+        profile: ProfileId::new(profile).map_err(|error| {
+            ocrx_inference_api::InferenceError::InvalidManifest(error.to_string())
+        })?,
         display_name: OVISOCR2_DISPLAY_NAME.to_owned(),
         family: OVISOCR2_FAMILY.to_owned(),
         quantization: asset.quantization.to_owned(),
         source_revision: OVISOCR2_REVISION.to_owned(),
         assets,
         runtime_binding: BindingRequirement {
-            runtime: RuntimeId::new(OVISOCR2_RUNTIME_ID)
-                .map_err(|error| ocrx_inference_api::InferenceError::InvalidManifest(error.to_string()))?,
+            runtime: RuntimeId::new(OVISOCR2_RUNTIME_ID).map_err(|error| {
+                ocrx_inference_api::InferenceError::InvalidManifest(error.to_string())
+            })?,
             wrapper_version: OVISOCR2_WRAPPER_VERSION.to_owned(),
             sys_version: OVISOCR2_SYS_VERSION.to_owned(),
             upstream_revision: OVISOCR2_UPSTREAM_REVISION.to_owned(),
         },
         adapter_binding: AdapterRequirement {
-            adapter: AdapterId::new(OVISOCR2_ADAPTER_ID)
-                .map_err(|error| ocrx_inference_api::InferenceError::InvalidManifest(error.to_string()))?,
+            adapter: AdapterId::new(OVISOCR2_ADAPTER_ID).map_err(|error| {
+                ocrx_inference_api::InferenceError::InvalidManifest(error.to_string())
+            })?,
             version: OVISOCR2_ADAPTER_VERSION.to_owned(),
         },
         license_id: OVISOCR2_LICENSE_ID.to_owned(),
@@ -175,21 +181,20 @@ mod tests {
             assert_eq!(manifest.family, "Ovis");
             assert_eq!(manifest.quantization, expected.quantization);
             assert_eq!(manifest.assets.len(), 2);
-            let model = manifest
-                .asset(&AssetRole::new("model").unwrap())
-                .unwrap();
+            let model = manifest.asset(&AssetRole::new("model").unwrap()).unwrap();
             assert_eq!(model.sha256, expected.sha256);
             assert_eq!(model.byte_len, expected.bytes);
             assert_eq!(model.scope, AssetScope::Profile);
             assert_eq!(model.relative_path, "model.gguf");
             assert!(model.source_url.ends_with(expected.file));
-            let mmproj = manifest
-                .asset(&AssetRole::new("mmproj").unwrap())
-                .unwrap();
+            let mmproj = manifest.asset(&AssetRole::new("mmproj").unwrap()).unwrap();
             assert_eq!(mmproj.sha256, OVISOCR2_MMPROJ_SHA256);
             assert_eq!(mmproj.byte_len, OVISOCR2_MMPROJ_BYTES);
             assert_eq!(mmproj.scope, AssetScope::Revision);
-            assert_eq!(mmproj.source_url, format!("{}/{}", ovisocr2_url_base(), OVISOCR2_MMPROJ_FILE));
+            assert_eq!(
+                mmproj.source_url,
+                format!("{}/{}", ovisocr2_url_base(), OVISOCR2_MMPROJ_FILE)
+            );
             assert_eq!(manifest.runtime_binding.wrapper_version, "0.1.161");
             assert_eq!(manifest.runtime_binding.sys_version, "0.1.161");
             assert_eq!(
@@ -219,8 +224,14 @@ mod tests {
             quality.asset(&role).unwrap().source_url
         );
         assert_ne!(
-            compact.asset(&AssetRole::new("model").unwrap()).unwrap().source_url,
-            quality.asset(&AssetRole::new("model").unwrap()).unwrap().source_url
+            compact
+                .asset(&AssetRole::new("model").unwrap())
+                .unwrap()
+                .source_url,
+            quality
+                .asset(&AssetRole::new("model").unwrap())
+                .unwrap()
+                .source_url
         );
     }
 }

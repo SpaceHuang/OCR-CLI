@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use image::RgbImage;
 use crate::state::{RenderAudit, RenderedPage};
+use image::RgbImage;
 use ocrx_core::{PageClassification, QualityTier};
 use ocrx_pdf::{PdfiumRenderer, RenderOptions, fit_pixel_budget};
 

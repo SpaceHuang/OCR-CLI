@@ -21,7 +21,11 @@ pub struct DeviceManagerImpl {
 
 impl DeviceManagerImpl {
     #[must_use]
-    pub fn new(probe: Box<dyn SystemProbe>, env_memory_gb: Option<u64>, cache_root: std::path::PathBuf) -> Self {
+    pub fn new(
+        probe: Box<dyn SystemProbe>,
+        env_memory_gb: Option<u64>,
+        cache_root: std::path::PathBuf,
+    ) -> Self {
         Self {
             probe,
             env_memory_gb,
@@ -96,8 +100,12 @@ impl DeviceManager for DeviceManagerImpl {
         match requested {
             "auto" => priority
                 .into_iter()
-                .find_map(|(device, available)| available.then(|| BackendId::new(device).expect("priority names are valid")))
-                .ok_or(InferenceError::DeviceUnavailable("no available backend".into())),
+                .find_map(|(device, available)| {
+                    available.then(|| BackendId::new(device).expect("priority names are valid"))
+                })
+                .ok_or(InferenceError::DeviceUnavailable(
+                    "no available backend".into(),
+                )),
             "metal" | "cuda" | "vulkan" | "cpu" => {
                 let available = match requested {
                     "metal" => snapshot.metal_available,
@@ -143,7 +151,9 @@ impl DeviceManager for DeviceManagerImpl {
             .filter(|profile| {
                 ocrx_models::builtin::ovisocr2::ovisocr2_manifest(profile)
                     .ok()
-                    .and_then(|manifest| ocrx_models::verify::is_installed(&self.cache_root, &manifest).ok())
+                    .and_then(|manifest| {
+                        ocrx_models::verify::is_installed(&self.cache_root, &manifest).ok()
+                    })
                     .unwrap_or(false)
             })
             .map(ToOwned::to_owned)
@@ -173,7 +183,10 @@ impl DeviceManager for DeviceManagerImpl {
         [Backend::Cpu, Backend::Metal, Backend::Cuda, Backend::Vulkan]
             .into_iter()
             .filter(|backend| backend.is_compiled())
-            .map(|backend| BackendId::new(backend.as_str().to_ascii_lowercase()).expect("backend names are valid"))
+            .map(|backend| {
+                BackendId::new(backend.as_str().to_ascii_lowercase())
+                    .expect("backend names are valid")
+            })
             .collect()
     }
 }
@@ -207,9 +220,9 @@ pub fn probe_vram_bytes(device: &str) -> Option<u64> {
 
 #[cfg(feature = "vulkan")]
 fn probe_vulkan_vram_bytes() -> Option<u64> {
+    use vulkano::VulkanLibrary;
     use vulkano::instance::{Instance, InstanceCreateInfo};
     use vulkano::memory::MemoryHeapFlags;
-    use vulkano::VulkanLibrary;
 
     let library = VulkanLibrary::new().ok()?;
     let instance = Instance::new(library, InstanceCreateInfo::default()).ok()?;
@@ -261,13 +274,7 @@ mod tests {
     }
 
     #[allow(clippy::fn_params_excessive_bools)] // one bool per backend is the frozen contract
-    fn probe(
-        memory: u64,
-        metal: bool,
-        cuda: bool,
-        vulkan: bool,
-        cpu: bool,
-    ) -> FakeSystemProbe {
+    fn probe(memory: u64, metal: bool, cuda: bool, vulkan: bool, cpu: bool) -> FakeSystemProbe {
         FakeSystemProbe {
             memory_gb: Some(memory),
             metal_available: metal,

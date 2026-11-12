@@ -97,7 +97,8 @@ pub fn validate_numeric_options(
     if max_output_tokens.is_some_and(|value| value < 128) {
         return Err("max output tokens must be at least 128".to_owned());
     }
-    if max_output_tokens.is_some_and(|value| value > crate::ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS) {
+    if max_output_tokens.is_some_and(|value| value > crate::ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS)
+    {
         return Err(format!(
             "max output tokens must not exceed {}",
             crate::ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS
@@ -163,7 +164,8 @@ pub fn validate_scan_output_policy(
     protected: &[&Path],
     working_directory: &Path,
 ) -> Result<(), String> {
-    ocrx_output::validate_output_root(input, output, protected).map_err(|error| error.to_string())?;
+    ocrx_output::validate_output_root(input, output, protected)
+        .map_err(|error| error.to_string())?;
     ocrx_output::validate_output_not_containing(output, working_directory)
         .map_err(|error| error.to_string())
 }
@@ -221,8 +223,8 @@ mod tests {
         let single = root.join("solo.pdf");
         std::fs::write(&single, b"").unwrap();
         // Directory expansion is sorted; the txt file is ignored.
-        let resolved = resolve_scan_inputs(&[root.join("dir").to_string_lossy().into_owned()])
-            .unwrap();
+        let resolved =
+            resolve_scan_inputs(&[root.join("dir").to_string_lossy().into_owned()]).unwrap();
         assert_eq!(resolved.len(), 2);
         assert!(resolved[0].ends_with("a.pdf"));
         assert!(resolved[1].ends_with("b.pdf"));
@@ -274,7 +276,7 @@ mod tests {
 
     #[test]
     fn ocr_lifecycle_question_follows_the_initial_plan() {
-        use ocrx_core::{PageType, ProcessingMethod, RouteConfidence, PdfReasonCode};
+        use ocrx_core::{PageType, PdfReasonCode, ProcessingMethod, RouteConfidence};
         let classification = |method: ProcessingMethod, page_type: PageType| PageClassification {
             page_type,
             confidence: RouteConfidence::High,

@@ -7,9 +7,9 @@ pub mod pdfium_owner;
 
 pub use pdfium_owner::OwnerPageRenderer;
 
-use std::path::Path;
 use ocrx_pdf::PdfWorkerScheduler;
 use ocrx_primitives::CancellationToken;
+use std::path::Path;
 
 /// Renders one 0-based half-open worker segment, honouring cancellation
 /// (plan §6.3). [`PdfWorkerScheduler`] is the production implementation; tests
@@ -109,4 +109,3 @@ pub fn inject_inference_failure(page: u32) -> std::io::Result<()> {
         "injected inference failure",
     )
 }
-

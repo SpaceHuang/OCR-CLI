@@ -135,9 +135,11 @@ mod tests {
             catalog.manifest(&model, &ProfileId::new("draft").unwrap()),
             Err(InferenceError::UnsupportedProfile(_))
         ));
-        assert!(catalog
-            .manifest(&model, &ProfileId::new("quality").unwrap())
-            .is_ok());
+        assert!(
+            catalog
+                .manifest(&model, &ProfileId::new("quality").unwrap())
+                .is_ok()
+        );
     }
 
     #[test]
@@ -155,11 +157,17 @@ mod tests {
             "compact"
         );
         assert_eq!(
-            catalog.resolve_profile(&model, "auto", 16).unwrap().as_str(),
+            catalog
+                .resolve_profile(&model, "auto", 16)
+                .unwrap()
+                .as_str(),
             "balanced"
         );
         assert_eq!(
-            catalog.resolve_profile(&model, "auto", 64).unwrap().as_str(),
+            catalog
+                .resolve_profile(&model, "auto", 64)
+                .unwrap()
+                .as_str(),
             "quality"
         );
         // Concrete profiles pass through unchanged.

@@ -13,16 +13,14 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use ocrx_core::{
-    PageClassification, PageType, PdfReasonCode, ProcessingMethod, QualityTier,
-};
+use ocrx_core::{PageClassification, PageType, PdfReasonCode, ProcessingMethod, QualityTier};
 use ocrx_inference_api::{
-    InferenceService, PrepareRequest, StaticInferenceIdentity, InstallPolicy,
+    InferenceService, InstallPolicy, PrepareRequest, StaticInferenceIdentity,
 };
 use ocrx_output::{
-    collect_page_markdowns, commit_native_page_v6, commit_pending_ocr_v6, finalize_document,
     PageIncomplete, PageMarkdown, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute,
-    V6Checkpoint, V6Status,
+    V6Checkpoint, V6Status, collect_page_markdowns, commit_native_page_v6, commit_pending_ocr_v6,
+    finalize_document,
 };
 use ocrx_pdf::NativePage;
 use ocrx_primitives::CancellationToken;
@@ -30,11 +28,9 @@ use ocrx_primitives::CancellationToken;
 use crate::native::{run_native_first_phase, service_pages_from_ocr_queue};
 use crate::plan::{planned_ocr_pages, validate_numeric_options};
 use crate::report::write_routing_checkpoint_sidecars_with_states;
-use crate::resume::{classify, PageDisposition, ResumeContext};
-use crate::state::{
-    merge_ocr_queue, JobSummary, OcrQueuePage, PageDiagnostic, PageStatus,
-};
-use crate::window::{run_pages_with_session, PageRenderer, WindowConfig, write_pending_ocr};
+use crate::resume::{PageDisposition, ResumeContext, classify};
+use crate::state::{JobSummary, OcrQueuePage, PageDiagnostic, PageStatus, merge_ocr_queue};
+use crate::window::{PageRenderer, WindowConfig, run_pages_with_session, write_pending_ocr};
 
 /// PDF facts the application needs (plan §6.3 steps 1–2). The production
 /// implementation routes through the PdfiumOwner; tests inject fakes.
@@ -115,7 +111,11 @@ pub enum ScanEvent {
     /// Analysis progress (completed/total pages).
     Analyzing { completed: u32, total: u32 },
     /// Window-loop generation heartbeat (page, tokens, elapsed seconds).
-    PageProgress { page: u32, generated_tokens: u32, elapsed_seconds: u64 },
+    PageProgress {
+        page: u32,
+        generated_tokens: u32,
+        elapsed_seconds: u64,
+    },
     /// Document finished with its summary.
     DocumentFinished { input: PathBuf, cancelled: bool },
 }
@@ -280,37 +280,43 @@ impl ScanApplication {
         cancellation: &CancellationToken,
         emit: &mut dyn FnMut(ScanEvent),
     ) -> std::io::Result<DocumentOutcome> {
-        let failure = |code: u8, kind: &str, message: &str, cause: Option<String>| DocumentOutcome {
-            input: input.to_path_buf(),
-            output_dir: output.to_path_buf(),
-            summary: JobSummary {
-                selected_pages: 0,
-                completed_pages: 0,
-                failed_pages: 0,
-                truncated_pages: 0,
-                degenerated_pages: 0,
-                think_blocks_stripped: 0,
-                warnings: Vec::new(),
-                diagnostics: Vec::new(),
-                cancelled: false,
-            },
-            pages: Vec::new(),
-            backend: None,
-            identity: None,
-            telemetry_delta: None,
-            step_profile_delta: None,
-            failure: Some(DocumentFailure {
-                code,
-                kind: kind.to_owned(),
-                message: message.to_owned(),
-                cause,
-            }),
-        };
+        let failure =
+            |code: u8, kind: &str, message: &str, cause: Option<String>| DocumentOutcome {
+                input: input.to_path_buf(),
+                output_dir: output.to_path_buf(),
+                summary: JobSummary {
+                    selected_pages: 0,
+                    completed_pages: 0,
+                    failed_pages: 0,
+                    truncated_pages: 0,
+                    degenerated_pages: 0,
+                    think_blocks_stripped: 0,
+                    warnings: Vec::new(),
+                    diagnostics: Vec::new(),
+                    cancelled: false,
+                },
+                pages: Vec::new(),
+                backend: None,
+                identity: None,
+                telemetry_delta: None,
+                step_profile_delta: None,
+                failure: Some(DocumentFailure {
+                    code,
+                    kind: kind.to_owned(),
+                    message: message.to_owned(),
+                    cause,
+                }),
+            };
         // Step 1: page count (PDF errors surface before any model work).
         let page_count = match pdf.page_count(input) {
             Ok(count) => count,
             Err(error) => {
-                return Ok(failure(3, "input", "unable to read PDF page count", Some(error.to_string())));
+                return Ok(failure(
+                    3,
+                    "input",
+                    "unable to read PDF page count",
+                    Some(error.to_string()),
+                ));
             }
         };
         let pages: Vec<usize> = match &options.pages {
@@ -339,14 +345,12 @@ impl ScanApplication {
             completed: 0,
             total: pages.len() as u32,
         });
-        let classifications = pdf
-            .analyze(input, &pages, required_tier)
-            .map_err(|error| {
-                std::io::Error::new(
-                    error.kind(),
-                    format!("unable to analyze PDF pages: {error}"),
-                )
-            })?;
+        let classifications = pdf.analyze(input, &pages, required_tier).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!("unable to analyze PDF pages: {error}"),
+            )
+        })?;
         if options.pdf_mode == "text"
             && classifications.iter().any(|classification| {
                 !matches!(classification.page_type, PageType::Empty)
@@ -371,8 +375,11 @@ impl ScanApplication {
             extractor_version: "pdf-text-v1".to_owned(),
             platform: current_platform(),
         };
-        let native_compatibility =
-            ScanCompatibility::native_or_empty(&input_sha256, ScanRoute::NativeText, pdf_identity.clone());
+        let native_compatibility = ScanCompatibility::native_or_empty(
+            &input_sha256,
+            ScanRoute::NativeText,
+            pdf_identity.clone(),
+        );
         // Step 3: resume classification (static pre-compare; zero-load path).
         let side = ScanOcrSide {
             prompt_id: crate::ocr::prompt::PROMPT_ID.to_owned(),
@@ -389,8 +396,9 @@ impl ScanApplication {
         let statik: Option<StaticInferenceIdentity> = if shared_prepared.is_none() {
             service
                 .static_identity(
-                    &ocrx_inference_api::ModelId::new("ovisocr2")
-                        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?,
+                    &ocrx_inference_api::ModelId::new("ovisocr2").map_err(|error| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+                    })?,
                     &options.requested_profile,
                 )
                 .ok()
@@ -400,8 +408,9 @@ impl ScanApplication {
             // pre-compare source (RBLK-4).
             service
                 .static_identity(
-                    &ocrx_inference_api::ModelId::new("ovisocr2")
-                        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?,
+                    &ocrx_inference_api::ModelId::new("ovisocr2").map_err(|error| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+                    })?,
                     &options.requested_profile,
                 )
                 .ok()
@@ -489,7 +498,9 @@ impl ScanApplication {
         let initial_queue = initial_queue_for_mode(&options.pdf_mode, &pages, &classifications);
         let initial_queue: Vec<OcrQueuePage> = initial_queue
             .into_iter()
-            .filter(|page| !resume_reuse.contains(&page.page) && !resume_pending.contains(&page.page))
+            .filter(|page| {
+                !resume_reuse.contains(&page.page) && !resume_pending.contains(&page.page)
+            })
             .collect();
         let native_candidates: Vec<u32> = if options.pdf_mode == "ocr" {
             Vec::new()
@@ -532,9 +543,13 @@ impl ScanApplication {
                     .position(|selected| *selected as u32 == page)
                     .and_then(|index| classifications.get(index).copied())
                     .ok_or_else(|| "native_classification_missing".to_owned())?;
-                let (markdown, page_json) =
-                    ocrx_pdf::native_pdf_page_artifacts(page, &native, classification, required_tier)
-                        .map_err(|reason| format!("page {page}: {}", reason.as_str()))?;
+                let (markdown, page_json) = ocrx_pdf::native_pdf_page_artifacts(
+                    page,
+                    &native,
+                    classification,
+                    required_tier,
+                )
+                .map_err(|reason| format!("page {page}: {}", reason.as_str()))?;
                 let checkpoint = V6Checkpoint {
                     page_number: page,
                     status: V6Status::Complete,
@@ -635,8 +650,9 @@ impl ScanApplication {
             if session.is_none() {
                 // Prepare once (invocation-shared).
                 let request = PrepareRequest {
-                    model: ocrx_inference_api::ModelId::new("ovisocr2")
-                        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?,
+                    model: ocrx_inference_api::ModelId::new("ovisocr2").map_err(|error| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+                    })?,
                     requested_profile: options.requested_profile.clone(),
                     requested_device: options.requested_device.clone(),
                     max_image_tokens: options.max_image_tokens,
@@ -676,9 +692,7 @@ impl ScanApplication {
                 }
             }
             // Final compare against the executing session (RBLK-6).
-            let executing = session
-                .as_ref()
-                .map(|session| session.identity().clone());
+            let executing = session.as_ref().map(|session| session.identity().clone());
             for page in &resume_reuse {
                 let path = output.join(format!("page-{page:04}.checkpoint"));
                 let Ok(Ok(ocrx_output::CheckpointFile::V6(checkpoint))) =
@@ -695,7 +709,11 @@ impl ScanApplication {
                     has_pending_decode: true,
                 };
                 if !matches!(
-                    classify(&ocrx_output::CheckpointFile::V6(checkpoint), output, &context),
+                    classify(
+                        &ocrx_output::CheckpointFile::V6(checkpoint),
+                        output,
+                        &context
+                    ),
                     PageDisposition::Reuse { .. }
                 ) {
                     final_compare_failures.push(*page);
@@ -749,9 +767,7 @@ impl ScanApplication {
             cancelled: false,
         };
         if has_pending_decode {
-            let executing = session
-                .as_mut()
-                .expect("prepare succeeded above");
+            let executing = session.as_mut().expect("prepare succeeded above");
             let executing: &mut dyn ocrx_inference_api::InferenceSession = executing.as_mut();
             let compatibility = crate::compatibility::ocr_compatibility(
                 &input_sha256,
@@ -801,11 +817,7 @@ impl ScanApplication {
         let committed_ocr: Vec<u32> = decode_pages
             .iter()
             .copied()
-            .filter(|page| {
-                output
-                    .join(format!("page-{page:04}.checkpoint"))
-                    .is_file()
-            })
+            .filter(|page| output.join(format!("page-{page:04}.checkpoint")).is_file())
             .collect();
         let mut ocr_markdown = collect_page_markdowns(output, &committed_ocr).unwrap_or_default();
         // Reuse-flag incomplete pages from the window summary diagnostics.
@@ -815,7 +827,11 @@ impl ScanApplication {
                 .iter()
                 .find(|entry| entry.page == markdown.page_number);
             markdown.incomplete = diagnostic.and_then(|entry| {
-                if entry.warnings.iter().any(|warning| warning == "degenerated") {
+                if entry
+                    .warnings
+                    .iter()
+                    .any(|warning| warning == "degenerated")
+                {
                     Some(PageIncomplete::Degenerated)
                 } else if entry.status == "failed" {
                     Some(PageIncomplete::Truncated)
@@ -844,10 +860,7 @@ impl ScanApplication {
                     .map(|reason| (page.page, pdf_reason_from_str(reason)))
             })
             .collect();
-        let pending_set: HashSet<u32> = final_queue
-            .iter()
-            .map(|page| page.page)
-            .collect();
+        let pending_set: HashSet<u32> = final_queue.iter().map(|page| page.page).collect();
         write_routing_checkpoint_sidecars_with_states(
             output,
             &options.pdf_mode,
@@ -915,8 +928,13 @@ impl ScanApplication {
             input: input.to_path_buf(),
             output_dir: output.to_path_buf(),
             summary,
-            pages: pages.iter().map(|page| u32::try_from(*page).unwrap_or(0)).collect(),
-            backend: identity.as_ref().map(|identity| identity.backend.to_string()),
+            pages: pages
+                .iter()
+                .map(|page| u32::try_from(*page).unwrap_or(0))
+                .collect(),
+            backend: identity
+                .as_ref()
+                .map(|identity| identity.backend.to_string()),
             identity: identity.clone(),
             telemetry_delta,
             step_profile_delta,
@@ -974,10 +992,7 @@ pub fn initial_queue_for_mode(
 
 /// Native candidate pages (recommended native text), sorted and deduped.
 #[must_use]
-pub fn native_candidate_pages(
-    pages: &[usize],
-    classifications: &[PageClassification],
-) -> Vec<u32> {
+pub fn native_candidate_pages(pages: &[usize], classifications: &[PageClassification]) -> Vec<u32> {
     let mut candidates: Vec<_> = pages
         .iter()
         .zip(classifications)
@@ -1170,7 +1185,8 @@ mod tests {
             &mut self,
             _request: PrepareRequest,
             _interaction: &mut dyn ocrx_inference_api::InstallInteraction,
-        ) -> Result<ocrx_inference_api::PreparedInference, ocrx_inference_api::InferenceError> {
+        ) -> Result<ocrx_inference_api::PreparedInference, ocrx_inference_api::InferenceError>
+        {
             *self.prepares.borrow_mut() += 1;
             Ok(ocrx_inference_api::PreparedInference {
                 session: Box::new(self.session.clone()),
@@ -1195,7 +1211,6 @@ mod tests {
     fn options() -> DocumentOptions {
         DocumentOptions::default()
     }
-
 
     #[test]
     fn native_only_scan_never_prepares_and_writes_document() {
@@ -1260,10 +1275,13 @@ mod tests {
         let mut pdf = FakePdf::new();
         let prepares = Rc::new(RefCell::new(0_usize));
         let session = crate::window_tests::FakeSession::with_depth(1);
-        session.core.push(2, crate::window_tests::Program {
-            text: "ocr body for page 2".into(),
-            finish: ocrx_inference_api::FinishReason::Eos,
-        });
+        session.core.push(
+            2,
+            crate::window_tests::Program {
+                text: "ocr body for page 2".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
             session,
@@ -1317,14 +1335,20 @@ mod tests {
         let pdf = FakeMultiPdf;
         let prepares = Rc::new(RefCell::new(0_usize));
         let session = crate::window_tests::FakeSession::with_depth(1);
-        session.core.push(1, crate::window_tests::Program {
-            text: "doc a body".into(),
-            finish: ocrx_inference_api::FinishReason::Eos,
-        });
-        session.core.push(1, crate::window_tests::Program {
-            text: "doc b body".into(),
-            finish: ocrx_inference_api::FinishReason::Eos,
-        });
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "doc a body".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "doc b body".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
             session,
@@ -1409,7 +1433,8 @@ mod tests {
             &mut self,
             _request: PrepareRequest,
             _interaction: &mut dyn ocrx_inference_api::InstallInteraction,
-        ) -> Result<ocrx_inference_api::PreparedInference, ocrx_inference_api::InferenceError> {
+        ) -> Result<ocrx_inference_api::PreparedInference, ocrx_inference_api::InferenceError>
+        {
             Err(ocrx_inference_api::InferenceError::RuntimeInitialization(
                 "model load failed".into(),
             ))
@@ -1471,10 +1496,12 @@ mod tests {
         match file {
             ocrx_output::CheckpointFile::V6(checkpoint) => {
                 assert_eq!(checkpoint.status, ocrx_output::V6Status::PendingOcr);
-                assert!(checkpoint
-                    .warnings
-                    .iter()
-                    .any(|warning| warning == "ocr_required_but_unavailable"));
+                assert!(
+                    checkpoint
+                        .warnings
+                        .iter()
+                        .any(|warning| warning == "ocr_required_but_unavailable")
+                );
             }
             other => panic!("expected v6 pending, got {other:?}"),
         }
@@ -1495,14 +1522,20 @@ mod tests {
         let output_root = root.join("outs");
         let pdf = FakeMultiPdf;
         let session = crate::window_tests::FakeSession::with_depth(1);
-        session.core.push(1, crate::window_tests::Program {
-            text: "doc a body".into(),
-            finish: ocrx_inference_api::FinishReason::Eos,
-        });
-        session.core.push(1, crate::window_tests::Program {
-            text: "doc b body".into(),
-            finish: ocrx_inference_api::FinishReason::Eos,
-        });
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "doc a body".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "doc b body".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
         let prepares = Rc::new(RefCell::new(0_usize));
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
@@ -1535,12 +1568,16 @@ mod tests {
         let a = &outcome.documents[0];
         let b = &outcome.documents[1];
         assert_eq!(
-            a.telemetry_delta.as_ref().map(|delta| delta.generated_tokens),
+            a.telemetry_delta
+                .as_ref()
+                .map(|delta| delta.generated_tokens),
             Some(1),
             "document A's delta covers only its own page"
         );
         assert_eq!(
-            b.telemetry_delta.as_ref().map(|delta| delta.generated_tokens),
+            b.telemetry_delta
+                .as_ref()
+                .map(|delta| delta.generated_tokens),
             Some(1),
             "document B's delta covers only its own page (baseline advanced)"
         );

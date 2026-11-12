@@ -2,11 +2,12 @@
 
 pub mod resource_sampler;
 
-
 // Cancellation/progress/hash primitives moved to `ocrx-primitives` (plan
 // §8.2). Core re-exports them so the legacy import paths keep compiling;
 // the duplicate implementations were deleted with the move (T010/T011).
-pub use ocrx_primitives::{CancellationToken, GenerationProgress, Sha256State, sha256, sha256_file};
+pub use ocrx_primitives::{
+    CancellationToken, GenerationProgress, Sha256State, sha256, sha256_file,
+};
 
 /// Frozen decode-window depth for multi-page continuous batching (phase-2
 /// stage C unfreeze, 2026-11-04: **N = 8**).

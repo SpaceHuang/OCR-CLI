@@ -290,12 +290,15 @@ use std::path::{Path, PathBuf};
 pub use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 pub mod compatibility;
-pub use compatibility::{ocr_final_compare, ocr_pre_compare, OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute};
+pub use compatibility::{
+    OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute, ocr_final_compare,
+    ocr_pre_compare,
+};
 
 pub mod checkpoint_v6;
 pub use checkpoint_v6::{
-    artifacts_intact, commit_native_page_v6, commit_page_v6, commit_pending_ocr_v6, read_any,
-    write_v6, CheckpointFile, V5Disposition, V6Checkpoint, V6Status,
+    CheckpointFile, V5Disposition, V6Checkpoint, V6Status, artifacts_intact, commit_native_page_v6,
+    commit_page_v6, commit_pending_ocr_v6, read_any, write_v6,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

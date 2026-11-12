@@ -82,7 +82,10 @@ impl ModelManagerImpl {
     pub fn required_asset_paths(
         &self,
         manifest: &ocrx_inference_api::ModelManifest,
-    ) -> Result<Vec<(ocrx_inference_api::AssetRole, std::path::PathBuf)>, ocrx_inference_api::InferenceError> {
+    ) -> Result<
+        Vec<(ocrx_inference_api::AssetRole, std::path::PathBuf)>,
+        ocrx_inference_api::InferenceError,
+    > {
         cache::manifest_asset_paths(&self.cache_root, manifest)
     }
 
@@ -96,7 +99,9 @@ impl ModelManagerImpl {
 }
 
 impl ocrx_inference_api::ModelManager for ModelManagerImpl {
-    fn list(&self) -> Result<Vec<ocrx_inference_api::ModelSummary>, ocrx_inference_api::InferenceError> {
+    fn list(
+        &self,
+    ) -> Result<Vec<ocrx_inference_api::ModelSummary>, ocrx_inference_api::InferenceError> {
         let mut summaries = Vec::new();
         for model in self.catalog.list() {
             let mut profiles = Vec::new();
@@ -111,8 +116,7 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
             }
             let first = self.manifest(
                 &model,
-                &ocrx_inference_api::ProfileId::new("compact")
-                    .expect("built-in profile is valid"),
+                &ocrx_inference_api::ProfileId::new("compact").expect("built-in profile is valid"),
             )?;
             summaries.push(ocrx_inference_api::ModelSummary {
                 model,
@@ -148,8 +152,9 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
                 installed,
             });
         }
-        let (runtime_binding, adapter_binding, license_id) = bindings
-            .ok_or_else(|| ocrx_inference_api::InferenceError::UnsupportedModel(model.to_string()))?;
+        let (runtime_binding, adapter_binding, license_id) = bindings.ok_or_else(|| {
+            ocrx_inference_api::InferenceError::UnsupportedModel(model.to_string())
+        })?;
         let compact = self.manifest(
             model,
             &ocrx_inference_api::ProfileId::new("compact").expect("built-in profile is valid"),
@@ -191,10 +196,7 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
             .collect();
         let profile = recommend::recommend_profile(&names, resources.memory_gb)?;
         Ok(ocrx_inference_api::ProfileRecommendation {
-            rationale: format!(
-                "frozen memory ladder for {} GiB",
-                resources.memory_gb
-            ),
+            rationale: format!("frozen memory ladder for {} GiB", resources.memory_gb),
             profile,
         })
     }
@@ -209,7 +211,9 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
         for asset in &manifest.assets {
             let path = cache::asset_cache_path(&self.cache_root, &manifest, &asset.role)?;
             let cached = path.is_file()
-                && std::fs::metadata(&path).map(|m| m.len() == asset.byte_len).unwrap_or(false);
+                && std::fs::metadata(&path)
+                    .map(|m| m.len() == asset.byte_len)
+                    .unwrap_or(false);
             items.push(ocrx_inference_api::InstallPlanItem {
                 role: asset.role.clone(),
                 url: asset.source_url.clone(),
@@ -1917,9 +1921,7 @@ mod tests {
 #[cfg(test)]
 mod manager_tests {
     use super::*;
-    use ocrx_inference_api::{
-        InstallInteraction, ModelId, ModelManager, ProfileId,
-    };
+    use ocrx_inference_api::{InstallInteraction, ModelId, ModelManager, ProfileId};
 
     struct AcceptingVerifier;
 
@@ -1991,9 +1993,7 @@ mod manager_tests {
         assert_eq!(summary.profiles.len(), 4);
         assert!(summary.profiles.iter().all(|profile| !profile.installed));
 
-        let detail = manager
-            .info(&ModelId::new("ovisocr2").unwrap())
-            .unwrap();
+        let detail = manager.info(&ModelId::new("ovisocr2").unwrap()).unwrap();
         assert_eq!(detail.runtime.runtime.as_str(), "llama.cpp");
         assert_eq!(detail.runtime.wrapper_version, "0.1.161");
         assert_eq!(

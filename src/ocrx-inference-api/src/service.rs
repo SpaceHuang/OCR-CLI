@@ -125,9 +125,7 @@ pub trait InferenceSession {
     ) -> Vec<Result<TaskResponse, InferenceError>> {
         let mut results = Vec::with_capacity(requests.len());
         for (slot, request) in requests.into_iter().enumerate() {
-            results.push(self.submit(request, cancellation, &mut |event| {
-                progress(slot, event)
-            }));
+            results.push(self.submit(request, cancellation, &mut |event| progress(slot, event)));
         }
         results
     }
@@ -137,7 +135,7 @@ pub trait InferenceSession {
 mod tests {
     use super::*;
     use crate::id::ProfileId;
-    use crate::identity::{AdapterIdentity, ModelIdentity, ModelDisplayMeta, RuntimeIdentity};
+    use crate::identity::{AdapterIdentity, ModelDisplayMeta, ModelIdentity, RuntimeIdentity};
     use crate::task::{DecodeEcho, FinishReason, ImageInput, TokenUsage};
     use std::cell::RefCell;
 
@@ -269,7 +267,11 @@ mod tests {
         assert_eq!(first.text, "b");
         assert_eq!(second.text, "a");
         assert_eq!(*session.submits.borrow(), 2);
-        assert_eq!(session.telemetry().generated_tokens, 2, "no double counting");
+        assert_eq!(
+            session.telemetry().generated_tokens,
+            2,
+            "no double counting"
+        );
         assert_eq!(session.step_profile(), None);
         assert_eq!(session.identity().batch_depth, 8);
         assert_eq!(session.identity().decode_generation, 2);

@@ -3,7 +3,7 @@
 //! until T074). Pure planning functions — commits go through caller
 //! callbacks so the application entry owns the output I/O.
 
-use crate::state::{merge_ocr_queue, OcrQueuePage};
+use crate::state::{OcrQueuePage, merge_ocr_queue};
 
 /// Why a native candidate did not commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,26 +159,33 @@ mod tests {
         let phase = run_native_first_phase(
             "auto",
             &[1, 2],
-            |page| if page == 2 {
-                Err("fallback reason".into())
-            } else {
-                Ok(())
+            |page| {
+                if page == 2 {
+                    Err("fallback reason".into())
+                } else {
+                    Ok(())
+                }
             },
             |_page| Ok(()),
         )
         .unwrap();
         assert_eq!(phase.committed_native_pages, [1]);
         assert_eq!(phase.fallback_pages.len(), 1);
-        assert_eq!(native_only_decision(&phase), NativeOnlyDecision::ContinueToOcr);
+        assert_eq!(
+            native_only_decision(&phase),
+            NativeOnlyDecision::ContinueToOcr
+        );
 
         // text mode: a failure aborts (the commit callback never runs past it).
         let error = run_native_first_phase(
             "text",
             &[1, 2],
-            |page| if page == 2 {
-                Err("no text".into())
-            } else {
-                Ok(())
+            |page| {
+                if page == 2 {
+                    Err("no text".into())
+                } else {
+                    Ok(())
+                }
             },
             |_page| Ok(()),
         )
@@ -186,8 +193,7 @@ mod tests {
         assert!(error.contains("page 2"));
 
         // All-pass phase completes natively.
-        let phase =
-            run_native_first_phase("auto", &[1], |_| Ok(()), |_| Ok(())).unwrap();
+        let phase = run_native_first_phase("auto", &[1], |_| Ok(()), |_| Ok(())).unwrap();
         assert_eq!(native_only_decision(&phase), NativeOnlyDecision::Complete);
     }
 
@@ -215,11 +221,7 @@ mod tests {
         let phase = run_native_first_phase(
             "auto",
             &[1, 2],
-            |page| if page == 2 {
-                Err("low".into())
-            } else {
-                Ok(())
-            },
+            |page| if page == 2 { Err("low".into()) } else { Ok(()) },
             |_| Ok(()),
         )
         .unwrap();

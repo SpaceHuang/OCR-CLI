@@ -126,12 +126,10 @@ mod llama {
             let applied = (
                 worker_task.image_tokens_override,
                 // Legacy struct -> api struct (identical-shape bridge).
-                worker_task
-                    .retry_sampling
-                    .map(|spec| RetrySampling {
-                        repeat_penalty_milli: spec.repeat_penalty_milli,
-                        penalty_window: spec.penalty_window,
-                    }),
+                worker_task.retry_sampling.map(|spec| RetrySampling {
+                    repeat_penalty_milli: spec.repeat_penalty_milli,
+                    penalty_window: spec.penalty_window,
+                }),
             );
             let mut last_tokens = 0_u64;
             let response = self
@@ -175,11 +173,11 @@ mod llama {
                     }
                 }
             }
-            let results =
-                self.runtime
-                    .generate_window_tasks(worker_tasks, cancellation, &mut |slot, event| {
-                        progress(slot as usize, event)
-                    });
+            let results = self.runtime.generate_window_tasks(
+                worker_tasks,
+                cancellation,
+                &mut |slot, event| progress(slot as usize, event),
+            );
             results
                 .into_iter()
                 .map(|result| {
@@ -268,8 +266,9 @@ mod llama {
         fn task(prompt: &str) -> EncodedTask {
             EncodedTask {
                 prompt: prompt.to_owned(),
-                images: vec![ocrx_inference_api::ImageInput::new("img", 1, 1, vec![1, 2, 3])
-                    .unwrap()],
+                images: vec![
+                    ocrx_inference_api::ImageInput::new("img", 1, 1, vec![1, 2, 3]).unwrap(),
+                ],
                 image_placement: ImagePlacement::BeforePrompt,
                 generation: params(),
                 image_tokens_override: None,
@@ -535,9 +534,7 @@ impl RuntimeBackend for FakeRuntimeBackend {
         }
         let mut results = Vec::with_capacity(tasks.len());
         for (slot, task) in tasks.into_iter().enumerate() {
-            results.push(self.generate(task, cancellation, &mut |event| {
-                progress(slot, event)
-            }));
+            results.push(self.generate(task, cancellation, &mut |event| progress(slot, event)));
         }
         results
     }
@@ -619,9 +616,11 @@ mod tests {
             &mut |_, _| {},
         );
         assert_eq!(results.len(), 2);
-        assert!(results
-            .iter()
-            .all(|result| matches!(result, Err(InferenceError::WindowFailed(_)))));
+        assert!(
+            results
+                .iter()
+                .all(|result| matches!(result, Err(InferenceError::WindowFailed(_))))
+        );
         // The queued response was NOT consumed by the failed window.
         let single = backend.generate(task("c"), &CancellationToken::new(), &mut |_| {});
         assert_eq!(single.unwrap().text, "queued");
@@ -653,7 +652,9 @@ mod tests {
         let token = CancellationToken::new();
         token.request_cancel();
         assert_eq!(
-            backend.generate(task("a"), &token, &mut |_| {}).unwrap_err(),
+            backend
+                .generate(task("a"), &token, &mut |_| {})
+                .unwrap_err(),
             InferenceError::Cancelled
         );
     }

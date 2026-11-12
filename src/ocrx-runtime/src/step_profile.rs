@@ -11,7 +11,7 @@ use std::time::Instant;
 // The StepProfile DTO, its `delta_from` semantics, the env constant, and the
 // frozen JSON golden live in the public API (RBLK-3): the scan must never
 // reference a runtime-owned type. This module keeps only the recorder.
-pub use ocrx_inference_api::{StepProfile, STEP_PROFILE_ENV};
+pub use ocrx_inference_api::{STEP_PROFILE_ENV, StepProfile};
 
 /// Segments of the window decode loop that are measured separately
 /// (plan T0.1: batch 构建 / 逐槽 FFI / 采样 / detokenize / 环检测 / 等待 decode).
@@ -51,8 +51,6 @@ fn segment_index(segment: Segment) -> usize {
         Segment::Ring => 7,
     }
 }
-
-
 
 /// Per-window segment recorder. Disabled instances make every call a no-op
 /// branch (the profiling gate must cost nothing in normal scans).

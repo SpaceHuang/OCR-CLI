@@ -22,26 +22,26 @@ pub mod task;
 
 pub use asset::{
     AdapterRequirement, AssetDescriptor, AssetProvenance, AssetScope, BindingRequirement,
-    DownloadProposal, InstallPolicy, InstallInteraction, ModelManifest, NonInteractive,
+    DownloadProposal, InstallInteraction, InstallPolicy, ModelManifest, NonInteractive,
 };
 pub use backend::{
-    BackendHandle, BackendOutput, EncodedTask, ImagePlacement, NativeFinishReason,
-    ProtocolAdapter, RuntimeBackend, RuntimeFactory, RuntimeLoadRequest,
+    BackendHandle, BackendOutput, EncodedTask, ImagePlacement, NativeFinishReason, ProtocolAdapter,
+    RuntimeBackend, RuntimeFactory, RuntimeLoadRequest,
 };
 pub use error::InferenceError;
 pub use id::{AdapterId, AssetRole, BackendId, ModelId, ProfileId, RuntimeId};
 pub use identity::{
     AdapterIdentity, AssetIdentity, InferenceIdentity, ModelDisplayMeta, ModelIdentity,
-    RuntimeIdentity, RuntimeTelemetry, StaticInferenceIdentity, StepProfile, STEP_PROFILE_ENV,
+    RuntimeIdentity, RuntimeTelemetry, STEP_PROFILE_ENV, StaticInferenceIdentity, StepProfile,
 };
 pub use management::{
     BindingVerifier, DeviceDiagnostics, DeviceManager, InstallPlan, InstallPlanItem,
-    InstallReceipt, ModelDetail, ModelManager, ModelSummary, ProfileRecommendation,
-    ProfileSummary, RemoveReport, ResourceSnapshot,
+    InstallReceipt, ModelDetail, ModelManager, ModelSummary, ProfileRecommendation, ProfileSummary,
+    RemoveReport, ResourceSnapshot,
 };
 pub use service::{InferenceService, InferenceSession, PrepareRequest, PreparedInference};
 pub use task::{
-    DecodeEcho, FinishReason, GenerationParams, ImageInput, TaskRequest, TaskResponse,
-    TokenUsage, DECODE_GENERATION, RetrySampling, SUPPORTED_IMAGE_TOKEN_GRIDS, WINDOW_DEPTH,
+    DECODE_GENERATION, DecodeEcho, FinishReason, GenerationParams, ImageInput, RetrySampling,
+    SUPPORTED_IMAGE_TOKEN_GRIDS, TaskRequest, TaskResponse, TokenUsage, WINDOW_DEPTH,
     WINDOW_DEPTH_HIGH_VRAM, window_depth_for_vram,
 };

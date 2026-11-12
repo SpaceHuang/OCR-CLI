@@ -228,7 +228,8 @@ mod tests {
 
     #[test]
     fn sha256_file_matches_in_memory_hash_and_rejects_missing_files() {
-        let root = std::env::temp_dir().join(format!("ocrx-primitives-hash-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ocrx-primitives-hash-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("block.bin");
         let payload: Vec<u8> = (0..=255_u8).cycle().take(200_003).collect();

@@ -10,8 +10,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compatibility::ScanCompatibility;
 use crate::RenderAudit;
+use crate::compatibility::ScanCompatibility;
 
 /// v6 checkpoint status (replaces the v5 `complete` bool + pending suffix).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,7 +76,10 @@ pub enum V5Disposition {
     /// reused across the format boundary), contradictory
     /// `complete=true` + pending combinations, and unfinished non-pending
     /// pages.
-    Reprocess { page_number: u32, reason: &'static str },
+    Reprocess {
+        page_number: u32,
+        reason: &'static str,
+    },
 }
 
 fn encode_field(value: &str) -> String {
@@ -105,9 +108,8 @@ fn decode_field(value: &str) -> Result<String, std::io::Error> {
 ///
 /// Underlying I/O errors from the atomic write.
 pub fn write_v6(path: impl AsRef<Path>, checkpoint: &V6Checkpoint) -> std::io::Result<()> {
-    let compatibility = serde_json::to_string(&checkpoint.compatibility).map_err(|error| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
-    })?;
+    let compatibility = serde_json::to_string(&checkpoint.compatibility)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
     // Write-range guard: attempts go out as 1..=4 (Q1.4a); wider values are
     // a read-compat concern only.
     let attempts = checkpoint.attempts.clamp(1, 4);
@@ -183,9 +185,9 @@ fn read_v6_content(content: &str) -> Result<V6Checkpoint, std::io::Error> {
         })
     };
     let parse_bool = |key: &str| -> Result<bool, std::io::Error> {
-        get(key)?
-            .parse()
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid {key}")))
+        get(key)?.parse().map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid {key}"))
+        })
     };
     let status = match get("status")? {
         "complete" => V6Status::Complete,
@@ -194,14 +196,12 @@ fn read_v6_content(content: &str) -> Result<V6Checkpoint, std::io::Error> {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("invalid checkpoint status {other:?}"),
-            ))
+            ));
         }
     };
     let compatibility_json = decode_field(get("compatibility")?)?;
     let compatibility: ScanCompatibility = serde_json::from_str(&compatibility_json)
-        .map_err(|error| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
-        })?;
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
     let audit = match get("audit")? {
         "none" => None,
         encoded => Some(parse_audit_fragment(&decode_field(encoded)?)?),
@@ -217,9 +217,9 @@ fn read_v6_content(content: &str) -> Result<V6Checkpoint, std::io::Error> {
         degenerated: parse_bool("degenerated")?,
         // Wide read compat (Q1.4b): values like 5 (a legacy wider ladder)
         // load fine; only the WRITE range is clamped to 1..=4.
-        attempts: get("attempts")?
-            .parse()
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid attempts"))?,
+        attempts: get("attempts")?.parse().map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid attempts")
+        })?,
         raw: match get("raw")? {
             "none" => None,
             name => Some(name.to_owned()),
@@ -229,17 +229,16 @@ fn read_v6_content(content: &str) -> Result<V6Checkpoint, std::io::Error> {
             .filter(|line| !line.is_empty())
             .map(ToOwned::to_owned)
             .collect(),
-        think_blocks_stripped: get("think_blocks_stripped")?
-            .parse()
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid think count"))?,
+        think_blocks_stripped: get("think_blocks_stripped")?.parse().map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid think count")
+        })?,
         audit,
     })
 }
 
 fn parse_audit_fragment(fragment: &str) -> Result<RenderAudit, std::io::Error> {
-    crate::parse_render_audit(fragment).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "malformed render audit")
-    })
+    crate::parse_render_audit(fragment)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "malformed render audit"))
 }
 
 /// Parses a v5 checkpoint body and maps it to the conservative disposition
@@ -304,7 +303,9 @@ fn read_v5_content(content: &str) -> V5Disposition {
         crate::compatibility::ScanRoute::NativeText
     };
     let compatibility = ScanCompatibility::native_or_empty(
-        get("input").and_then(|value| decode_field(value).ok()).unwrap_or_default(),
+        get("input")
+            .and_then(|value| decode_field(value).ok())
+            .unwrap_or_default(),
         route,
         pdf,
     );
@@ -364,9 +365,7 @@ fn read_v5_content(content: &str) -> V5Disposition {
 
 /// Parses the five public PDF parameters (`pdf-mode`, `quality-tier`,
 /// `classifier`, `extractor`, `platform`) out of a v5 compatibility string.
-fn parse_v5_pdf_identity(
-    parameters: &str,
-) -> Option<crate::compatibility::PdfIdentity> {
+fn parse_v5_pdf_identity(parameters: &str) -> Option<crate::compatibility::PdfIdentity> {
     let mut pdf_mode = None;
     let mut quality_tier = None;
     let mut classifier = None;
@@ -497,12 +496,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ocrx-v6-wide-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("wide.checkpoint");
-        let content = std::fs::read_to_string(
-            {
-                write_v6(&path, &wide).unwrap();
-                &path
-            },
-        )
+        let content = std::fs::read_to_string({
+            write_v6(&path, &wide).unwrap();
+            &path
+        })
         .unwrap()
         .replace("attempts=4", "attempts=5");
         std::fs::write(&path, content).unwrap();
@@ -539,7 +536,11 @@ mod tests {
     #[test]
     fn v5_native_complete_maps_to_reusable_v6_complete() {
         let parameters = "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;extractor=pdf-text-v1;platform=windows;dpi=300;tokens=16384;max_image_tokens=1024;context_size=20480;device=cpu;batch=8;route=native;decode=2";
-        let content = v5_document(parameters, true, "degenerated=false\nattempts=1\nwarnings=\n");
+        let content = v5_document(
+            parameters,
+            true,
+            "degenerated=false\nattempts=1\nwarnings=\n",
+        );
         let disposition = read_v5_content(&content);
         let V5Disposition::Complete(loaded) = disposition else {
             panic!("expected complete, got {disposition:?}");
@@ -558,7 +559,11 @@ mod tests {
     #[test]
     fn v5_ocr_complete_always_reprocesses() {
         let parameters = "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;extractor=pdf-text-v1;platform=windows;dpi=300;tokens=16384;max_image_tokens=1024;context_size=20480;device=cpu;batch=8;route=native;decode=2;ocr-profile=compact;ocr-device=cpu";
-        let content = v5_document(parameters, true, "degenerated=false\nattempts=1\nthink_blocks_stripped=12\n");
+        let content = v5_document(
+            parameters,
+            true,
+            "degenerated=false\nattempts=1\nthink_blocks_stripped=12\n",
+        );
         let disposition = read_v5_content(&content);
         assert_eq!(
             disposition,
@@ -647,7 +652,11 @@ mod tests {
         // A v5 native page with decode=1 (old generation) and a think count:
         // both ignored for the native reuse mapping; parse succeeds.
         let parameters = "pdf-mode=text;quality-tier=l1;classifier=pdf-route-v1;extractor=pdf-text-v1;platform=macos;dpi=200;tokens=8000;max_image_tokens=512;context_size=8192;device=metal;batch=4;route=native;decode=1";
-        let content = v5_document(parameters, true, "degenerated=false\nthink_blocks_stripped=3\n");
+        let content = v5_document(
+            parameters,
+            true,
+            "degenerated=false\nthink_blocks_stripped=3\n",
+        );
         let V5Disposition::Complete(loaded) = read_v5_content(&content) else {
             panic!("expected complete");
         };
@@ -680,7 +689,8 @@ pub fn commit_page_v6(
     }
     let root = output_root.as_ref();
     crate::atomic_write(
-        root.join("images").join(format!("page-{page_number:04}.png")),
+        root.join("images")
+            .join(format!("page-{page_number:04}.png")),
         png,
     )?;
     crate::atomic_write(
@@ -691,10 +701,8 @@ pub fn commit_page_v6(
         root.join(format!("page-{page_number:04}.json")),
         page_json.as_bytes(),
     )?;
-    let output_sha256 = crate::artifact_sha256(
-        &root.join(format!("page-{page_number:04}.md")),
-        root,
-    )?;
+    let output_sha256 =
+        crate::artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
     write_v6(
         root.join(format!("page-{page_number:04}.checkpoint")),
         &V6Checkpoint {
@@ -732,10 +740,8 @@ pub fn commit_native_page_v6(
         root.join(format!("page-{page_number:04}.json")),
         page_json.as_bytes(),
     )?;
-    let output_sha256 = crate::artifact_sha256(
-        &root.join(format!("page-{page_number:04}.md")),
-        root,
-    )?;
+    let output_sha256 =
+        crate::artifact_sha256(&root.join(format!("page-{page_number:04}.md")), root)?;
     write_v6(
         root.join(format!("page-{page_number:04}.checkpoint")),
         &V6Checkpoint {
@@ -790,7 +796,11 @@ pub fn artifacts_intact(checkpoint: &V6Checkpoint, root: &Path) -> bool {
     }
     // Referenced images must exist (bbox crops + the full-page png only
     // when the page carried one).
-    if root.join("images").join(format!("page-{page:04}.png")).exists() {
+    if root
+        .join("images")
+        .join(format!("page-{page:04}.png"))
+        .exists()
+    {
         // full-page png present: fine
     }
     for warning in &checkpoint.warnings {

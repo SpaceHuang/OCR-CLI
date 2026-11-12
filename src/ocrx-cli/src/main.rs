@@ -2,7 +2,8 @@ use image::ImageFormat;
 use ocrx_core::{
     GpuResourceReport, ModelId, PageClassification, PageType, ProcessingMethod, QualityTier,
 };
-use ocrx_models::{ ResourceSnapshot, UrlInstallRequest, community_asset_sizes, community_asset_urls,
+use ocrx_models::{
+    ResourceSnapshot, UrlInstallRequest, community_asset_sizes, community_asset_urls,
     community_manifest, recommend_device, recommend_profile,
 };
 use ocrx_output::{
@@ -1354,11 +1355,7 @@ fn main() {
                 );
             } else {
                 let snapshot = composed.inference.devices().snapshot();
-                match composed
-                    .inference
-                    .manager()
-                    .recommend(&model, &snapshot)
-                {
+                match composed.inference.manager().recommend(&model, &snapshot) {
                     Ok(recommendation) => println!(
                         "model={} profile={} memory_gb={} device={}",
                         ModelId::AS_STR,
@@ -4788,9 +4785,7 @@ fn doctor_diagnostics_from_snapshot(
 
 /// Doctor backend display: the frozen title-case strings ("Cpu"/"Metal"/
 /// "Cuda"/"Vulkan") derived from the device manager's backend id.
-fn doctor_backend_display(
-    diagnostics: &ocrx_inference_api::DeviceDiagnostics,
-) -> String {
+fn doctor_backend_display(diagnostics: &ocrx_inference_api::DeviceDiagnostics) -> String {
     let mut display = diagnostics.backend.as_str().to_owned();
     if let Some(first) = display.get_mut(..1) {
         first.make_ascii_uppercase();

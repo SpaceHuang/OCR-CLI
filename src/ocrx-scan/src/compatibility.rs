@@ -110,7 +110,13 @@ mod tests {
         let compatibility = ocr_compatibility("hash", pdf(), &fallback, &ScanOcrConfig::default());
         assert_eq!(compatibility.ocr.as_ref().unwrap().batch_depth, 8);
         assert_eq!(
-            compatibility.ocr.as_ref().unwrap().inference.backend.as_str(),
+            compatibility
+                .ocr
+                .as_ref()
+                .unwrap()
+                .inference
+                .backend
+                .as_str(),
             "cpu"
         );
     }

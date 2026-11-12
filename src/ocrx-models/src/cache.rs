@@ -68,9 +68,9 @@ fn validate_revision(revision: &str) -> Result<(), ocrx_inference_api::Inference
         || revision == ".."
         || revision == "."
     {
-        return Err(ocrx_inference_api::InferenceError::InvalidManifest(format!(
-            "unsafe revision segment {revision:?}"
-        )));
+        return Err(ocrx_inference_api::InferenceError::InvalidManifest(
+            format!("unsafe revision segment {revision:?}"),
+        ));
     }
     Ok(())
 }
@@ -85,9 +85,9 @@ fn validate_relative_path(path: &str) -> Result<(), ocrx_inference_api::Inferenc
         || path.contains('\\')
         || path.contains(':')
     {
-        return Err(ocrx_inference_api::InferenceError::InvalidManifest(format!(
-            "unsafe asset relative path {path:?}"
-        )));
+        return Err(ocrx_inference_api::InferenceError::InvalidManifest(
+            format!("unsafe asset relative path {path:?}"),
+        ));
     }
     Ok(())
 }
@@ -105,11 +105,15 @@ mod tests {
         let mmproj = asset_cache_path(root, &manifest, &AssetRole::new("mmproj").unwrap()).unwrap();
         assert_eq!(
             model,
-            PathBuf::from("/cache/ocrx/models/ovisocr2/8a22290a0c42dbcf84739d6d4c2763f877494ae0/compact/model.gguf")
+            PathBuf::from(
+                "/cache/ocrx/models/ovisocr2/8a22290a0c42dbcf84739d6d4c2763f877494ae0/compact/model.gguf"
+            )
         );
         assert_eq!(
             mmproj,
-            PathBuf::from("/cache/ocrx/models/ovisocr2/8a22290a0c42dbcf84739d6d4c2763f877494ae0/mmproj.gguf")
+            PathBuf::from(
+                "/cache/ocrx/models/ovisocr2/8a22290a0c42dbcf84739d6d4c2763f877494ae0/mmproj.gguf"
+            )
         );
     }
 
@@ -133,16 +137,44 @@ mod tests {
     #[test]
     fn path_escape_is_rejected_for_revisions_and_roles() {
         let mut manifest = ovisocr2_manifest("compact").unwrap();
-        assert!(asset_cache_path(Path::new("/c"), &manifest, &AssetRole::new("model").unwrap()).is_ok());
+        assert!(
+            asset_cache_path(
+                Path::new("/c"),
+                &manifest,
+                &AssetRole::new("model").unwrap()
+            )
+            .is_ok()
+        );
         // Role missing from the manifest is a manifest error, not a panic.
-        assert!(asset_cache_path(Path::new("/c"), &manifest, &AssetRole::new("tokenizer").unwrap()).is_err());
+        assert!(
+            asset_cache_path(
+                Path::new("/c"),
+                &manifest,
+                &AssetRole::new("tokenizer").unwrap()
+            )
+            .is_err()
+        );
         // Unsafe revision segment is rejected.
         manifest.source_revision = "../escape".to_owned();
-        assert!(asset_cache_path(Path::new("/c"), &manifest, &AssetRole::new("model").unwrap()).is_err());
+        assert!(
+            asset_cache_path(
+                Path::new("/c"),
+                &manifest,
+                &AssetRole::new("model").unwrap()
+            )
+            .is_err()
+        );
         // Unsafe relative path is rejected.
         let mut manifest = ovisocr2_manifest("compact").unwrap();
         manifest.assets[0].relative_path = "..".to_owned();
-        assert!(asset_cache_path(Path::new("/c"), &manifest, &AssetRole::new("model").unwrap()).is_err());
+        assert!(
+            asset_cache_path(
+                Path::new("/c"),
+                &manifest,
+                &AssetRole::new("model").unwrap()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -152,6 +184,10 @@ mod tests {
         assert_eq!(paths.len(), 2);
         assert_eq!(paths[0].0.as_str(), "model");
         assert_eq!(paths[1].0.as_str(), "mmproj");
-        assert!(paths.iter().all(|(_, path)| path.starts_with("/cache/ocrx/models")));
+        assert!(
+            paths
+                .iter()
+                .all(|(_, path)| path.starts_with("/cache/ocrx/models"))
+        );
     }
 }

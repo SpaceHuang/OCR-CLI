@@ -197,8 +197,11 @@ pub trait ModelManager {
     /// # Errors
     ///
     /// Returns [`InferenceError::UnsupportedProfile`] for unknown profiles.
-    fn remove(&mut self, model: &ModelId, profile: &ProfileId)
-        -> Result<RemoveReport, InferenceError>;
+    fn remove(
+        &mut self,
+        model: &ModelId,
+        profile: &ProfileId,
+    ) -> Result<RemoveReport, InferenceError>;
 }
 
 /// Device management service (plan §5.6).

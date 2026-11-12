@@ -5,10 +5,10 @@
 //! decode per submit.
 
 use ocrx_inference_api::{
-    BackendHandle, BackendId, InferenceError, InferenceService, InferenceSession, ModelId,
-    ModelIdentity, ModelDisplayMeta, PrepareRequest, PreparedInference, ProtocolAdapter,
-    RuntimeTelemetry, StaticInferenceIdentity, StepProfile, TaskRequest, TaskResponse,
-    DECODE_GENERATION,
+    BackendHandle, BackendId, DECODE_GENERATION, InferenceError, InferenceService,
+    InferenceSession, ModelDisplayMeta, ModelId, ModelIdentity, PrepareRequest, PreparedInference,
+    ProtocolAdapter, RuntimeTelemetry, StaticInferenceIdentity, StepProfile, TaskRequest,
+    TaskResponse,
 };
 use ocrx_inference_api::{DeviceManager, ModelManager};
 use ocrx_models::ModelManagerImpl;
@@ -114,7 +114,11 @@ impl InferenceService for InferenceServiceImpl {
         // 2. Manifest + binding verification (registry-backed, same port
         // semantics as `model verify`).
         let manifest = self.manager.catalog().manifest(&request.model, &profile)?;
-        binding::check_binding(&manifest, &registry::runtime_identity(), &registry::adapter_identity())?;
+        binding::check_binding(
+            &manifest,
+            &registry::runtime_identity(),
+            &registry::adapter_identity(),
+        )?;
         // 3. Device selection: explicit-unavailable fails here, before any
         // asset work.
         let requested_backend = self.devices.select(&request.requested_device)?;
@@ -135,7 +139,9 @@ impl InferenceService for InferenceServiceImpl {
         // with a warning and the re-selected floor depth.
         let mut warnings = Vec::new();
         let mut actual_backend = requested_backend.clone();
-        let mut batch_depth = self.devices.window_depth(self.devices.vram_bytes(&requested_backend));
+        let mut batch_depth = self
+            .devices
+            .window_depth(self.devices.vram_bytes(&requested_backend));
         let asset_paths = self.manager.required_asset_paths(&manifest)?;
         let path_of = |role: &str| -> Result<std::path::PathBuf, InferenceError> {
             asset_paths
@@ -147,14 +153,15 @@ impl InferenceService for InferenceServiceImpl {
                 })
         };
         let load = |backend: &BackendId, depth: usize| -> Result<BackendHandle, InferenceError> {
-            self.factory.create(&ocrx_inference_api::RuntimeLoadRequest {
-                model_path: path_of("model")?,
-                mmproj_path: path_of("mmproj")?,
-                device: backend.clone(),
-                context_size: request.context_size,
-                max_image_tokens: request.max_image_tokens,
-                batch_depth: depth,
-            })
+            self.factory
+                .create(&ocrx_inference_api::RuntimeLoadRequest {
+                    model_path: path_of("model")?,
+                    mmproj_path: path_of("mmproj")?,
+                    device: backend.clone(),
+                    context_size: request.context_size,
+                    max_image_tokens: request.max_image_tokens,
+                    batch_depth: depth,
+                })
         };
         let handle = match load(&actual_backend, batch_depth) {
             Ok(handle) => handle,
@@ -332,7 +339,10 @@ mod tests {
             cancellation: &CancellationToken,
             progress: &mut dyn FnMut(GenerationProgress),
         ) -> Result<ocrx_inference_api::BackendOutput, InferenceError> {
-            self.0.lock().unwrap().generate(task, cancellation, progress)
+            self.0
+                .lock()
+                .unwrap()
+                .generate(task, cancellation, progress)
         }
 
         fn generate_window(
@@ -520,9 +530,11 @@ mod tests {
             &mut |_, _| {},
         );
         assert_eq!(results.len(), 3);
-        assert!(results
-            .iter()
-            .all(|result| matches!(result, Err(InferenceError::WindowFailed(_)))));
+        assert!(
+            results
+                .iter()
+                .all(|result| matches!(result, Err(InferenceError::WindowFailed(_))))
+        );
     }
 
     #[test]
@@ -552,7 +564,10 @@ mod tests {
             &mut |_, _| {},
         );
         assert!(results[0].is_ok());
-        assert!(matches!(results[1], Err(InferenceError::BackendExecution(_))));
+        assert!(matches!(
+            results[1],
+            Err(InferenceError::BackendExecution(_))
+        ));
     }
 
     #[test]
