@@ -1072,6 +1072,31 @@ pub fn initial_queue_for_mode(
     queue
 }
 
+/// Initial OCR queue per mode (plan §6.3 step 2): empty pages never enter;
+/// ocr-mode takes every non-empty page; auto takes OCR-recommended pages.
+#[must_use]
+pub fn initial_ocr_queue_for_mode(
+    mode: &str,
+    pages: &[usize],
+    classifications: &[PageClassification],
+) -> Vec<crate::state::OcrQueuePage> {
+    let mut queue: Vec<_> = pages
+        .iter()
+        .zip(classifications)
+        .filter_map(|(page, classification)| {
+            let needs_ocr = !matches!(classification.page_type, PageType::Empty)
+                && (mode == "ocr" || classification.recommended_method == ProcessingMethod::Ocr);
+            needs_ocr.then_some(crate::state::OcrQueuePage {
+                page: u32::try_from(*page).unwrap_or(u32::MAX),
+                fallback_reason: None,
+            })
+        })
+        .collect();
+    queue.sort_by_key(|page| page.page);
+    queue.dedup_by_key(|page| page.page);
+    queue
+}
+
 /// Native candidate pages (recommended native text), sorted and deduped.
 #[must_use]
 pub fn native_candidate_pages(pages: &[usize], classifications: &[PageClassification]) -> Vec<u32> {
