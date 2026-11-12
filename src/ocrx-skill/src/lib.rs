@@ -104,12 +104,29 @@ pub fn install(
     content: &str,
 ) -> io::Result<Vec<PathBuf>> {
     let root = scope.root(home, project)?;
+    let targets = parse_target(target)?;
+    let marked = format!("{START}{content}{END}");
+    // Preflight every destination before changing any of them. Only a file
+    // carrying this installer's exact ownership/version markers is replaceable.
+    for target in &targets {
+        let path = target.directory(&root).join("SKILL.md");
+        match fs::read_to_string(&path) {
+            Ok(existing) if existing.starts_with(START) && existing.ends_with(END) => {}
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("refusing to replace unowned skill file: {}", path.display()),
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
     let mut paths = Vec::new();
-    for target in parse_target(target)? {
+    for target in targets {
         let directory = target.directory(&root);
         fs::create_dir_all(&directory)?;
         let path = directory.join("SKILL.md");
-        let marked = format!("{START}{content}{END}");
         let temporary = directory.join(".SKILL.md.part");
         // Write + sync + rename mirrors ocrx-output::atomic_write (review
         // m11): the sync guarantees the marker file survives a crash, and a
@@ -274,6 +291,40 @@ mod tests {
                 .is_empty()
         );
         assert!(directory.join("SKILL.md").is_file());
+        cleanup(&home);
+    }
+
+    #[test]
+    fn install_refuses_unowned_file_and_preflights_all_targets() {
+        let home = fresh_dir("install-conflict");
+        let codex = home.join(".codex/skills/ocrx/SKILL.md");
+        fs::create_dir_all(codex.parent().unwrap()).unwrap();
+        fs::write(&codex, "USER AUTHORED SKILL\n").unwrap();
+        assert_eq!(
+            install("all", SkillScope::User, Some(&home), None, "# new\n")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read_to_string(&codex).unwrap(), "USER AUTHORED SKILL\n");
+        assert!(!home.join(".claude/skills/ocrx/SKILL.md").exists());
+
+        fs::write(
+            &codex,
+            "<!-- ocrx-skill:begin version=0.2.0 -->\nold\n<!-- ocrx-skill:end -->\n",
+        )
+        .unwrap();
+        assert_eq!(
+            install("codex", SkillScope::User, Some(&home), None, "# new\n")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert!(
+            fs::read_to_string(&codex)
+                .unwrap()
+                .contains("version=0.2.0")
+        );
         cleanup(&home);
     }
 
