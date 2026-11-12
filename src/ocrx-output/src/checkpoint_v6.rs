@@ -817,8 +817,10 @@ mod tests {
     }
 
     fn seed_committed_page_with_images(root: &std::path::Path) -> V6Checkpoint {
-        // Native-scope checkpoint whose markdown references one figure image;
-        // artifacts (md/json/image) written exactly like commit_page_v6.
+        // Native-scope checkpoint whose page JSON carries one visual_region
+        // block — the artifact digest derives image dependencies from the
+        // JSON's structured blocks (frozen baseline algorithm), so the seed
+        // writes md/json/image exactly like commit_page_v6.
         let compatibility = ScanCompatibility::native_or_empty(
             "hash",
             ScanRoute::NativeText,
@@ -830,11 +832,16 @@ mod tests {
                 platform: "windows".to_owned(),
             },
         );
-        let markdown = "body\\n\\n![figure](images/page-0001-figure-001.png)\\n";
+        let markdown = "body\n\n![figure](images/page-0001-figure-001.png)\n";
+        let page_json = concat!(
+            "{\"schema_version\":1,",
+            "\"blocks\":[{\"type\":\"visual_region\",",
+            "\"image\":\"images/page-0001-figure-001.png\"}]}"
+        );
         std::fs::create_dir_all(root.join("images")).unwrap();
         std::fs::write(root.join("images/page-0001-figure-001.png"), b"png-bytes").unwrap();
         std::fs::write(root.join("page-0001.md"), markdown).unwrap();
-        std::fs::write(root.join("page-0001.json"), "{\"schema_version\":1}").unwrap();
+        std::fs::write(root.join("page-0001.json"), page_json).unwrap();
         V6Checkpoint {
             page_number: 1,
             status: V6Status::Complete,
@@ -881,21 +888,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let checkpoint = seed_committed_page_with_images(&root);
+        // Missing JSON: the digest requires it (fs read fails).
         std::fs::remove_file(root.join("page-0001.json")).unwrap();
         assert!(!artifacts_intact(&checkpoint, &root));
+        // Tampered JSON with the visual_region block stripped: the recomputed
+        // digest drops the image member and no longer matches.
         std::fs::write(root.join("page-0001.json"), "{}").unwrap();
         assert!(
-            artifacts_intact(&checkpoint, &root),
-            "json back in place restores integrity"
+            !artifacts_intact(&checkpoint, &root),
+            "tampered page json must not pass the integrity check"
+        );
+        // Tampered JSON keeping the block but mutating another field: digest
+        // still differs.
+        std::fs::write(
+            root.join("page-0001.json"),
+            "{\"schema_version\":2,\"blocks\":[{\"type\":\"visual_region\",\"image\":\"images/page-0001-figure-001.png\"}]}",
+        )
+        .unwrap();
+        assert!(
+            !artifacts_intact(&checkpoint, &root),
+            "any json content change must invalidate the page"
         );
         let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn markdown_only_digest_is_not_the_artifact_digest() {
-        // BLK-6 regression: the write path hashes md + referenced images;
+        // RBLK-1 regression: the write path hashes md + page json + images;
         // a verifier that only hashes the md bytes would wrongly accept a
-        // page whose image was tampered.
+        // page whose json or image was tampered.
         let root = std::env::temp_dir().join(format!("ocrx-v6-digest-diff-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
@@ -904,7 +925,7 @@ mod tests {
         assert_ne!(
             ocrx_primitives::sha256(&md_bytes),
             checkpoint.output_sha256,
-            "md-only digest must differ from the artifact digest when images are referenced"
+            "md-only digest must differ from the artifact digest when json/images are referenced"
         );
         let _ = std::fs::remove_dir_all(root);
     }

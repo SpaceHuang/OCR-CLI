@@ -2385,25 +2385,64 @@ impl PageCheckpoint {
     }
 }
 
+/// Deterministic artifact digest for one committed page: relative paths plus
+/// bytes of the markdown, the REQUIRED page JSON, and every image the JSON's
+/// `visual_region` blocks reference (frozen baseline algorithm — the write
+/// path and every verifier share it).
+///
+/// # Errors
+///
+/// [`io::Error`] when the markdown or page JSON cannot be read/parsed, or a
+/// referenced image is missing.
+///
+/// # Panics
+///
+/// Never for well-formed inputs: the image-directory unwrap only runs when
+/// at least one `visual_region` block exists, which is exactly when the
+/// directory was created above.
 pub fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
-    let content = fs::read_to_string(markdown)?;
-    let mut files = vec![markdown.to_path_buf()];
-    for start in content.match_indices("images/").map(|(start, _)| start) {
-        let tail = &content[start..];
-        let end = tail
-            .find(|character: char| {
-                character.is_whitespace() || matches!(character, ')' | '"' | '\'')
+    let page_json = markdown.with_extension("json");
+    // JSON contains structured block content and provenance that Markdown
+    // cannot reconstruct. Treat it as a required member of the committed page.
+    let mut files = vec![markdown.to_path_buf(), page_json.clone()];
+    // The adapter persists image dependencies as structured visual_region
+    // blocks. Markdown is user-facing prose and may mention paths such as
+    // `images/example.png`; those strings are not artifact references.
+    let page: serde_json::Value = serde_json::from_slice(&fs::read(&page_json)?)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if let Some(blocks) = page.get("blocks").and_then(serde_json::Value::as_array) {
+        let page_number = markdown
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| stem.strip_prefix("page-"))
+            .and_then(|number| number.parse::<u32>().ok())
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid page artifact name")
+            })?;
+        let visual_regions = blocks
+            .iter()
+            .filter(|block| {
+                block.get("type").and_then(serde_json::Value::as_str) == Some("visual_region")
             })
-            .unwrap_or(tail.len());
-        let relative = &tail[..end];
-        let file = root.join(relative);
-        if !file.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "referenced image missing",
-            ));
+            .count();
+        let images_dir = if visual_regions > 0 {
+            Some(ocrx_core::create_contained_child_dir(root, "images")?)
+        } else {
+            None
+        };
+        for index in 0..visual_regions {
+            let image = images_dir
+                .as_ref()
+                .expect("visual regions have image dir")
+                .join(format!("page-{page_number:04}-figure-{:03}.png", index + 1));
+            if !image.is_file() {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "referenced image missing",
+                ));
+            }
+            files.push(image);
         }
-        files.push(file);
     }
     files.sort();
     let mut manifest = Vec::new();
@@ -3491,7 +3530,7 @@ mod tests {
             think_blocks_stripped: 0,
             markdown: format!("clean page {page}"),
             page_json: format!(
-                r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]"}}"#
+                r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]}}"#
             ),
             truncated: false,
             degenerated: false,

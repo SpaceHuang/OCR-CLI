@@ -1,5 +1,8 @@
 //! Stable domain contracts shared by the OCR pipeline.
 
+use std::io;
+use std::path::{Component, Path, PathBuf};
+
 pub mod resource_sampler;
 
 // Cancellation/progress/hash primitives moved to `ocrx-primitives` (plan
@@ -41,6 +44,51 @@ pub use ocrx_primitives::{
 /// an expected, documented behavior change. Phase-1 freeze discipline
 /// stands: performance numbers must come from a correctness-gated build.
 pub const WINDOW_DEPTH: usize = 8;
+
+/// Creates or validates one direct child directory without following a
+/// pre-existing symlink. Returns its canonical path for subsequent writes.
+///
+/// # Errors
+///
+/// Returns an error if the root or child cannot be inspected, the child is a
+/// symlink or non-directory, or the canonical child is outside the root.
+pub fn create_contained_child_dir(root: &Path, child: &str) -> io::Result<PathBuf> {
+    let mut components = Path::new(child).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "child must be one path component",
+        ));
+    }
+    std::fs::create_dir_all(root)?;
+    let canonical_root = root.canonicalize()?;
+    let child_path = root.join(child);
+    match std::fs::symlink_metadata(&child_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "output child directory must not be a symlink",
+            ));
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "output child path is not a directory",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => std::fs::create_dir(&child_path)?,
+        Err(error) => return Err(error),
+    }
+    let canonical_child = child_path.canonicalize()?;
+    if !canonical_child.starts_with(&canonical_root) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "output child directory escapes output root",
+        ));
+    }
+    Ok(canonical_child)
+}
 
 /// Phase-4 depth tiering: the window depth is selected per device from the
 /// GPU's VRAM capacity. The 4090-class measured basis (2026-11-07 probe,

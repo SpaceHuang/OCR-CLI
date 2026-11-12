@@ -303,6 +303,9 @@ impl ScanApplication {
         emit: &mut dyn FnMut(ScanEvent),
     ) -> std::io::Result<DocumentOutcome> {
         let started = std::time::Instant::now();
+        // BLK-8/RBLK-2: per-document recorder isolation — same page numbers
+        // across documents must never accumulate into one profile.
+        commit_recorder.reset();
         let failure =
             |code: u8, kind: &str, message: &str, cause: Option<String>| DocumentOutcome {
                 input: input.to_path_buf(),
@@ -922,7 +925,13 @@ impl ScanApplication {
             // Stale document.md must not survive a zero-merge run.
             let _ = std::fs::remove_file(output.join("document.md"));
         } else {
+            // BLK-8/RBLK-2: the finalize span is part of the commit profile —
+            // record it around the merge write, per document.
+            let finalize_started = std::time::Instant::now();
             finalize_document(output, all_markdown)?;
+            commit_recorder.record_finalize(
+                u64::try_from(finalize_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            );
         }
         // Routing sidecars reflect the final states.
         let fallback_reasons: Vec<(u32, PdfReasonCode)> = native_phase
@@ -1009,22 +1018,27 @@ impl ScanApplication {
             }
             _ => (None, None),
         };
-        // BLK-8: T1 debug channel — both JSON files per document, only on a
-        // successful non-cancelled run (cancel/failure zero writes;
-        // disabled recorder = no commit profile file, disabled step channel
-        // = no step profile file). Frozen schema_version:1 golden strings.
-        if !cancellation.is_cancelled() && !summary.cancelled {
-            if let Some(delta) = step_profile_delta {
-                ocrx_output::atomic_write(
+        // BLK-8/RBLK-2: T1 debug channel — both JSON files per document, only
+        // on a successful non-cancelled run (cancel/failure zero writes;
+        // disabled recorder = no commit profile file, disabled step channel =
+        // no step profile file — the backend reports None). Write failures
+        // degrade to a warning line: the debug channel never aborts a scan.
+        if !cancellation.is_cancelled() && !summary.cancelled && summary.failed_pages == 0 {
+            if let Some(delta) = step_profile_delta
+                && let Err(error) = ocrx_output::atomic_write(
                     output.join("step-profile.json"),
                     delta.to_json().as_bytes(),
-                )?;
+                )
+            {
+                eprintln!("warning: step-profile.json write failed: {error}");
             }
             if commit_recorder.enabled() {
-                ocrx_output::atomic_write(
+                if let Err(error) = ocrx_output::atomic_write(
                     output.join("commit-profile.json"),
                     commit_recorder.snapshot().to_json().as_bytes(),
-                )?;
+                ) {
+                    eprintln!("warning: commit-profile.json write failed: {error}");
+                }
             }
         }
         let _ = PageStatus::Pending;
@@ -1961,6 +1975,9 @@ mod tests {
             tokens: 9,
             ..ocrx_inference_api::StepProfile::default()
         });
+        // A handle survives the move into the service (shared core) so the
+        // second document below can queue its own program.
+        let session_handle = session.clone();
         let prepares = Rc::new(RefCell::new(0_usize));
         let mut service = FakeService {
             prepares: Rc::clone(&prepares),
@@ -1993,8 +2010,18 @@ mod tests {
         assert!(step_json.starts_with("{\"schema_version\":1,\"windows\":1"));
         let commit_json = std::fs::read_to_string(output.join("commit-profile.json")).unwrap();
         assert!(commit_json.contains("\"schema_version\":1"));
-        // Disabled recorder: commit profile absent.
+        // Disabled recorder: commit profile absent. The fake queue was
+        // consumed by the first run — push page 1 again so this second
+        // document is a genuine SUCCESS (RBLK-2: a failed scan would now
+        // suppress the step profile too, which is tested separately).
         let output2 = root.join("out2");
+        session_handle.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "body 2".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
         let mut app2 = ScanApplication::new();
         let outcome2 = app2
             .run(
@@ -2113,6 +2140,211 @@ mod tests {
                 assert_eq!(cp.compatibility.ocr.as_ref().unwrap().batch_depth, 16);
             }
             other => panic!("expected v6, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn t1_profile_files_suppressed_on_page_failure_rblk2() {
+        // RBLK-2: cancel/failure zero-write — a page-level failure suppresses
+        // both profile files even though the step channel has data and the
+        // recorder is enabled.
+        let root = std::env::temp_dir().join(format!("ocrx-app-rblk2-fail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input = root.join("doc.pdf");
+        std::fs::write(&input, b"x").unwrap();
+        let output = root.join("out");
+        let mut pdf = FakeMultiPdf;
+        // No queued program: the window decode AND the depth-1 fallback both
+        // fail, so the page ends in a RecognizeFailed terminal.
+        let session = crate::window_tests::FakeSession::with_depth(1);
+        session.set_step_profile(ocrx_inference_api::StepProfile {
+            windows: 1,
+            steps: 4,
+            tokens: 9,
+            ..ocrx_inference_api::StepProfile::default()
+        });
+        let prepares = Rc::new(RefCell::new(0_usize));
+        let mut service = FakeService {
+            prepares: Rc::clone(&prepares),
+            session,
+            static_override: None,
+        };
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let options = DocumentOptions {
+            pdf_mode: "ocr".to_owned(),
+            ..DocumentOptions::default()
+        };
+        let recorder = ocrx_output::commit_profile::CommitRecorder::with_enabled(true);
+        let outcome = app
+            .run(
+                std::slice::from_ref(&input),
+                &|_| output.clone(),
+                &options,
+                &mut pdf,
+                &mut renderer,
+                &mut service,
+                &recorder,
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        assert!(
+            outcome.documents[0].failure.is_none(),
+            "a page-level failure is not a document failure"
+        );
+        assert_eq!(outcome.documents[0].summary.failed_pages, 1);
+        assert!(
+            !output.join("step-profile.json").exists(),
+            "failed scan writes no step profile"
+        );
+        assert!(
+            !output.join("commit-profile.json").exists(),
+            "failed scan writes no commit profile"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn t1_profile_write_failure_degrades_to_warning_rblk2() {
+        // RBLK-2: a profile write failure must never abort the scan — the
+        // debug channel degrades to a warning line and the scan still
+        // succeeds (commit-profile.json is still written after the step
+        // failure).
+        let root =
+            std::env::temp_dir().join(format!("ocrx-app-rblk2-wfail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input = root.join("doc.pdf");
+        std::fs::write(&input, b"x").unwrap();
+        let output = root.join("out");
+        let mut pdf = FakeMultiPdf;
+        let session = crate::window_tests::FakeSession::with_depth(1);
+        session.core.push(
+            1,
+            crate::window_tests::Program {
+                text: "body".into(),
+                finish: ocrx_inference_api::FinishReason::Eos,
+            },
+        );
+        session.set_step_profile(ocrx_inference_api::StepProfile {
+            windows: 1,
+            ..ocrx_inference_api::StepProfile::default()
+        });
+        let prepares = Rc::new(RefCell::new(0_usize));
+        let mut service = FakeService {
+            prepares: Rc::clone(&prepares),
+            session,
+            static_override: None,
+        };
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let options = DocumentOptions {
+            pdf_mode: "ocr".to_owned(),
+            ..DocumentOptions::default()
+        };
+        let recorder = ocrx_output::commit_profile::CommitRecorder::with_enabled(true);
+        // Occupy the step-profile path with a DIRECTORY: the atomic write
+        // (rename over it) fails, exercising the degrade path.
+        std::fs::create_dir_all(output.join("step-profile.json")).unwrap();
+        let outcome = app
+            .run(
+                std::slice::from_ref(&input),
+                &|_| output.clone(),
+                &options,
+                &mut pdf,
+                &mut renderer,
+                &mut service,
+                &recorder,
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        assert!(
+            outcome.documents[0].failure.is_none(),
+            "a profile write failure must not fail the document"
+        );
+        assert_eq!(outcome.documents[0].summary.completed_pages, 1);
+        assert!(output.join("commit-profile.json").is_file());
+        assert!(
+            output.join("step-profile.json").is_dir(),
+            "the blocking directory was left alone, not replaced"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn t1_commit_recorder_resets_per_document_and_records_finalize_rblk2() {
+        // RBLK-2: two documents decoding the SAME page number — each
+        // commit-profile.json carries exactly one generation-1 row for page 1
+        // (per-document reset isolation), and finalize_us is recorded (> 0).
+        let root = std::env::temp_dir().join(format!("ocrx-app-rblk2-iso-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let input_a = root.join("a.pdf");
+        let input_b = root.join("b.pdf");
+        std::fs::write(&input_a, b"a").unwrap();
+        std::fs::write(&input_b, b"b").unwrap();
+        let output_root = root.join("outs");
+        let mut pdf = FakeMultiPdf;
+        let session = crate::window_tests::FakeSession::with_depth(1);
+        // Both documents decode page 1: queue one program per document.
+        for document in ["doc a body", "doc b body"] {
+            session.core.push(
+                1,
+                crate::window_tests::Program {
+                    text: document.into(),
+                    finish: ocrx_inference_api::FinishReason::Eos,
+                },
+            );
+        }
+        let prepares = Rc::new(RefCell::new(0_usize));
+        let mut service = FakeService {
+            prepares: Rc::clone(&prepares),
+            session,
+            static_override: None,
+        };
+        let mut renderer = FakeRenderer;
+        let mut app = ScanApplication::new();
+        let options = DocumentOptions {
+            pdf_mode: "ocr".to_owned(),
+            ..DocumentOptions::default()
+        };
+        let recorder = ocrx_output::commit_profile::CommitRecorder::with_enabled(true);
+        let inputs = [input_a, input_b];
+        let outcome = app
+            .run(
+                &inputs,
+                &|input| output_root.join(input.file_stem().unwrap().to_string_lossy().as_ref()),
+                &options,
+                &mut pdf,
+                &mut renderer,
+                &mut service,
+                &recorder,
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .unwrap();
+        assert_eq!(outcome.documents.len(), 2);
+        for stem in ["a", "b"] {
+            let commit_json =
+                std::fs::read_to_string(output_root.join(stem).join("commit-profile.json"))
+                    .unwrap();
+            assert_eq!(
+                commit_json.matches("\"page\":1,\"generation\":1").count(),
+                1,
+                "document {stem}: exactly one generation-1 row — recorder was reset"
+            );
+            assert!(
+                commit_json.contains("\"finalize_us\":"),
+                "document {stem}: finalize span recorded"
+            );
+            assert!(
+                !commit_json.contains("\"finalize_us\":0"),
+                "document {stem}: finalize_us must be non-zero after a real merge"
+            );
         }
         let _ = std::fs::remove_dir_all(root);
     }

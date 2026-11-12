@@ -18,9 +18,11 @@ use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use ocrx_output::commit_profile::CommitRecorder;
 
-use crate::state::RenderedPage;
+use crate::state::{PageArtifactResult, RenderedPage};
 use crate::test_support::identity;
-use crate::window::{PageRenderer, WindowConfig, run_pages_with_session};
+use crate::window::{
+    PageRenderer, TerminalPage, WindowConfig, commit_terminal, run_pages_with_session,
+};
 
 /// One programmed per-page response.
 #[derive(Debug, Clone)]
@@ -491,5 +493,89 @@ fn window_batch_failure_falls_back_to_depth_one() {
     assert_eq!(summary.completed_pages, 2, "depth-1 rerun recovers both");
     assert_eq!(session.core.window_calls.get(), 1);
     assert_eq!(session.core.single_calls.get(), 2);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
+    // RBLK-4: a page whose PNG encode fails (rgb8 length no longer matches
+    // the dims — the shape an encode failure has at the commit path) is a
+    // page-level recognize failure: commit_terminal keeps returning Ok and
+    // the remaining terminal pages still commit.
+    let root = temp_root("png-encode-fail");
+    let mut broken_image = RenderedPage::new(1, 1, vec![200; 3]).unwrap();
+    broken_image.generation = 1;
+    // Corrupt AFTER construction: width no longer matches the rgb8 length.
+    broken_image.width = 2;
+    let mut good_image = RenderedPage::new(1, 1, vec![200; 3]).unwrap();
+    good_image.generation = 2;
+    let artifact = |page: u32, body: &str| PageArtifactResult {
+        png: None,
+        markdown: body.to_owned(),
+        page_json: format!(r#"{{"schema_version":1,"page_number":{page},"blocks":[]}}"#),
+        truncated: false,
+        degenerated: false,
+        warnings: Vec::new(),
+        think_blocks_stripped: 0,
+        raw_output: String::new(),
+    };
+    let terminal = vec![
+        TerminalPage::Committed {
+            page: 1,
+            image: broken_image,
+            artifact: artifact(1, "body 1"),
+            attempts: 1,
+        },
+        TerminalPage::Committed {
+            page: 2,
+            image: good_image,
+            artifact: artifact(2, "body 2"),
+            attempts: 1,
+        },
+    ];
+    let mut completed = 0_u32;
+    let mut failed = 0_u32;
+    let mut truncated = 0_u32;
+    let mut degenerated = 0_u32;
+    let mut think_blocks_stripped = 0_u64;
+    let mut warnings = std::collections::BTreeSet::new();
+    let mut diagnostics = Vec::new();
+    let result = commit_terminal(
+        &terminal,
+        &root,
+        &compatibility(),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut completed,
+        &mut failed,
+        &mut truncated,
+        &mut degenerated,
+        &mut think_blocks_stripped,
+        &mut warnings,
+        &mut diagnostics,
+    );
+    assert!(
+        result.is_ok(),
+        "an encode failure must not abort the commit: {result:?}"
+    );
+    assert_eq!(completed, 1, "only the healthy page completed");
+    assert_eq!(failed, 1, "the broken encode is a page-level failure");
+    let diagnostic = diagnostics.iter().find(|d| d.page == 1).unwrap();
+    assert_eq!(diagnostic.status, "failed");
+    assert_eq!(diagnostic.stage, "recognize");
+    assert!(
+        diagnostic
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("recognition failed"),
+        "encode failure surfaces as the frozen recognize diagnostic"
+    );
+    // The remaining page still committed its full artifact set.
+    assert!(root.join("page-0002.md").is_file());
+    assert!(root.join("page-0002.json").is_file());
+    let png = std::fs::read(root.join("images/page-0002.png")).unwrap();
+    assert!(!png.is_empty(), "page 2 committed a real PNG");
+    assert!(image::load_from_memory(&png).is_ok(), "page 2 png decodes");
     let _ = std::fs::remove_dir_all(root);
 }

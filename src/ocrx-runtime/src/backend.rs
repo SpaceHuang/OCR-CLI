@@ -207,8 +207,16 @@ mod llama {
         }
 
         fn step_profile(&self) -> Option<StepProfile> {
-            Some(self.runtime.step_profile())
+            gate_step_profile(StepProfile::env_enabled(), self.runtime.step_profile())
         }
+    }
+
+    /// RBLK-2: the T1 debug channel exists only when `OCRX_STEP_PROFILE` opts
+    /// in — the disabled channel reports `None` (no zero profile), so the
+    /// downstream writer keeps its no-op. Split from the backend impl so the
+    /// gate itself is testable without constructing a real runtime.
+    fn gate_step_profile(enabled: bool, profile: StepProfile) -> Option<StepProfile> {
+        if enabled { Some(profile) } else { None }
     }
 
     /// Runtime factory for the llama.cpp backend (plan §8.6): loads one
@@ -254,6 +262,20 @@ mod llama {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn llama_backend_step_profile_gate_follows_the_env_switch_rblk2() {
+            // RBLK-2: without the env opt-in the backend reports None — the
+            // zero-cost channel must not leak an all-zero profile downstream
+            // (a Some would make the scan write step-profile.json for
+            // default scans).
+            let profile = StepProfile {
+                windows: 1,
+                ..StepProfile::default()
+            };
+            assert!(gate_step_profile(false, profile).is_none());
+            assert_eq!(gate_step_profile(true, profile), Some(profile));
+        }
 
         fn params() -> ocrx_inference_api::GenerationParams {
             ocrx_inference_api::GenerationParams {

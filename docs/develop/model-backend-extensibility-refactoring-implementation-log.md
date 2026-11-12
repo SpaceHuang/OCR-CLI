@@ -280,3 +280,36 @@ test-release-scripts.sh ✓；bootstrap-check.sh 中除 4 个既有 Python 漂�
 外全部通过。清理：删除误跟踪的 wt.log（T104 无日志规则）、恢复被评审复现覆盖的
 benchmarks/fixtures/pdf/normal-1-page-ocr/{document.md,result.json}、去除 ocrx-eval/Cargo.toml EOF 空行
 （`git diff --check` 干净）。
+
+## 重审响应（2026-11-13）：修复重审 BLOCK 的 4 项（RBLK-1..4）
+
+重审（`4e65fe2`）：BLK-1/2/3/4/5/9 解除；RBLK-1..4 未闭环/新增。逐项：
+
+- **RBLK-1（页面 JSON 篡改仍判完整）**：根因是重构版 `artifact_sha256` 偏离了冻结基线——基线把
+  页面 JSON 作为必需成员并把图片依赖从 JSON 的 `visual_region` 结构块派生（markdown 里的
+  `images/` 字符串只是散文）。已从 main 逐字恢复该算法（含 `create_contained_child_dir` 回到
+  ocrx-core），写入端（commit_page/commit_native_page 先写 JSON 再算摘要）与校验端同源。
+  判别测试修正：篡改 JSON（去块/改字段）与缺失 JSON 均不可复用；种子 JSON 带 1 个 visual_region
+  块使图片真正参与摘要。顺带修复 1 处测试 mock JSON 恒为非法的潜伏 bug（旧摘要不解析故未暴露）。
+- **RBLK-2（T1 四类违约）**：(1) `LlamaBackend::step_profile` 在 backend 边界按
+  `StepProfile::env_enabled()` 返回 None（可测的 `gate_step_profile` 助手 + 测试）；
+  (2) 写盘条件补 `summary.failed_pages == 0`；(3) 两处 `atomic_write` 失败降级为
+  warning 行（"warning: step-profile.json write failed: …"，照基线字符串）不再中断扫描；
+  (4) `commit_recorder.reset()` 在 run_document 开头逐文档隔离、`record_finalize` 在
+  finalize_document 前后计时接线。测试：页级失败零写盘（有 delta+开启 recorder 也不写）、
+  step-profile.json 被目录占用时扫描仍成功且 commit-profile 照写、双文档同页码
+  `"page":1,"generation":1` 各恰一行 + `finalize_us` 非零。原 blk8 测试的第二次 run 原本
+  依赖"失败也写 step-profile"的 bug（fake 队列已耗尽），补第二个 program 使其为真成功路径。
+- **RBLK-3（取消被掩盖/折叠为 0）**：`document_exit_code` 取消检查前移（文档失败+取消→130）；
+  新增 `final_scan_exit(cancelled, multi, codes)` 终出口——取消优先于一切（零文档启动的取消
+  codes=[] 不再折叠为 0），多输入走 X1.4 聚合，单输入保留自身码。测试覆盖 failure+cancel→130、
+  summary.cancelled+failure→130、零文档取消→130（单/多输入）、非取消各档。
+- **RBLK-4（PNG 编码失败中断整扫描）**：window.rs `commit_terminal` 的 `encode_page_png(image)?`
+  改为页级失败分支（failed+=1 + mark_terminal + recognize 诊断 + continue），与老 ScanService 的
+  冻结面（encode_error_diagnostic）一致。回归测试直接驱动 commit_terminal：坏 rgb8 页失败、
+  后续页照常提交完整产物集（md/json/真实 PNG 可解码），函数整体仍返回 Ok。
+
+**门禁复跑：** fmt ✓；clippy `-D warnings` ✓（补 artifact_sha256 的 # Panics 文档）；
+`cargo test --workspace --locked` 37 套件全过 0 失败（scan 89、output 108、CLI bin 56、
+runtime 45）；architecture ✓；release-scripts ✓；`git diff --check` 干净；bootstrap-check.sh
+仅余 4 个既有 Python 漂移失败（T103 注记，主工作区同现）。

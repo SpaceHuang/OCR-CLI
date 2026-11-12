@@ -1520,27 +1520,36 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
     }
     emit_reporter(&mut reporter);
     let codes: Vec<i32> = doc_results.iter().map(|(_, exit)| *exit).collect();
-    if multi {
-        // X1.4 frozen aggregation over per-document codes
-        // (130 > document failure 3 > partial 10 > 0).
-        std::process::exit(aggregate_scan_exit(&codes));
-    }
-    // Single input keeps the document's own structured code (usage 2, page
-    // failures 10, cancel 130, clean 0) — the historical single-document
-    // shape must not collapse usage errors into 3.
-    std::process::exit(codes.first().copied().unwrap_or(0));
+    std::process::exit(final_scan_exit(cancelled, multi, &codes));
 }
 
-/// Frozen per-document exit mapping (BLK-7): document-level failures carry
-/// their structured code; page-level failures are partial (10); cancel is
-/// 130; a clean document is 0.
+/// Final scan exit (RBLK-3): cancellation dominates everything — including
+/// a cancel before the first document started, where empty codes must not
+/// fold into 0. Otherwise multi-input follows the X1.4 aggregation ladder
+/// (130 > document failure 3 > partial 10 > 0); single input keeps the
+/// document's own structured code (usage 2 must not collapse into 3).
+#[must_use]
+fn final_scan_exit(cancelled: bool, multi: bool, codes: &[i32]) -> i32 {
+    if cancelled {
+        return 130;
+    }
+    if multi {
+        return aggregate_scan_exit(codes);
+    }
+    codes.first().copied().unwrap_or(0)
+}
+
+/// Frozen per-document exit mapping (BLK-7): cancellation dominates
+/// everything (RBLK-3 — a document failure racing a global cancel still
+/// reports 130); page-level failures are partial (10); document-level
+/// failures carry their structured code; a clean document is 0.
 #[must_use]
 fn document_exit_code(document: &ocrx_scan::DocumentOutcome, cancelled: bool) -> i32 {
-    if let Some(failure) = &document.failure {
-        return i32::from(failure.code);
-    }
     if cancelled || document.summary.cancelled {
         return 130;
+    }
+    if let Some(failure) = &document.failure {
+        return i32::from(failure.code);
     }
     if document.summary.failed_pages > 0
         || document.summary.truncated_pages > 0
@@ -2015,7 +2024,7 @@ mod tests {
     use super::{
         CliCommand, ConfigSource, ResolvedConfig, RoutingCounts, ScanOptions, ScanResultFields,
         ScanSummaryDocument, aggregate_scan_exit, current_platform, doctor_json_report,
-        document_exit_code, injected_failure, output_dir_for_doc, parse_command,
+        document_exit_code, final_scan_exit, injected_failure, output_dir_for_doc, parse_command,
         parse_injected_failure_page, parse_page_selection, parse_scan_args, planned_ocr_pages,
         resolve_config, resolve_scan_inputs, scan_summary_json,
     };
@@ -3263,11 +3272,40 @@ mod tests {
         assert_eq!(document_exit_code(&doc_failed, false), 3);
         // Cancel → 130.
         assert_eq!(document_exit_code(&base(), true), 130);
+        // RBLK-3: a document failure racing a global cancel still reports the
+        // cancel — 130 dominates the failure code in both orderings.
+        assert_eq!(document_exit_code(&doc_failed, true), 130);
+        let mut doc_cancelled = base();
+        doc_cancelled.summary.cancelled = true;
+        doc_cancelled.failure = Some(ocrx_scan::DocumentFailure {
+            code: 9,
+            kind: "runtime".to_owned(),
+            message: "runtime died as cancel landed".to_owned(),
+            cause: None,
+        });
+        assert_eq!(document_exit_code(&doc_cancelled, false), 130);
         // Final aggregation follows the frozen ladder.
         assert_eq!(aggregate_scan_exit(&[0, 0]), 0);
         assert_eq!(aggregate_scan_exit(&[0, 10]), 10);
         assert_eq!(aggregate_scan_exit(&[10, 3]), 3);
         assert_eq!(aggregate_scan_exit(&[3, 130]), 130);
+    }
+
+    #[test]
+    fn final_scan_exit_gives_cancellation_absolute_priority_rblk3() {
+        // Zero documents started (cancel before the first document) must not
+        // fold into 0 — single and multi input alike.
+        assert_eq!(final_scan_exit(true, false, &[]), 130);
+        assert_eq!(final_scan_exit(true, true, &[]), 130);
+        // Failure + cancel → 130 (cancellation dominates document failures).
+        assert_eq!(final_scan_exit(true, false, &[3]), 130);
+        assert_eq!(final_scan_exit(true, true, &[3, 10]), 130);
+        // No cancel: multi keeps the X1.4 ladder; single keeps its own code.
+        assert_eq!(final_scan_exit(false, true, &[0, 10]), 10);
+        assert_eq!(final_scan_exit(false, true, &[0, 3]), 3);
+        assert_eq!(final_scan_exit(false, false, &[2]), 2);
+        assert_eq!(final_scan_exit(false, false, &[10]), 10);
+        assert_eq!(final_scan_exit(false, false, &[]), 0);
     }
 
     #[test]

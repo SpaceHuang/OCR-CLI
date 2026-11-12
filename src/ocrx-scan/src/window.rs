@@ -69,7 +69,7 @@ impl<T: PageRenderer + ?Sized> PageRenderer for Box<T> {
 }
 
 /// One window page at its terminal state.
-enum TerminalPage {
+pub(crate) enum TerminalPage {
     Committed {
         page: u32,
         image: RenderedPage,
@@ -568,7 +568,7 @@ fn serial_attempt_outcome(
 /// Mechanism-A window-atomic commit (v6): nothing commits until every
 /// window page reached a terminal state; a cancelled window commits zero.
 #[allow(clippy::too_many_arguments)]
-fn commit_terminal(
+pub(crate) fn commit_terminal(
     terminal: &[TerminalPage],
     root: &Path,
     compatibility: &ScanCompatibility,
@@ -643,11 +643,29 @@ fn commit_terminal(
                 // them, otherwise a synchronous encode of this attempt's
                 // rgb8 (a retry commit can never reuse an earlier
                 // attempt's image because the terminal image rides the
-                // terminal entry). An encode failure is a page-level
-                // failure, never an empty file.
+                // terminal entry).
+                // RBLK-4: an encode error is a page-level failure (frozen
+                // surface) — never a scan I/O abort; the remaining terminal
+                // pages still commit.
                 let png_bytes = match artifact.png.as_ref() {
                     Some(bytes) if !bytes.is_empty() => bytes.clone(),
-                    _ => encode_page_png(image)?,
+                    _ => match encode_page_png(image) {
+                        Ok(bytes) => bytes,
+                        Err(encode_error) => {
+                            *failed += 1;
+                            commit_recorder.mark_terminal(page);
+                            diagnostics.push(PageDiagnostic {
+                                page,
+                                status: "failed".to_owned(),
+                                stage: "recognize".to_owned(),
+                                error_code: Some("recognition_failed".to_owned()),
+                                message: Some(format!("page recognition failed: {encode_error}")),
+                                audit: Some(image.audit),
+                                warnings: Vec::new(),
+                            });
+                            continue;
+                        }
+                    },
                 };
                 commit_recorder.record_png_encode(
                     page,
