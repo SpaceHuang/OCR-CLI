@@ -12,7 +12,6 @@
 use std::path::PathBuf;
 
 use ocrx_inference::{DeviceManagerImpl, InferenceServiceImpl, RealSystemProbe, RegistryVerifier};
-use ocrx_inference_api::{DeviceManager, InferenceService};
 use ocrx_models::{CurlTransport, ModelManagerImpl};
 use ocrx_scan::ScanApplication;
 
@@ -68,7 +67,7 @@ pub fn compose(model_cache: Option<PathBuf>) -> Composed {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ocrx_inference_api::{ModelId, ModelManager};
+    use ocrx_inference_api::{DeviceManager as _, InferenceService as _, ModelId, ModelManager as _};
 
     #[test]
     fn composition_resolves_the_single_registered_model() {

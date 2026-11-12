@@ -2,8 +2,7 @@ use image::ImageFormat;
 use ocrx_core::{
     GpuResourceReport, ModelId, PageClassification, PageType, ProcessingMethod, QualityTier,
 };
-use ocrx_models::{
-    ModelCatalog, ResourceSnapshot, UrlInstallRequest, community_asset_sizes, community_asset_urls,
+use ocrx_models::{ ResourceSnapshot, UrlInstallRequest, community_asset_sizes, community_asset_urls,
     community_manifest, recommend_device, recommend_profile,
 };
 use ocrx_output::{
@@ -30,6 +29,21 @@ use std::time::{Duration, Instant};
 
 mod compose;
 mod pdfium_owner;
+
+use ocrx_inference_api::{DeviceManager as _, ModelManager as _};
+
+/// Trusted apache-2.0 community assets may install non-interactively: the
+/// frozen policy accepts every confirmed download (legacy install semantics).
+struct TrustedInstallInteraction;
+
+impl ocrx_inference_api::InstallInteraction for TrustedInstallInteraction {
+    fn confirm_download(
+        &mut self,
+        _proposals: &[ocrx_inference_api::DownloadProposal],
+    ) -> Result<bool, ocrx_inference_api::InferenceError> {
+        Ok(true)
+    }
+}
 mod platform_paths;
 use platform_paths::home_dir;
 
@@ -1303,30 +1317,58 @@ fn main() {
             offline: _,
             non_interactive: _,
         } if action == "list" || action == "info" || action == "recommend" => {
-            let manifests = ["compact", "balanced", "quality", "reference"]
-                .into_iter()
-                .map(|profile| ocrx_models::community_manifest(profile).expect("pinned manifest"))
-                .collect();
-            let catalog = ModelCatalog::new(manifests).expect("built-in catalog must be valid");
+            // T071: everything flows through the production ModelManager
+            // (compose root); the output strings stay byte-identical.
+            let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(ocrx_models::default_cache_root);
+            let composed = compose::compose(Some(cache_root));
+            let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+                .unwrap_or_else(|_| unreachable!("pinned model id"));
             if action == "list" {
                 println!("model={}", ModelId::AS_STR);
             } else if action == "info" {
-                let info = catalog.info(&profile.into_iter().collect::<Vec<_>>());
+                let detail = match composed.inference.manager().info(&model) {
+                    Ok(detail) => detail,
+                    Err(error) => {
+                        eprintln!("model info failed: {error:?}");
+                        std::process::exit(4);
+                    }
+                };
+                // Frozen display: profiles sorted; the optional profile
+                // argument rides the installed slot (historical shape).
+                let mut profiles: Vec<String> = detail
+                    .summary
+                    .profiles
+                    .iter()
+                    .map(|summary| summary.profile.to_string())
+                    .collect();
+                profiles.sort();
+                let installed: Vec<String> = profile.into_iter().collect();
                 println!(
                     "model={} profiles={} installed={}",
                     ModelId::AS_STR,
-                    info.profiles.join(","),
-                    info.installed_profiles.join(",")
+                    profiles.join(","),
+                    installed.join(",")
                 );
-            } else if action == "recommend" {
-                let snapshot = resource_snapshot();
-                match recommend_profile(snapshot.memory_gb, &["compact", "balanced", "quality"]) {
-                    Ok(profile) => println!(
+            } else {
+                let snapshot = composed.inference.devices().snapshot();
+                match composed
+                    .inference
+                    .manager()
+                    .recommend(&model, &snapshot)
+                {
+                    Ok(recommendation) => println!(
                         "model={} profile={} memory_gb={} device={}",
                         ModelId::AS_STR,
-                        profile,
+                        recommendation.profile,
                         snapshot.memory_gb,
-                        recommend_device(snapshot, "auto")
+                        composed
+                            .inference
+                            .devices()
+                            .select("auto")
+                            .map(|backend| backend.to_string())
                             .unwrap_or_else(|_| "unavailable".to_owned())
                     ),
                     Err(error) => {
@@ -1350,35 +1392,20 @@ fn main() {
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
                 .unwrap_or_else(ocrx_models::default_cache_root);
-            let revision = ocrx_models::community_manifest(&profile)
-                .unwrap_or_else(|_| unreachable!("profile parsed by CLI"))
-                .identity
-                .revision;
-            let (model_path, _mmproj_path) =
-                ocrx_models::cache_paths(&cache_root, &revision, &profile)
-                    .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
+            let mut composed = compose::compose(Some(cache_root));
             match action.as_str() {
                 "verify" => {
-                    let manifest = ocrx_models::community_manifest(&profile)
+                    // T072: verify = content + registry binding via the
+                    // injected port (never downloads, never loads).
+                    let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+                        .unwrap_or_else(|_| unreachable!("pinned model id"));
+                    let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
-                    let sizes = ocrx_models::community_asset_sizes(&profile)
-                        .unwrap_or_else(|| unreachable!("profile parsed by CLI"));
-                    match ocrx_models::verify_manifest_files_with_sizes(
-                        &manifest,
-                        &cache_root,
-                        sizes.0,
-                        sizes.1,
-                    )
-                    .and_then(|_| {
-                        ocrx_models::validate_runtime_adapter_compatibility(
-                            ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_2_version,
-                            ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_sys_2_version,
-                            ocrx_core::RUNTIME_COMPATIBILITY.adapter_id,
-                        )
-                    }) {
+                    let revision = ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION;
+                    match composed.inference.manager().verify(&model, &profile_id) {
                         Ok(()) => println!(
                             "model=ovisocr2 profile={} revision={} status=installed",
-                            profile, manifest.identity.revision
+                            profile, revision
                         ),
                         Err(error) => {
                             eprintln!("model verification failed: {error:?}");
@@ -1387,36 +1414,36 @@ fn main() {
                     }
                 }
                 "install" => {
-                    let manifest = community_manifest(&profile)
+                    // T072: install via the manager (revision-scoped group
+                    // transaction; trusted apache-2.0 community assets may
+                    // install non-interactively, so the interaction accepts).
+                    let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+                        .unwrap_or_else(|_| unreachable!("pinned model id"));
+                    let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
-                    let Some((model_url, mmproj_url)) = community_asset_urls(&profile) else {
-                        unreachable!("profile parsed by CLI");
-                    };
-                    // Trusted apache-2.0 community assets may install non-interactively.
-                    let request = UrlInstallRequest {
-                        manifest: manifest.clone(),
-                        model_url,
-                        mmproj_url,
-                        cache_root: cache_root.clone(),
+                    let revision = ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION;
+                    let mut interaction = TrustedInstallInteraction;
+                    match composed.inference.manager_mut().install(
+                        &model,
+                        &profile_id,
                         offline,
                         non_interactive,
-                        license_accepted: true,
-                        available_bytes: None,
-                    };
-                    match ocrx_models::install_from_urls(&request) {
-                        Ok(()) => println!(
+                        true,
+                        &mut interaction,
+                    ) {
+                        Ok(_receipt) => println!(
                             "model=ovisocr2 profile={} revision={} status=installed",
-                            profile, manifest.identity.revision
+                            profile, revision
                         ),
-                        Err(ocrx_models::ManifestError::Offline) => {
+                        Err(ocrx_inference_api::InferenceError::Offline) => {
                             eprintln!("model install blocked: offline mode");
                             std::process::exit(5);
                         }
-                        Err(ocrx_models::ManifestError::LicenseRequired) => {
+                        Err(ocrx_inference_api::InferenceError::LicenseRequired) => {
                             eprintln!("model install blocked: license acceptance required");
                             std::process::exit(4);
                         }
-                        Err(ocrx_models::ManifestError::InsufficientDisk) => {
+                        Err(ocrx_inference_api::InferenceError::InsufficientDisk(_)) => {
                             eprintln!("model install blocked: insufficient disk");
                             std::process::exit(5);
                         }
@@ -1427,40 +1454,19 @@ fn main() {
                     }
                 }
                 "remove" => {
-                    let directory = model_path
-                        .parent()
-                        .expect("generated cache path has parent");
-                    if directory.exists() {
-                        if let Err(error) = std::fs::remove_dir_all(directory) {
-                            eprintln!("model removal failed: {error}");
+                    // T072: removal via the manager (per-asset deletion with
+                    // the shared-projector reference check, review m9).
+                    let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+                        .unwrap_or_else(|_| unreachable!("pinned model id"));
+                    let profile_id = ocrx_inference_api::ProfileId::new(&profile)
+                        .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
+                    match composed.inference.manager_mut().remove(&model, &profile_id) {
+                        Ok(_report) => println!("model=ovisocr2 profile={profile} status=removed"),
+                        Err(error) => {
+                            eprintln!("model removal failed: {error:?}");
                             std::process::exit(9);
                         }
                     }
-                    // Reclaim the revision-shared projector (review m9): when
-                    // no other profile of this revision remains, its ~205 MB
-                    // mmproj used to survive every remove.
-                    let shared_mmproj = model_path
-                        .parent()
-                        .and_then(|directory| directory.parent())
-                        .map(|revision_dir| revision_dir.join("mmproj.gguf"));
-                    if let Some(mmproj_path) = shared_mmproj
-                        && mmproj_path.is_file()
-                        && let Some(revision_dir) = mmproj_path.parent()
-                    {
-                        let other_profiles = std::fs::read_dir(revision_dir)
-                            .map(|entries| {
-                                entries
-                                    .flatten()
-                                    .filter(|entry| entry.path().is_dir())
-                                    .count()
-                            })
-                            .unwrap_or(0);
-                        if other_profiles == 0 {
-                            let _ = std::fs::remove_file(&mmproj_path);
-                            let _ = std::fs::remove_dir(revision_dir);
-                        }
-                    }
-                    println!("model=ovisocr2 profile={profile} status=removed");
                 }
                 _ => unreachable!("model action parsed by CLI"),
             }
