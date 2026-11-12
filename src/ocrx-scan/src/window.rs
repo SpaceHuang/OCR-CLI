@@ -203,8 +203,43 @@ pub fn run_pages_with_session(
                 window.push(page);
             }
         }
+        // E2E seam: recognize-injected pages turn terminal before decode
+        // (stage "recognize", error "recognition_failed" — identical to the
+        // real recognize-failure shape); sibling pages continue.
+        window.retain(|&page| match injected_inference_failure(page) {
+            Some(error) => {
+                terminal.push(TerminalPage::RecognizeFailed {
+                    page,
+                    audit: None,
+                    error,
+                });
+                false
+            }
+            None => true,
+        });
         if window.is_empty() {
-            break;
+            if terminal.is_empty() {
+                break;
+            }
+            commit_terminal(
+                &terminal,
+                root,
+                config.compatibility,
+                commit_recorder,
+                cancellation,
+                &mut completed,
+                &mut failed,
+                &mut truncated,
+                &mut degenerated,
+                &mut think_blocks_stripped,
+                &mut warnings,
+                &mut diagnostics,
+            )?;
+            terminal.clear();
+            if cancellation.is_cancelled() {
+                break;
+            }
+            continue;
         }
 
         // Depth 1: the true serial path (numerically identical to the
@@ -756,6 +791,20 @@ pub(crate) fn commit_terminal(
         }
     }
     Ok(())
+}
+
+/// Injects a real inference failure for `page` when
+/// `OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE` matches (the W3.3 real-model fault
+/// seam, wired to the refactored recognition entry: an injected page turns
+/// terminal at recognize BEFORE decode and never reaches the model).
+fn injected_inference_failure(page: u32) -> Option<String> {
+    let value = std::env::var("OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE").ok()?;
+    let matches = value
+        .parse::<u32>()
+        .ok()
+        .filter(|injected| *injected > 0)
+        .is_some_and(|injected| injected == page);
+    matches.then(|| "injected inference failure".to_owned())
 }
 
 /// Encodes one rendered page's RGB8 into PNG bytes (synchronous commit-path
