@@ -178,17 +178,15 @@ fn decode_shared(
 }
 
 fn to_text(model: &LlamaModel, tokens: &[i32]) -> String {
-    tokens
+    let bytes: Vec<u8> = tokens
         .iter()
-        .map(|&id| {
-            String::from_utf8_lossy(
-                &model
-                    .vocab()
-                    .token_to_piece(LlamaToken::new(id), false, None),
-            )
-            .into_owned()
+        .flat_map(|&id| {
+            model
+                .vocab()
+                .token_to_piece(LlamaToken::new(id), false, None)
         })
-        .collect()
+        .collect();
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// Normalized bigram-overlap similarity in [0, 1] (order-sensitive, cheap).

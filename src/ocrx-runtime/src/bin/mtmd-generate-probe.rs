@@ -66,7 +66,7 @@ mod probe {
             .with_offload_kqv(use_gpu);
         let mut ctx = model.new_context(&backend, ctx_params)?;
         let n_past = chunks.eval_chunks(&mut mtmd, &mut ctx, 0, 0, 512, true)?;
-        let mut output = String::new();
+        let mut output = Vec::new();
         let mut termination = "max_tokens";
         let max_tokens = std::env::var("OCRX_RUNTIME_MAX_TOKENS")
             .ok()
@@ -91,9 +91,7 @@ mod probe {
                 termination = "eos";
                 break;
             }
-            output.push_str(&String::from_utf8_lossy(
-                &model.vocab().token_to_piece(token, false, None),
-            ));
+            output.extend_from_slice(&model.vocab().token_to_piece(token, false, None));
             if generated % 16 == 0 {
                 eprintln!("runtime_progress generated_tokens={}", generated + 1);
             }
@@ -103,7 +101,7 @@ mod probe {
             ctx.decode(&mut batch)?;
         }
         eprintln!("runtime_termination={termination}");
-        println!("{output}");
+        println!("{}", String::from_utf8_lossy(&output));
         Ok(())
     }
 }

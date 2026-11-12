@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::io;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const SKILL_ID: &str = "ocrx";
@@ -94,7 +93,7 @@ pub fn parse_target(target: &str) -> io::Result<Vec<SkillTarget>> {
 }
 
 /// Installs the skill for every selected target under the scope's root. The
-/// write is atomic (`.part` + rename) and source-marked so only this version's
+/// write is atomic and source-marked so only this version's
 /// files are ever touched; unrelated user files in the directory are preserved.
 pub fn install(
     target: &str,
@@ -104,26 +103,30 @@ pub fn install(
     content: &str,
 ) -> io::Result<Vec<PathBuf>> {
     let root = scope.root(home, project)?;
+    let targets = parse_target(target)?;
+    let marked = format!("{START}{content}{END}");
+    // Preflight every destination before changing any of them. Only a file
+    // carrying this installer's exact ownership/version markers is replaceable.
+    for target in &targets {
+        let path = target.directory(&root).join("SKILL.md");
+        match fs::read_to_string(&path) {
+            Ok(existing) if existing.starts_with(START) && existing.ends_with(END) => {}
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("refusing to replace unowned skill file: {}", path.display()),
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
     let mut paths = Vec::new();
-    for target in parse_target(target)? {
+    for target in targets {
         let directory = target.directory(&root);
         fs::create_dir_all(&directory)?;
         let path = directory.join("SKILL.md");
-        let marked = format!("{START}{content}{END}");
-        let temporary = directory.join(".SKILL.md.part");
-        // Write + sync + rename mirrors ocrx-output::atomic_write (review
-        // m11): the sync guarantees the marker file survives a crash, and a
-        // failed write must not leave the .part corpse behind.
-        let result = (|| -> io::Result<()> {
-            let mut file = fs::File::create(&temporary)?;
-            file.write_all(marked.as_bytes())?;
-            file.sync_all()?;
-            fs::rename(&temporary, &path)
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temporary);
-        }
-        result?;
+        ocrx_core::atomic_write(&path, marked.as_bytes())?;
         paths.push(path);
     }
     Ok(paths)
@@ -261,6 +264,34 @@ mod tests {
         cleanup(&home);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn install_does_not_follow_preexisting_part_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let home = fresh_dir("part-symlink");
+        let directory = home.join(".codex/skills/ocrx");
+        fs::create_dir_all(&directory).unwrap();
+        let sentinel = home.join("model.gguf");
+        fs::write(&sentinel, b"model sentinel").unwrap();
+        let part = directory.join(".SKILL.md.part");
+        symlink(&sentinel, &part).unwrap();
+
+        install(
+            "codex",
+            SkillScope::User,
+            Some(&home),
+            None,
+            "# safe skill\n",
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&sentinel).unwrap(), b"model sentinel");
+        assert!(directory.join("SKILL.md").is_file());
+        assert!(part.is_symlink());
+        cleanup(&home);
+    }
+
     #[test]
     fn unknown_target_and_unmarked_file_are_safe() {
         let home = fresh_dir("safe");
@@ -274,6 +305,40 @@ mod tests {
                 .is_empty()
         );
         assert!(directory.join("SKILL.md").is_file());
+        cleanup(&home);
+    }
+
+    #[test]
+    fn install_refuses_unowned_file_and_preflights_all_targets() {
+        let home = fresh_dir("install-conflict");
+        let codex = home.join(".codex/skills/ocrx/SKILL.md");
+        fs::create_dir_all(codex.parent().unwrap()).unwrap();
+        fs::write(&codex, "USER AUTHORED SKILL\n").unwrap();
+        assert_eq!(
+            install("all", SkillScope::User, Some(&home), None, "# new\n")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read_to_string(&codex).unwrap(), "USER AUTHORED SKILL\n");
+        assert!(!home.join(".claude/skills/ocrx/SKILL.md").exists());
+
+        fs::write(
+            &codex,
+            "<!-- ocrx-skill:begin version=0.2.0 -->\nold\n<!-- ocrx-skill:end -->\n",
+        )
+        .unwrap();
+        assert_eq!(
+            install("codex", SkillScope::User, Some(&home), None, "# new\n")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert!(
+            fs::read_to_string(&codex)
+                .unwrap()
+                .contains("version=0.2.0")
+        );
         cleanup(&home);
     }
 

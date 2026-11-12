@@ -47,6 +47,8 @@ pub struct PageSignals {
     pub page_width: f32,
     pub page_height: f32,
     pub image_objects: usize,
+    /// Count of non-text PDF objects (paths, forms, shadings, images, etc.).
+    pub non_text_objects: usize,
     pub text_bbox_coverage: f32,
     pub visible_characters: usize,
     pub unicode_validity: f32,
@@ -932,6 +934,7 @@ impl Default for PageSignals {
             page_width: 0.0,
             page_height: 0.0,
             image_objects: 0,
+            non_text_objects: 0,
             text_bbox_coverage: 0.0,
             visible_characters: 0,
             unicode_validity: 1.0,
@@ -1020,7 +1023,11 @@ pub fn classify_page_with_config(
             reason: PdfReasonCode::GeometryAnomaly,
         };
     }
-    if signals.visible_characters == 0 && signals.image_coverage < 0.01 {
+    if signals.visible_characters == 0
+        && signals.image_objects == 0
+        && signals.non_text_objects == 0
+        && signals.image_coverage < 0.01
+    {
         return PageClassification {
             page_type: PageType::Empty,
             confidence: RouteConfidence::High,
@@ -1219,14 +1226,11 @@ pub fn save_bbox_png(
         return Err("page and figure must be positive".into());
     }
     let cropped = crop_bbox(image, bbox).map_err(std::io::Error::other)?;
-    let root = output_root.as_ref().join("images");
-    fs::create_dir_all(&root)?;
+    let root = ocrx_core::create_contained_child_dir(output_root.as_ref(), "images")?;
     let final_path = root.join(format!("page-{page:04}-figure-{figure:03}.png"));
-    let part_path = root.join(format!(".page-{page:04}-figure-{figure:03}.part.png"));
     let mut bytes = Cursor::new(Vec::new());
     image::DynamicImage::ImageRgb8(cropped).write_to(&mut bytes, image::ImageFormat::Png)?;
-    fs::write(&part_path, bytes.into_inner())?;
-    fs::rename(&part_path, &final_path)?;
+    ocrx_core::atomic_write(&final_path, &bytes.into_inner())?;
     Ok(final_path)
 }
 
@@ -1719,6 +1723,11 @@ impl PdfiumRenderer {
             .iter()
             .filter(|object| object.as_image_object().is_some())
             .count();
+        let non_text_objects = page
+            .objects()
+            .iter()
+            .filter(|object| object.as_text_object().is_none())
+            .count();
         let mut text = String::new();
         let mut blocks = Vec::new();
         let mut valid = 0usize;
@@ -1793,6 +1802,7 @@ impl PdfiumRenderer {
                 page_width: width,
                 page_height: height,
                 image_objects,
+                non_text_objects,
                 text_bbox_coverage,
                 visible_characters: character_count,
                 unicode_validity: if character_count == 0 {
@@ -1855,6 +1865,11 @@ impl PdfiumRenderer {
             .iter()
             .filter(|object| object.as_image_object().is_some())
             .count();
+        let non_text_objects = page
+            .objects()
+            .iter()
+            .filter(|object| object.as_text_object().is_none())
+            .count();
 
         let mut valid = 0usize;
         let mut alphanumeric = 0usize;
@@ -1914,6 +1929,7 @@ impl PdfiumRenderer {
             page_width: width,
             page_height: height,
             image_objects,
+            non_text_objects,
             text_bbox_coverage,
             visible_characters,
             unicode_validity: if visible_characters == 0 {
@@ -2470,6 +2486,54 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn save_bbox_png_rejects_images_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join(format!("ocrx-png-symlink-{}", std::process::id()));
+        let root = base.join("output");
+        let protected = base.join("protected");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&protected).unwrap();
+        let sentinel = protected.join("page-0001-figure-001.png");
+        fs::write(&sentinel, b"protected").unwrap();
+        symlink(&protected, root.join("images")).unwrap();
+        let image = RgbImage::from_pixel(10, 10, image::Rgb([255, 0, 0]));
+        let bbox = NormalizedBbox::new(100, 100, 500, 500).unwrap();
+        assert!(save_bbox_png(&image, bbox, &root, 1, 1).is_err());
+        assert_eq!(fs::read(sentinel).unwrap(), b"protected");
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_bbox_png_does_not_follow_preexisting_part_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let base =
+            std::env::temp_dir().join(format!("ocrx-png-part-symlink-{}", std::process::id()));
+        let root = base.join("output");
+        let images = root.join("images");
+        let protected = base.join("protected");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&images).unwrap();
+        fs::create_dir_all(&protected).unwrap();
+        let sentinel = protected.join("model.gguf");
+        fs::write(&sentinel, b"model sentinel").unwrap();
+        symlink(&sentinel, images.join(".page-0001-figure-001.part.png")).unwrap();
+
+        let image = RgbImage::from_pixel(10, 10, image::Rgb([255, 0, 0]));
+        let bbox = NormalizedBbox::new(100, 100, 500, 500).unwrap();
+        let output = save_bbox_png(&image, bbox, &root, 1, 1).unwrap();
+
+        assert!(output.is_file());
+        assert_eq!(fs::read(sentinel).unwrap(), b"model sentinel");
+        assert!(images.join(".page-0001-figure-001.part.png").is_symlink());
+        let _ = fs::remove_dir_all(base);
+    }
+
     #[test]
     fn bbox_iou_is_zero_for_disjoint_one_for_identical_and_expected_for_overlap() {
         let disjoint_a = NormalizedBbox::new(0, 0, 100, 100).unwrap();
@@ -2801,6 +2865,25 @@ mod tests {
         assert_eq!(mixed.page_type, PageType::Mixed);
         let empty = classify_page(PageSignals::default(), QualityTier::L2);
         assert_eq!(empty.recommended_method, ProcessingMethod::Empty);
+        let outlined_vector = classify_page(
+            PageSignals {
+                non_text_objects: 4,
+                ..Default::default()
+            },
+            QualityTier::L2,
+        );
+        assert_eq!(outlined_vector.page_type, PageType::Uncertain);
+        assert_eq!(outlined_vector.recommended_method, ProcessingMethod::Ocr);
+        let tiny_image = classify_page(
+            PageSignals {
+                image_objects: 1,
+                non_text_objects: 1,
+                image_coverage: 0.001,
+                ..Default::default()
+            },
+            QualityTier::L2,
+        );
+        assert_eq!(tiny_image.recommended_method, ProcessingMethod::Ocr);
     }
 
     #[test]

@@ -12,6 +12,23 @@ grep -q 'uname -s' "$ROOT_DIR/scripts/package-macos-arm64.sh"
 grep -q 'arm64' "$ROOT_DIR/scripts/package-macos-arm64.sh"
 grep -q 'macOS only' "$ROOT_DIR/scripts/install.sh"
 grep -q 'arm64 only' "$ROOT_DIR/scripts/install.sh"
+if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+  # Install a tiny archive through the real installer and assert the bundled
+  # PDFium survives extraction after the temporary directory is removed.
+  INSTALL_SMOKE=$(mktemp -d)
+  trap 'rm -rf "$INSTALL_SMOKE"' EXIT
+  mkdir -p "$INSTALL_SMOKE/archive/ocrx/bin" "$INSTALL_SMOKE/archive/ocrx/lib"
+  printf '#!/bin/sh\nexit 0\n' > "$INSTALL_SMOKE/archive/ocrx/bin/ocrx"
+  chmod +x "$INSTALL_SMOKE/archive/ocrx/bin/ocrx"
+  printf 'pdfium sentinel\n' > "$INSTALL_SMOKE/archive/ocrx/lib/libpdfium.dylib"
+  tar -czf "$INSTALL_SMOKE/ocrx.tar.gz" -C "$INSTALL_SMOKE/archive" ocrx
+  OCRX_INSTALL_PREFIX="$INSTALL_SMOKE/prefix" \
+    OCRX_RELEASE_ARCHIVE="$INSTALL_SMOKE/ocrx.tar.gz" \
+    HOME="$INSTALL_SMOKE/home" bash "$ROOT_DIR/scripts/install.sh" >/dev/null
+  cmp "$INSTALL_SMOKE/archive/ocrx/lib/libpdfium.dylib" \
+    "$INSTALL_SMOKE/prefix/lib/libpdfium.dylib"
+  test -x "$INSTALL_SMOKE/prefix/bin/ocrx"
+fi
 # Privacy gate: release scripts must never download or embed model weights.
 # `! grep` is exempt from errexit in bash, so the negation form was a silent
 # no-op; use an explicit failure branch instead.

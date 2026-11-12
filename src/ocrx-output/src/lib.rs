@@ -279,8 +279,8 @@ impl ErrorReport {
     }
 }
 
-use std::fs::{self, File};
-use std::io::{self, Write};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 // Single cancellation source of truth (W3.1): the SIGINT token created by the
@@ -2336,7 +2336,8 @@ impl PageCheckpoint {
             return false;
         }
         let markdown = root.join(format!("page-{page:04}.md"));
-        if !markdown.is_file() {
+        let page_json = root.join(format!("page-{page:04}.json"));
+        if !markdown.is_file() || !page_json.is_file() {
             return false;
         }
         artifact_sha256(&markdown, root)
@@ -2374,24 +2375,48 @@ impl PageCheckpoint {
 }
 
 fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
-    let content = fs::read_to_string(markdown)?;
-    let mut files = vec![markdown.to_path_buf()];
-    for start in content.match_indices("images/").map(|(start, _)| start) {
-        let tail = &content[start..];
-        let end = tail
-            .find(|character: char| {
-                character.is_whitespace() || matches!(character, ')' | '"' | '\'')
+    let page_json = markdown.with_extension("json");
+    // JSON contains structured block content and provenance that Markdown
+    // cannot reconstruct. Treat it as a required member of the committed page.
+    let mut files = vec![markdown.to_path_buf(), page_json.clone()];
+    // The adapter persists image dependencies as structured visual_region
+    // blocks. Markdown is user-facing prose and may mention paths such as
+    // `images/example.png`; those strings are not artifact references.
+    let page: serde_json::Value = serde_json::from_slice(&fs::read(&page_json)?)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if let Some(blocks) = page.get("blocks").and_then(serde_json::Value::as_array) {
+        let page_number = markdown
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| stem.strip_prefix("page-"))
+            .and_then(|number| number.parse::<u32>().ok())
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid page artifact name")
+            })?;
+        let visual_regions = blocks
+            .iter()
+            .filter(|block| {
+                block.get("type").and_then(serde_json::Value::as_str) == Some("visual_region")
             })
-            .unwrap_or(tail.len());
-        let relative = &tail[..end];
-        let file = root.join(relative);
-        if !file.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "referenced image missing",
-            ));
+            .count();
+        let images_dir = if visual_regions > 0 {
+            Some(ocrx_core::create_contained_child_dir(root, "images")?)
+        } else {
+            None
+        };
+        for index in 0..visual_regions {
+            let image = images_dir
+                .as_ref()
+                .expect("visual regions have image dir")
+                .join(format!("page-{page_number:04}-figure-{:03}.png", index + 1));
+            if !image.is_file() {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "referenced image missing",
+                ));
+            }
+            files.push(image);
         }
-        files.push(file);
     }
     files.sort();
     let mut manifest = Vec::new();
@@ -2628,22 +2653,7 @@ fn parse_render_audit(value: &str) -> io::Result<RenderAudit> {
 }
 
 pub fn atomic_write(path: impl AsRef<Path>, contents: &[u8]) -> io::Result<()> {
-    let path = path.as_ref();
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "output path has no parent"))?;
-    fs::create_dir_all(parent)?;
-    let temp = temporary_path(path);
-    let result = (|| {
-        let mut file = File::create(&temp)?;
-        file.write_all(contents)?;
-        file.sync_all()?;
-        fs::rename(&temp, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result
+    ocrx_core::atomic_write(path, contents)
 }
 
 /// Compares path components for equality, ignoring ASCII case on Windows.
@@ -2786,11 +2796,11 @@ pub fn validate_output_root(
             "output root must be absolute",
         ));
     }
-    // Normalize first (review BLK-2 sequence): a default output derived from
-    // a relative input legitimately contains `..` (cwd.join("../../x"));
-    // lexical resolution turns it into its real absolute spelling, and only
-    // genuinely ambiguous spellings (trailing dots/spaces on Windows) are
-    // then refused outright.
+    // Reject parent traversal before normalization. Lexically folding `..`
+    // across a symlink can produce a different target than filesystem path
+    // resolution, while callers later perform writes/deletes using the raw
+    // spelling.
+    reject_ambiguous_output_path(output)?;
     let output_normalized = lexically_normalize(output);
     let input_normalized = lexically_normalize(input);
     reject_ambiguous_output_path(&output_normalized)?;
@@ -2875,11 +2885,8 @@ pub fn commit_page(
         ));
     }
     let root = output_root.as_ref();
-    atomic_write(
-        root.join("images")
-            .join(format!("page-{page_number:04}.png")),
-        png,
-    )?;
+    let images_dir = ocrx_core::create_contained_child_dir(root, "images")?;
+    atomic_write(images_dir.join(format!("page-{page_number:04}.png")), png)?;
     atomic_write(
         root.join(format!("page-{page_number:04}.md")),
         normalize_lf(markdown).as_bytes(),
@@ -2948,14 +2955,6 @@ pub fn commit_native_page_and_collect(
         content: normalize_lf(markdown),
         incomplete: None,
     })
-}
-
-fn temporary_path(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("output");
-    path.with_file_name(format!(".{name}.part-{}", std::process::id()))
 }
 
 #[cfg(test)]
@@ -3037,9 +3036,14 @@ mod tests {
                 markdown: format!("page {page}"),
                 degenerated: false,
                 raw_output: String::new(),
-                page_json: format!(
-                    r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]}}"#
-                ),
+                page_json: serde_json::json!({
+                    "schema_version": 1,
+                    "page_number": page,
+                    "blocks": [],
+                    "termination": "eos",
+                    "warnings": []
+                })
+                .to_string(),
                 truncated: false,
                 warnings: Vec::new(),
             })
@@ -3474,9 +3478,14 @@ mod tests {
             png: Some(vec![page as u8]),
             think_blocks_stripped: 0,
             markdown: format!("clean page {page}"),
-            page_json: format!(
-                r#"{{"schema_version":1,"page_number":{page},"blocks":[],"termination":"eos","warnings":[]"}}"#
-            ),
+            page_json: serde_json::json!({
+                "schema_version": 1,
+                "page_number": page,
+                "blocks": [],
+                "termination": "eos",
+                "warnings": []
+            })
+            .to_string(),
             truncated: false,
             degenerated: false,
             warnings: Vec::new(),
@@ -4826,28 +4835,42 @@ audit=none
     }
 
     #[test]
-    fn output_root_dot_dot_vector_is_resolved_before_overlap_check() {
-        // BLK-2 vector 1: `Path::components` never resolves `..`, so the
-        // check lexically normalizes first — an output that lands inside a
-        // protected root after resolution must be rejected even though its
-        // raw components never spell the root, while one that resolves
-        // elsewhere stays allowed.
+    fn output_root_rejects_parent_components_before_path_resolution() {
         let base = std::env::temp_dir().join(format!("ocrx-dotdot-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let protected = base.join("cache");
         std::fs::create_dir_all(&protected).unwrap();
         let input = base.join("input.pdf");
         let overlap = base.join("elsewhere").join("..").join("cache").join("out");
-        assert!(
-            super::validate_output_root(&input, &overlap, &[protected.as_path()]).is_err(),
-            "dot-dot spelling resolving into the protected root must be rejected"
-        );
+        assert!(super::validate_output_root(&input, &overlap, &[protected.as_path()]).is_err());
         let safe = base.join("elsewhere").join("..").join("other").join("out");
-        assert!(
-            super::validate_output_root(&input, &safe, &[protected.as_path()]).is_ok(),
-            "dot-dot spelling resolving outside the protected root is fine"
-        );
+        assert!(super::validate_output_root(&input, &safe, &[protected.as_path()]).is_err());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overwrite_rejects_symlink_parent_traversal_without_deleting_protected_file() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join(format!("ocrx-symlink-dotdot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let protected = base.join("cache/ocrx/models");
+        let nested = protected.join("nested");
+        let victim = protected.join("victim");
+        let cwd = base.join("work");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&victim).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        fs::write(victim.join("SENTINEL"), b"keep").unwrap();
+        symlink(&nested, base.join("alias")).unwrap();
+        let input = base.join("input.pdf");
+        let output = base.join("alias/../victim");
+        assert!(
+            super::remove_for_overwrite(&input, &output, &[protected.as_path()], &cwd).is_err()
+        );
+        assert_eq!(fs::read(victim.join("SENTINEL")).unwrap(), b"keep");
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -4996,6 +5019,80 @@ audit=none
     }
 
     #[test]
+    fn checkpoint_reuse_requires_page_json_and_its_contents_to_match() {
+        let root = test_dir("checkpoint-page-json");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let markdown = root.join("page-0001.md");
+        let page_json = root.join("page-0001.json");
+        fs::write(&markdown, "page text").unwrap();
+        fs::write(&page_json, "{\"blocks\":[\"original\"]}").unwrap();
+        let compatibility = CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "compact".to_owned(),
+            parameters: "dpi=300".to_owned(),
+        };
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: compatibility.clone(),
+            complete: true,
+            output_sha256: super::artifact_sha256(&markdown, &root).unwrap(),
+            truncated: false,
+            warnings: Vec::new(),
+            think_blocks_stripped: 0,
+            audit: None,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
+        };
+        assert!(checkpoint.is_reusable_at(&compatibility, &root, 1));
+
+        fs::remove_file(&page_json).unwrap();
+        assert!(!checkpoint.is_reusable_at(&compatibility, &root, 1));
+        fs::write(&page_json, "{\"blocks\":").unwrap();
+        assert!(!checkpoint.is_reusable_at(&compatibility, &root, 1));
+        fs::write(&page_json, "{\"blocks\":[\"truncated\"]}").unwrap();
+        assert!(!checkpoint.is_reusable_at(&compatibility, &root, 1));
+        fs::write(&page_json, "{\"blocks\":[\"original\"]}").unwrap();
+        assert!(checkpoint.is_reusable_at(&compatibility, &root, 1));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn pdf_classifier_and_decode_generation_changes_invalidate_old_checkpoints() {
+        let base = |classifier: &str, extractor: &str, decode: u32| CompatibilityKey {
+            input_sha256: "input".to_owned(),
+            model: "ovisocr2".to_owned(),
+            profile: "native".to_owned(),
+            parameters: format!(
+                "{};platform=macos;dpi=300;route=native;decode={decode}",
+                super::pdf_compatibility_parameters("auto", "l2", classifier, extractor)
+            ),
+        };
+        let old_native = base("pdf-route-v1", "pdf-text-v1", 2);
+        let fixed_native = base("pdf-route-v2", "pdf-text-v2", 2);
+        assert!(!old_native.matches_page_compatibility(&fixed_native));
+
+        let old_ocr = CompatibilityKey {
+            profile: "compact".to_owned(),
+            parameters: format!("{};ocr-profile=compact", old_native.parameters),
+            ..old_native.clone()
+        };
+        let fixed_ocr = CompatibilityKey {
+            profile: "compact".to_owned(),
+            parameters: format!("{};ocr-profile=compact", fixed_native.parameters),
+            ..fixed_native
+        };
+        assert!(!old_ocr.matches_page_compatibility(&fixed_ocr));
+        let new_generation = CompatibilityKey {
+            parameters: fixed_ocr.parameters.replace("decode=2", "decode=3"),
+            ..fixed_ocr.clone()
+        };
+        assert!(!fixed_ocr.matches_page_compatibility(&new_generation));
+    }
+
+    #[test]
     fn native_checkpoint_ignores_ocr_only_configuration_changes() {
         let native = CompatibilityKey {
             input_sha256: "input".to_owned(),
@@ -5057,22 +5154,26 @@ audit=none
 
     #[test]
     fn pdf_compatibility_fragment_changes_when_routing_contract_changes() {
-        let base = super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v1", "pdf-text-v1");
+        let base = super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v2", "pdf-text-v2");
         assert_eq!(
             base,
-            "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;extractor=pdf-text-v1"
+            "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v2;extractor=pdf-text-v2"
         );
         assert_ne!(
             base,
-            super::pdf_compatibility_parameters("auto", "l1", "pdf-route-v1", "pdf-text-v1")
+            super::pdf_compatibility_parameters("auto", "l1", "pdf-route-v2", "pdf-text-v2")
         );
         assert_ne!(
             base,
-            super::pdf_compatibility_parameters("text", "l2", "pdf-route-v1", "pdf-text-v1")
+            super::pdf_compatibility_parameters("text", "l2", "pdf-route-v2", "pdf-text-v2")
         );
         assert_ne!(
             base,
-            super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v2", "pdf-text-v1")
+            super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v3", "pdf-text-v2")
+        );
+        assert_ne!(
+            base,
+            super::pdf_compatibility_parameters("auto", "l2", "pdf-route-v2", "pdf-text-v3")
         );
     }
 
@@ -5577,6 +5678,77 @@ audit=none
                 .unwrap()
                 .complete
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn page_commit_rejects_images_symlink_without_touching_protected_files() {
+        use std::os::unix::fs::symlink;
+
+        let base = test_dir("page-commit-images-symlink");
+        let output = base.join("output");
+        let protected = base.join("protected");
+        fs::create_dir_all(&output).unwrap();
+        fs::create_dir_all(&protected).unwrap();
+        let sentinel = protected.join("page-0001.png");
+        fs::write(&sentinel, b"protected").unwrap();
+        symlink(&protected, output.join("images")).unwrap();
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "ovisocr2".to_owned(),
+                profile: "compact".to_owned(),
+                parameters: "dpi=300".to_owned(),
+            },
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
+            warnings: Vec::new(),
+            think_blocks_stripped: 0,
+            audit: None,
+        };
+        assert!(super::commit_page(&output, 1, b"replacement", "text", "{}", &checkpoint).is_err());
+        assert_eq!(fs::read(sentinel).unwrap(), b"protected");
+        assert!(!output.join("page-0001.md").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn prose_mention_of_images_path_is_not_a_page_artifact_dependency() {
+        let directory = test_dir("images-path-prose");
+        let _ = fs::remove_dir_all(&directory);
+        let checkpoint = PageCheckpoint {
+            page_number: 1,
+            compatibility: CompatibilityKey {
+                input_sha256: "input".to_owned(),
+                model: "none".to_owned(),
+                profile: "none".to_owned(),
+                parameters: "pdf-mode=auto".to_owned(),
+            },
+            complete: false,
+            output_sha256: String::new(),
+            truncated: false,
+            degenerated: false,
+            attempts: 1,
+            raw: None,
+            warnings: Vec::new(),
+            think_blocks_stripped: 0,
+            audit: None,
+        };
+        super::commit_native_page(
+            &directory,
+            1,
+            "Store files in images/example.png.",
+            r#"{"blocks":[{"type":"markdown","content":"Store files in images/example.png."}]}"#,
+            &checkpoint,
+        )
+        .unwrap();
+        assert!(directory.join("page-0001.checkpoint").is_file());
         fs::remove_dir_all(directory).unwrap();
     }
 
