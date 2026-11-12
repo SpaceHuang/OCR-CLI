@@ -328,6 +328,11 @@ impl PdfiumOwnerHandle {
                     prefetch_us: BTreeMap::new(),
                     prefetch_depth,
                 };
+                // Subprocess regression seam: disconnect at a document boundary.
+                let disconnect_on_switch = std::env::var("OCRX_E2E_OWNER_DISCONNECT_ON_SWITCH")
+                    .ok()
+                    .and_then(|value| value.parse::<usize>().ok());
+                let mut switches = 0;
                 for request in requests_rx {
                     let mut pending_prefetch: Option<u32> = None;
                     let response = match request {
@@ -366,6 +371,10 @@ impl PdfiumOwnerHandle {
                             PdfResponse::Render(rendered.map(|page| (page, owner_us)))
                         }
                         PdfRequest::SwitchDocument { input } => {
+                            switches += 1;
+                            if disconnect_on_switch == Some(switches) {
+                                break;
+                            }
                             // BLK-2 §3-3: switching is only legal at a
                             // scheduling boundary (the orchestrator
                             // serializes), so the prefetch window of the
