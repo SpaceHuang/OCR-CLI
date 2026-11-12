@@ -169,3 +169,42 @@ CommitRecorder sink 全路径接线）。
 - 现有 CLI golden（T003 表）在基线文档；doctor json `recommended_profile:"quality"`（63GB→quality）。
 - 测试：每个临时目录唯一 tag；`cargo test --workspace --locked` 必须全绿后 commit。
 - 计划勾选状态：`grep -c "^- \[x\]"` 当前 61。
+
+
+## 断点续接锚点 3（2026-11-12，阶段 G 中段）
+
+**已完成并提交：T001–T073**（67 项勾选）。workspace 全绿（37 测试目标）；CLI bin 107 测试；
+`cargo fmt --all -- --check` 通过；doctor/model 命令 golden 在本机二进制上逐字节复验（T003 表）。
+
+**阶段 G 已完成项：**
+- T069 compose.rs（见锚点 2）。
+- T071/T072：全部六个 model 命令切换到 compose 的 ModelManager（list/info/recommend/install/verify/
+  remove），输出串与退出码逐字节保持（4/5/9 错误串一致）；verify 走注入的 RegistryVerifier；
+  install 走组事务（TrustedInstallInteraction 保持冻结的非交互策略）；remove 走共享引用检查。
+- T073：doctor 切换到 DeviceManager DTO 形态——`doctor_diagnostics_from_snapshot()` 从已交集的
+  snapshot 派生 DTO（formatter 测试注入人工 snapshot 时 JSON 必须镜像之，golden 保持权威）；
+  installed 概览经 v2 manifest 的 verify::is_installed；schema 2 字段序/转义/skill_installed 合并
+  逐字节一致。
+
+**T070/T074–T078 执行要点（下一步，按序）：**
+1. **T074/T075（核心）**：scan 命令切到 ScanApplication::run：
+   - 组装：`OwnerPdfAccess::spawn(pdfium_dir, input, RenderOptions{dpi}, password, window_depth*2)`
+     （pdfium_dir 解析链在 main.rs ~2126 + pdf.rs 2553-2620，默认 `vendor/pdfium/bin`）；
+     `access.renderer(commit_recorder)` 给窗口循环；service 来自 compose（多文档共享同一 service/session）。
+   - DocumentOptions 从 ScanOptions 映射（pdf_mode/quality_tier/dpi 默认 300/budgets/resume/keep_pages/
+     column_split_retry/pages/requested_profile+device/install policy 从 offline+non_interactive）。
+   - output_for：单输入 `resolve_output_dir`（历史形态）；多输入 `output_dir_for_doc`（`<stem>-<hash8>`）。
+   - serialize_scan_result 从 DocumentOutcome 派生：model 对象字段经 InferenceIdentity（display 通道的
+     name/family/quantization；runtime=`llama.cpp@0.1.161`；prompt_schema_version=数值 1）；失败分支
+     （DocumentFailure→错误对象+退出码）；多输入 scan-summary.json（main.rs scan_summary_json 形态）+
+     aggregate_scan_exit（130>3>10>0）；`--report json` 单输入 stdout 一个聚合对象。
+   - 保留 install_sigint_handler（T076）。
+   - 验收：T003/T004 golden + cli_subprocess.rs + multi_input_contract.rs 全部通过；fake 扫描端到端。
+2. **T077**：删除 CLI 对 runtime/models/ovisocr2/pdf 的直接依赖（Cargo.toml + 源码 import）与
+   run_scan/run_scan_multi/scan_document/DocScanEnv/ModelSlot/OvisRecognizer/PreloadedLoader/
+   load_runtime_with_fallback/WorkerScanRenderer/SegmentRenderer/cli 自带的 pdfium_owner.rs/system_probe.rs；
+   注意 scan crate 已有这些的迁移版。每删一批跑 `cargo check --workspace`。
+3. **T070**（可与 T077 合并做）：main.rs 拆 args.rs/config.rs/interaction.rs/present.rs/platform_paths.rs。
+4. **T078**：全部 CLI 子进程测试 + 编排 vs 逐个调用一致。
+
+**注意：** Windows link.exe LNK1104 偶发（exe 被占用）——删 target/debug 下对应 exe 重跑即可，非代码问题。
