@@ -213,14 +213,12 @@ impl InferenceRequest {
 
 pub use ocrx_core::{BATCH_ERROR_PREFIX, WINDOW_DEPTH};
 
-/// Decode-generation marker for checkpoint compatibility (quality plan
-/// Q1.3 / D-15): the wrapper era that produced a page. Generation 1 =
-/// llama.cpp wrapper 0.1.152/0.1.153; generation 2 = 0.1.161 (sampler-
-/// capable decode, normal-page output drift declared per D-15). The scan
-/// writes `decode=<gen>` into the checkpoint compatibility parameters, so
-/// checkpoints from another generation never pass the reuse check and are
-/// reprocessed instead of silently mixed into one scan.
-pub const DECODE_GENERATION: u32 = 2;
+/// Decode-generation marker for checkpoint compatibility: generation 1 =
+/// llama.cpp wrapper 0.1.152/0.1.153; generation 2 = 0.1.161 sampler-capable
+/// decode; generation 3 = token pieces are accumulated as bytes before UTF-8
+/// decoding. The scan writes `decode=<gen>` into checkpoint compatibility
+/// parameters so results produced by a different generation are reprocessed.
+pub const DECODE_GENERATION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceResponse {

@@ -764,6 +764,7 @@ version = "0.1.0"
 dependencies = [
  "ocrx-core",
  "ocrx-runtime",
+ "serde_json",
 ]
 
 [[package]]
