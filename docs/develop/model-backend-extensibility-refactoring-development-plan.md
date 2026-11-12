@@ -1448,9 +1448,9 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 ### 阶段 I：清理、架构检查与全面回归
 
-- [ ] T086（T019、T030、T050、T077、T083）删除 core 中 ModelId、RUNTIME_COMPATIBILITY、重复取消/哈希及无用 re-export，并删除 models 的旧 `community_*` 过渡委托和旧 `recommend_device` 自含过渡实现；完成判定：全 workspace 无旧类型和旧函数引用，页面领域 golden 仍通过。
-- [ ] T087（T031、T037、T060、T061、T077）删除 `ocrx-ovisocr2` 旧业务函数和依赖，并删除 runtime 的旧 Runtime/fake/请求响应兼容包装及其中暂存的 prompt；完成判定：adapter crate 只含协议 adapter，runtime 只含通用 backend，依赖和源码检查证明无 core/pdf/扫描 prompt/page。
-- [ ] T088（T051、T052、T077）删除 output 中已迁移的扫描服务、识别抽象、旧 CompatibilityKey 和旧 v5 写入入口；完成判定：无重复实现，所有调用只走 scan 应用和 v6 持久化，`cargo check --workspace` 返回 0。
+- [x] T086（T019、T030、T050、T077、T083）删除 core 中 ModelId、RUNTIME_COMPATIBILITY、重复取消/哈希及无用 re-export，并删除 models 的旧 `community_*` 过渡委托和旧 `recommend_device` 自含过渡实现；完成判定：全 workspace 无旧类型和旧函数引用，页面领域 golden 仍通过。
+- [x] T087（T031、T037、T060、T061、T077）删除 `ocrx-ovisocr2` 旧业务函数和依赖，并删除 runtime 的旧 Runtime/fake/请求响应兼容包装及其中暂存的 prompt；完成判定：adapter crate 只含协议 adapter，runtime 只含通用 backend，依赖和源码检查证明无 core/pdf/扫描 prompt/page。
+- [x] T088（T051、T052、T077）删除 output 中已迁移的扫描服务、识别抽象、旧 CompatibilityKey 和旧 v5 写入入口；完成判定：无重复实现，所有调用只走 scan 应用和 v6 持久化，`cargo check --workspace` 返回 0。
 - [ ] T089（T077、T087、T088）实现 `validate-architecture-boundaries.py` 的 Cargo 白名单和源码禁用检查；完成判定：合法树返回 0，临时违规 fixture 能被检出，脚本只用标准库；禁用类型名显式包含 `ocrx_runtime::StepProfile` 在 `ocrx-scan` 中的引用（RBLK-3，StepProfile 只经公共 API DTO 流动）。
 - [ ] T090（T089）把架构检查加入本机 bootstrap，不加入网络/模型/GPU 前置；完成判定：干净本机按脚本顺序可执行，外部条件缺失不会阻断 fake 测试。
 - [ ] T091（T086、T087、T088）清理 Cargo 依赖、feature 转发和 lockfile；完成判定：无未使用直接依赖，vulkan/cuda 传递有效，`cargo metadata --locked` 成功。
