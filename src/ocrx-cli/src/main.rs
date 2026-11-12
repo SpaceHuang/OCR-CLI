@@ -4731,6 +4731,73 @@ fn install_sigint_handler(token: CancellationToken) {
     });
 }
 
+/// Derives the doctor [`ocrx_inference_api::DeviceDiagnostics`] from an
+/// already-intersected snapshot (same pure rule as the device manager's
+/// diagnose: recommend ladder + auto priority + installed overview).
+fn doctor_diagnostics_from_snapshot(
+    snapshot: &ResourceSnapshot,
+    cache_root: &Path,
+) -> ocrx_inference_api::DeviceDiagnostics {
+    let recommended_profile = ocrx_models::recommend::recommend_profile(
+        &["compact", "balanced", "quality", "reference"],
+        snapshot.memory_gb,
+    )
+    .map(|profile| profile.to_string())
+    .unwrap_or_else(|_| "unavailable".to_owned());
+    let recommended_device = if snapshot.metal_available {
+        "metal"
+    } else if snapshot.cuda_available {
+        "cuda"
+    } else if snapshot.vulkan_available {
+        "vulkan"
+    } else if snapshot.cpu_available {
+        "cpu"
+    } else {
+        "unavailable"
+    };
+    let installed_profiles = ["compact", "balanced", "quality", "reference"]
+        .into_iter()
+        .filter(|profile| {
+            ocrx_models::builtin::ovisocr2::ovisocr2_manifest(profile)
+                .ok()
+                .and_then(|manifest| ocrx_models::verify::is_installed(cache_root, &manifest).ok())
+                .unwrap_or(false)
+        })
+        .map(ToOwned::to_owned)
+        .collect();
+    ocrx_inference_api::DeviceDiagnostics {
+        platform: platform_paths::detect().as_str().to_owned(),
+        backend: ocrx_inference_api::BackendId::new(recommended_device)
+            .unwrap_or_else(|_| ocrx_inference_api::BackendId::new("cpu").expect("cpu is valid")),
+        image_token_limit: 1024,
+        memory_gb: snapshot.memory_gb,
+        metal_available: snapshot.metal_available,
+        cpu_available: snapshot.cpu_available,
+        recommended_profile,
+        recommended_device: recommended_device.to_owned(),
+        cache_root: cache_root.to_string_lossy().into_owned(),
+        installed_profiles,
+        profiles: vec![
+            "compact".to_owned(),
+            "balanced".to_owned(),
+            "quality".to_owned(),
+            "reference".to_owned(),
+        ],
+    }
+}
+
+/// Doctor backend display: the frozen title-case strings ("Cpu"/"Metal"/
+/// "Cuda"/"Vulkan") derived from the device manager's backend id.
+fn doctor_backend_display(
+    diagnostics: &ocrx_inference_api::DeviceDiagnostics,
+) -> String {
+    let mut display = diagnostics.backend.as_str().to_owned();
+    if let Some(first) = display.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    display
+}
+
 fn doctor_runtime_info(snapshot: ResourceSnapshot) -> RuntimeInfo {
     // Mirrors `recommend_device`'s auto priority (metal > cuda > vulkan > cpu)
     // so the reported backend can never contradict `recommended_device` on a
@@ -4854,24 +4921,20 @@ fn doctor_json_report_with_paths(
     cache_root: PathBuf,
     home: Option<&Path>,
 ) -> String {
-    let profile = recommend_profile(snapshot.memory_gb, &["compact", "balanced", "quality"])
-        .unwrap_or_else(|_| "unavailable".to_owned());
-    let device = recommend_device(snapshot, "auto").unwrap_or_else(|_| "unavailable".to_owned());
-    let platform = platform_paths::detect().as_str();
+    // T073: doctor flows through the DeviceManager DTO shape. The injected
+    // snapshot is ALREADY hardware∩compiled-intersected (production builds
+    // it via resource_snapshot()), so the DTO derives from it without
+    // re-probing — the formatter tests inject artificial snapshots and the
+    // JSON must mirror them (golden behavior).
+    let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root);
+    let profile = diagnostics.recommended_profile.clone();
+    let device = diagnostics.recommended_device.clone();
+    let platform = diagnostics.platform.clone();
     // Single source of the doctor spelling; the frozen golden strings
-    // ("Metal"/"Cuda"/"Vulkan"/"Cpu") live in `Backend::as_str`.
-    let backend = info.backend.as_str();
-    let installed_profiles = ["compact", "balanced", "quality", "reference"]
-        .into_iter()
-        .filter(|profile| {
-            ocrx_models::community_manifest(profile)
-                .and_then(|manifest| {
-                    ocrx_models::cache_paths(&cache_root, &manifest.identity.revision, profile)
-                })
-                .map(|(model, mmproj)| model.is_file() && mmproj.is_file())
-                .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
+    // ("Metal"/"Cuda"/"Vulkan"/"Cpu") map from the backend id.
+    let backend = doctor_backend_display(&diagnostics);
+    let installed_profiles: Vec<String> = diagnostics.installed_profiles.clone();
+    let _ = &info;
     // `home_dir` covers the Windows USERPROFILE/HOMEDRIVE+HOMEPATH chain; a
     // bare $HOME read is always unset in cmd.exe, which used to force
     // skill_installed=false on Windows even after a successful install.
@@ -4886,10 +4949,10 @@ fn doctor_json_report_with_paths(
         .unwrap_or(false);
     format!(
         "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
-        info.image_token_limit,
-        snapshot.memory_gb,
-        snapshot.metal_available,
-        snapshot.cpu_available,
+        diagnostics.image_token_limit,
+        diagnostics.memory_gb,
+        diagnostics.metal_available,
+        diagnostics.cpu_available,
         json_escape_path(&cache_root),
         installed_profiles
             .iter()
