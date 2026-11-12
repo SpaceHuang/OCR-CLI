@@ -477,7 +477,6 @@ fn commit_pair(
     mmproj: &std::path::Path,
     transaction: &str,
 ) -> Result<(), ManifestError> {
-    let _lock = InstallLock::acquire(model.parent().ok_or(ManifestError::TransactionFailed)?)?;
     let model_backup = model.with_extension(format!("gguf{transaction}.bak"));
     let mmproj_backup = mmproj.with_extension(format!("gguf{transaction}.bak"));
     let old_model = model.is_file();
@@ -655,11 +654,20 @@ pub fn install_from_urls(request: &UrlInstallRequest) -> Result<(), ManifestErro
     if request.non_interactive && !request.license_accepted {
         return Err(ManifestError::LicenseRequired);
     }
+    // Reject unsupported schemes before creating cache directories or locks.
+    if !request.model_url.starts_with("https://") || !request.mmproj_url.starts_with("https://") {
+        return Err(ManifestError::Network);
+    }
     let (model, mmproj) = cache_paths(
         &request.cache_root,
         &request.manifest.identity.revision,
         &request.manifest.profile,
     )?;
+    // The projector and its transaction files are shared by all profiles
+    // under this revision, so the lock must cover the whole transaction.
+    let revision_dir = mmproj.parent().ok_or(ManifestError::TransactionFailed)?;
+    std::fs::create_dir_all(revision_dir).map_err(|_| ManifestError::TransactionFailed)?;
+    let _lock = InstallLock::acquire(revision_dir)?;
     // Idempotent reinstall (review M-3): an installed profile that already
     // verifies is a success without touching the network — a second install
     // used to die on stale ETag state instead.
@@ -737,6 +745,10 @@ pub fn install_from_files(request: &InstallRequest) -> Result<(), ManifestError>
         &request.manifest.identity.revision,
         &request.manifest.profile,
     )?;
+    // Use the revision directory because mmproj.gguf is shared across profiles.
+    let revision_dir = mmproj.parent().ok_or(ManifestError::TransactionFailed)?;
+    std::fs::create_dir_all(revision_dir).map_err(|_| ManifestError::TransactionFailed)?;
+    let _lock = InstallLock::acquire(revision_dir)?;
     // Same idempotency rule as `install_from_urls` (review M-3).
     if let Some((model_bytes, mmproj_bytes)) = community_asset_sizes(&request.manifest.profile)
         && verify_manifest_files_with_sizes(
@@ -837,8 +849,8 @@ pub fn download_asset(
 /// directories holding the committed asset targets, before a new transaction
 /// starts (review M-3): killed installs used to leave multi-GB `.part`
 /// corpses behind forever, and stale `.etag`/`.bak` state broke re-installs.
-/// Best-effort; concurrent transactions are still serialized by
-/// [`InstallLock`] at commit time.
+/// Best-effort. Callers must hold the revision-level [`InstallLock`] for the
+/// full install transaction before invoking this cleanup.
 fn clean_transaction_residue(targets: &[&std::path::Path]) {
     let mut directories = Vec::new();
     for target in targets {
@@ -1086,6 +1098,61 @@ mod tests {
         let mut bad = request;
         bad.manifest.model_sha256 = "b".repeat(64);
         assert_eq!(install_from_files(&bad), Err(ManifestError::HashMismatch));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejected_concurrent_install_does_not_clean_active_transaction_files() {
+        let root =
+            std::env::temp_dir().join(format!("ocrx-model-live-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let source = root.join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        let model_source = source.join("model");
+        let mmproj_source = source.join("mmproj");
+        std::fs::write(&model_source, b"model").unwrap();
+        std::fs::write(&mmproj_source, b"projector").unwrap();
+        let mut valid = manifest();
+        valid.model_sha256 = ocrx_core::sha256_file(&model_source).unwrap();
+        valid.mmproj_sha256 = ocrx_core::sha256_file(&mmproj_source).unwrap();
+        let cache = root.join("cache");
+        let (model, mmproj) = cache_paths(&cache, "rev-1", "compact").unwrap();
+        let revision_dir = mmproj.parent().unwrap();
+        let profile_dir = model.parent().unwrap();
+        std::fs::create_dir_all(profile_dir).unwrap();
+        let active_part = profile_dir.join("model-active.part");
+        let active_backup = profile_dir.join("model-active.bak");
+        let shared_part = revision_dir.join("mmproj-active.part");
+        let shared_backup = revision_dir.join("mmproj-active.bak");
+        for path in [&active_part, &active_backup, &shared_part, &shared_backup] {
+            std::fs::write(path, b"active transaction").unwrap();
+        }
+        std::fs::write(
+            revision_dir.join(".install.lock"),
+            std::process::id().to_string(),
+        )
+        .unwrap();
+        let request = InstallRequest {
+            manifest: valid,
+            model_source,
+            mmproj_source,
+            cache_root: cache,
+            offline: false,
+            non_interactive: true,
+            license_accepted: true,
+            available_bytes: Some(100),
+        };
+        assert_eq!(
+            install_from_files(&request),
+            Err(ManifestError::TransactionFailed)
+        );
+        for path in [&active_part, &active_backup, &shared_part, &shared_backup] {
+            assert!(
+                path.exists(),
+                "active transaction file was removed: {path:?}"
+            );
+            assert_eq!(std::fs::read(path).unwrap(), b"active transaction");
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 
