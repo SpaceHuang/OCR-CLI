@@ -78,6 +78,25 @@
 **在主工作区（未做任何重构）运行同一命令产生完全相同的 4 个失败**，故为既有环境问题而非本次回归。
 架构检查（validate-architecture-boundaries.py，新增）与 test-release-scripts.sh 均返回 0。
 
+## 最终状态（2026-11-12，T001–T102 完成 + T103/T105 环境注记）
+
+**102/108 任务完成**（T103/T105 带 T096 既有失败注记；T106/T107 可选未执行——真实模型故障注入与
+CPU/GPU 观察需要 OCRX_E2E_MODEL+真实资产环境，本 worktree 未配置，按 §11 记为非阻塞；T108 属后续独立立项）。
+
+**T103 环境注记：** bootstrap-check.sh 的 Python unittest 步骤有 4 个既有失败（pdf-native
+candidate/forbidden/stage6-gate/regression-dispatch），断言 fixture manifest 的 input_sha256 与本地
+PDF 哈希不一致。这些 PDF 被 .gitignore 排除、本地重新获取后哈希漂移；**主工作区（未做任何重构）产生
+完全相同的 4 个失败**（MAIN_UNITTEST=1 已验证），故为既有环境漂移而非本次回归。其余全部步骤
+（fmt/build/test/architecture/release-scripts/version/doctor）返回 0。
+
+**§11 完成定义逐项核对：** crate 边界落地 + 禁止依赖检查通过（validate-architecture-boundaries.py 返回 0）；
+CLI 7071→~3300 行，旧编排器/绕路入口已删；生产仍单模型 OvisOCR2、pin 0.1.161/d8123504 未变；scan 只依赖
+inference-api（架构脚本锁定）；模型管理/doctor 独立运行且与 scan 复用同一 manager；native/empty/OCR、
+fallback、按需加载、P4 窗口合批（8/16 分层+机制 A+自一致）、退化阶梯（2048 网格/penalty 链/切栏/纯截断重试）、
+X1 跨文档（FIFO/一次加载/scan-summary/退出码聚合）、StepProfile/CommitProfile 黄金串、复读退化、GPU 回退、
+取消、失败继续、续扫与合并均通过测试；v6 checkpoint 完整身份 + v5 安全迁移；CLI/页产物/doctor/result/质量
+报告契约兼容（golden 逐字节复验）；§9.1 门禁除 Python 既有漂移外全部通过，未以删除/放宽既有测试换取通过。
+
 ## 剩余工作（下一步清单）
 
 1. **T052–T054/T056–T058/T065–T068**：ScanApplication 主体（lib.rs ScanRequest/ScanOutcome/ScanEvent；
