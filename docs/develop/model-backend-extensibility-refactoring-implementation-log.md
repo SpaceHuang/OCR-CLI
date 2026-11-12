@@ -69,6 +69,15 @@
 - scan 测试基座：test_support.rs（identity/side/pdf/v6_ocr/v5 fixtures）；window_tests.rs（FakeSession
   共享核心 + FakeRenderer）。
 
+## 阶段 I 进行中 + Python 测试的既有失败记录（2026-11-12）
+
+**既有失败（非重构回归，T002 规则记录）：** `python -m unittest discover -s scripts -p "test_*.py"`
+有 4 个失败（stage6-gate / pdf-native-candidate / pdf-native-forbidden / regression-dispatch），
+断言均为 manifest 中记录的 input_sha256 与本地重新获取的 fixture PDF 哈希不一致——这些 PDF 被
+.gitignore 排除（`/assets/regression/*/inputs/*.pdf`），属于本地重新获取的 fixture 漂移。
+**在主工作区（未做任何重构）运行同一命令产生完全相同的 4 个失败**，故为既有环境问题而非本次回归。
+架构检查（validate-architecture-boundaries.py，新增）与 test-release-scripts.sh 均返回 0。
+
 ## 剩余工作（下一步清单）
 
 1. **T052–T054/T056–T058/T065–T068**：ScanApplication 主体（lib.rs ScanRequest/ScanOutcome/ScanEvent；
