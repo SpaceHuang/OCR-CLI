@@ -544,7 +544,11 @@ impl OwnerPdfAccess {
     ) -> Self {
         Self {
             handle: Rc::new(RefCell::new(PdfiumOwnerHandle::spawn(
-                library_dir, input.clone(), options, password, prefetch_depth,
+                library_dir,
+                input.clone(),
+                options,
+                password,
+                prefetch_depth,
             ))),
             current_input: input,
         }

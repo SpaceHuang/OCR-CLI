@@ -1401,8 +1401,7 @@ fn main() {
                     let revision = ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION;
                     match composed.inference.manager().verify(&model, &profile_id) {
                         Ok(()) => println!(
-                            "model=ovisocr2 profile={} revision={} status=installed",
-                            profile, revision
+                            "model=ovisocr2 profile={profile} revision={revision} status=installed"
                         ),
                         Err(error) => {
                             eprintln!("model verification failed: {error:?}");
@@ -1429,8 +1428,7 @@ fn main() {
                         &mut interaction,
                     ) {
                         Ok(_receipt) => println!(
-                            "model=ovisocr2 profile={} revision={} status=installed",
-                            profile, revision
+                            "model=ovisocr2 profile={profile} revision={revision} status=installed"
                         ),
                         Err(ocrx_inference_api::InferenceError::Offline) => {
                             eprintln!("model install blocked: offline mode");
@@ -1469,21 +1467,10 @@ fn main() {
             }
         }
         CliCommand::Scan(options) => {
-            // Route to the orchestrator when the invocation expands to
-            // multiple documents. A single directory input expands inside
-            // run_scan_multi; plain single-file scans skip input resolution
-            // entirely, so their historical missing-file behavior (page
-            // count failure, exit 3) is untouched.
-            let expands_multi = options.inputs.len() > 1
-                || options
-                    .inputs
-                    .first()
-                    .is_some_and(|first| Path::new(first).is_dir());
-            if expands_multi {
-                run_scan_multi(options)
-            } else {
-                run_scan(options)
-            }
+            // T074: single- and multi-input invocations both route through
+            // ScanApplication::run (the app owns the FIFO orchestration and
+            // the historical page-count failure / exit 3 gate).
+            run_scan_via_application(options)
         }
         CliCommand::Skill { action } => {
             let target = std::env::var("OCRX_SKILL_TARGET").unwrap_or_else(|_| "all".to_owned());
@@ -4140,6 +4127,393 @@ fn emit_reporter(reporter: &mut Reporter) {
 /// pre-orchestrator `run_scan` - the output directory resolves up front, the
 /// owner spawns at the historical point, the runtime loads per invocation,
 /// and the document's exit code becomes the process exit code.
+/// Maps CLI scan options onto the scan application (T074/T075): builds the
+/// PDF/render ports over PdfiumOwner, drives the compose-root service, and
+/// serializes each outcome into the frozen result.json shape. Exit codes:
+/// cancel 130 > document failure 3 > partial 10 > 0; multi-input adds
+/// `scan-summary.json` and (JSON mode) exactly one stdout aggregate.
+#[allow(clippy::too_many_lines)]
+fn run_scan_via_application(options: ScanOptions) -> ! {
+    let started = std::time::Instant::now();
+    let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
+    let report_format = match options.report.as_str() {
+        "json" => ReportFormat::Json,
+        _ => ReportFormat::Text,
+    };
+    let multi = options.inputs.len() > 1
+        || Path::new(options.inputs.first().unwrap_or(&String::new())).is_dir();
+    // BLK-4: orchestrated invocations keep stdout to exactly one aggregate
+    // object - per-document errors are logs on stderr. Single input keeps
+    // the historical stdout error contract.
+    let mut reporter = Reporter {
+        json_errors_on_stderr: multi,
+        ..Reporter::default()
+    };
+    // Plain single-file scans skip input resolution entirely: their
+    // historical missing-file behavior is the page-count failure (exit 3),
+    // produced by the app's page-count gate (kind=input).
+    let resolved_inputs = if multi {
+        match resolve_scan_inputs(&options.inputs) {
+            Ok(inputs) => inputs,
+            Err(error) => {
+                eprintln!("error: {error}");
+                std::process::exit(2);
+            }
+        }
+    } else {
+        options.inputs.iter().map(PathBuf::from).collect()
+    };
+    if multi && options.output_dir.is_none() {
+        eprintln!("error: scanning multiple inputs requires --output-dir <output-root>");
+        std::process::exit(2);
+    }
+    // Multi-input: the relative output root resolves against the current
+    // directory up front (the X1 golden uses a relative spelling).
+    let output_root = options.output_dir.clone().map(|spelling| {
+        let root = PathBuf::from(spelling);
+        if root.is_absolute() {
+            root
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&root))
+                .unwrap_or(root)
+        }
+    });
+    let output_for = |input: &Path| -> PathBuf {
+        if multi {
+            output_dir_for_doc(output_root.as_deref().unwrap_or(Path::new(".")), input)
+        } else {
+            let input_str = input.to_string_lossy().into_owned();
+            resolve_output_dir(&input_str, options.output_dir.as_deref()).unwrap_or_else(|error| {
+                eprintln!("error: {error}");
+                std::process::exit(2);
+            })
+        }
+    };
+    // Ctrl+C: first request graceful, second forced 130 (frozen contract).
+    let cancellation = CancellationToken::new();
+    install_sigint_handler(cancellation.clone());
+    // Frozen preflight (§6.3 step 1): an explicit unavailable device fails
+    // diagnosably (exit 6 kind runtime) even for native-only documents.
+    if options.device != "auto" {
+        let composed_gate = compose::compose(None);
+        if let Err(device_error) = composed_gate.inference.devices().select(&options.device) {
+            reporter.error(
+                &ErrorReport {
+                    code: 6,
+                    kind: "runtime".to_owned(),
+                    message: "requested device is unavailable".to_owned(),
+                    cause: Some(format!("{device_error:?}")),
+                    suggestion: Some(
+                        "run `ocrx doctor --report json` to see available backends".to_owned(),
+                    ),
+                },
+                report_format,
+            );
+            emit_reporter(&mut reporter);
+            std::process::exit(6);
+        }
+    }
+    // Output policy: the output tree may not overlap the input, the model
+    // cache, or the working directory (exit 9 kind output).
+    let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(ocrx_models::default_cache_root);
+    let working_directory = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for input in &resolved_inputs {
+        let output = output_for(input);
+        if let Ok(canonical_input) = input.canonicalize() {
+            // W2.3/m2: the protected cache paths are the MODEL subtrees
+            // (`<root>/ocrx/models`, `<root>/ovisocr2`), not the whole cache
+            // root — on Windows the default root is %LOCALAPPDATA%, which
+            // also contains %TEMP%; protecting the root would outlaw every
+            // temp-dir output. An output AT the cache root is still refused
+            // (ancestor of the protected subtree).
+            let protected_cache_roots = [
+                cache_root.join("ocrx").join("models"),
+                cache_root.join("ovisocr2"),
+            ];
+            let protected = [
+                canonical_input.as_path(),
+                protected_cache_roots[0].as_path(),
+                protected_cache_roots[1].as_path(),
+            ];
+            if let Err(error) = validate_scan_output_policy(
+                &canonical_input,
+                &output,
+                &protected,
+                &working_directory,
+            ) {
+                reporter.error(
+                    &ErrorReport {
+                        code: 9,
+                        kind: "output".to_owned(),
+                        message: "output directory refused by the output policy".to_owned(),
+                        cause: Some(error),
+                        suggestion: Some("choose a dedicated output directory".to_owned()),
+                    },
+                    report_format,
+                );
+                emit_reporter(&mut reporter);
+                std::process::exit(9);
+            }
+        }
+    }
+    let dpi = u16::try_from(options.dpi.unwrap_or(300)).unwrap_or(300);
+    let window_depth = resolve_window_depth(&options.device);
+    let pdfium_dir = std::env::var_os("OCRX_PDFIUM_LIBRARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut composed = compose::compose(None);
+    let app_options = ocrx_scan::DocumentOptions {
+        pdf_mode: options.pdf_mode.clone(),
+        quality_tier: options.quality_tier.clone(),
+        dpi: options.dpi.unwrap_or(300),
+        max_image_tokens: options.max_image_tokens.unwrap_or(1024),
+        max_output_tokens: options.max_output_tokens.unwrap_or(16_384),
+        context_size: options.context_size.unwrap_or(20_480),
+        resume: options.resume,
+        keep_pages: options.keep_pages,
+        column_split_retry: options.column_split_retry,
+        pages: options.pages.clone(),
+        requested_profile: options.profile.clone(),
+        requested_device: options.device.clone(),
+        install: ocrx_inference_api::InstallPolicy {
+            offline: options.offline,
+            non_interactive: options.non_interactive,
+            license_accepted: true,
+        },
+    };
+    // One owner for the whole invocation (X1): the first input spawns it,
+    // later documents SwitchDocument inside the port.
+    let first_input = resolved_inputs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("missing.pdf"));
+    let mut pdf_access = ocrx_scan::render::pdfium_owner::OwnerPdfAccess::spawn(
+        pdfium_dir.clone(),
+        first_input,
+        ocrx_pdf::RenderOptions { dpi },
+        options.password.clone(),
+        u32::try_from(window_depth * 2).unwrap_or(2),
+    );
+    let commit_recorder = ocrx_output::commit_profile::CommitRecorder::new_gated();
+    let renderer = pdf_access.renderer(commit_recorder.clone());
+    let mut renderer_box: Box<dyn ocrx_scan::window::PageRenderer> = Box::new(renderer);
+    let events = std::cell::RefCell::new(Vec::new());
+    let outcome = composed.scan.run(
+        &resolved_inputs,
+        &output_for,
+        &app_options,
+        &mut pdf_access,
+        renderer_box.as_mut(),
+        &mut composed.inference,
+        &commit_recorder,
+        &cancellation,
+        &mut |event| events.borrow_mut().push(event),
+    );
+    // Emit buffered events through the Reporter contract. Multi-doc
+    // boundary lines land on stderr (X1 golden "[doc i/n input]").
+    let mut doc_index = 0_usize;
+    for event in events.into_inner() {
+        match event {
+            ocrx_scan::ScanEvent::DocumentStarted { input, .. } => {
+                doc_index += 1;
+                if multi {
+                    eprintln!(
+                        "[doc {doc_index}/{} {}]",
+                        resolved_inputs.len(),
+                        input.display()
+                    );
+                }
+            }
+            ocrx_scan::ScanEvent::Analyzing { completed, total } => {
+                reporter.progress(
+                    &ProgressEvent::for_stage(ProgressStage::Analyzing, None, completed, total),
+                    progress_mode,
+                );
+            }
+            ocrx_scan::ScanEvent::PageProgress {
+                page,
+                generated_tokens,
+                elapsed_seconds,
+            } => {
+                reporter.progress(
+                    &ProgressEvent::for_stage(
+                        ProgressStage::Recognizing,
+                        Some(page),
+                        generated_tokens,
+                        generated_tokens,
+                    ),
+                    progress_mode,
+                );
+                let _ = elapsed_seconds;
+            }
+            ocrx_scan::ScanEvent::DocumentFinished { .. } => {}
+        }
+    }
+    let Ok(outcome) = outcome else {
+        // Whole-invocation infrastructure failure (rare: I/O abort).
+        eprintln!("error: scan invocation failed");
+        std::process::exit(3);
+    };
+    let cancelled = outcome.cancelled;
+    let mut doc_results: Vec<(PathBuf, i32)> = Vec::new();
+    let mut any_failure = false;
+    let mut any_partial = false;
+    for document in &outcome.documents {
+        if let Some(failure) = &document.failure {
+            // Document-level failure: an Err VALUE (the orchestrator skips
+            // it and keeps going, X1.2).
+            reporter.error(
+                &ErrorReport {
+                    code: failure.code,
+                    kind: failure.kind.clone(),
+                    message: failure.message.clone(),
+                    cause: failure.cause.clone(),
+                    suggestion: None,
+                },
+                report_format,
+            );
+            doc_results.push((document.input.clone(), i32::from(failure.code)));
+            any_failure = true;
+            continue;
+        }
+        let result_json = serialize_scan_result(&ScanResultFields {
+            status: if document.summary.failed_pages == 0
+                && document.summary.truncated_pages == 0
+                && document.summary.degenerated_pages == 0
+            {
+                "success"
+            } else {
+                "partial"
+            },
+            input: &document.input,
+            markdown_path: document.markdown_path.as_deref(),
+            output_dir: &document.output_dir,
+            profile: &options.profile,
+            required_quality_tier: &options.quality_tier,
+            document_type: &document.document_type,
+            ocr_model_loaded: document.identity.is_some(),
+            backend: document.backend.as_deref().unwrap_or("cpu"),
+            total_pages: document.summary.selected_pages,
+            completed_pages: document.summary.completed_pages,
+            failed_pages: document.summary.failed_pages,
+            truncated_pages: document.summary.truncated_pages,
+            degenerated_pages: document.summary.degenerated_pages,
+            think_blocks_stripped_total: document.summary.think_blocks_stripped,
+            warnings: document.summary.warnings.clone(),
+            diagnostics: document.summary.diagnostics.clone(),
+            pdf_routing: document.pdf_routing.clone(),
+            routing_counts: app_counts(&document.routing_counts),
+            image_dir: &document.output_dir.join("images"),
+            image_count: document.images_count,
+            elapsed_ms: document.elapsed_ms,
+        });
+        if let Err(error) = ocrx_output::atomic_write(
+            document.output_dir.join("result.json"),
+            result_json.as_bytes(),
+        ) {
+            reporter.error(
+                &ErrorReport {
+                    code: 5,
+                    kind: "output".to_owned(),
+                    message: "result.json commit failed".to_owned(),
+                    cause: Some(error.to_string()),
+                    suggestion: None,
+                },
+                report_format,
+            );
+            doc_results.push((document.input.clone(), 5));
+            any_failure = true;
+            continue;
+        }
+        if report_format == ReportFormat::Json {
+            if !multi {
+                reporter.stdout.push_str(&result_json);
+                reporter.stdout.push('\n');
+            }
+        } else {
+            reporter.stdout.push_str(&format!(
+                "document_type={} native_text={} ocr={} empty={} fallback={}\n",
+                document.document_type,
+                document.routing_counts.native_text,
+                document.routing_counts.ocr,
+                document.routing_counts.empty,
+                document.routing_counts.fallback
+            ));
+        }
+        let exit = if cancelled {
+            130
+        } else if document.summary.failed_pages > 0 {
+            3
+        } else if document.summary.truncated_pages > 0 || document.summary.degenerated_pages > 0 {
+            any_partial = true;
+            10
+        } else {
+            0
+        };
+        doc_results.push((document.input.clone(), exit));
+    }
+    // Multi-input: scan-summary.json + aggregate exit (X1.3/X1.4).
+    if multi {
+        let documents: Vec<ScanSummaryDocument> = doc_results
+            .iter()
+            .map(|(input, exit)| ScanSummaryDocument {
+                input: input.clone(),
+                output_dir: output_for(input),
+                status: match *exit {
+                    0 => "success",
+                    130 => "cancelled",
+                    code if (3..10).contains(&code) => "failed",
+                    _ => "partial",
+                },
+                exit_code: *exit,
+                elapsed_ms: 0,
+            })
+            .collect();
+        let summary = scan_summary_json(
+            &resolved_inputs,
+            output_root.as_deref().unwrap_or(Path::new(".")),
+            &documents,
+            started.elapsed().as_millis(),
+        );
+        if let Some(root) = &output_root {
+            if let Err(error) =
+                ocrx_output::atomic_write(root.join("scan-summary.json"), summary.as_bytes())
+            {
+                eprintln!("warning: scan-summary.json commit failed: {error}");
+            }
+            if report_format == ReportFormat::Json {
+                reporter.stdout.push_str(&summary);
+                reporter.stdout.push('\n');
+            }
+        }
+    }
+    emit_reporter(&mut reporter);
+    if cancelled {
+        std::process::exit(130);
+    }
+    if any_failure {
+        std::process::exit(3);
+    }
+    if any_partial {
+        std::process::exit(10);
+    }
+    std::process::exit(0);
+}
+
+/// Bridge the scan crate's counter type onto the legacy report shape.
+fn app_counts(counts: &ocrx_scan::app::RoutingCounts) -> RoutingCounts {
+    RoutingCounts {
+        native_text: usize::try_from(counts.native_text).unwrap_or(usize::MAX),
+        ocr: usize::try_from(counts.ocr).unwrap_or(usize::MAX),
+        empty: usize::try_from(counts.empty).unwrap_or(usize::MAX),
+        fallback: usize::try_from(counts.fallback).unwrap_or(usize::MAX),
+    }
+}
+
 fn run_scan(options: ScanOptions) -> ! {
     // Install the Ctrl+C handler before any slow phase (PDF analysis, native
     // extraction, runtime load), so "exit 130 -> resume with --resume" covers
@@ -6238,38 +6612,89 @@ previous: {}",
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let input_sha = ocrx_core::sha256_file(&input).unwrap();
-        let compatibility = ocrx_output::CompatibilityKey {
-            input_sha256: input_sha,
-            model: "ovisocr2".to_owned(),
-            profile: "native".to_owned(),
-            parameters: format!(
-                "{};platform={};dpi={};tokens={};max_image_tokens={};context_size={};device={};route=native",
-                ocrx_output::pdf_compatibility_parameters(
-                    "ocr",
-                    "l2",
-                    "pdf-route-v1",
-                    "pdf-text-v1"
-                ),
-                current_platform(),
-                300,
-                16_384,
-                1024,
-                20_480,
-                "cpu"
-            ),
+        // T100-era seed: a V6 OCR-complete checkpoint carrying the true
+        // reference identity (pinned hashes), truncated=true — so `--resume`
+        // must REUSE it (pre-compare + integrity pass; zero decode since the
+        // page is the only selected page) and keep the page partial.
+        let assets = ocrx_models::builtin::ovisocr2::OVISOCR2_MODEL_ASSETS
+            .iter()
+            .find(|asset| asset.profile == "reference")
+            .expect("pinned reference asset");
+        let identity = ocrx_inference_api::InferenceIdentity {
+            model: ocrx_inference_api::ModelIdentity::new(
+                ocrx_inference_api::ModelId::new("ovisocr2").unwrap(),
+                ocrx_inference_api::ProfileId::new("reference").unwrap(),
+                ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION,
+                vec![
+                    ocrx_inference_api::AssetIdentity {
+                        role: ocrx_inference_api::AssetRole::new("mmproj").unwrap(),
+                        sha256: ocrx_models::builtin::ovisocr2::OVISOCR2_MMPROJ_SHA256.to_owned(),
+                        byte_len: ocrx_models::builtin::ovisocr2::OVISOCR2_MMPROJ_BYTES,
+                    },
+                    ocrx_inference_api::AssetIdentity {
+                        role: ocrx_inference_api::AssetRole::new("model").unwrap(),
+                        sha256: assets.sha256.to_owned(),
+                        byte_len: assets.bytes,
+                    },
+                ],
+            )
+            .unwrap(),
+            runtime: ocrx_inference_api::RuntimeIdentity {
+                runtime: ocrx_inference_api::RuntimeId::new("llama.cpp").unwrap(),
+                wrapper_version: "0.1.161".to_owned(),
+                sys_version: "0.1.161".to_owned(),
+                upstream_revision: "d81235049384534c167caea52b85a694f6103d14".to_owned(),
+            },
+            adapter: ocrx_inference_api::AdapterIdentity {
+                adapter: ocrx_inference_api::AdapterId::new("ovisocr2").unwrap(),
+                version: "0.1.0".to_owned(),
+            },
+            backend: ocrx_inference_api::BackendId::new("cpu").unwrap(),
+            decode_generation: 2,
+            batch_depth: 8,
+            display: ocrx_inference_api::ModelDisplayMeta {
+                display_name: "OvisOCR2".to_owned(),
+                family: "Ovis".to_owned(),
+                quantization: "BF16".to_owned(),
+            },
         };
-        let page_json = r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated","degenerated"]}"#;
-        ocrx_output::commit_page(
-            &root,
-            1,
-            b"png",
-            "truncated page body",
-            page_json,
-            &ocrx_output::PageCheckpoint {
+        let compatibility = ocrx_output::ScanCompatibility::ocr(
+            &input_sha,
+            ocrx_output::PdfIdentity {
+                pdf_mode: "ocr".to_owned(),
+                quality_tier: "l2".to_owned(),
+                classifier_version: "pdf-route-v1".to_owned(),
+                extractor_version: "pdf-text-v1".to_owned(),
+                platform: current_platform().to_owned(),
+            },
+            ocrx_output::OcrIdentity {
+                inference: identity,
+                prompt_id: "ocr-markdown".to_owned(),
+                prompt_version: "ocr-markdown-v1".to_owned(),
+                prompt_schema_version: 1,
+                dpi: 300,
+                max_image_tokens: 1024,
+                max_output_tokens: 16_384,
+                context_size: 20_480,
+                batch_depth: 8,
+                decode_generation: 2,
+                pixel_width_budget: 2880,
+                pixel_height_budget: 2880,
+                page_parser_version: "ovis-page-v1".to_owned(),
+            },
+        );
+        // Artifacts must be intact for reuse: the md the checkpoint hashes.
+        let markdown_body = "truncated page body";
+        std::fs::write(root.join("page-0001.md"), markdown_body).unwrap();
+        let page_json = r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}"#;
+        std::fs::write(root.join("page-0001.json"), page_json).unwrap();
+        ocrx_output::write_v6(
+            root.join("page-0001.checkpoint"),
+            &ocrx_output::V6Checkpoint {
                 page_number: 1,
-                compatibility: compatibility.clone(),
-                complete: true,
-                output_sha256: String::new(),
+                status: ocrx_output::V6Status::Complete,
+                compatibility,
+                output_sha256: ocrx_core::sha256(markdown_body.as_bytes()),
                 truncated: true,
                 degenerated: false,
                 attempts: 1,

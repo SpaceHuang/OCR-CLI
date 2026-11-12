@@ -13,6 +13,7 @@ use std::io;
 
 // The render audit is an output-persistence type (checkpoint fragment);
 // the scan consumes it by value.
+pub use ocrx_output::PageDiagnostic;
 pub use ocrx_output::RenderAudit;
 
 /// One degeneration-retry rung (quality plan Q1.4a): the render and decode
@@ -135,17 +136,6 @@ impl PageLifecycle {
         self.status = next;
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PageDiagnostic {
-    pub page: u32,
-    pub status: String,
-    pub stage: String,
-    pub error_code: Option<String>,
-    pub message: Option<String>,
-    pub audit: Option<RenderAudit>,
-    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

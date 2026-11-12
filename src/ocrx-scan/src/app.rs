@@ -447,6 +447,9 @@ impl ScanApplication {
         let mut resume_reuse: Vec<u32> = Vec::new();
         let mut resume_pending: Vec<u32> = Vec::new();
         let mut resume_incomplete: Vec<V6Checkpoint> = Vec::new();
+        // Reused truncated/degenerated pages keep their incomplete flags in
+        // the merged document (legacy collect_verified_page_markdowns rule).
+        let mut reuse_incomplete: Vec<(u32, PageIncomplete)> = Vec::new();
         let mut reuse_think: u64 = 0;
         let mut reuse_truncated: u32 = 0;
         let mut reuse_warnings: HashSet<String> = HashSet::new();
@@ -475,6 +478,7 @@ impl ScanApplication {
                         reuse_think += u64::from(think_blocks_stripped);
                         if truncated {
                             reuse_truncated += 1;
+                            reuse_incomplete.push((page_u32, PageIncomplete::Truncated));
                         }
                         reuse_warnings.extend(warnings.iter().cloned());
                         // The checkpoint route decides the collection scope.
@@ -766,15 +770,21 @@ impl ScanApplication {
         // Collect the reused OCR pages' markdown (identity-verified above).
         for page in &resume_reuse {
             let collected = collect_page_markdowns(output, &[*page]).unwrap_or_default();
-            let incomplete = resume_incomplete
+            let incomplete = reuse_incomplete
                 .iter()
-                .find(|checkpoint| checkpoint.page_number == *page)
-                .map(|checkpoint| {
-                    if checkpoint.degenerated {
-                        PageIncomplete::Degenerated
-                    } else {
-                        PageIncomplete::Truncated
-                    }
+                .find(|(page_number, _)| *page_number == *page)
+                .map(|(_, incomplete)| *incomplete)
+                .or_else(|| {
+                    resume_incomplete
+                        .iter()
+                        .find(|checkpoint| checkpoint.page_number == *page)
+                        .map(|checkpoint| {
+                            if checkpoint.degenerated {
+                                PageIncomplete::Degenerated
+                            } else {
+                                PageIncomplete::Truncated
+                            }
+                        })
                 });
             for markdown in collected {
                 resume_markdown.push(PageMarkdown {
@@ -898,8 +908,12 @@ impl ScanApplication {
             &pending_set,
             &HashSet::new(),
         );
-        let routing_counts =
-            routing_counts_for_mode(&options.pdf_mode, &pages, &classifications, &fallback_reasons);
+        let routing_counts = routing_counts_for_mode(
+            &options.pdf_mode,
+            &pages,
+            &classifications,
+            &fallback_reasons,
+        );
         let document_type = ocrx_pdf::summarize_document_type(&classifications)
             .as_str()
             .to_owned();
@@ -976,7 +990,10 @@ impl ScanApplication {
                     .filter_map(Result::ok)
                     .filter(|entry| {
                         entry.path().is_file()
-                            && entry.path().extension().is_some_and(|extension| extension == "png")
+                            && entry
+                                .path()
+                                .extension()
+                                .is_some_and(|extension| extension == "png")
                             && entry.file_name().to_string_lossy().starts_with("page-")
                             && entry.file_name().to_string_lossy().contains("-figure-")
                     })

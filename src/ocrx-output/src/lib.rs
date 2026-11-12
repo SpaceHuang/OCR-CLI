@@ -2703,7 +2703,11 @@ pub fn paths_overlap(left: &Path, right: &Path) -> bool {
 /// through the deepest existing ancestor also unfolds `..`, 8.3 short names
 /// (`PROGRA~1`), and reparse points for the parts of the path that exist
 /// (review BLK-2: component-wise comparison alone was bypassable).
-fn canonical_form(path: &Path) -> PathBuf {
+pub fn canonical_form(path: &Path) -> PathBuf {
+    canonical_form_public(path)
+}
+
+pub fn canonical_form_public(path: &Path) -> PathBuf {
     if let Ok(canonical) = fs::canonicalize(path) {
         return canonical;
     }
@@ -5890,5 +5894,18 @@ audit=none
         assert_eq!(controller.start_next().unwrap(), None);
         controller.finish(2, PageStatus::Failed).unwrap();
         assert_eq!(controller.summary().status(), JobStatus::Cancelled);
+    }
+}
+
+#[cfg(test)]
+mod overlap_debug {
+    #[test]
+    fn debug_overlap_temp_vs_models() {
+        let output = std::path::Path::new("C:/Users/WIN11/AppData/Local/Temp/ocrx-gate-t5");
+        let protected = std::path::Path::new(r"C:\Users\WIN11\AppData\Local\ocrx\models");
+        let result = super::paths_overlap(output, protected);
+        eprintln!("OVERLAP: {result}");
+        eprintln!("out canon: {:?}", super::canonical_form(output));
+        eprintln!("prot canon: {:?}", super::canonical_form(protected));
     }
 }
