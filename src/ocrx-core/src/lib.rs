@@ -3,9 +3,112 @@
 pub mod resource_sampler;
 
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+
+static ATOMIC_WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Atomically replaces a file using a newly created sibling temporary file.
+/// `create_new` prevents following a pre-existing temporary-path symlink.
+///
+/// # Errors
+///
+/// Returns an error if the parent cannot be created, a temporary file cannot
+/// be opened or written, or the completed file cannot be renamed into place.
+pub fn atomic_write(path: impl AsRef<Path>, contents: &[u8]) -> io::Result<()> {
+    let path = path.as_ref();
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "output path has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let name = path.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "output path has no filename")
+    })?;
+    let mut last_collision = None;
+    for _ in 0..128 {
+        let sequence = ATOMIC_WRITE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp = parent.join(format!(
+            ".{}.tmp-{}-{sequence}",
+            name.to_string_lossy(),
+            std::process::id()
+        ));
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                last_collision = Some(error);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let result = (|| {
+            use std::io::Write;
+            file.write_all(contents)?;
+            file.sync_all()?;
+            drop(file);
+            std::fs::rename(&temp, path)
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temp);
+        }
+        return result;
+    }
+    Err(last_collision.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate temporary file",
+        )
+    }))
+}
+
+/// Creates or validates one direct child directory without following a
+/// pre-existing symlink. Returns its canonical path for subsequent writes.
+///
+/// # Errors
+///
+/// Returns an error if the root or child cannot be inspected, the child is a
+/// symlink or non-directory, or the canonical child is outside the root.
+pub fn create_contained_child_dir(root: &Path, child: &str) -> io::Result<PathBuf> {
+    let mut components = Path::new(child).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "child must be one path component",
+        ));
+    }
+    std::fs::create_dir_all(root)?;
+    let canonical_root = root.canonicalize()?;
+    let child_path = root.join(child);
+    match std::fs::symlink_metadata(&child_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "output child directory must not be a symlink",
+            ));
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "output child path is not a directory",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => std::fs::create_dir(&child_path)?,
+        Err(error) => return Err(error),
+    }
+    let canonical_child = child_path.canonicalize()?;
+    if !canonical_child.starts_with(&canonical_root) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "output child directory escapes output root",
+        ));
+    }
+    Ok(canonical_child)
+}
 
 /// Cooperative cancellation token shared by runtime, scan, and CLI layers.
 ///
@@ -1088,7 +1191,7 @@ impl PageDocument {
             .and_then(serde_json::Value::as_array)
             .ok_or(DomainError::InvalidJson)?
             .iter()
-            .map(|block| parse_block(&block.to_string()))
+            .map(parse_block)
             .collect::<Result<Vec<_>, _>>()?;
         let document = Self {
             schema_version,
@@ -1234,49 +1337,44 @@ impl PdfPageDocument {
     }
 }
 
-fn json_number(value: &str, key: &str) -> Result<u32, DomainError> {
+fn block_string<'a>(value: &'a serde_json::Value, key: &str) -> Result<&'a str, DomainError> {
     value
-        .split_once(&format!("\"{key}\":"))
-        .and_then(|(_, rest)| rest.split(|c: char| !c.is_ascii_digit()).next())
-        .and_then(|number| number.parse().ok())
+        .get(key)
+        .and_then(serde_json::Value::as_str)
         .ok_or(DomainError::InvalidJson)
 }
 
-fn json_string(value: &str, key: &str) -> Result<String, DomainError> {
+fn block_u32(value: &serde_json::Value, key: &str) -> Result<u32, DomainError> {
     value
-        .split_once(&format!("\"{key}\":\""))
-        .and_then(|(_, rest)| rest.split_once('"'))
-        .map(|(string, _)| {
-            string
-                .replace("\\n", "\n")
-                .replace("\\\"", "\"")
-                .replace("\\\\", "\\")
-        })
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|number| u32::try_from(number).ok())
         .ok_or(DomainError::InvalidJson)
 }
 
-fn parse_block(value: &str) -> Result<PageBlock, DomainError> {
-    let value = value.trim_matches('{').trim_matches('}');
-    let kind = json_string(value, "type")?;
-    match kind.as_str() {
+fn parse_block(value: &serde_json::Value) -> Result<PageBlock, DomainError> {
+    if !value.is_object() {
+        return Err(DomainError::InvalidJson);
+    }
+    let kind = block_string(value, "type")?;
+    match kind {
         "markdown" => Ok(PageBlock::Markdown {
-            content: json_string(value, "content")?,
+            content: block_string(value, "content")?.to_owned(),
         }),
         "formula" => Ok(PageBlock::Formula {
-            latex: json_string(value, "latex")?,
-            display: value.contains("\"display\":true"),
+            latex: block_string(value, "latex")?.to_owned(),
+            display: value
+                .get("display")
+                .and_then(serde_json::Value::as_bool)
+                .ok_or(DomainError::InvalidJson)?,
         }),
         "html_table" => Ok(PageBlock::HtmlTable {
-            html: json_string(value, "html")?,
+            html: block_string(value, "html")?.to_owned(),
         }),
         "visual_region" => {
-            let bbox = value
-                .split_once("\"bbox\":{")
-                .and_then(|(_, rest)| rest.split_once('}'))
-                .ok_or(DomainError::InvalidJson)?
-                .0;
+            let bbox = value.get("bbox").ok_or(DomainError::InvalidJson)?;
             let number =
-                |key| u16::try_from(json_number(bbox, key)?).map_err(|_| DomainError::InvalidJson);
+                |key| u16::try_from(block_u32(bbox, key)?).map_err(|_| DomainError::InvalidJson);
             Ok(PageBlock::VisualRegion {
                 bbox: NormalizedBbox::new(
                     number("left")?,
@@ -1284,7 +1382,7 @@ fn parse_block(value: &str) -> Result<PageBlock, DomainError> {
                     number("right")?,
                     number("bottom")?,
                 )?,
-                source_order: json_number(value, "source_order")?,
+                source_order: block_u32(value, "source_order")?,
             })
         }
         _ => Err(DomainError::InvalidJson),
@@ -2040,6 +2138,31 @@ mod tests {
             let encoded = document.to_json().unwrap();
             assert_eq!(PageDocument::from_json(&encoded).unwrap(), document);
         }
+    }
+
+    #[test]
+    fn page_document_json_round_trips_quotes_slashes_controls_and_unicode() {
+        let document = PageDocument {
+            schema_version: PageDocument::SCHEMA_VERSION,
+            page_number: 1,
+            blocks: vec![
+                PageBlock::Markdown {
+                    content: "He said \"hello\".\tLaTeX: \\theta + \\nu\r\n龘𠮷🙂🚀".to_owned(),
+                },
+                PageBlock::Formula {
+                    latex: r"\left(\theta + \nu\right) \quad x\to y".to_owned(),
+                    display: true,
+                },
+                PageBlock::HtmlTable {
+                    html: "<td title=\"a\\b\">line\tvalue</td>".to_owned(),
+                },
+            ],
+            termination: Termination::Eos,
+            warnings: vec![],
+        };
+        let encoded = document.to_json().unwrap();
+        assert!(serde_json::from_str::<serde_json::Value>(&encoded).is_ok());
+        assert_eq!(PageDocument::from_json(&encoded).unwrap(), document);
     }
 
     #[test]

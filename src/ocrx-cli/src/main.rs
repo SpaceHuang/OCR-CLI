@@ -1134,6 +1134,33 @@ fn resolve_output_dir(input: &str, explicit: Option<&str>) -> Result<PathBuf, St
     }
 }
 
+fn bundled_pdfium_path(executable: &Path) -> PathBuf {
+    let directory = executable.parent().unwrap_or_else(|| Path::new("."));
+    #[cfg(target_os = "macos")]
+    let bundled = directory.join("../lib/libpdfium.dylib");
+    #[cfg(target_os = "windows")]
+    let bundled = directory.join("pdfium.dll");
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let bundled = directory.join("../lib/libpdfium.so");
+    bundled
+}
+
+fn default_pdfium_library() -> PathBuf {
+    if let Ok(executable) = std::env::current_exe() {
+        let bundled = bundled_pdfium_path(&executable);
+        if bundled.is_file() {
+            return bundled;
+        }
+    }
+    PathBuf::from(".")
+}
+
+fn pdfium_library_from_environment() -> PathBuf {
+    std::env::var_os("OCRX_PDFIUM_LIBRARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(default_pdfium_library)
+}
+
 fn validate_output_policy(input: &Path, output: &Path, protected: &[&Path]) -> Result<(), String> {
     // Delegates to the shared output-root validator so every scan gets the
     // full protection set in one place (review BLK-2): absolute-path check,
@@ -2566,9 +2593,7 @@ fn scan_document(
             return 9;
         }
     };
-    let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let library = pdfium_library_from_environment();
     // Validate the input before resolving or downloading model assets. Invalid,
     // encrypted, and corrupt PDFs are input errors even on a machine with no
     // installed OCR model.
@@ -2921,8 +2946,8 @@ fn scan_document(
             ocrx_output::pdf_compatibility_parameters(
                 &options.pdf_mode,
                 &options.quality_tier,
-                "pdf-route-v1",
-                "pdf-text-v1",
+                "pdf-route-v2",
+                "pdf-text-v2",
             ),
             current_platform(),
             options.max_output_tokens.unwrap_or(16_384),
@@ -4351,10 +4376,44 @@ fn run_scan_multi(options: ScanOptions) -> ! {
             std::process::exit(2);
         }
     };
+    // Validate the aggregate root before starting the owner or any document.
+    // Child-directory checks cannot protect scan-summary.json on failure paths.
+    let output_policy = (|| -> Result<(), String> {
+        let working_directory = std::env::current_dir().map_err(|error| error.to_string())?;
+        let cache = std::env::var_os("OCRX_MODEL_CACHE")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(ocrx_models::default_cache_root);
+        let protected = [cache.join("ocrx/models"), cache.join("ovisocr2")];
+        for input in &inputs {
+            validate_scan_output_policy(
+                input,
+                &output_root,
+                &[protected[0].as_path(), protected[1].as_path()],
+                &working_directory,
+            )?;
+        }
+        if output_root.join("scan-summary.json").exists() && !options.overwrite && !options.resume {
+            return Err("scan-summary.json already exists; use --resume or --overwrite".to_owned());
+        }
+        Ok(())
+    })();
+    if let Err(error) = output_policy {
+        reporter.error(
+            &ErrorReport {
+                code: 9,
+                kind: "output".to_owned(),
+                message: "output directory refused by the output policy".to_owned(),
+                cause: Some(error),
+                suggestion: Some("choose a dedicated output directory; use --resume or --overwrite for existing results".to_owned()),
+            },
+            report_format,
+        );
+        print_reporter(reporter);
+        std::process::exit(9);
+    }
     let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
-    let library = std::env::var_os("OCRX_PDFIUM_LIBRARY")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let library = pdfium_library_from_environment();
     // X1 protocol ①: ONE owner for the whole invocation, spawned on the
     // first input; documents switch through the protocol at scheduling
     // boundaries. A per-document spawn is structurally impossible here.
@@ -4395,7 +4454,8 @@ fn run_scan_multi(options: ScanOptions) -> ! {
         // X1 protocol ③/④: the switch happens at the document scheduling
         // boundary; an Err VALUE skips this document and the invocation
         // continues; owner poison is the fail-loud invocation abort.
-        if let Err(error) = owner.borrow_mut().switch_document(&canonical) {
+        let switch_result = owner.borrow_mut().switch_document(&canonical);
+        if let Err(error) = switch_result {
             if let Some(poison) = owner.borrow().poisoned() {
                 reporter.error(
                     &ErrorReport {
@@ -4895,6 +4955,32 @@ fn doctor_json_report_with_paths(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bundled_pdfium_is_resolved_from_installed_executable_layout() {
+        let root = std::env::temp_dir().join(format!("ocrx-bundled-pdfium-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = root.join("bin");
+        let lib = root.join("lib");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&lib).unwrap();
+        let executable = bin.join(if cfg!(windows) { "ocrx.exe" } else { "ocrx" });
+        std::fs::write(&executable, b"binary").unwrap();
+        #[cfg(target_os = "macos")]
+        let library = lib.join("libpdfium.dylib");
+        #[cfg(target_os = "windows")]
+        let library = bin.join("pdfium.dll");
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        let library = lib.join("libpdfium.so");
+        std::fs::write(&library, b"pdfium").unwrap();
+        assert_eq!(
+            super::bundled_pdfium_path(&executable)
+                .canonicalize()
+                .unwrap(),
+            library.canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::Arc;

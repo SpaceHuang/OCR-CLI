@@ -204,3 +204,108 @@ fn orchestrated_cancellation_stops_the_queue_at_the_next_boundary() {
 
     let _ = std::fs::remove_dir_all(&cwd);
 }
+
+#[test]
+fn multi_root_policy_protects_outputs_before_any_document_runs() {
+    let cwd = std::env::temp_dir().join(format!("ocrx-root-policy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&cwd);
+    std::fs::create_dir_all(cwd.join("docs")).unwrap();
+    let first = cwd.join("docs/a.pdf");
+    std::fs::create_dir_all(cwd.join("other-docs")).unwrap();
+    let second = cwd.join("other-docs/b.pdf");
+    std::fs::write(&first, b"invalid PDF").unwrap();
+    std::fs::write(&second, b"invalid PDF").unwrap();
+    let cache = cwd.join("cache");
+    for root in [
+        cache.join("ocrx/models"),
+        cache.join("ovisocr2"),
+        cwd.clone(),
+        cwd.join("docs"),
+        cwd.join("other-docs"),
+        cwd.join("existing"),
+    ] {
+        std::fs::create_dir_all(&root).unwrap();
+        let summary = root.join("scan-summary.json");
+        for existing in [false, true] {
+            if existing {
+                std::fs::write(&summary, b"SENTINEL").unwrap();
+            }
+            // A fresh dedicated output is allowed; every other case is refused.
+            if !existing && root == cwd.join("existing") {
+                continue;
+            }
+            let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+                .current_dir(&cwd)
+                .arg("scan")
+                .arg(&first)
+                .arg(&second)
+                .arg("--output-dir")
+                .arg(&root)
+                .args([
+                    "--pdf-mode",
+                    "text",
+                    "--offline",
+                    "--non-interactive",
+                    "--report",
+                    "json",
+                ])
+                .env("OCRX_MODEL_CACHE", &cache)
+                .env("OCRX_PDFIUM_LIBRARY", cwd.join("missing-pdfium"))
+                .output()
+                .unwrap();
+            assert!(matches!(output.status.code(), Some(2 | 9)), "{output:?}");
+            assert!(
+                !String::from_utf8_lossy(&output.stderr).contains("[doc "),
+                "{output:?}"
+            );
+            if existing {
+                assert_eq!(std::fs::read(&summary).unwrap(), b"SENTINEL");
+                std::fs::remove_file(&summary).unwrap();
+            } else {
+                assert!(!summary.exists());
+            }
+        }
+    }
+    std::fs::remove_dir_all(cwd).unwrap();
+}
+
+#[test]
+fn owner_disconnect_at_second_document_reports_error_without_panic() {
+    let cwd = std::env::temp_dir().join(format!("ocrx-owner-disconnect-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&cwd);
+    std::fs::create_dir_all(cwd.join("out/committed")).unwrap();
+    let committed = cwd.join("out/committed/document.md");
+    std::fs::write(&committed, b"committed result").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .current_dir(&cwd)
+        .arg("scan")
+        .arg(fixture("normal-1-page.pdf"))
+        .arg(fixture("native-plus-empty.pdf"))
+        .args([
+            "--output-dir",
+            "out",
+            "--pdf-mode",
+            "text",
+            "--offline",
+            "--non-interactive",
+            "--report",
+            "json",
+        ])
+        .env("OCRX_E2E_OWNER_DISCONNECT_ON_SWITCH", "2")
+        .env("OCRX_PDFIUM_LIBRARY", cwd.join("missing-pdfium"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("pdfium owner failed"), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(
+        stderr
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .any(|error| error.to_string().contains("pdfium owner failed")),
+        "{stderr}"
+    );
+    assert_eq!(std::fs::read(committed).unwrap(), b"committed result");
+    std::fs::remove_dir_all(cwd).unwrap();
+}
