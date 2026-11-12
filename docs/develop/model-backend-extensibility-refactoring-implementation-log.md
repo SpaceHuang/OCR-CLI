@@ -126,3 +126,46 @@ T053 已提交（plan.rs 纯校验移植，56 scan 测试）。workspace 全绿�
 **重要：** main.rs 的对应函数在 T074/T077 前不删；port 时用 python 脚本或 Write 工具（heredoc 会被长
 内容截断）。scan crate 依赖现况：core/primitives/inference-api/pdf/output/image。测试必须每个临时目录
 唯一 tag。每次 commit 前 `cargo test --workspace --locked`。
+
+
+## 断点续接锚点 2（2026-11-12，阶段 G 起点）
+
+**已完成并提交：T001–T069**（61 项勾选）。workspace 全绿（37 个测试目标）；scan 80 测试；
+新 crate clippy `-D warnings` 干净。阶段 F 全部完成：ScanApplication 端到端管线（native-only 零
+prepare、auto 回退一次 prepare、多输入共享 session、prepare 失败 pending 保留、T1 逐文档遥测增量、
+CommitRecorder sink 全路径接线）。
+
+**T069 已落地：**
+- `src/ocrx-cli/src/compose.rs`：§6.1 顺序组合根（catalog → probe/devices+llama factory → registry →
+  RegistryVerifier → ModelManagerImpl(注入 verifier) → InferenceServiceImpl → ScanApplication），
+  测试证明单模型 list/doctor 概览/static_identity 解析。
+- `ocrx-scan`：`OwnerPdfAccess`（PdfDocumentAccess over PdfiumOwner 通道；`renderer(recorder)` 把同一
+  owner 交给窗口循环；`switch_document` 重建 owner）。PdfiumOwnerHandle/OwnerPageRenderer::new 已 pub。
+- CLI 新依赖：ocrx-inference / ocrx-inference-api / ocrx-scan。scan 导出
+  ScanApplication/DocumentOptions/DocumentOutcome/ScanEvent/ScanOutcome/PdfDocumentAccess 等。
+
+**T070–T078 执行要点（下一步）：**
+1. **T070**：拆 args.rs/config.rs/interaction.rs/present.rs（main.rs 的 parse_scan_args/resolve_config/
+   format_cli_result/print_reporter 等移动；`pub(crate)` 互引保持编译）。
+2. **T071/T072**：`model list/info/recommend` → `composed.inference.manager().list()/info()/recommend()`
+   映射到现有输出串（golden：`model=ovisocr2` / `model=ovisocr2 profiles=… installed=`）；
+   `model install/verify/remove` → manager().install/verify/remove（verify 经注入 RegistryVerifier，
+   T072 专项：资产对但 registry 身份不匹配 → IncompatibleBinding）。
+3. **T073**：doctor → DeviceManagerImpl::diagnose() + manager 概览（schema 2 golden 字段序不变，
+   runtime backend 首字母大写 Cpu 来自 BackendId→展示映射）。
+4. **T074/T075**：scan 命令 → ScanApplication::run（OwnerPdfAccess::spawn(pdfium_dir, input,
+   RenderOptions{dpi}, password, window_depth*2) + renderer(commit_recorder) + compose 的 service；
+   serialize_scan_result 从 DocumentOutcome+InferenceIdentity.display 派生，runtime=llama.cpp@0.1.161，
+   多输入 scan-summary.json + 退出码聚合 130>3>10>0）。
+5. **T076**：install_sigint_handler 保留（ctrlc crate 已在 CLI deps）。
+6. **T077**：删除 CLI 对 runtime/models/ovisocr2/pdf 的直接依赖与 run_scan/run_scan_multi/
+   OvisRecognizer/PreloadedLoader/WorkerScanRenderer/pdfium_owner（CLI 自己的拷贝）等旧代码。
+7. **T078**：全部 CLI 子进程测试（cli_subprocess.rs 264 行 + multi_input_contract.rs 206 行）。
+
+**关键事实：**
+- scan crate 的 `run_pages_with_session` 第 6 参是 `&CommitRecorder`；app `run()` 第 7 参同。
+- CLI 的 pdfium dll 目录解析：`platform_paths`/`OCRX_PDFIUM_LIBRARY` 链路在 main.rs ~2126 与
+  pdf.rs 2553-2620（`vendor/pdfium/bin` 默认）。
+- 现有 CLI golden（T003 表）在基线文档；doctor json `recommended_profile:"quality"`（63GB→quality）。
+- 测试：每个临时目录唯一 tag；`cargo test --workspace --locked` 必须全绿后 commit。
+- 计划勾选状态：`grep -c "^- \[x\]"` 当前 61。
