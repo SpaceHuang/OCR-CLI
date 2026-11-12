@@ -22,9 +22,9 @@ use crate::window::{run_pages_with_session, PageRenderer, WindowConfig};
 
 /// One programmed per-page response.
 #[derive(Debug, Clone)]
-struct Program {
-    text: String,
-    finish: FinishReason,
+pub(crate) struct Program {
+    pub(crate) text: String,
+    pub(crate) finish: FinishReason,
 }
 
 type Shared<T> = Rc<RefCell<T>>;
@@ -32,7 +32,7 @@ type Shared<T> = Rc<RefCell<T>>;
 /// A programmable session core shared by handle clones (tests pass the
 /// same core to the loop and inspect it afterwards).
 #[derive(Default)]
-struct Core {
+pub(crate) struct Core {
     queue: RefCell<Vec<(u32, Program)>>,
     captured: RefCell<Vec<TaskRequest>>,
     window_calls: std::cell::Cell<usize>,
@@ -41,20 +41,20 @@ struct Core {
 }
 
 impl Core {
-    fn push(&self, page_key: u32, program: Program) {
+    pub(crate) fn push(&self, page_key: u32, program: Program) {
         self.queue.borrow_mut().push((page_key, program));
     }
 }
 
 /// A session handle over the shared core.
 #[derive(Clone, Default)]
-struct FakeSession {
-    identity: Option<InferenceIdentity>,
-    core: Rc<Core>,
+pub(crate) struct FakeSession {
+    pub(crate) identity: Option<InferenceIdentity>,
+    pub(crate) core: Rc<Core>,
 }
 
 impl FakeSession {
-    fn with_depth(depth: usize) -> Self {
+    pub(crate) fn with_depth(depth: usize) -> Self {
         let mut id = identity();
         id.batch_depth = depth;
         Self {
@@ -63,11 +63,11 @@ impl FakeSession {
         }
     }
 
-    fn push(&self, page_key: u32, program: Program) {
+    pub(crate) fn push(&self, page_key: u32, program: Program) {
         self.core.push(page_key, program);
     }
 
-    fn fail_next_window(&self) {
+    pub(crate) fn fail_next_window(&self) {
         self.core.fail_next_window.set(true);
     }
 

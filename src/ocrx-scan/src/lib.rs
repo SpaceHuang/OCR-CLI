@@ -2,6 +2,7 @@
 //! inference API. Under construction — modules land stage by stage; the
 //! CLI keeps its legacy path until T074/T077.
 
+pub mod app;
 pub mod ladder;
 pub mod ocr;
 pub mod state;
@@ -10,6 +11,7 @@ pub mod compatibility;
 pub mod native;
 pub mod plan;
 pub mod render;
+pub mod report;
 pub mod resume;
 
 #[cfg(test)]
