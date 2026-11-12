@@ -31,9 +31,7 @@ pub use ocrx_models::default_cache_root;
 pub mod builtin {
     pub use ocrx_models::builtin::ovisocr2::*;
 }
-pub use ocrx_models::{
-    COMMUNITY_REVISION, CurlTransport, ModelManagerImpl, recommend as recommend_module,
-};
+pub use ocrx_models::{CurlTransport, ModelManagerImpl, recommend as recommend_module};
 pub mod recommend {
     pub use ocrx_models::recommend::*;
 }

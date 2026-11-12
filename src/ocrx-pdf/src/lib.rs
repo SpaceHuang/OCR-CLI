@@ -1582,7 +1582,6 @@ mod tests {
     use super::*;
     use image::RgbImage;
     use ocrx_core::NormalizedBbox;
-    use std::collections::HashMap;
 
     #[test]
     fn bbox_iou_is_zero_for_disjoint_one_for_identical_and_expected_for_overlap() {

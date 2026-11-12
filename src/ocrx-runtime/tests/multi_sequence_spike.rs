@@ -50,10 +50,21 @@ fn resolve_model_paths() -> Result<(PathBuf, PathBuf), String> {
     let cache = std::env::var_os("OCRX_MODEL_CACHE")
         .map(PathBuf::from)
         .unwrap_or_else(ocrx_models::default_cache_root);
-    let _manifest =
-        ocrx_models::community_manifest("reference").map_err(|error| format!("{error:?}"))?;
-    ocrx_models::cache_paths(cache, ocrx_models::COMMUNITY_REVISION, "reference")
-        .map_err(|error| format!("{error:?}"))
+    let manifest = ocrx_models::builtin::ovisocr2::ovisocr2_manifest("reference")
+        .map_err(|error| format!("{error:?}"))?;
+    let model = ocrx_models::cache::asset_cache_path(
+        &cache,
+        &manifest,
+        &ocrx_inference_api::AssetRole::new("model").unwrap(),
+    )
+    .map_err(|error| format!("{error:?}"))?;
+    let mmproj = ocrx_models::cache::asset_cache_path(
+        &cache,
+        &manifest,
+        &ocrx_inference_api::AssetRole::new("mmproj").unwrap(),
+    )
+    .map_err(|error| format!("{error:?}"))?;
+    Ok((model, mmproj))
 }
 
 fn repo_root() -> PathBuf {

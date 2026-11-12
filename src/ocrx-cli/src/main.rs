@@ -1,4 +1,4 @@
-use ocrx_core::{ModelId, PageClassification, PageType, ProcessingMethod};
+use ocrx_core::{PageClassification, PageType, ProcessingMethod};
 use ocrx_output::{
     CancellationToken, CompatibilityKey, ErrorReport, OcrQueuePage, PageDiagnostic, PageIncomplete,
     PageMarkdown, ProgressEvent, ProgressMode, ProgressStage, ReportFormat, Reporter, ResultReport,
@@ -27,6 +27,10 @@ impl ocrx_inference_api::InstallInteraction for TrustedInstallInteraction {
 }
 mod platform_paths;
 use platform_paths::home_dir;
+
+/// The only registered model id (frozen; the inference-api value type is
+/// authoritative — this spelling backs CLI defaults/display).
+const DEFAULT_MODEL: &str = "ovisocr2";
 
 #[derive(Debug, PartialEq, Eq)]
 enum CliCommand {
@@ -132,7 +136,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         inputs: vec![(*input).to_owned()],
         output_dir: None,
         pages: None,
-        model: ModelId::AS_STR.to_owned(),
+        model: DEFAULT_MODEL.to_owned(),
         profile: "auto".to_owned(),
         pdf_mode: "auto".to_owned(),
         quality_tier: "l2".to_owned(),
@@ -168,7 +172,9 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             "--model" => {
                 index += 1;
                 let model = required_value(args, index, "--model")?;
-                ModelId::parse(model).map_err(|_| format!("unsupported model: {model}"))?;
+                if model != DEFAULT_MODEL {
+                    return Err(format!("unsupported model: {model}"));
+                }
                 model.clone_into(&mut options.model);
             }
             "--model-profile" => {
@@ -1140,7 +1146,7 @@ fn main() {
             } else {
                 println!(
                     "model={} backend={} image_token_limit={} memory_gb={} metal_available={}",
-                    ModelId::AS_STR,
+                    DEFAULT_MODEL,
                     backend_display,
                     diagnostics.image_token_limit,
                     snapshot.memory_gb,
@@ -1161,10 +1167,10 @@ fn main() {
                 .map(PathBuf::from)
                 .unwrap_or_else(ocrx_inference::default_cache_root);
             let composed = compose::compose(Some(cache_root));
-            let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+            let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
                 .unwrap_or_else(|_| unreachable!("pinned model id"));
             if action == "list" {
-                println!("model={}", ModelId::AS_STR);
+                println!("model={DEFAULT_MODEL}");
             } else if action == "info" {
                 let detail = match composed.inference.manager().info(&model) {
                     Ok(detail) => detail,
@@ -1185,7 +1191,7 @@ fn main() {
                 let installed: Vec<String> = profile.into_iter().collect();
                 println!(
                     "model={} profiles={} installed={}",
-                    ModelId::AS_STR,
+                    DEFAULT_MODEL,
                     profiles.join(","),
                     installed.join(",")
                 );
@@ -1194,7 +1200,7 @@ fn main() {
                 match composed.inference.manager().recommend(&model, &snapshot) {
                     Ok(recommendation) => println!(
                         "model={} profile={} memory_gb={} device={}",
-                        ModelId::AS_STR,
+                        DEFAULT_MODEL,
                         recommendation.profile,
                         snapshot.memory_gb,
                         composed
@@ -1230,7 +1236,7 @@ fn main() {
                 "verify" => {
                     // T072: verify = content + registry binding via the
                     // injected port (never downloads, never loads).
-                    let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
                         .unwrap_or_else(|_| unreachable!("pinned model id"));
                     let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
@@ -1249,7 +1255,7 @@ fn main() {
                     // T072: install via the manager (revision-scoped group
                     // transaction; trusted apache-2.0 community assets may
                     // install non-interactively, so the interaction accepts).
-                    let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
                         .unwrap_or_else(|_| unreachable!("pinned model id"));
                     let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
@@ -1287,7 +1293,7 @@ fn main() {
                 "remove" => {
                     // T072: removal via the manager (per-asset deletion with
                     // the shared-projector reference check, review m9).
-                    let model = ocrx_inference_api::ModelId::new(ModelId::AS_STR)
+                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
                         .unwrap_or_else(|_| unreachable!("pinned model id"));
                     let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
@@ -1513,7 +1519,7 @@ fn resolve_window_depth(requested_device: &str) -> usize {
 }
 
 /// Per-invocation shared state for one document scan (X1.2). `owner` is
-/// `None` on the single-input path: `scan_document` then spawns the
+/// `None` on the single-input path: the scan then spawns the
 /// invocation's owner at the historical spawn point, byte-identically. The
 /// orchestrated path passes the invocation-wide owner and switches it
 /// between documents. `model_slot` decides whether the runtime is loaded per
@@ -2112,8 +2118,8 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         format!(
             "{{\"id\":\"ovisocr2\",\"name\":\"OvisOCR2\",\"family\":\"Ovis\",\"profile\":\"{}\",\"revision\":\"{}\",\"mmproj_revision\":\"{}\",\"adapter\":\"ovisocr2\",\"adapter_version\":\"0.1.0\",\"prompt_schema_version\":1,\"runtime\":\"llama.cpp@0.1.152\",\"quantization\":\"{}\"}}",
             fields.profile,
-            ocrx_inference::COMMUNITY_REVISION,
-            ocrx_inference::COMMUNITY_REVISION,
+            ocrx_inference::builtin::OVISOCR2_REVISION,
+            ocrx_inference::builtin::OVISOCR2_REVISION,
             quantization
         )
     } else {

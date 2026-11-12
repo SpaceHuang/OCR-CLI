@@ -1803,7 +1803,9 @@ mod tests {
                     .join("ocrx")
                     .join("models")
             });
-        let revision_dir = cache.join("ovisocr2").join(ocrx_models::COMMUNITY_REVISION);
+        let revision_dir = cache
+            .join("ovisocr2")
+            .join(ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION);
         let mut runtime = LlamaMtmdRuntime::load(
             revision_dir.join("reference").join("model.gguf"),
             revision_dir.join("mmproj.gguf"),
@@ -1900,7 +1902,9 @@ mod tests {
                     .join("ocrx")
                     .join("models")
             });
-        let revision_dir = cache.join("ovisocr2").join(ocrx_models::COMMUNITY_REVISION);
+        let revision_dir = cache
+            .join("ovisocr2")
+            .join(ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION);
         let mut runtime = LlamaMtmdRuntime::load(
             revision_dir.join("reference").join("model.gguf"),
             revision_dir.join("mmproj.gguf"),

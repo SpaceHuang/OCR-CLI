@@ -1261,35 +1261,6 @@ fn parse_json_number(bytes: &[u8], mut index: usize) -> Option<usize> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelId {
-    OvisOcr2,
-}
-
-impl ModelId {
-    pub const AS_STR: &str = "ovisocr2";
-
-    /// Parses the only model supported by the v0.1 contract.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`DomainError::UnsupportedModel`] for every other identifier.
-    pub fn parse(value: &str) -> Result<Self, DomainError> {
-        (value == Self::AS_STR)
-            .then_some(Self::OvisOcr2)
-            .ok_or(DomainError::UnsupportedModel)
-    }
-}
-
-/// Frozen runtime binding compatibility for the community OvisOCR2 asset.
-///
-/// Single source of truth shared across macOS and Windows: the `llama-cpp-2`
-/// wrapper version, the `llama-cpp-sys-2` sys crate version, the embedded
-/// `llama.cpp` upstream commit, and the adapter id. The per-target
-/// `Cargo.toml` dependencies in `ocrx-runtime` and
-/// `ocrx_models::validate_runtime_adapter_compatibility` must agree with these
-/// values; platform differences live only in build features and probing, never
-/// in scattered version constants.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeCompatibility {
     /// `llama-cpp-2` wrapper crate version.
     pub llama_cpp_2_version: &'static str,
@@ -1300,35 +1271,6 @@ pub struct RuntimeCompatibility {
     pub llama_cpp_commit: &'static str,
     /// Adapter id this runtime binding serves (`ovisocr2`).
     pub adapter_id: &'static str,
-}
-
-/// The pinned runtime binding shared by macOS and Windows builds.
-pub const RUNTIME_COMPATIBILITY: RuntimeCompatibility = RuntimeCompatibility {
-    llama_cpp_2_version: "0.1.152",
-    llama_cpp_sys_2_version: "0.1.153",
-    // llama.cpp commit embedded in llama-cpp-sys-2 0.1.153, verified by
-    // file-hash match against upstream; frozen by the WP.2 Windows build
-    // (docs/develop/runtime-windows-alignment-2026-08-14.md).
-    llama_cpp_commit: "9e3b928",
-    adapter_id: ModelId::AS_STR,
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Profile {
-    Auto,
-    Compact,
-    Balanced,
-    Quality,
-    Reference,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Device {
-    Auto,
-    Cpu,
-    Metal,
-    Cuda,
-    Vulkan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1524,28 +1466,6 @@ mod tests {
     }
 
     #[test]
-    fn runtime_compatibility_records_frozen_llama_cpp_commit() {
-        // WP.2 build freeze: the shared binding must name the llama.cpp commit
-        // embedded in llama-cpp-sys-2 0.1.153, so W0.1's structured comparison
-        // and every compatibility report reference one pinned runtime.
-        let compat = RUNTIME_COMPATIBILITY;
-        assert!(
-            !compat.llama_cpp_commit.is_empty(),
-            "llama_cpp_commit is filled by the WP.2 Windows build freeze"
-        );
-        assert!(
-            compat
-                .llama_cpp_commit
-                .chars()
-                .all(|c| c.is_ascii_hexdigit()),
-            "llama_cpp_commit is a hex SHA fragment, not free text"
-        );
-        assert_eq!(compat.llama_cpp_2_version, "0.1.152");
-        assert_eq!(compat.llama_cpp_sys_2_version, "0.1.153");
-        assert_eq!(compat.adapter_id, "ovisocr2");
-    }
-
-    #[test]
     fn gpu_resource_report_json_has_stable_schema_golden() {
         let report = GpuResourceReport {
             backend: "vulkan".to_owned(),
@@ -1561,12 +1481,6 @@ mod tests {
             report.to_json(),
             "{\"schema_version\":1,\"backend\":\"vulkan\",\"vram_peak_bytes\":862000000,\"unified_memory_peak_bytes\":null,\"load_time_ms\":1234,\"first_token_ms\":2345,\"output_tokens\":128,\"output_tokens_per_sec\":12.500,\"peak_memory_bytes\":456000000}"
         );
-    }
-
-    #[test]
-    fn only_ovisocr2_is_a_valid_model() {
-        assert_eq!(ModelId::parse("ovisocr2"), Ok(ModelId::OvisOcr2));
-        assert_eq!(ModelId::parse("other"), Err(DomainError::UnsupportedModel));
     }
 
     #[test]
