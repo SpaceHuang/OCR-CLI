@@ -576,7 +576,7 @@ impl OwnerPdfAccess {
         self.handle = Rc::new(RefCell::new(PdfiumOwnerHandle::spawn(
             self.library_dir.clone(),
             self.input.clone(),
-            self.options
+            self.options,
             self.password.clone(),
             self.prefetch_depth,
         )));
