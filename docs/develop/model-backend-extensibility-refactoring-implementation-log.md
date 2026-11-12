@@ -371,3 +371,19 @@ multi_input_contract 契约测试与断连 seam 测试）；fmt/clippy `-D warni
 release-scripts ✓；`git diff --check` 干净；bootstrap-check.sh 仅余 4 个既有 Python 漂移失败。
 （一次 LNK1104 偶发按备忘删 exe 重跑即过。）route v2 + decode 3 的组合意味着 main 时代与更早
 的 checkpoint 不再复用——与上游"版本升级即重扫"的兼容键语义一致。
+
+## 评审闭环（2026-11-13）：合并 main 后重审 PASS
+
+第三轮评审（`2509dd4`，范围 d79ecf6..2509dd4）结论 **PASS**：合并冲突处理未造成既有修复回退，
+上游安全加固已接入重构架构，无新增合并阻断。评审复核要点：九项原始修复全部保持；core 统一
+atomic_write、受控 images 目录、原始 `..` 拒绝、聚合输出根/scan-summary 保护接入；revision 级
+InstallLock 在事务变更前获取；DECODE_GENERATION=3 单源 + 路由 v2；owner 每文档边界 switch +
+CLI fail-loud；`ocrx-skill → ocrx-core` 白名单一致。评审验证全绿（工作区测试含上游新增契约/
+断连测试、严格 Clippy、格式、架构、release 脚本、git diff --check、真实 CLI 越界页码 exit 2）。
+
+**验证边界（评审明示）：** 未运行真实模型/GPU/环境门控 E2E——与 T106/T107 可选注记一致。
+
+**最终状态：** 评审链 c8ce717（BLOCK 9 项）→ 4e65fe2（修 9 项）→ d79ecf6（闭环 4 项）→ PASS →
+2509dd4（合并 main@5e995d0 + 安全加固移植）→ PASS。计划任务 102/108 完成（T103/T105 既有环境
+漂移注记；T106/T107 可选 E2E；T108 后续独立立项）。分支 `refactor/model-backend-extensibility`
+包含完整重构 + 上游全部安全加固，可合并回 main。
