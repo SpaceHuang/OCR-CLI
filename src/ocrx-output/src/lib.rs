@@ -2786,11 +2786,11 @@ pub fn validate_output_root(
             "output root must be absolute",
         ));
     }
-    // Normalize first (review BLK-2 sequence): a default output derived from
-    // a relative input legitimately contains `..` (cwd.join("../../x"));
-    // lexical resolution turns it into its real absolute spelling, and only
-    // genuinely ambiguous spellings (trailing dots/spaces on Windows) are
-    // then refused outright.
+    // Reject parent traversal before normalization. Lexically folding `..`
+    // across a symlink can produce a different target than filesystem path
+    // resolution, while callers later perform writes/deletes using the raw
+    // spelling.
+    reject_ambiguous_output_path(output)?;
     let output_normalized = lexically_normalize(output);
     let input_normalized = lexically_normalize(input);
     reject_ambiguous_output_path(&output_normalized)?;
@@ -4826,28 +4826,42 @@ audit=none
     }
 
     #[test]
-    fn output_root_dot_dot_vector_is_resolved_before_overlap_check() {
-        // BLK-2 vector 1: `Path::components` never resolves `..`, so the
-        // check lexically normalizes first — an output that lands inside a
-        // protected root after resolution must be rejected even though its
-        // raw components never spell the root, while one that resolves
-        // elsewhere stays allowed.
+    fn output_root_rejects_parent_components_before_path_resolution() {
         let base = std::env::temp_dir().join(format!("ocrx-dotdot-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let protected = base.join("cache");
         std::fs::create_dir_all(&protected).unwrap();
         let input = base.join("input.pdf");
         let overlap = base.join("elsewhere").join("..").join("cache").join("out");
-        assert!(
-            super::validate_output_root(&input, &overlap, &[protected.as_path()]).is_err(),
-            "dot-dot spelling resolving into the protected root must be rejected"
-        );
+        assert!(super::validate_output_root(&input, &overlap, &[protected.as_path()]).is_err());
         let safe = base.join("elsewhere").join("..").join("other").join("out");
-        assert!(
-            super::validate_output_root(&input, &safe, &[protected.as_path()]).is_ok(),
-            "dot-dot spelling resolving outside the protected root is fine"
-        );
+        assert!(super::validate_output_root(&input, &safe, &[protected.as_path()]).is_err());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overwrite_rejects_symlink_parent_traversal_without_deleting_protected_file() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join(format!("ocrx-symlink-dotdot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let protected = base.join("cache/ocrx/models");
+        let nested = protected.join("nested");
+        let victim = protected.join("victim");
+        let cwd = base.join("work");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&victim).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        fs::write(victim.join("SENTINEL"), b"keep").unwrap();
+        symlink(&nested, base.join("alias")).unwrap();
+        let input = base.join("input.pdf");
+        let output = base.join("alias/../victim");
+        assert!(
+            super::remove_for_overwrite(&input, &output, &[protected.as_path()], &cwd).is_err()
+        );
+        assert_eq!(fs::read(victim.join("SENTINEL")).unwrap(), b"keep");
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
