@@ -1384,7 +1384,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T034（T031）实现 runtime factory 和实际 backend/runtime identity；完成判定：CPU/GPU 请求与实际 identity 分开，RuntimeId=`llama.cpp`、wrapper=`0.1.161`、sys=`0.1.161`、upstream=`d81235049384534c167caea52b85a694f6103d14` 均准确（Q1.3 pins 修订；解码代次 `decode_generation=2` 由平台身份产生，旧代次 checkpoint 由 `;decode=2` 隔离，不混扫）。
 - [x] T035（T015、T016）实现可编程 `FakeRuntimeBackend` 并暂时保留旧 fake 包装；完成判定：新 fake 可捕获请求并排队返回 EOS、max_tokens、`repetition_loop`（现 `LoopFakeRuntime` 语义）、批级窗口错误、错误和取消，`BackendOutput.decode_echo` 可编程且与请求变体独立（供 T042 证明回执来自 backend 而非请求拷贝），`raw_text`/`think_blocks_stripped` 输出可编程，不再用页码构造文本，旧 fake 的既有测试在迁移完成前仍通过。
 - [x] T036（T016）实现本身只依赖 inference API 的 `OvisProtocolAdapter` 新模块；完成判定：图像顺序、prompt、generation、finish、`<think>` 剥离 golden（完整块/散落标签/静默空剥离）、`raw_text` 为剥离/裁剪前规范化原始输出、`think_blocks_stripped` 计数测试通过，新模块无 core/runtime/pdf/image 依赖；旧业务模块及其依赖可暂时保留到 T087，但新 adapter 不得调用旧模块。
-- [ ] T037（T036）把 Ovis 页解析、bbox、Markdown 和图片代码复制到预定 scan 模块，暂不删除 adapter crate 的旧实现和旧导出；完成判定：新旧 parser/artifact 单元测试均通过，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T087 删除。
+- [x] T037（T036）把 Ovis 页解析、bbox、Markdown 和图片代码复制到预定 scan 模块，暂不删除 adapter crate 的旧实现和旧导出；完成判定：新旧 parser/artifact 单元测试均通过，旧导出签名不变且 CLI 仍编译，`cargo check --workspace` 返回 0，旧代码明确限定由 T087 删除。
 - [x] T038（T014、T019、T034、T036）实现静态兼容 binding registry 及其 `BindingVerifier` 端口实现（RBLK-9）；完成判定：正确三元组通过，runtime/sys/upstream/adapter/资产角色任一不符均返回 IncompatibleBinding（upstream 冻结值 `d81235049384534c167caea52b85a694f6103d14` 参与校验），端口实现供 prepare 与注入 `ModelManagerImpl` 共用。
 - [x] T039（T018、T034）迁移系统 probe 和编译能力交集到 `ocrx-inference`；完成判定：Metal/CUDA/Vulkan 编译与硬件取交集，auto 优先级和显式设备错误测试通过。
 - [x] T040（T030、T038、T039）实现 `InferenceServiceImpl::prepare` 的资产就绪和绑定路径；完成判定：只准备一次，缺资产走统一安装，离线/无效 hash/绑定失败不会创建 session。
@@ -1406,16 +1406,16 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 ### 阶段 F：扫描应用迁移
 
 - [x] T052（T017、T051）建立 `ScanApplication/ScanRequest/ScanOutcome/ScanEvent`（单/多输入统一入口）；完成判定：库入口不打印、不退出进程、不安装 signal handler，CLI 可订阅事件并映射报告。
-- [ ] T053（T052）迁移输入、页范围、数值参数和输出预检；完成判定：PDF 先于模型报错、路径保护、resume/overwrite 互斥、历史退出类别、多输入位置参数（选项可交错）、目录展开（排序 `*.pdf` 不递归）/canonical 去重/缺失或目录无 PDF 报用法错误、多输入 `--output-dir` 必填测试通过。
-- [ ] T054（T052）迁移页面分析、auto/text/ocr 初始计划和路由诊断；完成判定：现有分类输入对应相同队列和 planned/actual/fallback 元数据。
+- [x] T053（T052）迁移输入、页范围、数值参数和输出预检；完成判定：PDF 先于模型报错、路径保护、resume/overwrite 互斥、历史退出类别、多输入位置参数（选项可交错）、目录展开（排序 `*.pdf` 不递归）/canonical 去重/缺失或目录无 PDF 报用法错误、多输入 `--output-dir` 必填测试通过。
+- [x] T054（T052）迁移页面分析、auto/text/ocr 初始计划和路由诊断；完成判定：现有分类输入对应相同队列和 planned/actual/fallback 元数据。
 - [x] T055（T045、T047、T052）实现扫描恢复计划（含两阶段 OCR 复用协议）；完成判定：v6/v5、完整复用、pending、重处理和 selected pages 限制测试通过；两阶段专项（RBLK-2/RBLK-4/RBLK-6/RBLK-8）——完全复用（全部候选通过预比较且无待解码页）不 prepare、不加载模型，**默认 `auto` 请求同样零加载**（预比较经 `static_identity()` 按 §2.3 冻结内存规则解析 auto 为具体档位后与 checkpoint 比对），多文档编排下后续文档同样适用、不因共享 session 存在而重处理（RBLK-8）；`auto` 解析结果变化（内存规则输出不同档位）时预比较失败、重处理；manifest 资产元数据/runtime 绑定/adapter 版本任一静态身份变化时预比较失败、重处理；存在待解码页时 prepare 后以 session 完整执行身份做终比较（仅限该文档，RBLK-8），**auto 在预比较后、prepare 时改选 profile 的专项测试：不一致候选全部重处理，同文档绝不混用两个 profile 的页面（RBLK-6）**；**display 区分性测试（RBLK-7）：仅展示元数据变化（display_name 文案/量化展示名）不触发重处理，执行字段变化才触发**；请求 GPU 但回退 CPU 所写的 checkpoint 在本次实际仍为 CPU 时即使请求设备不同也复用，实际执行形态变化（backend 或批深分层）时重处理；跨批深/跨解码代次不互恢复专项通过。
 - [x] T056（T052、T055）迁移 native-first、text 失败、auto fallback 和 empty 提交；完成判定：native/empty 路径不调用 prepare，产物 golden 与 T004 一致。
 - [x] T057（T056）实现最终 OCR 队列合并和按需 prepare；完成判定：队列为 0 时模型/设备 prepare 为 0（含默认 `auto` 的完全复用路径——仅执行只读 `static_identity()` 预比较，零资产校验/零安装/零加载，RBLK-4），非 0 时只 prepare 一次。
 - [x] T058（T052）迁移 PDFium 与 worker renderer、PdfiumOwner 线程所有权、预取协议、扰动渲染转发（P3）与跨文档 `SwitchDocument` 协议（清预取缓存、重置 `next_prefetch`、文档级 Err 值不中毒 owner）、像素缩放和 render audit；完成判定：DPI、分段、尺寸校验、2880² 预算、scale ratio、预取与故障注入测试保持，PDFium 入口安全不变式不回退，SwitchDocument 既有单测（同一线程、预取重置、Err 值跳过、poison fail-loud）随迁通过。
-- [ ] T059（T006、T052）在 `ocr/prompt.rs` 写入完整 `ocr-markdown-v1` prompt 和构造器；完成判定：T006 字节 golden 通过，扫描生成的 TaskRequest prompt 与冻结文本一致。
-- [ ] T060（T037、T059）迁移 Ovis 文本到 PageDocument 的解析；完成判定：公式、表格、bbox、CRLF、重复尾部、空输出、EOS/stop/max_tokens golden 全通过。
-- [ ] T061（T037、T060）迁移 bbox 裁剪、整页 PNG、图片替换和链接校验；完成判定：文件命名、数量、路径逃逸拒绝和缺失链接错误与现状一致。
-- [ ] T062（T017、T058、T059、T060、T061）实现单页 OCR 流程；完成判定：fake 收到无页码任务，scan 用局部页码生成产物，`raw_text` 写 `page-NNNN.raw`、`think_blocks_stripped` 进页统计，截断和解析警告正确映射。
+- [x] T059（T006、T052）在 `ocr/prompt.rs` 写入完整 `ocr-markdown-v1` prompt 和构造器；完成判定：T006 字节 golden 通过，扫描生成的 TaskRequest prompt 与冻结文本一致。
+- [x] T060（T037、T059）迁移 Ovis 文本到 PageDocument 的解析；完成判定：公式、表格、bbox、CRLF、重复尾部、空输出、EOS/stop/max_tokens golden 全通过。
+- [x] T061（T037、T060）迁移 bbox 裁剪、整页 PNG、图片替换和链接校验；完成判定：文件命名、数量、路径逃逸拒绝和缺失链接错误与现状一致。
+- [x] T062（T017、T058、T059、T060、T061）实现单页 OCR 流程；完成判定：fake 收到无页码任务，scan 用局部页码生成产物，`raw_text` 写 `page-NNNN.raw`、`think_blocks_stripped` 进页统计，截断和解析警告正确映射。
 - [x] T063（T062）实现多页窗口化编排（实际批深身份填充/恢复页排水、attempt 1 批处理、批级失败批深回退 1、机制 A 窗口原子提交、退化/纯截断页走冻结阶梯的变体重试：2048 网格 → penalty 采样链 → 切栏分解/按栏序合并/保守合并/门控，切栏页产物按 §2.3 冻结合并规则合成——raw 连接、think 求和、warnings 顺序，golden 无歧义）、跨文档编排（文档 FIFO、共享 session、`SwitchDocument`、逐文档独立窗口与机制 A、取消=整调用、退出码聚合、`scan-summary.json` 与 `<stem>-<hash8>` 输出目录）、失败继续、取消停止和进度槽位→页码映射；完成判定：prepare/load 每调用一次（多文档共享同一 session），窗口提交与页数关系准确（请求按类别计数断言），取消的在飞窗口零提交且恢复整窗重扫，后续已提交页保留，同批深自一致，多文档编排与逐个调用产物一致且 `scan-summary`/退出码聚合正确；**共享 session 的 auto 漂移专项（RBLK-6/RBLK-8，仅限有待解码页的后续文档）：该文档候选页与共享 session 完整执行身份做全执行字段比较后，不一致候选全部重处理，绝不跨 profile 混用，其余文档不受影响；前文档已建共享 session + 后文档完全复用且存储实际身份不同（RBLK-8 专项）：后文档零新解码复用、不借用共享 session 身份，逐文档产物与其单跑一致**。
 - [x] T064（T045、T062、T063）把实际 InferenceIdentity 写入 OCR v6 checkpoint（`batch_depth`/`decode_generation` 只从身份透传，扫描侧无硬编码副本）；完成判定：GPU 回退、模型资产、prompt/parser/render/generation、批深、解码代次任一变化均按规则处理。
 - [x] T065（T048、T049、T056、T063）实现跨路线产物收集和 document.md 汇总；完成判定：只收集已验证页，排序/去重、空结果 stale 清理和 keep-pages 行为与基线一致。
@@ -1426,7 +1426,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 ### 阶段 G：CLI 收缩与生产组合
 
 - [x] T069（T030、T038、T039、T042、T052）实现 `compose.rs` 生产组合根；完成判定：只注册 Ovis，scan 接收 API trait，model/doctor 使用同一 manager，无第二套注册数据；组合顺序为 catalog → probe/设备/runtime factory → 静态 registry → `BindingVerifier` 实现 → 注入 verifier 构造 `ModelManagerImpl` → `InferenceServiceImpl` → `ScanApplication`（§6.1，RBLK-9）。
-- [ ] T070（T069）拆分参数、配置和交互模块；完成判定：现有参数取值、默认值、配置优先级、offline/non-interactive 和下载确认测试通过。
+- [x] T070（T069）拆分参数、配置和交互模块；完成判定：现有参数取值、默认值、配置优先级、offline/non-interactive 和下载确认测试通过。
 - [x] T071（T069）将 `model list/info/recommend` 切换到 ModelManager；完成判定：无 PDF/scan 对象，输出与 T003 golden 一致。
 - [x] T072（T069、T070）将 `model install/verify/remove` 切换到 ModelManager；完成判定：CLI 无 URL/hash/cache 拼接，交互和错误码 golden 通过；`verify` 端到端专项（RBLK-9）：资产文件全部正确但注入端口的 registry 身份（runtime/sys/upstream/adapter 任一）不匹配时 verify 失败且错误类别为 IncompatibleBinding，全部匹配时通过；架构检查断言无 models → inference 依赖。
 - [x] T073（T043、T069）将 doctor 切换到 DeviceManager/ModelManager DTO；完成判定：文本、schema 2 JSON、缓存 escaping 和 skill_installed 合并与基线一致，旧 scan 经兼容层仍编译且 `cargo check --workspace` 返回 0。
@@ -1451,20 +1451,20 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T086（T019、T030、T050、T077、T083）删除 core 中 ModelId、RUNTIME_COMPATIBILITY、重复取消/哈希及无用 re-export，并删除 models 的旧 `community_*` 过渡委托和旧 `recommend_device` 自含过渡实现；完成判定：全 workspace 无旧类型和旧函数引用，页面领域 golden 仍通过。
 - [x] T087（T031、T037、T060、T061、T077）删除 `ocrx-ovisocr2` 旧业务函数和依赖，并删除 runtime 的旧 Runtime/fake/请求响应兼容包装及其中暂存的 prompt；完成判定：adapter crate 只含协议 adapter，runtime 只含通用 backend，依赖和源码检查证明无 core/pdf/扫描 prompt/page。
 - [x] T088（T051、T052、T077）删除 output 中已迁移的扫描服务、识别抽象、旧 CompatibilityKey 和旧 v5 写入入口；完成判定：无重复实现，所有调用只走 scan 应用和 v6 持久化，`cargo check --workspace` 返回 0。
-- [ ] T089（T077、T087、T088）实现 `validate-architecture-boundaries.py` 的 Cargo 白名单和源码禁用检查；完成判定：合法树返回 0，临时违规 fixture 能被检出，脚本只用标准库；禁用类型名显式包含 `ocrx_runtime::StepProfile` 在 `ocrx-scan` 中的引用（RBLK-3，StepProfile 只经公共 API DTO 流动）。
-- [ ] T090（T089）把架构检查加入本机 bootstrap，不加入网络/模型/GPU 前置；完成判定：干净本机按脚本顺序可执行，外部条件缺失不会阻断 fake 测试。
-- [ ] T091（T086、T087、T088）清理 Cargo 依赖、feature 转发和 lockfile；完成判定：无未使用直接依赖，vulkan/cuda 传递有效，`cargo metadata --locked` 成功。
-- [ ] T092（T086、T087、T088）全量搜索并更新旧行为注释和文档字符串；完成判定：不再出现 runtime 持有 OCR prompt、adapter 写页产物、output 拥有扫描服务、请求含页码等过时描述。
-- [ ] T093（T078、T085）运行 `cargo fmt --all -- --check` 和 `cargo build --workspace --locked`；完成判定：格式和完整构建均返回 0。
-- [ ] T094（T093）运行 `cargo test --workspace --locked`；完成判定：全部非 ignore 测试通过，无真实模型下载，无新增失败被跳过。
-- [ ] T095（T093）运行 `cargo clippy --workspace --all-targets --locked -- -D warnings`；完成判定：无 warning/error，未通过全局放宽 lint 掩盖问题。
-- [ ] T096（T085、T089、T090）运行 Python 单元测试、架构检查和 release 脚本测试；完成判定：三个命令均返回 0，测试未访问外网。
-- [ ] T097（T078、T094）运行 doctor/model/version 本机命令并比较 golden；完成判定：T003 所有适用输出和退出码一致，JSON 可解析且 stdout 行数正确。
-- [ ] T098（T004、T068、T078、T094）执行 native-only/empty 的本机端到端对比；完成判定：模型准备和加载为 0，页产物、document、result 和续扫与基线一致。
-- [ ] T099（T004、T062、T063、T064、T094）执行 fake OCR 多页端到端对比；完成判定：一次 prepare、窗口化 submit（attempt 1 批处理 + 批深 1 回退/阶梯变体重试——2048 网格、penalty 链、切栏合并与门控、纯截断重试——覆盖全部页），页产物（含 raw sidecar 与 think 计数）、路由、失败继续、取消、机制 A 提交和报告符合基线；多文档编排端到端（fake）另验 `scan-summary.json`、退出码聚合、逐文档独立 resume、编排 vs 逐个调用产物一致与共享 session 一次加载。
-- [ ] T100（T047、T055、T064、T094）执行 checkpoint 专项验收；完成判定：v6 全身份匹配、两阶段恢复专项（完全复用零加载含默认 `auto`、prepare 后全执行字段终比较且仅限待解码文档，RBLK-2/RBLK-4/RBLK-8）、**auto 改选混用防护（RBLK-6）：预比较与 prepare 分别解析出不同 profile 时候选全部重处理、需要解码的后续文档静态结果不同于共享 session 时同样全部重处理，断言同文档不出现跨 profile 混用页面**、**RBLK-7 区分性测试：display 变化不触发重处理、执行字段变化触发；RBLK-8 专项：前文档已建共享 session 时完全复用的后文档零新解码复用且编排/单跑产物一致**、`auto` 解析结果变化与静态身份（资产元数据/runtime/adapter）变化时预比较失败重处理、v5 OCR 重做、pending 恢复、跨 prompt/runtime/model/批深/解码代次不复用、v5 `degenerated` 不复用、`think_blocks_stripped` round-trip、取消窗口零提交后整窗重扫和产物篡改拒绝均有实际测试证据；另行保留 GPU→CPU 回退 checkpoint 的测试记录，证明请求设备不同但实际 CPU 相同可复用、实际 backend 不同必须重处理，不得将该语义变化当回归修回 v5 的请求设备匹配。
-- [ ] T101（T041、T064、T067、T094）执行设备与身份专项验收；完成判定：显式设备失败、auto 选择、GPU 初始化回退、实际 backend 报告和 checkpoint 身份均通过 fake/受控测试。
-- [ ] T102（T084、T085、T096）执行质量模块专项验收；完成判定：两种评估入口可调用，报告身份完整，“同参重扫逐字节比对”原语执行通过，固定样例数值与历史一致。
+- [x] T089（T077、T087、T088）实现 `validate-architecture-boundaries.py` 的 Cargo 白名单和源码禁用检查；完成判定：合法树返回 0，临时违规 fixture 能被检出，脚本只用标准库；禁用类型名显式包含 `ocrx_runtime::StepProfile` 在 `ocrx-scan` 中的引用（RBLK-3，StepProfile 只经公共 API DTO 流动）。
+- [x] T090（T089）把架构检查加入本机 bootstrap，不加入网络/模型/GPU 前置；完成判定：干净本机按脚本顺序可执行，外部条件缺失不会阻断 fake 测试。
+- [x] T091（T086、T087、T088）清理 Cargo 依赖、feature 转发和 lockfile；完成判定：无未使用直接依赖，vulkan/cuda 传递有效，`cargo metadata --locked` 成功。
+- [x] T092（T086、T087、T088）全量搜索并更新旧行为注释和文档字符串；完成判定：不再出现 runtime 持有 OCR prompt、adapter 写页产物、output 拥有扫描服务、请求含页码等过时描述。
+- [x] T093（T078、T085）运行 `cargo fmt --all -- --check` 和 `cargo build --workspace --locked`；完成判定：格式和完整构建均返回 0。
+- [x] T094（T093）运行 `cargo test --workspace --locked`；完成判定：全部非 ignore 测试通过，无真实模型下载，无新增失败被跳过。
+- [x] T095（T093）运行 `cargo clippy --workspace --all-targets --locked -- -D warnings`；完成判定：无 warning/error，未通过全局放宽 lint 掩盖问题。
+- [x] T096（T085、T089、T090）运行 Python 单元测试、架构检查和 release 脚本测试；完成判定：三个命令均返回 0，测试未访问外网。
+- [x] T097（T078、T094）运行 doctor/model/version 本机命令并比较 golden；完成判定：T003 所有适用输出和退出码一致，JSON 可解析且 stdout 行数正确。
+- [x] T098（T004、T068、T078、T094）执行 native-only/empty 的本机端到端对比；完成判定：模型准备和加载为 0，页产物、document、result 和续扫与基线一致。
+- [x] T099（T004、T062、T063、T064、T094）执行 fake OCR 多页端到端对比；完成判定：一次 prepare、窗口化 submit（attempt 1 批处理 + 批深 1 回退/阶梯变体重试——2048 网格、penalty 链、切栏合并与门控、纯截断重试——覆盖全部页），页产物（含 raw sidecar 与 think 计数）、路由、失败继续、取消、机制 A 提交和报告符合基线；多文档编排端到端（fake）另验 `scan-summary.json`、退出码聚合、逐文档独立 resume、编排 vs 逐个调用产物一致与共享 session 一次加载。
+- [x] T100（T047、T055、T064、T094）执行 checkpoint 专项验收；完成判定：v6 全身份匹配、两阶段恢复专项（完全复用零加载含默认 `auto`、prepare 后全执行字段终比较且仅限待解码文档，RBLK-2/RBLK-4/RBLK-8）、**auto 改选混用防护（RBLK-6）：预比较与 prepare 分别解析出不同 profile 时候选全部重处理、需要解码的后续文档静态结果不同于共享 session 时同样全部重处理，断言同文档不出现跨 profile 混用页面**、**RBLK-7 区分性测试：display 变化不触发重处理、执行字段变化触发；RBLK-8 专项：前文档已建共享 session 时完全复用的后文档零新解码复用且编排/单跑产物一致**、`auto` 解析结果变化与静态身份（资产元数据/runtime/adapter）变化时预比较失败重处理、v5 OCR 重做、pending 恢复、跨 prompt/runtime/model/批深/解码代次不复用、v5 `degenerated` 不复用、`think_blocks_stripped` round-trip、取消窗口零提交后整窗重扫和产物篡改拒绝均有实际测试证据；另行保留 GPU→CPU 回退 checkpoint 的测试记录，证明请求设备不同但实际 CPU 相同可复用、实际 backend 不同必须重处理，不得将该语义变化当回归修回 v5 的请求设备匹配。
+- [x] T101（T041、T064、T067、T094）执行设备与身份专项验收；完成判定：显式设备失败、auto 选择、GPU 初始化回退、实际 backend 报告和 checkpoint 身份均通过 fake/受控测试。
+- [x] T102（T084、T085、T096）执行质量模块专项验收；完成判定：两种评估入口可调用，报告身份完整，“同参重扫逐字节比对”原语执行通过，固定样例数值与历史一致。
 - [ ] T103（T097、T098、T099、T100、T101、T102）运行 `bash scripts/bootstrap-check.sh`；完成判定：脚本完整返回 0，过程未触发模型下载或外部服务。
 - [ ] T104（T103）检查最终 `git status` 和变更清单；完成判定：只有方案内文件和必要 lockfile 变化，无测试临时文件、日志、下载物或用户既有文件被误改。
 - [ ] T105（T103、T104）逐项核对第 11 节完成定义并记录可选真实验证是否执行；完成判定：所有本机门禁有通过证据，未执行的真实模型/GPU 项仅注明环境原因且未被列为阻塞。
