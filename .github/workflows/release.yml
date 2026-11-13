@@ -140,13 +140,16 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # nvcc for the llama.cpp CUDA backend. Pinned to the same minor the
-      # release baseline was validated on (12.4).
+      # nvcc for the llama.cpp CUDA backend. 12.9 (not the locally-validated
+      # 12.4): hosted runners ship MSVC 19.4x and CUDA 12.4's host_config.h
+      # hard-rejects anything above 19.38 (C1189, observed on the first v0.1.0
+      # run). 12.9 accepts the runner's MSVC while keeping 12.x semantics
+      # (llama.cpp 0.1.161 is CUDA 13-ready too, so a future bump is open).
       - name: install CUDA toolkit (windows)
         if: runner.os == 'Windows'
         uses: Jimver/cuda-toolkit@v0.2.36
         with:
-          cuda: '12.4.0'
+          cuda: '12.9.1'
           method: network
 
       # Hosted runners have no NVIDIA GPU, so llama.cpp cannot auto-detect
