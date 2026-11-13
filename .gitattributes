@@ -2,3 +2,10 @@
 # never let git convert EOLs on checkout/commit — a CRLF drift breaks
 # include_str! assertions and any digest computed over fixture bytes.
 **/tests/fixtures/** -text
+# Benchmark fixtures are hash-locked and byte-compared (stage0 gates, resume
+# digests): minimal hand-built PDFs can be all-ASCII and .txt is text, so a
+# Windows checkout with autocrlf would corrupt them. Same for any tracked PDF
+# anywhere — binary, never convert.
+**/tests/fixtures/** -text
+benchmarks/fixtures/** -text
+*.pdf -text
