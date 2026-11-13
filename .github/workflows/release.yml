@@ -1,7 +1,8 @@
 name: Release
 
 # Builds the distributable archives with the existing packaging scripts on
-# both shipping platforms (Windows x64, macOS arm64).
+# both shipping platforms (Windows x64 ships the CPU + CUDA variants; macOS
+# arm64 is Metal-capable by default).
 #
 # - tag push `v*`     -> package + create a GitHub Release with the archives
 # - workflow_dispatch -> package only; artifacts land on the run page for a
@@ -133,14 +134,51 @@ jobs:
         shell: bash
         run: bash scripts/package-macos-arm64.sh
 
-      # CPU baseline (no -GpuPackages): the script verifies the pinned
-      # pdfium.dll sha256, PE machine type, VC CRT, license set, and writes
-      # SHA256SUMS. GPU variants can be added later by installing the
-      # respective SDK and passing -GpuPackages.
-      - name: package (windows)
+      # cl.exe / cmake / ninja on PATH: the CUDA packaging branch requires
+      # Ninja as the CMake generator and an MSVC toolchain for llama.cpp.
+      - name: set up MSVC dev environment (windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # nvcc for the llama.cpp CUDA backend. Pinned to the same minor the
+      # release baseline was validated on (12.4).
+      - name: install CUDA toolkit (windows)
+        if: runner.os == 'Windows'
+        uses: Jimver/cuda-toolkit@v0.2
+        with:
+          cuda: '12.4.0'
+          method: network
+
+      # Hosted runners have no NVIDIA GPU, so llama.cpp cannot auto-detect
+      # target architectures ("native" would fail): pin a breadth list
+      # covering Turing through Ada, the realistic NVIDIA install base.
+      - name: pin CUDA architectures (windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/package-windows-x64.ps1
+        run: Add-Content $env:GITHUB_ENV 'CMAKE_CUDA_ARCHITECTURES=75;80;86;89'
+
+      - name: package (windows, cpu + cuda)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/package-windows-x64.ps1 -GpuPackages cuda
+
+      # Install the EXACT built artifact (hash-gated) and launch the installed
+      # binary — a release candidate must survive its own installer before it
+      # can ship.
+      - name: install smoke on the built archive (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem dist -Filter '*.zip' | Select-Object -First 1
+          if (-not $zip) { throw 'no archive produced' }
+          $env:OCRX_RELEASE_ARCHIVE = $zip.FullName
+          $env:OCRX_RELEASE_SHA256 = (Get-FileHash -Algorithm SHA256 $zip.FullName).Hash.ToLower()
+          ./scripts/install.ps1
+          & (Join-Path $env:USERPROFILE '.local\bin\ocrx.exe') version
+          if ($LASTEXITCODE -ne 0) { throw 'installed binary failed to launch' }
 
       - name: upload archive
         uses: actions/upload-artifact@v4
