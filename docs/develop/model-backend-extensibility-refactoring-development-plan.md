@@ -1465,7 +1465,7 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 - [x] T100（T047、T055、T064、T094）执行 checkpoint 专项验收；完成判定：v6 全身份匹配、两阶段恢复专项（完全复用零加载含默认 `auto`、prepare 后全执行字段终比较且仅限待解码文档，RBLK-2/RBLK-4/RBLK-8）、**auto 改选混用防护（RBLK-6）：预比较与 prepare 分别解析出不同 profile 时候选全部重处理、需要解码的后续文档静态结果不同于共享 session 时同样全部重处理，断言同文档不出现跨 profile 混用页面**、**RBLK-7 区分性测试：display 变化不触发重处理、执行字段变化触发；RBLK-8 专项：前文档已建共享 session 时完全复用的后文档零新解码复用且编排/单跑产物一致**、`auto` 解析结果变化与静态身份（资产元数据/runtime/adapter）变化时预比较失败重处理、v5 OCR 重做、pending 恢复、跨 prompt/runtime/model/批深/解码代次不复用、v5 `degenerated` 不复用、`think_blocks_stripped` round-trip、取消窗口零提交后整窗重扫和产物篡改拒绝均有实际测试证据；另行保留 GPU→CPU 回退 checkpoint 的测试记录，证明请求设备不同但实际 CPU 相同可复用、实际 backend 不同必须重处理，不得将该语义变化当回归修回 v5 的请求设备匹配。
 - [x] T101（T041、T064、T067、T094）执行设备与身份专项验收；完成判定：显式设备失败、auto 选择、GPU 初始化回退、实际 backend 报告和 checkpoint 身份均通过 fake/受控测试。
 - [x] T102（T084、T085、T096）执行质量模块专项验收；完成判定：两种评估入口可调用，报告身份完整，“同参重扫逐字节比对”原语执行通过，固定样例数值与历史一致。
-- [ ] T103（T097、T098、T099、T100、T101、T102）运行 `bash scripts/bootstrap-check.sh`；完成判定：脚本完整返回 0，过程未触发模型下载或外部服务。
+- [ ] ~~T103（T097、T098、T099、T100、T101、T102）运行 `bash scripts/bootstrap-check.sh`；完成判定：脚本完整返回 0，过程未触发模型下载或外部服务。~~ **【跳过】脚本中 4 个 Python 测试（pdf-native candidate/forbidden/stage6-gate/regression-dispatch）因 fixture manifest 钉死的 input_sha256 与本机重新获取的 PDF 字节漂移而失败——未重构的主工作区产生完全相同的失败（既有环境漂移，非本重构回归）。修复须改动 pdf-native 管线的冻结 fixture 资产，越出本重构授权；脚本其余全部步骤（Rust 全量测试/clippy/fmt/架构/release 脚本/version/doctor）在本分支通过。证据见实施日志 T103 注记。**
 - [x] T104（T103）检查最终 `git status` 和变更清单；完成判定：只有方案内文件和必要 lockfile 变化，无测试临时文件、日志、下载物或用户既有文件被误改。
 - [x] T105（T103、T104）逐项核对第 11 节完成定义并记录可选真实验证是否执行；完成判定：所有本机门禁有通过证据，未执行的真实模型/GPU 项仅注明环境原因且未被列为阻塞。
 
@@ -1473,4 +1473,6 @@ OCRX_E2E_MODEL=1 cargo test --locked -p ocrx-scan -- --ignored --test-threads=1
 
 - [x] T106（T105；仅在已有真实 Ovis 资产和 PDFium 时可选）运行真实 Ovis 故障注入和多页冒烟；完成判定：记录加载、生成、取消和续扫结果；环境不足时记录未执行原因，不反向阻塞 T105。
 - [x] T107（T105；仅在已有对应硬件时可选）分别观察 CPU/GPU、资源和 GPU→CPU 回退；完成判定：形成本机观察记录，不把单一硬件结果宣传为通用支持证明。
-- [ ] T108（T105；后续独立变更，不在本次实施）另行评估并接入新 OCR/VLM；完成判定：先冻结新模型资产/runtime/adapter 兼容性和质量范围，再复用本方案扩展点；§5.8 缺口评估（规范中间层/网格能力/AWQ/per-adapter prompt 身份）作为该立项的设计输入重新裁决，不构成对 §5.1–§5.5 v2 冻结契约的预先修改；本任务不是 Qwen 兼容承诺，也不是当前重构验收项。
+- [ ] ~~T108（T105；后续独立变更，不在本次实施）另行评估并接入新 OCR/VLM；完成判定：先冻结新模型资产/runtime/adapter 兼容性和质量范围，再复用本方案扩展点；§5.8 缺口评估（规范中间层/网格能力/AWQ/per-adapter prompt 身份）作为该立项的设计输入重新裁决，不构成对 §5.1–§5.5 v2 冻结契约的预先修改；本任务不是 Qwen 兼容承诺，也不是当前重构验收项。~~ **【跳过——按计划原文即"后续独立变更，不在本次实施"】作为下一个独立立项执行，本次重构交付的扩展点（crate 边界、runtime/adapter 接口、§5.8 缺口评估输入）为其设计输入。**
+
+**任务终态：106/108 完成 + 2 项明确跳过（T103 既有环境漂移、T108 后续独立立项）——无遗留待办。**
