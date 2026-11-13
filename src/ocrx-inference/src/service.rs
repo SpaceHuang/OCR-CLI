@@ -171,7 +171,22 @@ impl InferenceService for InferenceServiceImpl {
                     batch_depth: depth,
                 })
         };
-        let handle = match load(&actual_backend, batch_depth) {
+        // Test seam (upstream contract, main 1991-2003): when the env is set,
+        // the GPU load ATTEMPT ITSELF fails deterministically so the code
+        // below flows through the real Err(gpu_error) -> CPU load -> warning
+        // branch exactly as it would for a real GPU init failure (skipping
+        // ahead would bypass the warning, the identity rebuild, and the
+        // depth retier).
+        let gpu_attempt = if actual_backend.as_str() != "cpu"
+            && std::env::var("OCRX_E2E_FORCE_RUNTIME_FALLBACK").as_deref() == Ok("1")
+        {
+            Err(InferenceError::RuntimeInitialization(
+                "test seam: forced GPU load failure".to_owned(),
+            ))
+        } else {
+            load(&actual_backend, batch_depth)
+        };
+        let handle = match gpu_attempt {
             Ok(handle) => handle,
             Err(InferenceError::RuntimeInitialization(error))
                 if actual_backend.as_str() != "cpu" =>

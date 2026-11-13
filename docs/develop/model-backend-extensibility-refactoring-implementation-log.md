@@ -387,3 +387,52 @@ CLI fail-loud；`ocrx-skill → ocrx-core` 白名单一致。评审验证全绿�
 2509dd4（合并 main@5e995d0 + 安全加固移植）→ PASS。计划任务 102/108 完成（T103/T105 既有环境
 漂移注记；T106/T107 可选 E2E；T108 后续独立立项）。分支 `refactor/model-backend-extensibility`
 包含完整重构 + 上游全部安全加固，可合并回 main。
+
+## T106/T107 真实验证（2026-11-13，本机 RTX 4090 D 24GB + CUDA 12.4 + compact 资产）
+
+### T106：真实 Ovis 故障注入 + 多页冒烟 + 取消/续扫 —— 全部通过（并修复 2 个真实缺陷）
+
+- **故障注入（2/2）**：`OCRX_E2E_MODEL=1 real_scan_fault_injection --ignored`——render 注入
+  partial/10/stage=render ✓；recognize 注入发现**接缝回归**：`OCRX_E2E_INJECT_INFERENCE_FAIL_PAGE`
+  在重构后从未被生产路径读取（旧 CLI 的 inject_inference_failure 成了死代码）。修复：缝接到窗口
+  组装处（注入页在 decode 前转 recognize 终态，形状与真实识别失败一致，同级页继续，机制 A 保持）。
+- **真实模型编排（9/9）**：`multi_doc_orchestration --ignored` 首次真跑（基线注记该 9 项重构前
+  从未执行）。发现并修复：(a) prepare 的 "[model] resolved and verified" 逐调用诊断行在重构版
+  丢失——移植回 ocrx-inference prepare（OCRX_STEP_PROFILE 门控）；(b) fallback_auto_resume 的
+  能力跳过门只查 stderr——exit 6 在单输入 --report json 下走 stdout（冻结路由），门改为双流探测。
+- **多页冒烟**：8 页 figure 文档（release CPU）20/20 页级完成（含 20 页文档）；CPU/CUDA 产物
+  逐字节一致（page-0001/0004/0008 md IDENTICAL）。
+- **取消+续扫**：windows-ctrl-c-smoke.ps1 真实 CTRL_BREAK（脚本首次按 CPU-only 二进制跑通——
+  原脚本硬编码 --device vulkan + 16 页锚点，已参数化 -Device 推导锚点）：**cancelled=130、窗口 1
+  检查点保留且复用（mtime 未变）、机制 A 零提交、无 .part 残留、--resume 完成（code 10）**。
+- **续扫复用修复（真跑暴露的最重缺陷）**：真实 20 页 `--resume` 曾 20/20 全量重解码。根因是
+  两处 post-prepare 分类的 `ResumeContext { statik: None }`——OCR 候选在 phase-1 门即被拒
+  （"no static identity for OCR pre-compare"），预分类的 reuse 全部被推翻：(a) app 层
+  final-compare 重分类（权威 RBLK-6 门）；(b) window.rs 窗口组装分类。假模型测试未覆盖
+  "有 pending 解码 + 候选复用"组合（新增回归测试 resume_reuses_candidate_pages_even_with_pending_
+  decode，stash 验证无修复必失败）。修复后真实证据：干净截断页 2/4/6/8 **checkpoint mtime 未变、
+  零提交行**（复用），退化页 1/3/5/7 按阶梯带新预算重扫（§3.5），9-20 新解码，20/20 完成。
+
+### T107：CPU/GPU/资源/回退观察（单一硬件，不外推）
+
+| 项 | CPU（release，8 页 figure） | CUDA（同文档） |
+|---|---|---|
+| 墙钟 | 75.2 s（scan 内 73.2 s） | **7.2 s**（scan 内 5.2 s，≈10.4×） |
+| 峰值 RSS | 3457 MB | 1549 MB（解码移至 VRAM） |
+| backend | cpu | cuda |
+| 产物 | 同参逐字节一致（抽 3 页 cmp IDENTICAL） | 同左 |
+
+- **CUDA 构建/打包**：`package-windows-x64.ps1 -GpuPackages cuda`（vcvars64 + VS Ninja，
+  19m37s）；包内 ocrx.exe（CPU）+ ocrx-cuda.exe；安装器在本机把 cuda 变体提升为默认 ocrx.exe。
+- **GPU→CPU 回退（真实观察）**：发现 `OCRX_E2E_FORCE_RUNTIME_FALLBACK` 是死缝（仅测试引用，
+  生产未读；相关门控测试在 CPU-only 二进制上经能力跳过门空过）。已在 ocrx-inference prepare 的
+  GPU 加载尝试点接线（上游 main:1991 语义：注入在失败点，走真实 Err→CPU 加载→警告→身份重建→
+  深度降档分支）。真实观察：`--device cuda` + 缝 → **backend=cpu、扫描成功、checkpoint
+  inference.backend=cpu / batch_depth=8（16→8 降档）/ decode_generation=3**。补充观察：
+  `--device auto` 正常选 cuda；显式 `--device vulkan`（无 vulkan 构建）→ exit 6 不可用（符合契约）。
+  CUDA_VISIBLE_DEVICES="" 不影响驱动 API 枚举（backend 仍 cuda）——记录为枚举语义观察，不作回退证据。
+
+**门禁（T106/T107 修复后）**：37 套件全过 0 失败（scan 90）、fmt/clippy -D warnings ✓。安装包
+重建并重装（SHA256 5c0fc194…，含全部修复 + cuda 变体）。计划勾选更新：T104/T105（实质完成有
+证据）/T106/T107 完成；T103 保持未勾——4 个既有 Python 漂移失败属 pdf-native 管线的冻结 fixture
+断言（主工作区同现），修复越出本重构授权，已按 T105 语义记录环境原因。
