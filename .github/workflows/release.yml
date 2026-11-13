@@ -134,51 +134,18 @@ jobs:
         shell: bash
         run: bash scripts/package-macos-arm64.sh
 
-      # cl.exe / cmake / ninja on PATH: the CUDA packaging branch requires
-      # Ninja as the CMake generator and an MSVC toolchain for llama.cpp.
-      - name: set up MSVC dev environment (windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # nvcc for the llama.cpp CUDA backend. 12.9 (not the locally-validated
-      # 12.4): hosted runners ship MSVC 19.4x and CUDA 12.4's host_config.h
-      # hard-rejects anything above 19.38 (C1189, observed on the first v0.1.0
-      # run). 12.9 accepts the runner's MSVC while keeping 12.x semantics
-      # (llama.cpp 0.1.161 is CUDA 13-ready too, so a future bump is open).
-      - name: install CUDA toolkit (windows)
-        if: runner.os == 'Windows'
-        uses: Jimver/cuda-toolkit@v0.2.36
-        with:
-          cuda: '12.9.1'
-          method: network
-
-      # Hosted runners have no NVIDIA GPU, so llama.cpp cannot auto-detect
-      # target architectures ("native" would fail): pin a breadth list
-      # covering Turing through Ada, the realistic NVIDIA install base.
-      - name: pin CUDA architectures (windows)
+      # CPU-only on hosted runners for now: the runner's fresher MSVC breaks
+      # every nvcc we can bring (12.4 C1189 on host_config, 12.9 crashes
+      # cudafe++ with 0xC0000005 even under -allow-unsupported-compiler —
+      # both observed on the v0.1.0 release attempts). The CUDA variant for
+      # v0.1.0 is built on the locally-validated toolchain and attached to
+      # the release separately. Re-enabling runner-side CUDA needs either a
+      # runner image with a CUDA-compatible MSVC or a custom container —
+      # tracked as a CI follow-up.
+      - name: package (windows, cpu baseline)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Add-Content $env:GITHUB_ENV 'CMAKE_CUDA_ARCHITECTURES=75;80;86;89'
-
-      # Even the newest CUDA minor rejects the hosted runner's fresher MSVC in
-      # nvcc's compiler-id step (C1189 at CMakeDetermineCompilerId — observed
-      # with 12.4 AND 12.9). Inject -allow-unsupported-compiler through
-      # CUDAFLAGS so the flag reaches BOTH the compiler-id probe and the real
-      # build (llama.cpp upstream CI runs exactly this combination; MSVC 19.4x
-      # works with CUDA 12.9 in practice — the check is conservative).
-      - name: allow the runner's MSVC as nvcc host compiler (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Add-Content $env:GITHUB_ENV 'CUDAFLAGS=-allow-unsupported-compiler'
-          Add-Content $env:GITHUB_ENV 'NVCC_PREPEND_FLAGS=-allow-unsupported-compiler'
-
-      - name: package (windows, cpu + cuda)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          ./scripts/package-windows-x64.ps1 -GpuPackages cuda
+        run: ./scripts/package-windows-x64.ps1
 
       # Install the EXACT built artifact (hash-gated) and launch the installed
       # binary — a release candidate must survive its own installer before it
