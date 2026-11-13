@@ -831,9 +831,12 @@ mod tests {
             .join("ovisocr2")
             .join("rev-test-1");
         std::fs::create_dir_all(&revision_dir).unwrap();
-        // A live foreign holder: this test process's own PID would be
-        // "stale-reclaimable" only if dead, so use a PID that cannot exist.
-        let foreign_holder = u32::MAX - 1;
+        // A LIVE holder: use this test process's own PID. process_liveness
+        // sees it as alive on every platform, so the lock must be rejected —
+        // a nonexistent PID (e.g. u32::MAX-1) is DEAD on unix (kill -0 ->
+        // ESRCH) and would be stale-reclaimed instead of rejected, which is
+        // the other feature. CI caught exactly that divergence on macOS.
+        let foreign_holder = std::process::id();
         std::fs::write(
             revision_dir.join(".install.lock"),
             foreign_holder.to_string(),
