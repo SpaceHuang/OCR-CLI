@@ -450,3 +450,13 @@ CLI fail-loud；`ocrx-skill → ocrx-core` 白名单一致。评审验证全绿�
 重构范围内的工作全部完成并经三轮评审（两次 BLOCK → 修复 → PASS → 合并 main → PASS → 真实资产
 验证闭环）。最终提交链见 git log；验证边界（真实 GPU 训练级负载、其他硬件形态）不外推单一本机
 观察，已在 T107 记录中明示。
+
+## 遗留边界登记（2026-11-13 收尾）
+
+- **OmniDocBench 复评未执行（用户决定"先这样"）**：权威分数保持重构前里程碑
+  `omnidocbench-0161-milestone-2026-11-10.md`（all 84.92 / en 81.58 / zh 86.83；基线 77.99）。
+  重构的质量契约为字节中性（同参逐字节一致，fixture 金集 + 黄金串 + 本轮 CPU/CUDA 对拍背书），
+  复评预期分数不变但属下一质量工作线的实证动作。复评条件已盘点：主工作区
+  `benchmarks/omnidocbench/`（GT/venv/1,651 页语料/mapping）+ 本分支 CUDA 二进制 +
+  Docker 官方评分器（ghcr 南大镜像，README runbook）。注意里程碑为 vulkan 后端，CUDA 复评
+  需注明后端差异（噪声 ±3% 量级）。
