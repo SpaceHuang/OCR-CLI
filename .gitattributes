@@ -1,37 +1,4 @@
-*.rs text eol=lf
-# Fixtures are hash-locked test inputs; their bytes must survive checkout
-# byte-identically on every platform (Windows autocrlf corrupted *.txt and
-# even some generated *.pdf fixtures before this rule).
-benchmarks/fixtures/** -text
-# Vendored native binaries and archives must never be text-normalized: a
-# CRLF-mangled pdfium.dll would not load and a rewritten GGUF or release
-# archive would fail its pinned SHA-256 verification.
-*.dll binary
-*.dylib binary
-*.gguf binary
-*.zip binary
-*.tgz binary
-# Files that ship inside release archives keep LF on every platform so the
-# macOS and Windows archives stay byte-identical for the same source
-# revision (these three were checked in as CRLF from Windows).
-/assets/skills/ocrx/SKILL.md text eol=lf
-/THIRD_PARTY_NOTICES.md text eol=lf
-/LICENSE text eol=lf
-/assets/licenses/** text eol=lf
-src/ocrx-ovisocr2/tests/fixtures/** -text
-# P0 throughput baseline raw data is a byte-identity reference for the
-# golden-set gate (plan §2.3 第一档): text normalization on checkout would
-# corrupt the recorded bytes and break future byte-exact comparisons.
-docs/test/reports/perf-baseline-*-data/** -text
-
-# phase-2 measurement data: raw bytes, no EOL normalization
-docs/test/reports/phase2-t0-*-data/** -text
-
-# CUDA-vs-Vulkan engine bench data (raw bytes)
-docs/test/reports/llamacpp-cuda-vs-vulkan-bench-2026-11-05-data/** -text
-
-# window depth curve extension data (raw bytes)
-docs/test/reports/window-depth-curve-2026-11-07-data/** -text
-
-# phase-4 measurement data (raw bytes)
-docs/test/reports/phase4-2026-11-07-data/** -text
+# Test fixtures are byte-exact data (checkpoint digests, string assertions):
+# never let git convert EOLs on checkout/commit — a CRLF drift breaks
+# include_str! assertions and any digest computed over fixture bytes.
+**/tests/fixtures/** -text
