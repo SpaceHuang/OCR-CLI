@@ -144,7 +144,7 @@ jobs:
       # release baseline was validated on (12.4).
       - name: install CUDA toolkit (windows)
         if: runner.os == 'Windows'
-        uses: Jimver/cuda-toolkit@v0.2
+        uses: Jimver/cuda-toolkit@v0.2.36
         with:
           cuda: '12.4.0'
           method: network
