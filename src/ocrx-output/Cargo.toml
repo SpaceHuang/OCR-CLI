@@ -10,5 +10,8 @@ workspace = true
 
 [dependencies]
 ocrx-core = { path = "../ocrx-core" }
+ocrx-primitives = { path = "../ocrx-primitives" }
+ocrx-inference-api = { path = "../ocrx-inference-api" }
 ocrx-runtime = { path = "../ocrx-runtime" }
+serde.workspace = true
 serde_json.workspace = true

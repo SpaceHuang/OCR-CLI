@@ -731,13 +731,11 @@ name = "ocrx"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
- "image",
  "ocrx-core",
- "ocrx-models",
+ "ocrx-inference",
+ "ocrx-inference-api",
  "ocrx-output",
- "ocrx-ovisocr2",
- "ocrx-pdf",
- "ocrx-runtime",
+ "ocrx-scan",
  "ocrx-skill",
  "serde_json",
  "vulkano",
@@ -747,6 +745,44 @@ dependencies = [
 name = "ocrx-core"
 version = "0.1.0"
 dependencies = [
+ "ocrx-primitives",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ocrx-eval"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "ocrx-core",
+ "ocrx-inference-api",
+ "ocrx-output",
+ "ocrx-pdf",
+ "ocrx-primitives",
+ "ocrx-scan",
+ "serde_json",
+]
+
+[[package]]
+name = "ocrx-inference"
+version = "0.1.0"
+dependencies = [
+ "ocrx-inference-api",
+ "ocrx-models",
+ "ocrx-ovisocr2",
+ "ocrx-primitives",
+ "ocrx-runtime",
+ "serde",
+ "serde_json",
+ "vulkano",
+]
+
+[[package]]
+name = "ocrx-inference-api"
+version = "0.1.0"
+dependencies = [
+ "ocrx-primitives",
  "serde",
  "serde_json",
 ]
@@ -756,6 +792,10 @@ name = "ocrx-models"
 version = "0.1.0"
 dependencies = [
  "ocrx-core",
+ "ocrx-inference-api",
+ "ocrx-primitives",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -763,7 +803,10 @@ name = "ocrx-output"
 version = "0.1.0"
 dependencies = [
  "ocrx-core",
+ "ocrx-inference-api",
+ "ocrx-primitives",
  "ocrx-runtime",
+ "serde",
  "serde_json",
 ]
 
@@ -771,11 +814,7 @@ dependencies = [
 name = "ocrx-ovisocr2"
 version = "0.1.0"
 dependencies = [
- "image",
- "ocrx-core",
- "ocrx-models",
- "ocrx-pdf",
- "ocrx-runtime",
+ "ocrx-inference-api",
 ]
 
 [[package]]
@@ -788,14 +827,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocrx-primitives"
+version = "0.1.0"
+
+[[package]]
 name = "ocrx-runtime"
 version = "0.1.0"
 dependencies = [
  "llama-cpp-2",
  "llama-cpp-sys-2",
  "ocrx-core",
+ "ocrx-inference-api",
  "ocrx-models",
  "ocrx-pdf",
+ "ocrx-primitives",
+]
+
+[[package]]
+name = "ocrx-scan"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "ocrx-core",
+ "ocrx-inference-api",
+ "ocrx-output",
+ "ocrx-pdf",
+ "ocrx-primitives",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

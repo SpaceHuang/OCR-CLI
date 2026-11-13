@@ -1,4 +1,5 @@
-//! PdfiumOwner: every in-process PDFium call of a scan runs on exactly one
+//! PdfiumOwner (migrated from the CLI, plan §8.10/T058): every in-process
+//! PDFium call of a scan runs on exactly one
 //! dedicated owner thread (plan §6.1); the main thread requests via channels.
 //!
 //! Invariant (review MAJOR-2/BLK-2, plan v3.10): the main thread never touches
@@ -15,9 +16,9 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
+use crate::state::{RenderAudit, RenderedPage};
 use image::RgbImage;
 use ocrx_core::{PageClassification, QualityTier};
-use ocrx_output::{PageRenderer, RenderAudit, RenderedPage};
 use ocrx_pdf::{PdfiumRenderer, RenderOptions, fit_pixel_budget};
 
 /// Prefetch depth floor (plan §6.2 froze K=2 for the serial-era pipeline).
@@ -253,7 +254,7 @@ fn compose_rendered_page(
         image
     };
     let (scale_ratio_numerator, scale_ratio_denominator) =
-        crate::linear_scale_ratio(model_width, scaled_input_width);
+        crate::render::linear_scale_ratio(model_width, scaled_input_width);
     RenderedPage::new(rgb.width(), rgb.height(), rgb.into_raw()).map(|page| {
         page.with_audit(RenderAudit {
             original_width: input.original_width,
@@ -272,7 +273,7 @@ fn compose_rendered_page(
 /// Main-thread handle: channel endpoints plus the poisoned flag. Dropping the
 /// handle closes the request channel and the owner exits after its current
 /// operation (plan §6.2 cancellation contract).
-pub(crate) struct PdfiumOwnerHandle {
+pub struct PdfiumOwnerHandle {
     requests: Option<std::sync::mpsc::Sender<PdfRequest>>,
     responses: std::sync::mpsc::Receiver<PdfResponse>,
     timeout: Duration,
@@ -286,7 +287,7 @@ impl PdfiumOwnerHandle {
     /// Spawns the owner thread with the real PDFium executor. The renderer is
     /// constructed inside the thread: the binding init happens there and the
     /// main thread never sees a pdfium type (plan §6.1).
-    pub(crate) fn spawn(
+    pub fn spawn(
         library_dir: PathBuf,
         input: PathBuf,
         options: RenderOptions,
@@ -530,6 +531,112 @@ impl PdfiumOwnerHandle {
     }
 }
 
+/// Production [`crate::app::PdfDocumentAccess`] over the owner handle:
+/// every PDF fact (page count, classification signals, native extraction)
+/// crosses the owner channel; the main thread holds no pdfium type.
+pub struct OwnerPdfAccess {
+    handle: Rc<RefCell<PdfiumOwnerHandle>>,
+    /// The document the owner currently serves; a differing `input` in any
+    /// port call triggers the X1 `SwitchDocument` swap (same owner thread).
+    current_input: PathBuf,
+}
+
+impl OwnerPdfAccess {
+    /// Spawns the owner thread for one document.
+    #[must_use]
+    pub fn spawn(
+        library_dir: PathBuf,
+        input: PathBuf,
+        options: RenderOptions,
+        password: Option<String>,
+        prefetch_depth: u32,
+    ) -> Self {
+        Self {
+            handle: Rc::new(RefCell::new(PdfiumOwnerHandle::spawn(
+                library_dir,
+                input.clone(),
+                options,
+                password,
+                prefetch_depth,
+            ))),
+            current_input: input,
+        }
+    }
+
+    /// The structured failure when the owner is poisoned (library missing,
+    /// terminated, timed out), if it is — the caller aborts the invocation
+    /// fail-loud instead of skipping documents (X1.2 owner contract).
+    #[must_use]
+    pub fn poisoned(&self) -> Option<String> {
+        self.handle.borrow().poisoned()
+    }
+
+    /// Builds the window-loop renderer over the SAME owner (shared handle).
+    #[must_use]
+    pub fn renderer(
+        &self,
+        commit_recorder: ocrx_output::commit_profile::CommitRecorder,
+    ) -> OwnerPageRenderer {
+        OwnerPageRenderer::new(Rc::clone(&self.handle), commit_recorder)
+    }
+
+    /// X1 SwitchDocument: the SAME owner thread swaps to the new document
+    /// (prefetch cache cleared, `next_prefetch` reset; a dead/unresponsive
+    /// owner surfaces as an error on the follow-up calls).
+    ///
+    /// # Errors
+    ///
+    /// Channel/owner failure.
+    pub fn switch_document(&mut self, input: &Path) -> std::io::Result<()> {
+        self.handle
+            .borrow_mut()
+            .switch_document(input)
+            .map_err(std::io::Error::other)?;
+        self.current_input = input.to_path_buf();
+        Ok(())
+    }
+
+    /// Ensures the owner serves `input` (no-op when it already does).
+    fn ensure_document(&mut self, input: &Path) -> std::io::Result<()> {
+        if self.current_input != input {
+            self.switch_document(input)?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::app::PdfDocumentAccess for OwnerPdfAccess {
+    fn begin_document(&mut self, input: &Path) {
+        // Every document boundary switches — including a repeat of the
+        // spawn input — so the protocol matches the baseline (the boundary
+        // swap clears prefetch state; owner poison surfaces on this call or
+        // the next port call).
+        let _ = self.switch_document(input);
+    }
+
+    fn page_count(&mut self, input: &Path) -> std::io::Result<usize> {
+        self.ensure_document(input)?;
+        self.handle.borrow_mut().page_count()
+    }
+
+    fn analyze(
+        &mut self,
+        input: &Path,
+        pages: &[usize],
+        tier: QualityTier,
+    ) -> std::io::Result<Vec<PageClassification>> {
+        self.ensure_document(input)?;
+        self.handle
+            .borrow_mut()
+            .analyze(pages, tier)
+            .map_err(std::io::Error::other)
+    }
+
+    fn extract_native(&mut self, page: u32) -> std::io::Result<ocrx_pdf::NativePage> {
+        self.handle.borrow_mut().extract_native(page)
+    }
+}
+
 impl Drop for PdfiumOwnerHandle {
     fn drop(&mut self) {
         self.requests.take(); // close the channel; the owner exits
@@ -600,7 +707,7 @@ impl PdfiumExecutor for RealPdfiumExecutor {
 /// `PageRenderer` wrapper used by the scan service: forwards every render to
 /// the owner and carries the render-failure injection seam. Holds no pdfium
 /// type — the §6.1 invariant by construction.
-pub(crate) struct OwnerPageRenderer {
+pub struct OwnerPageRenderer {
     handle: Rc<RefCell<PdfiumOwnerHandle>>,
     /// T1: records the owner render work time each response carried; a
     /// clone of the scan's shared commit-path recorder.
@@ -608,7 +715,8 @@ pub(crate) struct OwnerPageRenderer {
 }
 
 impl OwnerPageRenderer {
-    pub(crate) fn new(
+    #[must_use]
+    pub fn new(
         handle: Rc<RefCell<PdfiumOwnerHandle>>,
         commit_recorder: ocrx_output::commit_profile::CommitRecorder,
     ) -> Self {
@@ -619,7 +727,7 @@ impl OwnerPageRenderer {
     }
 }
 
-impl PageRenderer for OwnerPageRenderer {
+impl crate::window::PageRenderer for OwnerPageRenderer {
     fn preflight(&mut self) -> std::io::Result<()> {
         // Page count and analysis already ran through the owner in run_scan,
         // which validated the input; channel health is all that is left.
@@ -630,7 +738,7 @@ impl PageRenderer for OwnerPageRenderer {
     }
 
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
-        crate::inject_render_failure(page)?;
+        crate::render::inject_render_failure(page)?;
         let rendered = self
             .handle
             .borrow_mut()
@@ -648,7 +756,7 @@ impl PageRenderer for OwnerPageRenderer {
         numerator: u32,
         denominator: u32,
     ) -> std::io::Result<RenderedPage> {
-        crate::inject_render_failure(page)?;
+        crate::render::inject_render_failure(page)?;
         let rendered = self
             .handle
             .borrow_mut()
@@ -666,6 +774,7 @@ impl PageRenderer for OwnerPageRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::window::PageRenderer as _;
     use ocrx_core::{PageType, PdfReasonCode, ProcessingMethod, RouteConfidence};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

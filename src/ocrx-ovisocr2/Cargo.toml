@@ -9,10 +9,4 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-ocrx-core = { path = "../ocrx-core" }
-ocrx-runtime = { path = "../ocrx-runtime" }
-ocrx-pdf = { path = "../ocrx-pdf" }
-image = { version = "=0.25.10", default-features = false, features = ["png"] }
-
-[dev-dependencies]
-ocrx-models = { path = "../ocrx-models" }
+ocrx-inference-api = { path = "../ocrx-inference-api" }

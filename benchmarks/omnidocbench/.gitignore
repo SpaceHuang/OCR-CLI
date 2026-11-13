@@ -19,3 +19,18 @@ reports/**/*_quick_match_display_formula/
 # matched GT/pred pair dumps (12-26MB each, debugging only)
 reports/*_quick_match_text_block_result.json
 reports/*_quick_match_table_result.json
+# Subset corpora rebuilt from dataset/ GT via scripts/build-omnidocbench-pdfs.py
+# (formula = 313 formula-subset pages, newspaper = 151 newspaper-subset pages)
+pdfs-formula/
+pdfs-newspaper/
+# degeneration-v0.1: corpus/predictions are derivable scan data; keep only the
+# top-level corpus manifests + eval script
+degeneration-v0.1/pdfs-*/
+degeneration-v0.1/column-split*/
+degeneration-v0.1/gold-*/
+degeneration-v0.1/escaped-*/
+degeneration-v0.1/sample-images/
+degeneration-v0.1/predictions/
+degeneration-v0.1/truth-subset.json
+# ad-hoc export/eval driver iteration (see run-scans.sh / post-scan.sh above)
+post-scan3.sh

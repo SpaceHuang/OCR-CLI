@@ -18,7 +18,12 @@ param(
     [string]$Binary = "",
     [string]$PdfiumDir = "",
     [string]$ModelCache = "",
-    [string]$Fixture = ""
+    [string]$Fixture = "",
+    # Backend the smoke targets: vulkan/cuda (GPU packaging, depth-16 tier on
+    # a 12 GiB+ card) or cpu (CPU baseline, depth-8 tier). The cancel anchor,
+    # in-flight range, and BOTH invocations derive from it (BLK-3: the resume
+    # must repeat the same effective config or the compat key mismatches).
+    [string]$Device = "vulkan"
 )
 
 $ErrorActionPreference = "Stop"
@@ -123,7 +128,7 @@ $scanArgs = @(
     "--model-profile"
     "compact"
     "--device"
-    "vulkan"
+    $Device
     "--offline"
     "--non-interactive"
     "--report"
@@ -171,20 +176,25 @@ try {
     $logStream.Dispose()
 
     $childPid = $pi.dwProcessId
-    # Windowed commits are atomic (plan §7.4 mechanism A): window 1 is pages
-    # 1-16, committed together; the signal lands while window 2 (pages 17-20)
-    # is in flight with zero checkpoints of its own.
-    $firstCheckpoint = Join-Path $outputDir "page-0016.checkpoint"
-    $secondCheckpoint = Join-Path $outputDir "page-0017.checkpoint"
+    # Windowed commits are atomic (plan §7.4 mechanism A): window 1 (depth
+    # pages) commits together; the signal lands while window 2 is in flight
+    # with zero checkpoints of its own. Depth follows the device tier: 16 for
+    # a GPU build on a 12 GiB+ card, 8 for the CPU baseline.
+    $windowDepth = if ($Device -eq "cpu") { 8 } else { 16 }
+    if ($windowDepth -ge 20) { throw "fixture has 20 pages; depth must leave a second window" }
+    $anchor = "page-{0:D4}.checkpoint" -f $windowDepth
+    $second = "page-{0:D4}.checkpoint" -f ($windowDepth + 1)
+    $firstCheckpoint = Join-Path $outputDir $anchor
+    $secondCheckpoint = Join-Path $outputDir $second
     $deadline = (Get-Date).AddMinutes(12)
     while (-not (Test-Path -LiteralPath $firstCheckpoint)) {
         if ((Get-Date) -gt $deadline) {
-            throw "page 16 did not commit before deadline; output was not produced"
+            throw "window-1 anchor checkpoint did not commit before deadline; output was not produced"
         }
         Start-Sleep -Milliseconds 250
     }
     if (Test-Path -LiteralPath $secondCheckpoint) {
-        throw "page 17 already committed before the cancel could be exercised; the workload is too small to smoke-test cancellation"
+        throw "window-2 already committed before the cancel could be exercised; the workload is too small to smoke-test cancellation"
     }
 
     # CTRL_BREAK_EVENT (1) targets the new process group reliably on Windows.
@@ -211,9 +221,9 @@ try {
     if (-not (Test-Path -LiteralPath $firstCheckpoint)) {
         throw "completed page checkpoint was not retained after cancellation"
     }
-    # Mechanism A evidence: the cancelled in-flight window (pages 17-20) must
-    # have produced zero checkpoints.
-    foreach ($inFlight in 17..20) {
+    # Mechanism A evidence: the cancelled in-flight window must have produced
+    # zero checkpoints.
+    foreach ($inFlight in ($windowDepth + 1)..20) {
         $inFlightPath = Join-Path $outputDir ("page-{0:D4}.checkpoint" -f $inFlight)
         if (Test-Path -LiteralPath $inFlightPath) {
             throw "cancelled window page $inFlight left a checkpoint; window-atomic commit (mechanism A) is broken"
@@ -237,7 +247,7 @@ try {
     # window-1 checkpoint (degenerated pages are intentionally re-run on
     # resume per plan §3.5 — the resume machine retries them).
     $window1Timestamps = @{}
-    foreach ($page in 1..16) {
+    foreach ($page in 1..$windowDepth) {
         $cp = Join-Path $outputDir ("page-{0:D4}.checkpoint" -f $page)
         if (Test-Path $cp) {
             $cpText = Get-Content $cp -Raw
@@ -250,15 +260,16 @@ try {
         throw "no clean (non-degenerated) window-1 checkpoints found"
     }
     & $Binary scan $Fixture --output-dir $outputDir --pages 1-20 --pdf-mode ocr --model-profile compact `
-        --device vulkan --offline --non-interactive --report json --resume `
+        --device $Device --offline --non-interactive --report json --resume `
         --max-image-tokens 128 --max-output-tokens 128 2>&1 | Out-Null
     $ErrorActionPreference = $previousPreference
     $resumeCode = $LASTEXITCODE
     if ($resumeCode -notin @(0, 10)) {
         throw "resume scan failed with exit code $resumeCode"
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $outputDir "page-0017.checkpoint"))) {
-        throw "resume scan did not produce the cancelled window's page 17 checkpoint"
+    $secondAnchor = "page-{0:D4}.checkpoint" -f ($windowDepth + 1)
+    if (-not (Test-Path -LiteralPath (Join-Path $outputDir $secondAnchor))) {
+        throw "resume scan did not produce the cancelled window's next-page checkpoint"
     }
     # BLK-2 (rereview): verify NO clean window-1 checkpoint was rewritten
     # during the resume — a compat-key-driven re-run would produce a new

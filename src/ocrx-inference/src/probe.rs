@@ -1,10 +1,8 @@
-//! Injectable system probe for hardware/resource detection.
-//!
-//! `ResourceSnapshot` construction depends on memory size and GPU backend
-//! availability, which are machine-specific. The [`SystemProbe`] trait
-//! abstracts that detection so recommendation logic can be tested against a
-//! fixed fake instead of the host hardware (W1.2). The real implementation
-//! lives in [`RealSystemProbe`]; tests inject a fake.
+//! System probe for hardware/resource detection (plan §8.8: migrated from
+//! the CLI). `ResourceSnapshot` construction depends on memory size and GPU
+//! backend availability, which are machine-specific; the [`SystemProbe`]
+//! trait abstracts that detection so recommendation logic can be tested
+//! against a fixed fake instead of the host hardware.
 
 /// Hardware/resource facts needed to build a [`crate::ResourceSnapshot`].
 ///
@@ -141,50 +139,50 @@ fn detect_vulkan_device() -> bool {
         .unwrap_or(false)
 }
 
+/// A fake probe returning fixed values, for snapshot/recommendation tests.
+#[allow(clippy::struct_excessive_bools)] // mirrors the one-bool-per-backend contract
+#[derive(Debug, Clone, Copy)]
+pub struct FakeSystemProbe {
+    pub memory_gb: Option<u64>,
+    pub metal_available: bool,
+    pub cuda_available: bool,
+    pub vulkan_available: bool,
+    pub cpu_available: bool,
+}
+
+impl Default for FakeSystemProbe {
+    fn default() -> Self {
+        Self {
+            memory_gb: Some(16),
+            metal_available: false,
+            cuda_available: false,
+            vulkan_available: false,
+            cpu_available: true,
+        }
+    }
+}
+
+impl SystemProbe for FakeSystemProbe {
+    fn detected_memory_gb(&self) -> Option<u64> {
+        self.memory_gb
+    }
+    fn metal_available(&self) -> bool {
+        self.metal_available
+    }
+    fn cuda_available(&self) -> bool {
+        self.cuda_available
+    }
+    fn vulkan_available(&self) -> bool {
+        self.vulkan_available
+    }
+    fn cpu_available(&self) -> bool {
+        self.cpu_available
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A fake probe returning fixed values, for snapshot/recommendation tests.
-    #[allow(clippy::struct_excessive_bools)] // mirrors the one-bool-per-backend contract
-    #[derive(Debug, Clone, Copy)]
-    pub struct FakeSystemProbe {
-        pub memory_gb: Option<u64>,
-        pub metal_available: bool,
-        pub cuda_available: bool,
-        pub vulkan_available: bool,
-        pub cpu_available: bool,
-    }
-
-    impl Default for FakeSystemProbe {
-        fn default() -> Self {
-            Self {
-                memory_gb: Some(16),
-                metal_available: false,
-                cuda_available: false,
-                vulkan_available: false,
-                cpu_available: true,
-            }
-        }
-    }
-
-    impl SystemProbe for FakeSystemProbe {
-        fn detected_memory_gb(&self) -> Option<u64> {
-            self.memory_gb
-        }
-        fn metal_available(&self) -> bool {
-            self.metal_available
-        }
-        fn cuda_available(&self) -> bool {
-            self.cuda_available
-        }
-        fn vulkan_available(&self) -> bool {
-            self.vulkan_available
-        }
-        fn cpu_available(&self) -> bool {
-            self.cpu_available
-        }
-    }
 
     #[test]
     fn real_probe_reports_cpu_available_on_every_platform() {

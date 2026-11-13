@@ -136,8 +136,13 @@ fn cli_scan_rejects_vulkan_on_cpu_only_build() {
         );
         return;
     }
+    // Canonical spelling: the hardened output policy refuses a raw `..`
+    // before lexical normalization, which would preempt the behavior under
+    // test.
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf");
+        .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf")
+        .canonicalize()
+        .expect("fixture resolves");
     let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
         .args([
             "scan",
@@ -174,8 +179,13 @@ fn scan_prerequisites() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
         );
         return None;
     }
+    // Canonical spelling: the hardened output policy refuses a raw `..`
+    // before lexical normalization, which would preempt the behavior under
+    // test.
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf");
+        .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf")
+        .canonicalize()
+        .expect("fixture resolves");
     Some((pdfium_dll, fixture))
 }
 

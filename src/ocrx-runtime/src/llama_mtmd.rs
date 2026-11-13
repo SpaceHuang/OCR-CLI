@@ -7,7 +7,7 @@ use std::time::Instant;
 use super::step_profile::{Segment, StepProfile, StepProfiler};
 use super::{
     Backend, CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse,
-    RetrySampling, Runtime, RuntimeInfo, RuntimeTelemetry,
+    RetrySampling, Runtime, RuntimeInfo, RuntimeTelemetry, WorkerTask,
 };
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -23,7 +23,10 @@ use llama_cpp_2::mtmd::{
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 
-const PROMPT: &str = "\nExtract all readable content from the image in natural human reading order and output the result as a single Markdown document. For charts or images, represent them using an HTML image tag: <img src=\"images/bbox_{left}_{top}_{right}_{bottom}.jpg\" />, where left, top, right, bottom are bounding box coordinates scaled to [0, 1000). Format formulas as LaTeX. Format tables as HTML: <table>...</table>. Transcribe all other text as standard Markdown.\nPreserve the original text without translation or paraphrasing.";
+/// FROZEN legacy OCR prompt (temporary bridge, deleted with the legacy
+/// `Runtime` wrapper at T087): the new backend path consumes caller prompts
+/// and must never read this constant.
+const LEGACY_PROMPT: &str = "\nExtract all readable content from the image in natural human reading order and output the result as a single Markdown document. For charts or images, represent them using an HTML image tag: <img src=\"images/bbox_{left}_{top}_{right}_{bottom}.jpg\" />, where left, top, right, bottom are bounding box coordinates scaled to [0, 1000). Format formulas as LaTeX. Format tables as HTML: <table>...</table>. Transcribe all other text as standard Markdown.\nPreserve the original text without translation or paraphrasing.";
 
 // Frozen repetition-loop detector thresholds (plan §3.2.1). Adjusting any of
 // these requires a fresh golden-set zero-trigger acceptance run (§5.3).
@@ -157,13 +160,13 @@ pub struct LlamaMtmdRuntime {
 
 enum WorkerRequest {
     Generate {
-        request: InferenceRequest,
+        request: WorkerTask,
         cancellation: CancellationToken,
     },
     /// Multi-page continuous batching (plan P4.3): decode the window's pages
     /// concurrently on one shared batch.
     GenerateWindow {
-        requests: Vec<InferenceRequest>,
+        requests: Vec<WorkerTask>,
         cancellation: CancellationToken,
     },
     /// Step-profile snapshot request (phase-2 T0.1/A1 debug channel).
@@ -175,7 +178,7 @@ enum WorkerMessage {
     /// One-shot load handshake: success carries the frozen runtime info.
     Loaded(Result<RuntimeInfo, String>),
     Progress {
-        page: u32,
+        slot: u32,
         progress: GenerationProgress,
     },
     Generated(Result<InferenceResponse, String>),
@@ -253,9 +256,9 @@ impl LlamaMtmdRuntime {
     /// refreshing the telemetry snapshot from the worker's follow-up message.
     fn generate_via(
         &mut self,
-        request: InferenceRequest,
+        request: WorkerTask,
         cancellation: &CancellationToken,
-        progress: &mut dyn FnMut(GenerationProgress),
+        progress: &mut dyn FnMut(u32, GenerationProgress),
     ) -> Result<InferenceResponse, String> {
         if let Some(poison) = &self.poison {
             return Err(poison.clone());
@@ -274,8 +277,9 @@ impl LlamaMtmdRuntime {
         loop {
             match self.messages.recv() {
                 Ok(WorkerMessage::Progress {
-                    progress: event, ..
-                }) => progress(event),
+                    slot,
+                    progress: event,
+                }) => progress(slot, event),
                 Ok(WorkerMessage::Generated(result)) => return result,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
                 Ok(
@@ -296,7 +300,7 @@ impl LlamaMtmdRuntime {
     /// [`super::Runtime::generate_window`] for the contract.
     fn generate_window_via(
         &mut self,
-        requests: Vec<InferenceRequest>,
+        requests: Vec<WorkerTask>,
         cancellation: &CancellationToken,
         progress: &mut dyn FnMut(u32, GenerationProgress),
     ) -> Vec<Result<InferenceResponse, String>> {
@@ -323,9 +327,9 @@ impl LlamaMtmdRuntime {
         loop {
             match self.messages.recv() {
                 Ok(WorkerMessage::Progress {
-                    page,
+                    slot,
                     progress: event,
-                }) => progress(page, event),
+                }) => progress(slot, event),
                 Ok(WorkerMessage::WindowGenerated(results)) => return results,
                 Ok(WorkerMessage::Telemetry(telemetry)) => self.telemetry = telemetry,
                 Ok(
@@ -656,9 +660,9 @@ fn run_inference_worker(
     }
 }
 
-/// Context budget for one windowed page: image tokens (upper bound) +
+/// Context budget for one windowed slot: image tokens (upper bound) +
 /// prompt headroom + the page's output budget (plan P4.2 §①).
-fn page_context_budget(image_tokens: u32, request: &InferenceRequest) -> u32 {
+fn page_context_budget(image_tokens: u32, request: &WorkerTask) -> u32 {
     image_tokens
         .saturating_add(64)
         .saturating_add(request.max_output_tokens)
@@ -671,11 +675,7 @@ fn page_context_budget(image_tokens: u32, request: &InferenceRequest) -> u32 {
 /// first request's budget. Equal-budget windows get budget x depth exactly;
 /// mixed-budget windows over-provision the low-budget slots, which keeps
 /// every page inside its own context for the whole window.
-fn window_context_capacity(
-    image_tokens: u32,
-    requests: &[InferenceRequest],
-    window_depth: usize,
-) -> u32 {
+fn window_context_capacity(image_tokens: u32, requests: &[WorkerTask], window_depth: usize) -> u32 {
     let depth = requests.len().max(window_depth) as u64;
     let max_budget = requests
         .iter()
@@ -687,7 +687,7 @@ fn window_context_capacity(
 
 /// Per-slot mutable state of one in-flight windowed page.
 struct WindowSlot {
-    request_page: u32,
+    request_slot: u32,
     /// Next input token for the decode loop.
     last: LlamaToken,
     position: i32,
@@ -724,7 +724,7 @@ fn generate_window_pages<'a>(
     image_tokens: u32,
     use_gpu: bool,
     window_depth: usize,
-    requests: &[InferenceRequest],
+    requests: &[WorkerTask],
     cancellation: &CancellationToken,
     telemetry: &mut RuntimeTelemetry,
     messages: &Sender<WorkerMessage>,
@@ -774,7 +774,7 @@ fn generate_window_pages<'a>(
             || request.max_output_tokens == 0;
         if invalid {
             slots.push(WindowSlot {
-                request_page: request.page,
+                request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
                 output: Vec::new(),
@@ -790,7 +790,7 @@ fn generate_window_pages<'a>(
         }
         if cancellation.is_cancelled() {
             slots.push(WindowSlot {
-                request_page: request.page,
+                request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
                 output: Vec::new(),
@@ -810,7 +810,7 @@ fn generate_window_pages<'a>(
                 Ok(bitmap) => bitmap,
                 Err(error) => {
                     slots.push(WindowSlot {
-                        request_page: request.page,
+                        request_slot: request.slot,
                         last: LlamaToken::new(0),
                         position: 0,
                         output: Vec::new(),
@@ -827,7 +827,7 @@ fn generate_window_pages<'a>(
             };
         let chunks = match mtmd.tokenize(
             MtmdInputText {
-                text: format!("{}{}", mtmd_default_marker(), PROMPT),
+                text: format!("{}{}", mtmd_default_marker(), request.prompt),
                 add_special: true,
                 parse_special: true,
             },
@@ -839,7 +839,7 @@ fn generate_window_pages<'a>(
             }
             Err(error) => {
                 slots.push(WindowSlot {
-                    request_page: request.page,
+                    request_slot: request.slot,
                     last: LlamaToken::new(0),
                     position: 0,
                     output: Vec::new(),
@@ -857,7 +857,7 @@ fn generate_window_pages<'a>(
         // Per-sequence encode (M9 checkpoints surround the blocking eval).
         if cancellation.is_cancelled() {
             slots.push(WindowSlot {
-                request_page: request.page,
+                request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
                 output: Vec::new(),
@@ -879,7 +879,7 @@ fn generate_window_pages<'a>(
             }
             Err(error) => {
                 slots.push(WindowSlot {
-                    request_page: request.page,
+                    request_slot: request.slot,
                     last: LlamaToken::new(0),
                     position: 0,
                     output: Vec::new(),
@@ -901,7 +901,7 @@ fn generate_window_pages<'a>(
         let seed = argmax_total_cmp(seed_row).unwrap_or(usize::MAX);
         if seed == usize::MAX {
             slots.push(WindowSlot {
-                request_page: request.page,
+                request_slot: request.slot,
                 last: LlamaToken::new(0),
                 position: 0,
                 output: Vec::new(),
@@ -916,7 +916,7 @@ fn generate_window_pages<'a>(
             continue;
         }
         let _ = messages.send(WorkerMessage::Progress {
-            page: request.page,
+            slot: request.slot,
             progress: GenerationProgress {
                 generated_tokens: 0,
                 elapsed_seconds: started.elapsed().as_secs(),
@@ -929,7 +929,7 @@ fn generate_window_pages<'a>(
         let first_token_ms = started.elapsed().as_millis() as u64;
         let seed_token = LlamaToken::new(seed as i32);
         let mut seed_slot = WindowSlot {
-            request_page: request.page,
+            request_slot: request.slot,
             last: seed_token,
             position,
             output: Vec::new(),
@@ -1053,7 +1053,7 @@ fn generate_window_pages<'a>(
             if slot.last_emitted_second != Some(elapsed_seconds) {
                 slot.last_emitted_second = Some(elapsed_seconds);
                 let _ = messages.send(WorkerMessage::Progress {
-                    page: slot.request_page,
+                    slot: slot.request_slot,
                     progress: GenerationProgress {
                         generated_tokens: slot.generated as u32,
                         elapsed_seconds,
@@ -1153,7 +1153,7 @@ fn generate_one_page(
     model: &LlamaModel,
     mtmd: &mut MtmdContext,
     context: &mut LlamaContext<'_>,
-    request: &InferenceRequest,
+    request: &WorkerTask,
     cancellation: &CancellationToken,
     telemetry: &mut RuntimeTelemetry,
     messages: &Sender<WorkerMessage>,
@@ -1193,7 +1193,7 @@ fn generate_one_page(
     let chunks = mtmd
         .tokenize(
             MtmdInputText {
-                text: format!("{}{}", mtmd_default_marker(), PROMPT),
+                text: format!("{}{}", mtmd_default_marker(), request.prompt),
                 add_special: true,
                 parse_special: true,
             },
@@ -1210,7 +1210,7 @@ fn generate_one_page(
         return Err("cancelled".to_owned());
     }
     let _ = messages.send(WorkerMessage::Progress {
-        page: request.page,
+        slot: request.slot,
         progress: GenerationProgress {
             generated_tokens: 0,
             elapsed_seconds: started.elapsed().as_secs(),
@@ -1251,7 +1251,7 @@ fn generate_one_page(
         if last_emitted_second != Some(elapsed_seconds) {
             last_emitted_second = Some(elapsed_seconds);
             let _ = messages.send(WorkerMessage::Progress {
-                page: request.page,
+                slot: request.slot,
                 progress: GenerationProgress {
                     generated_tokens: generated as u32,
                     elapsed_seconds,
@@ -1259,7 +1259,7 @@ fn generate_one_page(
             });
         }
         // Fallible per-token steps: every error path records the telemetry
-        // gathered so far before failing the page, so mid-generation
+        // gathered so far before failing the slot, so mid-generation
         // failures still contribute token/timing counts (MINOR 10).
         let next_token = (|| -> Result<LlamaToken, String> {
             // Q1.2: sampler-bound contexts expose the chain output per
@@ -1352,6 +1352,44 @@ fn generate_one_page(
     })
 }
 
+impl LlamaMtmdRuntime {
+    /// New backend path: runs one protocol-encoded task (slot-routed
+    /// progress). Page identity never crosses this boundary.
+    pub(crate) fn generate_task(
+        &mut self,
+        task: WorkerTask,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> Result<InferenceResponse, String> {
+        self.generate_via(task, cancellation, &mut |slot, event| progress(slot, event))
+    }
+
+    /// New backend path: one multi-slot window decode (plan P4.3).
+    pub(crate) fn generate_window_tasks(
+        &mut self,
+        tasks: Vec<WorkerTask>,
+        cancellation: &CancellationToken,
+        progress: &mut dyn FnMut(u32, GenerationProgress),
+    ) -> Vec<Result<InferenceResponse, String>> {
+        self.generate_window_via(tasks, cancellation, progress)
+    }
+}
+
+/// Legacy bridge (temporary until T087): converts the legacy page-keyed
+/// request into a slot-keyed worker task carrying the frozen prompt.
+fn legacy_task(slot: u32, request: &InferenceRequest) -> WorkerTask {
+    WorkerTask {
+        slot,
+        prompt: LEGACY_PROMPT.to_owned(),
+        width: request.width,
+        height: request.height,
+        image_rgb8: request.image_rgb8.clone(),
+        max_output_tokens: request.max_output_tokens,
+        image_tokens_override: request.image_tokens_override,
+        retry_sampling: request.retry_sampling,
+    }
+}
+
 impl Runtime for LlamaMtmdRuntime {
     fn info(&self) -> RuntimeInfo {
         self.info
@@ -1395,7 +1433,9 @@ impl Runtime for LlamaMtmdRuntime {
         cancellation: &CancellationToken,
         progress: &mut dyn FnMut(GenerationProgress),
     ) -> Result<InferenceResponse, String> {
-        self.generate_via(request, cancellation, progress)
+        // The frozen prompt rides only in this legacy bridge (T087 deletes it).
+        let task = legacy_task(0, &request);
+        self.generate_task(task, cancellation, &mut |_slot, event| progress(event))
     }
 
     fn generate_window(
@@ -1404,7 +1444,16 @@ impl Runtime for LlamaMtmdRuntime {
         cancellation: &CancellationToken,
         progress: &mut dyn FnMut(u32, GenerationProgress),
     ) -> Vec<Result<InferenceResponse, String>> {
-        self.generate_window_via(requests, cancellation, progress)
+        let pages: Vec<u32> = requests.iter().map(|request| request.page).collect();
+        let tasks: Vec<WorkerTask> = requests
+            .iter()
+            .enumerate()
+            .map(|(slot, request)| legacy_task(u32::try_from(slot).unwrap_or(u32::MAX), request))
+            .collect();
+        self.generate_window_tasks(tasks, cancellation, &mut |slot, event| {
+            let page = pages.get(slot as usize).copied().unwrap_or_default();
+            progress(page, event)
+        })
     }
 }
 
@@ -1585,12 +1634,27 @@ mod tests {
     use super::{
         CancellationToken, GenerationProgress, InferenceRequest, InferenceResponse,
         LlamaMtmdRuntime, Runtime, RuntimeInfo, RuntimeTelemetry, WorkerMessage, WorkerRequest,
+        WorkerTask,
     };
     use crate::Backend;
     use std::sync::mpsc::{self, Receiver, Sender};
 
     fn test_request() -> InferenceRequest {
         InferenceRequest::new(1, 2, 2, vec![1; 2 * 2 * 3], 16).unwrap()
+    }
+
+    /// Builds a worker task for window-protocol tests (slot-keyed).
+    fn window_task(slot: u32, max_output_tokens: u32) -> WorkerTask {
+        WorkerTask {
+            slot,
+            prompt: "test prompt".to_owned(),
+            width: 1,
+            height: 1,
+            image_rgb8: vec![1; 3],
+            max_output_tokens,
+            image_tokens_override: None,
+            retry_sampling: None,
+        }
     }
 
     /// Builds a handle over explicit channels, standing in for the worker
@@ -1621,8 +1685,8 @@ mod tests {
         // tail pages previously under-provisioned the unified KV and overflowed
         // the tail pages mid-window (batch failure -> depth-1 fallback).
         let depth = ocrx_core::WINDOW_DEPTH as u32;
-        let low = InferenceRequest::new(1, 1, 1, vec![1; 3], 1).unwrap();
-        let high = InferenceRequest::new(2, 1, 1, vec![1; 3], 8192).unwrap();
+        let low = window_task(0, 1);
+        let high = window_task(1, 8192);
         let image_tokens = 1024_u32;
         let low_budget = image_tokens + 64 + 1;
         let high_budget = image_tokens + 64 + 8192;
@@ -1694,7 +1758,7 @@ mod tests {
                 };
                 assert!(!cancellation.is_cancelled());
                 let _ = messages.send(WorkerMessage::Progress {
-                    page: 1,
+                    slot: 1,
                     progress: GenerationProgress {
                         generated_tokens: 1,
                         elapsed_seconds: 0,
@@ -1760,7 +1824,9 @@ mod tests {
                     .join("ocrx")
                     .join("models")
             });
-        let revision_dir = cache.join("ovisocr2").join(ocrx_models::COMMUNITY_REVISION);
+        let revision_dir = cache
+            .join("ovisocr2")
+            .join(ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION);
         let mut runtime = LlamaMtmdRuntime::load(
             revision_dir.join("reference").join("model.gguf"),
             revision_dir.join("mmproj.gguf"),
@@ -1802,7 +1868,7 @@ mod tests {
                 };
                 let request = &pages[0];
                 let _ = messages.send(WorkerMessage::Progress {
-                    page: request.page,
+                    slot: request.slot,
                     progress: GenerationProgress {
                         generated_tokens: 1,
                         elapsed_seconds: 0,
@@ -1813,7 +1879,7 @@ mod tests {
                         .iter()
                         .map(|entry| {
                             Ok(InferenceResponse {
-                                raw_output: format!("page {}", entry.page),
+                                raw_output: format!("slot {}", entry.slot),
                                 finish_reason: "eos".to_owned(),
                             })
                         })
@@ -1831,7 +1897,8 @@ mod tests {
             progress.push(page)
         });
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0].as_ref().unwrap().raw_output, "page 1");
+        assert_eq!(results[0].as_ref().unwrap().raw_output, "slot 0");
+        // Legacy progress maps slot -> page (page identity stays with the caller).
         assert_eq!(progress, vec![1]);
     }
 
@@ -1856,7 +1923,9 @@ mod tests {
                     .join("ocrx")
                     .join("models")
             });
-        let revision_dir = cache.join("ovisocr2").join(ocrx_models::COMMUNITY_REVISION);
+        let revision_dir = cache
+            .join("ovisocr2")
+            .join(ocrx_models::builtin::ovisocr2::OVISOCR2_REVISION);
         let mut runtime = LlamaMtmdRuntime::load(
             revision_dir.join("reference").join("model.gguf"),
             revision_dir.join("mmproj.gguf"),

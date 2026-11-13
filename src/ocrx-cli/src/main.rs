@@ -1,39 +1,36 @@
-use image::ImageFormat;
-use ocrx_core::{
-    GpuResourceReport, ModelId, PageClassification, PageType, ProcessingMethod, QualityTier,
-};
-use ocrx_models::{
-    ModelCatalog, ResourceSnapshot, UrlInstallRequest, community_asset_sizes, community_asset_urls,
-    community_manifest, recommend_device, recommend_profile,
-};
+use ocrx_core::{PageClassification, PageType, ProcessingMethod};
 use ocrx_output::{
-    CancellationToken, CheckpointResumeAction, CompatibilityKey, ErrorReport, GenerationProgress,
-    ModelLoader, OcrQueuePage, PageArtifactRecognizer, PageArtifactResult, PageDiagnostic,
-    PageIncomplete, PageMarkdown, PageRenderer, ProgressEvent, ProgressMode, ProgressStage,
-    RenderAudit, RenderedPage, ReportFormat, Reporter, ResultReport, ScanService,
-    collect_page_markdowns, commit_native_page_and_collect, finalize_document, format_report,
-    merge_ocr_queue, read_checkpoint, recover_pending_ocr_queue, remove_for_overwrite,
+    CancellationToken, CompatibilityKey, ErrorReport, OcrQueuePage, PageDiagnostic, PageIncomplete,
+    PageMarkdown, ProgressEvent, ProgressMode, ProgressStage, ReportFormat, Reporter, ResultReport,
+    format_report, merge_ocr_queue, read_checkpoint,
 };
-use ocrx_pdf::{
-    PdfErrorKind, PdfWorkerScheduler, RenderOptions, classify_pdf_error, fit_pixel_budget,
-    plan_page_checked,
-};
-use ocrx_runtime::{
-    Backend, LlamaMtmdRuntime, Runtime, RuntimeInfo, RuntimeTelemetry, StepProfile,
-};
-use std::cell::RefCell;
-use std::io::{Cursor, IsTerminal, Read};
+use ocrx_scan::RenderOptions;
+use ocrx_scan::{PdfErrorKind, classify_pdf_error};
+use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 
-mod pdfium_owner;
+mod compose;
+
+use ocrx_inference_api::{DeviceManager as _, ModelManager as _};
+
+/// Trusted apache-2.0 community assets may install non-interactively: the
+/// frozen policy accepts every confirmed download (legacy install semantics).
+struct TrustedInstallInteraction;
+
+impl ocrx_inference_api::InstallInteraction for TrustedInstallInteraction {
+    fn confirm_download(
+        &mut self,
+        _proposals: &[ocrx_inference_api::DownloadProposal],
+    ) -> Result<bool, ocrx_inference_api::InferenceError> {
+        Ok(true)
+    }
+}
 mod platform_paths;
 use platform_paths::home_dir;
 
-mod system_probe;
-use system_probe::RealSystemProbe;
+/// The only registered model id (frozen; the inference-api value type is
+/// authoritative — this spelling backs CLI defaults/display).
+const DEFAULT_MODEL: &str = "ovisocr2";
 
 #[derive(Debug, PartialEq, Eq)]
 enum CliCommand {
@@ -139,7 +136,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         inputs: vec![(*input).to_owned()],
         output_dir: None,
         pages: None,
-        model: ModelId::AS_STR.to_owned(),
+        model: DEFAULT_MODEL.to_owned(),
         profile: "auto".to_owned(),
         pdf_mode: "auto".to_owned(),
         quality_tier: "l2".to_owned(),
@@ -175,7 +172,9 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             "--model" => {
                 index += 1;
                 let model = required_value(args, index, "--model")?;
-                ModelId::parse(model).map_err(|_| format!("unsupported model: {model}"))?;
+                if model != DEFAULT_MODEL {
+                    return Err(format!("unsupported model: {model}"));
+                }
                 model.clone_into(&mut options.model);
             }
             "--model-profile" => {
@@ -343,530 +342,6 @@ fn planned_ocr_pages(mode: &str, pages: &[PageClassification]) -> bool {
         })
 }
 
-#[must_use]
-fn dynamic_fallback_requires_model_assets(
-    initial_ocr_pages: usize,
-    final_ocr_pages: usize,
-    assets_valid: bool,
-) -> bool {
-    initial_ocr_pages == 0 && final_ocr_pages > 0 && !assets_valid
-}
-
-#[allow(clippy::fn_params_excessive_bools)]
-fn prepare_model_if_required(
-    needs_ocr: bool,
-    assets_valid: bool,
-    offline: bool,
-    non_interactive: bool,
-    profile: &str,
-    cache: &Path,
-) -> Result<(), String> {
-    if !needs_ocr || assets_valid {
-        return Ok(());
-    }
-    if offline {
-        return Err("offline scan requires verified local model assets".to_owned());
-    }
-    let manifest = community_manifest(profile).map_err(|e| format!("model manifest: {e:?}"))?;
-    let (model_url, mmproj_url) = community_asset_urls(profile).ok_or("model URLs unavailable")?;
-    let request = UrlInstallRequest {
-        manifest,
-        model_url,
-        mmproj_url,
-        cache_root: cache.to_path_buf(),
-        offline: false,
-        non_interactive,
-        license_accepted: true,
-        available_bytes: None,
-    };
-    ocrx_models::install_from_urls(&request)
-        .map_err(|e| format!("model installation failed: {e:?}"))
-}
-
-fn resolve_and_prepare_model(
-    needs_ocr: bool,
-    requested_profile: &str,
-    requested_device: &str,
-    offline: bool,
-    non_interactive: bool,
-    cache: &Path,
-) -> Result<(String, String, PathBuf, PathBuf), String> {
-    if !needs_ocr {
-        return Ok((
-            requested_profile.to_owned(),
-            requested_device.to_owned(),
-            PathBuf::new(),
-            PathBuf::new(),
-        ));
-    }
-    let snapshot = resource_snapshot();
-    let profile = resolve_scan_profile(requested_profile, snapshot.memory_gb)?;
-    let device = recommend_device(snapshot, requested_device)
-        .map_err(|error| format!("requested device is unavailable: {error:?}"))?;
-    let manifest =
-        community_manifest(&profile).map_err(|error| format!("model manifest: {error:?}"))?;
-    let (model, mmproj) = ocrx_models::cache_paths(cache, &manifest.identity.revision, &profile)
-        .map_err(|error| format!("model path resolution failed: {error:?}"))?;
-    let (model_bytes, mmproj_bytes) = community_asset_sizes(&profile)
-        .ok_or_else(|| "model asset sizes unavailable".to_owned())?;
-    let mut assets_valid = model.is_file()
-        && mmproj.is_file()
-        && ocrx_models::verify_manifest_files_with_sizes(
-            &manifest,
-            cache,
-            model_bytes,
-            mmproj_bytes,
-        )
-        .and_then(|_| {
-            ocrx_models::validate_runtime_adapter_compatibility(
-                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_2_version,
-                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_sys_2_version,
-                ocrx_core::RUNTIME_COMPATIBILITY.adapter_id,
-            )
-        })
-        .is_ok();
-    if !assets_valid && offline {
-        return Err("offline scan requires verified local model assets".to_owned());
-    }
-    if !assets_valid {
-        if std::io::stdin().is_terminal() && !non_interactive {
-            eprintln!(
-                "Model profile '{profile}' is missing or invalid; download {} MB of model assets? [y/N]",
-                (model_bytes.saturating_add(mmproj_bytes)) / 1_000_000
-            );
-            let mut answer = String::new();
-            let _ = std::io::stdin().read_line(&mut answer);
-            if !answer.trim().eq_ignore_ascii_case("y") {
-                return Err("model installation not confirmed".to_owned());
-            }
-        }
-        let (model_url, mmproj_url) =
-            community_asset_urls(&profile).ok_or_else(|| "model URLs unavailable".to_owned())?;
-        let request = UrlInstallRequest {
-            manifest,
-            model_url,
-            mmproj_url,
-            cache_root: cache.to_path_buf(),
-            offline: false,
-            non_interactive,
-            license_accepted: true,
-            available_bytes: None,
-        };
-        ocrx_models::install_from_urls(&request)
-            .map_err(|error| format!("model installation failed: {error:?}"))?;
-        assets_valid = ocrx_models::verify_manifest_files_with_sizes(
-            &request.manifest,
-            cache,
-            model_bytes,
-            mmproj_bytes,
-        )
-        .and_then(|_| {
-            ocrx_models::validate_runtime_adapter_compatibility(
-                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_2_version,
-                ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_sys_2_version,
-                ocrx_core::RUNTIME_COMPATIBILITY.adapter_id,
-            )
-        })
-        .is_ok();
-        if !assets_valid {
-            return Err("installed model failed verification".to_owned());
-        }
-    }
-    // Review BLK-2 observability: one stderr line per full asset
-    // verification, gated by the established debug channel so the gated
-    // orchestration test can assert verify-once-per-invocation.
-    if StepProfile::env_enabled() {
-        eprintln!("[model] resolved and verified profile={profile}");
-    }
-    Ok((profile, device, model, mmproj))
-}
-
-fn resolve_effective_ocr_configuration(
-    requested_profile: &str,
-    requested_device: &str,
-) -> Result<(String, String), String> {
-    let snapshot = resource_snapshot();
-    let profile = resolve_scan_profile(requested_profile, snapshot.memory_gb)?;
-    let device = recommend_device(snapshot, requested_device)
-        .map_err(|error| format!("requested device is unavailable: {error:?}"))?;
-    Ok((profile, device))
-}
-
-fn make_ocr_compatibility(
-    native_compatibility: &CompatibilityKey,
-    profile: &str,
-    device: &str,
-) -> CompatibilityKey {
-    CompatibilityKey {
-        profile: profile.to_owned(),
-        parameters: format!(
-            "{};ocr-profile={profile};ocr-device={device}",
-            native_compatibility.parameters
-        ),
-        ..native_compatibility.clone()
-    }
-}
-
-fn initial_ocr_queue(pages: &[usize], classifications: &[PageClassification]) -> Vec<OcrQueuePage> {
-    let mut queue: Vec<_> = pages
-        .iter()
-        .zip(classifications)
-        .filter_map(|(page, classification)| {
-            (classification.recommended_method == ProcessingMethod::Ocr).then_some(OcrQueuePage {
-                page: *page as u32,
-                fallback_reason: None,
-            })
-        })
-        .collect();
-    queue.sort_by_key(|page| page.page);
-    queue.dedup_by_key(|page| page.page);
-    queue
-}
-
-fn validate_text_mode_classifications(
-    classifications: &[PageClassification],
-) -> Result<(), &'static str> {
-    classifications.iter().try_for_each(|classification| {
-        plan_page_checked(ocrx_core::PdfMode::Text, *classification)
-            .map(|_| ())
-            .map_err(|_| "text mode requires every non-empty page to be reliable native text")
-    })
-}
-
-fn initial_ocr_queue_for_mode(
-    mode: &str,
-    pages: &[usize],
-    classifications: &[PageClassification],
-) -> Vec<OcrQueuePage> {
-    let mut queue: Vec<_> = pages
-        .iter()
-        .zip(classifications)
-        .filter_map(|(page, classification)| {
-            let needs_ocr = !matches!(classification.page_type, PageType::Empty)
-                && (mode == "ocr" || classification.recommended_method == ProcessingMethod::Ocr);
-            needs_ocr.then_some(OcrQueuePage {
-                page: *page as u32,
-                fallback_reason: None,
-            })
-        })
-        .collect();
-    queue.sort_by_key(|page| page.page);
-    queue.dedup_by_key(|page| page.page);
-    queue
-}
-
-fn native_candidate_pages(pages: &[usize], classifications: &[PageClassification]) -> Vec<u32> {
-    let mut candidates: Vec<_> = pages
-        .iter()
-        .zip(classifications)
-        .filter_map(|(page, classification)| {
-            (classification.recommended_method == ProcessingMethod::NativeText)
-                .then_some(*page as u32)
-        })
-        .collect();
-    candidates.sort_unstable();
-    candidates.dedup();
-    candidates
-}
-
-fn native_candidate_outcome(page: u32, validation: Result<(), String>) -> Result<(), OcrQueuePage> {
-    validation.map_err(|reason| OcrQueuePage {
-        page,
-        fallback_reason: Some(reason),
-    })
-}
-
-fn pdf_reason_code_from_str(value: &str) -> ocrx_core::PdfReasonCode {
-    match value {
-        "native_text_reliable" => ocrx_core::PdfReasonCode::NativeTextReliable,
-        "no_visible_content" => ocrx_core::PdfReasonCode::NoVisibleContent,
-        "image_coverage_high" => ocrx_core::PdfReasonCode::ImageCoverageHigh,
-        "mixed_content" => ocrx_core::PdfReasonCode::MixedContent,
-        "text_coverage_low" => ocrx_core::PdfReasonCode::TextCoverageLow,
-        "unicode_validity_low" => ocrx_core::PdfReasonCode::UnicodeValidityLow,
-        "duplicate_text" => ocrx_core::PdfReasonCode::DuplicateText,
-        "geometry_anomaly" => ocrx_core::PdfReasonCode::GeometryAnomaly,
-        "native_structure_unresolved" => ocrx_core::PdfReasonCode::NativeStructureUnresolved,
-        _ => ocrx_core::PdfReasonCode::NativeValidationFailed,
-    }
-}
-
-fn routing_diagnostic_json(page: u32, classification: PageClassification) -> String {
-    let processing = ocrx_core::PageProcessing {
-        planned_method: classification.recommended_method,
-        actual_method: None,
-        fallback_reason: None,
-    };
-    format!(
-        "{{\"page\":{},\"classification\":{},\"processing\":{}}}",
-        page,
-        classification.to_json(),
-        processing.to_json()
-    )
-}
-
-fn routing_diagnostic_with_processing(
-    page: u32,
-    classification: PageClassification,
-    actual_method: ProcessingMethod,
-    fallback_reason: Option<ocrx_core::PdfReasonCode>,
-) -> String {
-    let processing = ocrx_core::PageProcessing {
-        planned_method: classification.recommended_method,
-        actual_method: Some(actual_method),
-        fallback_reason,
-    };
-    debug_assert!(processing.validate().is_ok());
-    format!(
-        "{{\"page\":{},\"classification\":{},\"processing\":{}}}",
-        page,
-        classification.to_json(),
-        processing.to_json()
-    )
-}
-
-fn planned_method_for_mode(mode: &str, classification: PageClassification) -> ProcessingMethod {
-    if classification.page_type == PageType::Empty {
-        ProcessingMethod::Empty
-    } else if mode == "ocr" {
-        ProcessingMethod::Ocr
-    } else {
-        classification.recommended_method
-    }
-}
-
-fn try_routing_diagnostic_with_processing(
-    page: u32,
-    classification: PageClassification,
-    actual_method: ProcessingMethod,
-    fallback_reason: Option<ocrx_core::PdfReasonCode>,
-) -> Result<String, ocrx_core::DomainError> {
-    try_routing_diagnostic_with_plan(
-        page,
-        classification,
-        classification.recommended_method,
-        actual_method,
-        fallback_reason,
-    )
-}
-
-fn try_routing_diagnostic_with_plan(
-    page: u32,
-    classification: PageClassification,
-    planned_method: ProcessingMethod,
-    actual_method: ProcessingMethod,
-    fallback_reason: Option<ocrx_core::PdfReasonCode>,
-) -> Result<String, ocrx_core::DomainError> {
-    let processing = ocrx_core::PageProcessing {
-        planned_method,
-        actual_method: Some(actual_method),
-        fallback_reason,
-    };
-    processing.validate()?;
-    Ok(format!(
-        "{{\"page\":{},\"classification\":{},\"processing\":{}}}",
-        page,
-        classification.to_json(),
-        processing.to_json()
-    ))
-}
-
-fn final_routing_diagnostics(
-    mode: &str,
-    pages: &[usize],
-    classifications: &[PageClassification],
-    fallback_reasons: &[(u32, ocrx_core::PdfReasonCode)],
-) -> Vec<String> {
-    final_routing_diagnostics_with_pending(
-        mode,
-        pages,
-        classifications,
-        fallback_reasons,
-        &std::collections::HashSet::new(),
-        &std::collections::HashSet::new(),
-    )
-}
-
-fn final_routing_diagnostics_with_pending(
-    mode: &str,
-    pages: &[usize],
-    classifications: &[PageClassification],
-    fallback_reasons: &[(u32, ocrx_core::PdfReasonCode)],
-    pending_pages: &std::collections::HashSet<u32>,
-    unavailable_pages: &std::collections::HashSet<u32>,
-) -> Vec<String> {
-    pages
-        .iter()
-        .zip(classifications)
-        .map(|(page, classification)| {
-            if pending_pages.contains(&(*page as u32)) {
-                let processing = ocrx_core::PageProcessing {
-                    planned_method: planned_method_for_mode(mode, *classification),
-                    actual_method: None,
-                    fallback_reason: None,
-                };
-                return format!(
-                    "{{\"page\":{},\"classification\":{},\"processing\":{}}}",
-                    page,
-                    classification.to_json(),
-                    processing.to_json()
-                );
-            }
-            if unavailable_pages.contains(&(*page as u32)) {
-                let processing = ocrx_core::PageProcessing {
-                    planned_method: planned_method_for_mode(mode, *classification),
-                    actual_method: None,
-                    fallback_reason: None,
-                };
-                return format!(
-                    "{{\"page\":{},\"classification\":{},\"processing\":{}}}",
-                    page,
-                    classification.to_json(),
-                    processing.to_json()
-                );
-            }
-            if let Some((_, reason)) = fallback_reasons
-                .iter()
-                .find(|(number, _)| *number == *page as u32)
-            {
-                try_routing_diagnostic_with_plan(
-                    *page as u32,
-                    *classification,
-                    classification.recommended_method,
-                    ProcessingMethod::Ocr,
-                    Some(*reason),
-                )
-                .unwrap_or_else(|_| routing_diagnostic_json(*page as u32, *classification))
-            } else {
-                let planned = planned_method_for_mode(mode, *classification);
-                try_routing_diagnostic_with_plan(
-                    *page as u32,
-                    *classification,
-                    planned,
-                    planned,
-                    None,
-                )
-                .unwrap_or_else(|_| routing_diagnostic_json(*page as u32, *classification))
-            }
-        })
-        .collect()
-}
-
-fn write_routing_checkpoint_sidecars(
-    output: &Path,
-    mode: &str,
-    pages: &[usize],
-    classifications: &[PageClassification],
-    fallback_reasons: &[(u32, ocrx_core::PdfReasonCode)],
-) -> std::io::Result<()> {
-    write_routing_checkpoint_sidecars_with_states(
-        output,
-        mode,
-        pages,
-        classifications,
-        fallback_reasons,
-        &std::collections::HashSet::new(),
-        &std::collections::HashSet::new(),
-    )
-}
-
-fn write_routing_checkpoint_sidecars_with_states(
-    output: &Path,
-    mode: &str,
-    pages: &[usize],
-    classifications: &[PageClassification],
-    fallback_reasons: &[(u32, ocrx_core::PdfReasonCode)],
-    pending_pages: &std::collections::HashSet<u32>,
-    unavailable_pages: &std::collections::HashSet<u32>,
-) -> std::io::Result<()> {
-    for (page, routing) in pages.iter().zip(final_routing_diagnostics_with_pending(
-        mode,
-        pages,
-        classifications,
-        fallback_reasons,
-        pending_pages,
-        unavailable_pages,
-    )) {
-        let sidecar =
-            format!("{{\"schema\":\"ocrx-routing-checkpoint-v1\",\"routing\":{routing}}}");
-        ocrx_output::atomic_write(
-            output.join(format!("page-{page:04}.routing.json")),
-            sidecar.as_bytes(),
-        )?;
-    }
-    Ok(())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RoutingCounts {
-    native_text: usize,
-    ocr: usize,
-    empty: usize,
-    fallback: usize,
-}
-
-fn routing_counts(
-    pages: &[usize],
-    classifications: &[PageClassification],
-    fallback_reasons: &[(u32, ocrx_core::PdfReasonCode)],
-) -> RoutingCounts {
-    let mut counts = RoutingCounts {
-        native_text: 0,
-        ocr: 0,
-        empty: 0,
-        fallback: 0,
-    };
-    for (page, classification) in pages.iter().zip(classifications) {
-        if fallback_reasons
-            .iter()
-            .any(|(number, _)| *number == *page as u32)
-        {
-            counts.ocr += 1;
-            counts.fallback += 1;
-        } else {
-            match classification.recommended_method {
-                ProcessingMethod::NativeText => counts.native_text += 1,
-                ProcessingMethod::Ocr => counts.ocr += 1,
-                ProcessingMethod::Empty => counts.empty += 1,
-            }
-        }
-    }
-    counts
-}
-
-fn routing_counts_for_mode(
-    mode: &str,
-    pages: &[usize],
-    classifications: &[PageClassification],
-    fallback_reasons: &[(u32, ocrx_core::PdfReasonCode)],
-) -> RoutingCounts {
-    if mode == "ocr" {
-        let empty = classifications
-            .iter()
-            .filter(|classification| classification.recommended_method == ProcessingMethod::Empty)
-            .count();
-        return RoutingCounts {
-            native_text: 0,
-            ocr: pages.len().saturating_sub(empty),
-            empty,
-            fallback: 0,
-        };
-    }
-    routing_counts(pages, classifications, fallback_reasons)
-}
-
-fn format_routing_summary(document_type: ocrx_pdf::DocumentType, counts: RoutingCounts) -> String {
-    format!(
-        "document_type={} native_text={} ocr={} empty={} fallback={}\n",
-        document_type.as_str(),
-        counts.native_text,
-        counts.ocr,
-        counts.empty,
-        counts.fallback
-    )
-}
-
-#[must_use]
 fn should_initialize_ocr_runtime(final_ocr_queue_len: usize) -> bool {
     final_ocr_queue_len > 0
 }
@@ -1085,10 +560,12 @@ fn validate_numeric_options(
     }
     // Mirror the adapter cap (plan §3.7/D5.1): an over-cap budget must fail
     // once before the scan starts, never as a per-page adapter error.
-    if max_output_tokens.is_some_and(|value| value > ocrx_ovisocr2::MAX_OUTPUT_TOKENS) {
+    if max_output_tokens
+        .is_some_and(|value| value > ocrx_scan::ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS)
+    {
         return Err(format!(
             "max output tokens must not exceed {}",
-            ocrx_ovisocr2::MAX_OUTPUT_TOKENS
+            ocrx_scan::ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS
         ));
     }
     if context_size.is_some_and(|value| value < 1024) {
@@ -1132,33 +609,6 @@ fn resolve_output_dir(input: &str, explicit: Option<&str>) -> Result<PathBuf, St
             .map(|directory| directory.join(output))
             .map_err(|error| format!("cannot resolve output directory: {error}"))
     }
-}
-
-fn bundled_pdfium_path(executable: &Path) -> PathBuf {
-    let directory = executable.parent().unwrap_or_else(|| Path::new("."));
-    #[cfg(target_os = "macos")]
-    let bundled = directory.join("../lib/libpdfium.dylib");
-    #[cfg(target_os = "windows")]
-    let bundled = directory.join("pdfium.dll");
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let bundled = directory.join("../lib/libpdfium.so");
-    bundled
-}
-
-fn default_pdfium_library() -> PathBuf {
-    if let Ok(executable) = std::env::current_exe() {
-        let bundled = bundled_pdfium_path(&executable);
-        if bundled.is_file() {
-            return bundled;
-        }
-    }
-    PathBuf::from(".")
-}
-
-fn pdfium_library_from_environment() -> PathBuf {
-    std::env::var_os("OCRX_PDFIUM_LIBRARY")
-        .map(PathBuf::from)
-        .unwrap_or_else(default_pdfium_library)
 }
 
 fn validate_output_policy(input: &Path, output: &Path, protected: &[&Path]) -> Result<(), String> {
@@ -1308,16 +758,24 @@ fn main() {
         CliCommand::Version => println!("ocrx 0.1.0"),
         CliCommand::Help(topic) => print_help(topic.as_deref()),
         CliCommand::Doctor { json } => {
-            let snapshot = resource_snapshot();
-            let info = doctor_runtime_info(snapshot);
+            // T073/T077: doctor flows through the composed DeviceManager;
+            // the snapshot is the manager's probe (hardware ∩ compiled).
+            let composed = compose::compose(None);
+            let snapshot = composed.inference.devices().snapshot();
+            let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(ocrx_inference::default_cache_root);
+            let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root);
+            let backend_display = doctor_backend_display(&diagnostics);
             if json {
-                println!("{}", doctor_json_report(snapshot, info));
+                println!("{}", doctor_json_report(snapshot));
             } else {
                 println!(
-                    "model={} backend={:?} image_token_limit={} memory_gb={} metal_available={}",
-                    ModelId::AS_STR,
-                    info.backend,
-                    info.image_token_limit,
+                    "model={} backend={} image_token_limit={} memory_gb={} metal_available={}",
+                    DEFAULT_MODEL,
+                    backend_display,
+                    diagnostics.image_token_limit,
                     snapshot.memory_gb,
                     snapshot.metal_available
                 );
@@ -1329,30 +787,54 @@ fn main() {
             offline: _,
             non_interactive: _,
         } if action == "list" || action == "info" || action == "recommend" => {
-            let manifests = ["compact", "balanced", "quality", "reference"]
-                .into_iter()
-                .map(|profile| ocrx_models::community_manifest(profile).expect("pinned manifest"))
-                .collect();
-            let catalog = ModelCatalog::new(manifests).expect("built-in catalog must be valid");
+            // T071: everything flows through the production ModelManager
+            // (compose root); the output strings stay byte-identical.
+            let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(ocrx_inference::default_cache_root);
+            let composed = compose::compose(Some(cache_root));
+            let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
+                .unwrap_or_else(|_| unreachable!("pinned model id"));
             if action == "list" {
-                println!("model={}", ModelId::AS_STR);
+                println!("model={DEFAULT_MODEL}");
             } else if action == "info" {
-                let info = catalog.info(&profile.into_iter().collect::<Vec<_>>());
+                let detail = match composed.inference.manager().info(&model) {
+                    Ok(detail) => detail,
+                    Err(error) => {
+                        eprintln!("model info failed: {error:?}");
+                        std::process::exit(4);
+                    }
+                };
+                // Frozen display: profiles sorted; the optional profile
+                // argument rides the installed slot (historical shape).
+                let mut profiles: Vec<String> = detail
+                    .summary
+                    .profiles
+                    .iter()
+                    .map(|summary| summary.profile.to_string())
+                    .collect();
+                profiles.sort();
+                let installed: Vec<String> = profile.into_iter().collect();
                 println!(
                     "model={} profiles={} installed={}",
-                    ModelId::AS_STR,
-                    info.profiles.join(","),
-                    info.installed_profiles.join(",")
+                    DEFAULT_MODEL,
+                    profiles.join(","),
+                    installed.join(",")
                 );
-            } else if action == "recommend" {
-                let snapshot = resource_snapshot();
-                match recommend_profile(snapshot.memory_gb, &["compact", "balanced", "quality"]) {
-                    Ok(profile) => println!(
+            } else {
+                let snapshot = composed.inference.devices().snapshot();
+                match composed.inference.manager().recommend(&model, &snapshot) {
+                    Ok(recommendation) => println!(
                         "model={} profile={} memory_gb={} device={}",
-                        ModelId::AS_STR,
-                        profile,
+                        DEFAULT_MODEL,
+                        recommendation.profile,
                         snapshot.memory_gb,
-                        recommend_device(snapshot, "auto")
+                        composed
+                            .inference
+                            .devices()
+                            .select("auto")
+                            .map(|backend| backend.to_string())
                             .unwrap_or_else(|_| "unavailable".to_owned())
                     ),
                     Err(error) => {
@@ -1375,36 +857,20 @@ fn main() {
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
-                .unwrap_or_else(ocrx_models::default_cache_root);
-            let revision = ocrx_models::community_manifest(&profile)
-                .unwrap_or_else(|_| unreachable!("profile parsed by CLI"))
-                .identity
-                .revision;
-            let (model_path, _mmproj_path) =
-                ocrx_models::cache_paths(&cache_root, &revision, &profile)
-                    .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
+                .unwrap_or_else(ocrx_inference::default_cache_root);
+            let mut composed = compose::compose(Some(cache_root));
             match action.as_str() {
                 "verify" => {
-                    let manifest = ocrx_models::community_manifest(&profile)
+                    // T072: verify = content + registry binding via the
+                    // injected port (never downloads, never loads).
+                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
+                        .unwrap_or_else(|_| unreachable!("pinned model id"));
+                    let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
-                    let sizes = ocrx_models::community_asset_sizes(&profile)
-                        .unwrap_or_else(|| unreachable!("profile parsed by CLI"));
-                    match ocrx_models::verify_manifest_files_with_sizes(
-                        &manifest,
-                        &cache_root,
-                        sizes.0,
-                        sizes.1,
-                    )
-                    .and_then(|_| {
-                        ocrx_models::validate_runtime_adapter_compatibility(
-                            ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_2_version,
-                            ocrx_core::RUNTIME_COMPATIBILITY.llama_cpp_sys_2_version,
-                            ocrx_core::RUNTIME_COMPATIBILITY.adapter_id,
-                        )
-                    }) {
+                    let revision = ocrx_inference::builtin::OVISOCR2_REVISION;
+                    match composed.inference.manager().verify(&model, &profile_id) {
                         Ok(()) => println!(
-                            "model=ovisocr2 profile={} revision={} status=installed",
-                            profile, manifest.identity.revision
+                            "model=ovisocr2 profile={profile} revision={revision} status=installed"
                         ),
                         Err(error) => {
                             eprintln!("model verification failed: {error:?}");
@@ -1413,36 +879,35 @@ fn main() {
                     }
                 }
                 "install" => {
-                    let manifest = community_manifest(&profile)
+                    // T072: install via the manager (revision-scoped group
+                    // transaction; trusted apache-2.0 community assets may
+                    // install non-interactively, so the interaction accepts).
+                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
+                        .unwrap_or_else(|_| unreachable!("pinned model id"));
+                    let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
-                    let Some((model_url, mmproj_url)) = community_asset_urls(&profile) else {
-                        unreachable!("profile parsed by CLI");
-                    };
-                    // Trusted apache-2.0 community assets may install non-interactively.
-                    let request = UrlInstallRequest {
-                        manifest: manifest.clone(),
-                        model_url,
-                        mmproj_url,
-                        cache_root: cache_root.clone(),
+                    let revision = ocrx_inference::builtin::OVISOCR2_REVISION;
+                    let mut interaction = TrustedInstallInteraction;
+                    match composed.inference.manager_mut().install(
+                        &model,
+                        &profile_id,
                         offline,
                         non_interactive,
-                        license_accepted: true,
-                        available_bytes: None,
-                    };
-                    match ocrx_models::install_from_urls(&request) {
-                        Ok(()) => println!(
-                            "model=ovisocr2 profile={} revision={} status=installed",
-                            profile, manifest.identity.revision
+                        true,
+                        &mut interaction,
+                    ) {
+                        Ok(_receipt) => println!(
+                            "model=ovisocr2 profile={profile} revision={revision} status=installed"
                         ),
-                        Err(ocrx_models::ManifestError::Offline) => {
+                        Err(ocrx_inference_api::InferenceError::Offline) => {
                             eprintln!("model install blocked: offline mode");
                             std::process::exit(5);
                         }
-                        Err(ocrx_models::ManifestError::LicenseRequired) => {
+                        Err(ocrx_inference_api::InferenceError::LicenseRequired) => {
                             eprintln!("model install blocked: license acceptance required");
                             std::process::exit(4);
                         }
-                        Err(ocrx_models::ManifestError::InsufficientDisk) => {
+                        Err(ocrx_inference_api::InferenceError::InsufficientDisk(_)) => {
                             eprintln!("model install blocked: insufficient disk");
                             std::process::exit(5);
                         }
@@ -1453,60 +918,28 @@ fn main() {
                     }
                 }
                 "remove" => {
-                    let directory = model_path
-                        .parent()
-                        .expect("generated cache path has parent");
-                    if directory.exists() {
-                        if let Err(error) = std::fs::remove_dir_all(directory) {
-                            eprintln!("model removal failed: {error}");
+                    // T072: removal via the manager (per-asset deletion with
+                    // the shared-projector reference check, review m9).
+                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
+                        .unwrap_or_else(|_| unreachable!("pinned model id"));
+                    let profile_id = ocrx_inference_api::ProfileId::new(&profile)
+                        .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
+                    match composed.inference.manager_mut().remove(&model, &profile_id) {
+                        Ok(_report) => println!("model=ovisocr2 profile={profile} status=removed"),
+                        Err(error) => {
+                            eprintln!("model removal failed: {error:?}");
                             std::process::exit(9);
                         }
                     }
-                    // Reclaim the revision-shared projector (review m9): when
-                    // no other profile of this revision remains, its ~205 MB
-                    // mmproj used to survive every remove.
-                    let shared_mmproj = model_path
-                        .parent()
-                        .and_then(|directory| directory.parent())
-                        .map(|revision_dir| revision_dir.join("mmproj.gguf"));
-                    if let Some(mmproj_path) = shared_mmproj
-                        && mmproj_path.is_file()
-                        && let Some(revision_dir) = mmproj_path.parent()
-                    {
-                        let other_profiles = std::fs::read_dir(revision_dir)
-                            .map(|entries| {
-                                entries
-                                    .flatten()
-                                    .filter(|entry| entry.path().is_dir())
-                                    .count()
-                            })
-                            .unwrap_or(0);
-                        if other_profiles == 0 {
-                            let _ = std::fs::remove_file(&mmproj_path);
-                            let _ = std::fs::remove_dir(revision_dir);
-                        }
-                    }
-                    println!("model=ovisocr2 profile={profile} status=removed");
                 }
                 _ => unreachable!("model action parsed by CLI"),
             }
         }
         CliCommand::Scan(options) => {
-            // Route to the orchestrator when the invocation expands to
-            // multiple documents. A single directory input expands inside
-            // run_scan_multi; plain single-file scans skip input resolution
-            // entirely, so their historical missing-file behavior (page
-            // count failure, exit 3) is untouched.
-            let expands_multi = options.inputs.len() > 1
-                || options
-                    .inputs
-                    .first()
-                    .is_some_and(|first| Path::new(first).is_dir());
-            if expands_multi {
-                run_scan_multi(options)
-            } else {
-                run_scan(options)
-            }
+            // T074: single- and multi-input invocations both route through
+            // ScanApplication::run (the app owns the FIFO orchestration and
+            // the historical page-count failure / exit 3 gate).
+            run_scan_via_application(options)
         }
         CliCommand::Skill { action } => {
             let target = std::env::var("OCRX_SKILL_TARGET").unwrap_or_else(|_| "all".to_owned());
@@ -1571,313 +1004,6 @@ fn main() {
                 }
             }
         }
-    }
-}
-
-/// Renders one 0-based half-open worker segment, honouring cancellation
-/// (plan §6.3). [`PdfWorkerScheduler`] is the production implementation; tests
-/// inject fakes that write segment files directly.
-trait SegmentRenderer: Send + Sync + 'static {
-    fn run_segment(
-        &self,
-        input: &Path,
-        output: &Path,
-        start: usize,
-        end: usize,
-        cancellation: &CancellationToken,
-    ) -> Result<(), String>;
-}
-
-impl SegmentRenderer for PdfWorkerScheduler {
-    fn run_segment(
-        &self,
-        input: &Path,
-        output: &Path,
-        start: usize,
-        end: usize,
-        cancellation: &CancellationToken,
-    ) -> Result<(), String> {
-        self.run_with_cancel(input, output, start, end, || cancellation.is_cancelled())
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-    }
-}
-
-/// One in-flight background segment render (prefetch depth = 1 segment, so at
-/// most one worker process is in flight at any time, plan §6.3).
-struct SegmentPrefetch {
-    start: usize,
-    end: usize,
-    join: std::thread::JoinHandle<Result<(), String>>,
-}
-
-/// Renders OCR pages through worker processes with one-segment prefetch.
-///
-/// P3 (plan §6.3): after serving a page from segment [S, E), the next segment
-/// renders on a background thread (shared scheduler); page files of fully
-/// consumed segments are deleted individually so the prefetched segment's
-/// committed files survive in the shared root directory. The
-/// degeneration-retry perturbation is implemented here (v3.10 BLK-1: the
-/// default trait fallback silently ignored the ratio in worker mode).
-struct WorkerScanRenderer<S: SegmentRenderer> {
-    scheduler: Arc<S>,
-    input: PathBuf,
-    output: PathBuf,
-    page_count: Option<usize>,
-    segment_pages: usize,
-    rendered_end: usize,
-    /// The segment the last served page came from; its files are removed when
-    /// the scan advances past it (narrowed cleanup, plan §6.3).
-    active_segment: (usize, usize),
-    has_active_segment: bool,
-    prefetch: Option<SegmentPrefetch>,
-    cancellation: CancellationToken,
-}
-
-impl<S: SegmentRenderer> WorkerScanRenderer<S> {
-    /// Deletes the page files of one consumed segment (best effort).
-    fn cleanup_segment_files(&self, start: usize, end: usize) {
-        for page in start..end {
-            let Ok(page_number) = u32::try_from(page + 1) else {
-                continue;
-            };
-            let _ = std::fs::remove_file(self.output.join(format!("page-{page_number:04}.png")));
-            let _ = std::fs::remove_file(self.output.join(format!("page-{page_number:04}.audit")));
-        }
-    }
-
-    fn cleanup_active_segment(&self) {
-        if self.has_active_segment {
-            self.cleanup_segment_files(self.active_segment.0, self.active_segment.1);
-        }
-    }
-
-    /// Launches the next segment on a background thread (depth = 1).
-    fn maybe_launch_prefetch(&mut self, after_end: usize) {
-        let Some(count) = self.page_count else {
-            return;
-        };
-        if self.prefetch.is_some() || after_end >= count {
-            return;
-        }
-        let end = (after_end + self.segment_pages).min(count);
-        let scheduler = Arc::clone(&self.scheduler);
-        let input = self.input.clone();
-        let output = self.output.clone();
-        let cancellation = self.cancellation.clone();
-        let join = std::thread::Builder::new()
-            .name("worker-prefetch".to_owned())
-            .spawn(move || scheduler.run_segment(&input, &output, after_end, end, &cancellation));
-        if let Ok(join) = join {
-            self.prefetch = Some(SegmentPrefetch {
-                start: after_end,
-                end,
-                join,
-            });
-        }
-    }
-
-    /// Advances bookkeeping once segment [start, end) is available on disk.
-    fn finish_segment_advance(&mut self, start: usize, end: usize) {
-        self.cleanup_active_segment();
-        self.rendered_end = end;
-        self.active_segment = (start, end);
-        self.has_active_segment = true;
-        self.maybe_launch_prefetch(end);
-    }
-
-    /// Consumes a prefetch covering the next needed segment. A stale prefetch
-    /// (never produced by the sequential page order) is cancelled and cleaned
-    /// best effort. `Ok(true)` = consumed, segment files are on disk.
-    fn consume_or_drop_prefetch(&mut self, start: usize) -> std::io::Result<bool> {
-        let Some(prefetch) = self.prefetch.take() else {
-            return Ok(false);
-        };
-        if prefetch.start != start {
-            self.cancellation.request_cancel();
-            let _ = prefetch.join.join();
-            self.cleanup_segment_files(prefetch.start, prefetch.end);
-            return Ok(false);
-        }
-        let result = prefetch.join.join().map_err(|error| {
-            std::io::Error::other(format!("worker prefetch panicked: {error:?}"))
-        })?;
-        result.map_err(std::io::Error::other)?;
-        Ok(true)
-    }
-
-    /// Ensures segment files cover the 0-based `page_index`, advancing segment
-    /// by segment with prefetch consumption and narrowed cleanup.
-    fn ensure_coverage(&mut self, page_index: usize) -> std::io::Result<()> {
-        let count = self.page_count.unwrap_or_default();
-        while self.rendered_end < page_index {
-            let start = self.rendered_end;
-            let end = (start + self.segment_pages).min(count);
-            if self.consume_or_drop_prefetch(start)? {
-                self.finish_segment_advance(start, end);
-                continue;
-            }
-            self.cleanup_active_segment();
-            self.scheduler
-                .run_segment(&self.input, &self.output, start, end, &self.cancellation)
-                .map_err(std::io::Error::other)?;
-            self.finish_segment_advance(start, end);
-        }
-        Ok(())
-    }
-
-    /// Reads one committed worker page (PNG + audit) without model scaling.
-    fn read_worker_page(&self, page: u32) -> std::io::Result<(image::RgbImage, u32, u32)> {
-        let path = self.output.join(format!("page-{page:04}.png"));
-        let image = image::open(path)
-            .map_err(std::io::Error::other)?
-            .into_rgb8();
-        let audit_path = self.output.join(format!("page-{page:04}.audit"));
-        let audit_text = std::fs::read_to_string(audit_path).map_err(std::io::Error::other)?;
-        let original = audit_text
-            .strip_prefix("original=")
-            .and_then(|value| value.split_once(";rendered="))
-            .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid worker audit")
-            })?;
-        let (original_width, original_height) = parse_dimensions(original.0)?;
-        let (metadata_rendered_width, metadata_rendered_height) = parse_dimensions(original.1)?;
-        if (metadata_rendered_width, metadata_rendered_height) != image.dimensions() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "worker audit dimensions do not match PNG",
-            ));
-        }
-        Ok((image, original_width, original_height))
-    }
-
-    /// Applies the optional perturbation ratio and the pixel budget to a raw
-    /// worker page, recording the audit exactly like the in-process path.
-    fn compose_worker_page(
-        image: image::RgbImage,
-        original_width: u32,
-        original_height: u32,
-        scale: Option<(u32, u32)>,
-    ) -> std::io::Result<RenderedPage> {
-        const PIXEL_BUDGET: u64 = 2880 * 2880;
-        let rendered_width = image.width();
-        let rendered_height = image.height();
-        let image = match scale {
-            None => image,
-            Some((numerator, denominator)) => {
-                let scaled_width = u32::try_from(
-                    (u64::from(rendered_width) * u64::from(numerator)) / u64::from(denominator),
-                )
-                .map_err(|_| std::io::Error::other("scaled width out of range"))?
-                .max(1);
-                let scaled_height = u32::try_from(
-                    (u64::from(rendered_height) * u64::from(numerator)) / u64::from(denominator),
-                )
-                .map_err(|_| std::io::Error::other("scaled height out of range"))?
-                .max(1);
-                image::imageops::resize(
-                    &image,
-                    scaled_width,
-                    scaled_height,
-                    image::imageops::FilterType::Triangle,
-                )
-            }
-        };
-        let (model_width, model_height, scaled) =
-            fit_pixel_budget(image.width(), image.height(), PIXEL_BUDGET);
-        let scaled_input_width = image.width();
-        let rgb = if scaled {
-            image::imageops::resize(
-                &image,
-                model_width,
-                model_height,
-                image::imageops::FilterType::Triangle,
-            )
-        } else {
-            image
-        };
-        let (scale_ratio_numerator, scale_ratio_denominator) =
-            linear_scale_ratio(model_width, scaled_input_width);
-        RenderedPage::new(rgb.width(), rgb.height(), rgb.into_raw()).map(|page| {
-            page.with_audit(RenderAudit {
-                original_width,
-                original_height,
-                rendered_width,
-                rendered_height,
-                model_width,
-                model_height,
-                scaled,
-                scale_ratio_numerator,
-                scale_ratio_denominator,
-            })
-        })
-    }
-}
-
-impl<S: SegmentRenderer> Drop for WorkerScanRenderer<S> {
-    fn drop(&mut self) {
-        // Cancel + drain the in-flight prefetch, then clean up its page files
-        // best effort (plan §6.3: no orphan worker, no unconsumed residue).
-        self.cancellation.request_cancel();
-        if let Some(prefetch) = self.prefetch.take() {
-            let _ = prefetch.join.join();
-            self.cleanup_segment_files(prefetch.start, prefetch.end);
-        }
-    }
-}
-
-impl<S: SegmentRenderer> PageRenderer for WorkerScanRenderer<S> {
-    fn preflight(&mut self) -> std::io::Result<()> {
-        // Page count is resolved before the renderer exists; the owner thread
-        // owns every in-process PDFium call (plan §6.1), so the old
-        // direct-count fallback here would violate the invariant.
-        if self.page_count.is_none() {
-            return Err(std::io::Error::other(
-                "worker renderer requires a resolved page count",
-            ));
-        }
-        std::fs::create_dir_all(&self.output)?;
-        Ok(())
-    }
-
-    fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
-        let count = self.page_count.unwrap_or_default();
-        let page_index = usize::try_from(page).map_err(std::io::Error::other)?;
-        if page == 0 || page_index > count {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "worker page is out of range",
-            ));
-        }
-        self.ensure_coverage(page_index)?;
-        let (image, original_width, original_height) = self.read_worker_page(page)?;
-        Self::compose_worker_page(image, original_width, original_height, None)
-    }
-
-    fn render_perturbed(
-        &mut self,
-        page: u32,
-        numerator: u32,
-        denominator: u32,
-    ) -> std::io::Result<RenderedPage> {
-        // Degeneration retry (plan §3.5/§6.3): resample the already-committed
-        // page by the ratio; the RenderAudit records the perturbation.
-        let count = self.page_count.unwrap_or_default();
-        let page_index = usize::try_from(page).map_err(std::io::Error::other)?;
-        if page == 0 || page_index > count {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "worker page is out of range",
-            ));
-        }
-        self.ensure_coverage(page_index)?;
-        let (image, original_width, original_height) = self.read_worker_page(page)?;
-        Self::compose_worker_page(
-            image,
-            original_width,
-            original_height,
-            Some((numerator, denominator)),
-        )
     }
 }
 
@@ -1951,402 +1077,6 @@ fn inject_inference_failure(page: u32) -> std::io::Result<()> {
     )
 }
 
-struct PreloadedLoader {
-    model: Option<LlamaMtmdRuntime>,
-}
-impl ModelLoader for PreloadedLoader {
-    type Model = LlamaMtmdRuntime;
-    fn load(&mut self) -> std::io::Result<Self::Model> {
-        self.model
-            .take()
-            .ok_or_else(|| std::io::Error::other("runtime already loaded"))
-    }
-}
-
-/// Loads the runtime, falling back to CPU when GPU initialization fails (W4.1).
-///
-/// Plan §3.2: a GPU backend that is compiled in but unavailable at runtime
-/// (missing Vulkan ICD, no CUDA driver) must degrade to CPU with an explicit
-/// warning instead of failing the whole scan with exit 6. The warning is
-/// returned alongside the runtime and recorded in `summary.warnings`.
-fn load_runtime_with_fallback(
-    model: &Path,
-    mmproj: &Path,
-    gpu: bool,
-    max_image_tokens: u32,
-    context_size: u32,
-    window_depth: usize,
-) -> std::io::Result<(LlamaMtmdRuntime, Option<String>, usize)> {
-    // BLK-2: the CPU path always runs the compiled floor depth (the 16 tier
-    // is a GPU-VRAM decision only), loads exactly once, and can never report
-    // a GPU fallback (rereview BLK-3: a failed explicit-CPU load used to be
-    // retried with identical parameters and, on second success, misreported
-    // as "gpu init failed; fallback to cpu").
-    if !gpu {
-        let depth = effective_depth_after_fallback(false, window_depth);
-        return LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size, depth)
-            .map(|runtime| (runtime, None, depth))
-            .map_err(std::io::Error::other);
-    }
-    // Test seam: when OCRX_E2E_FORCE_RUNTIME_FALLBACK is set, the GPU load
-    // ATTEMPT ITSELF fails deterministically. The injection sits at the
-    // failure point so the code below flows through the real
-    // Err(gpu_error) -> CPU load -> Some(warning) branch exactly as it would
-    // for a real GPU init failure (rereview BLK-1: skipping ahead to the CPU
-    // branch would bypass the warning, the compat-key rebuild, the prefetch
-    // retier, and the resume re-match).
-    let depth = effective_depth_after_fallback(true, window_depth);
-    let gpu_attempt = if std::env::var("OCRX_E2E_FORCE_RUNTIME_FALLBACK").as_deref() == Ok("1") {
-        Err("test seam: forced GPU load failure".to_owned())
-    } else {
-        LlamaMtmdRuntime::load(model, mmproj, true, max_image_tokens, context_size, depth)
-    };
-    match gpu_attempt {
-        Ok(runtime) => Ok((runtime, None, depth)),
-        Err(gpu_error) => {
-            let depth = effective_depth_after_fallback(false, window_depth);
-            let cpu_runtime =
-                LlamaMtmdRuntime::load(model, mmproj, false, max_image_tokens, context_size, depth)
-                    .map_err(|cpu_error| {
-                        std::io::Error::other(format!(
-                            "gpu load failed: {gpu_error}; cpu fallback failed: {cpu_error}"
-                        ))
-                    })?;
-            Ok((
-                cpu_runtime,
-                Some(format!("gpu init failed; fallback to cpu: {gpu_error}")),
-                depth,
-            ))
-        }
-    }
-}
-
-/// Sample peak Windows GPU VRAM (via `nvidia-smi`) while a scan runs so the
-/// W4.4 GPU resource report can record a real `vram_peak_bytes`. Returns `None`
-/// on non-Windows targets or when `nvidia-smi` is unavailable.
-fn start_vram_sampler() -> Option<(
-    std::sync::Arc<std::sync::atomic::AtomicBool>,
-    std::thread::JoinHandle<u64>,
-)> {
-    if !cfg!(target_os = "windows") {
-        return None;
-    }
-    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let done_worker = std::sync::Arc::clone(&done);
-    let handle = std::thread::spawn(move || {
-        let mut peak_mb = 0_u64;
-        while !done_worker.load(std::sync::atomic::Ordering::SeqCst) {
-            if let Ok(output) = std::process::Command::new("nvidia-smi")
-                .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
-                .output()
-                && output.status.success()
-            {
-                if let Some(first) = String::from_utf8_lossy(&output.stdout).lines().next()
-                    && let Ok(mb) = first.trim().parse::<u64>()
-                {
-                    peak_mb = peak_mb.max(mb);
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-        peak_mb.saturating_mul(1024 * 1024)
-    });
-    Some((done, handle))
-}
-
-fn stop_vram_sampler(
-    sampler: Option<(
-        std::sync::Arc<std::sync::atomic::AtomicBool>,
-        std::thread::JoinHandle<u64>,
-    )>,
-) -> Option<u64> {
-    let (done, handle) = sampler?;
-    done.store(true, std::sync::atomic::Ordering::SeqCst);
-    let bytes = handle.join().unwrap_or(0);
-    (bytes > 0).then_some(bytes)
-}
-
-/// Phase-4 W3: the production PNG encoder - byte-identical to the former
-/// inline encode (same `image` crate call, same default parameters), moved
-/// behind the [`PagePngEncoder`] trait so the scan service's EncodePipeline
-/// can run it on worker threads while the window decodes.
-struct ImagePngEncoder {
-    commit_recorder: ocrx_output::commit_profile::CommitRecorder,
-}
-
-impl ocrx_output::encode_pipeline::PagePngEncoder for ImagePngEncoder {
-    fn encode_png(
-        &self,
-        page: u32,
-        _generation: u64,
-        width: u32,
-        height: u32,
-        rgb8: &[u8],
-    ) -> std::io::Result<Vec<u8>> {
-        let encode_started = std::time::Instant::now();
-        let mut png = Cursor::new(Vec::new());
-        image::RgbImage::from_raw(width, height, rgb8.to_vec())
-            .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
-            .write_to(&mut png, ImageFormat::Png)
-            .map_err(std::io::Error::other)?;
-        self.commit_recorder.record_png_encode(
-            page,
-            u64::try_from(encode_started.elapsed().as_micros()).unwrap_or(u64::MAX),
-        );
-        Ok(png.into_inner())
-    }
-}
-
-struct OvisRecognizer {
-    output: PathBuf,
-    max_tokens: u32,
-    telemetry: Rc<RefCell<RuntimeTelemetry>>,
-    /// Last cumulative step-profile snapshot (T0.1/A1 debug channel); only
-    /// populated meaningfully when `OCRX_STEP_PROFILE` opts in.
-    step_profile: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
-    /// Rereview BLK-3: the shared actor's telemetry/step-profile accumulate
-    /// over its whole lifetime, so each orchestrated document reports
-    /// `snapshot - baseline` (captured at this document's start) instead of
-    /// the invocation-wide cumulative. Zero for the PerCall path and for the
-    /// document that fills the shared slot (fresh runtime = zero base).
-    telemetry_base: Rc<RefCell<RuntimeTelemetry>>,
-    step_profile_base: Rc<RefCell<Option<ocrx_runtime::StepProfile>>>,
-    /// T1: PNG encode timing sink; clone of the scan's shared recorder.
-    commit_recorder: ocrx_output::commit_profile::CommitRecorder,
-    /// Q1.1c/D-10 type gate (O-5): the column-split rung engages only when
-    /// enabled. Default on (newspaper-class residual empirically positive);
-    /// formula-dense document sets (academic/exam) measured HARMFUL
-    /// (text 0.18 -> 0.13, formulas cut cross-band) - pass off for those.
-    column_split_enabled: bool,
-}
-impl PageArtifactRecognizer<LlamaMtmdRuntime> for OvisRecognizer {
-    /// Phase-4 W3: donates the production encoder - the scan service's
-    /// EncodePipeline runs it while the window decodes.
-    fn png_encoder(&self) -> Option<Box<dyn ocrx_output::encode_pipeline::PagePngEncoder>> {
-        Some(Box::new(ImagePngEncoder {
-            commit_recorder: self.commit_recorder.clone(),
-        }))
-    }
-
-    fn recognize_artifact(
-        &mut self,
-        model: &mut LlamaMtmdRuntime,
-        page: u32,
-        image: &RenderedPage,
-    ) -> std::io::Result<PageArtifactResult> {
-        self.recognize_artifact_cancelled(
-            model,
-            page,
-            image,
-            &CancellationToken::new(),
-            &mut |_| {},
-        )
-    }
-
-    fn recognize_artifact_cancelled(
-        &mut self,
-        model: &mut LlamaMtmdRuntime,
-        page: u32,
-        image: &RenderedPage,
-        cancellation: &CancellationToken,
-        progress: &mut dyn FnMut(GenerationProgress),
-    ) -> std::io::Result<PageArtifactResult> {
-        inject_inference_failure(page)?;
-        let artifact = ocrx_ovisocr2::write_page_artifacts_with_status_cancelled(
-            model,
-            page,
-            image.width,
-            image.height,
-            image.rgb8.clone(),
-            self.max_tokens,
-            &self.output,
-            cancellation,
-            progress,
-        )
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-        // Runtime telemetry is cumulative across pages for this loaded model,
-        // so the scan-wide value is the runtime's current total — merging it
-        // into the previous total would double-count every completed page.
-        let snapshot = model.telemetry();
-        let base = *self.telemetry_base.borrow();
-        *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
-        let profile_snapshot = model.step_profile();
-        let profile_base = self.step_profile_base.borrow().unwrap_or_default();
-        *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-        // Phase-4 W3: the PNG encode moved to the scan service's
-        // EncodePipeline (it overlaps the window decode); the artifact
-        // carries recognition output only.
-        Ok(PageArtifactResult {
-            png: None,
-            markdown: artifact.markdown,
-            page_json: artifact.page_json,
-            truncated: artifact.truncated,
-            degenerated: artifact.degenerated,
-            warnings: artifact.warnings,
-            think_blocks_stripped: artifact.think_blocks_stripped,
-            raw_output: artifact.raw_output,
-        })
-    }
-
-    fn recognize_retry_artifact_cancelled(
-        &mut self,
-        model: &mut LlamaMtmdRuntime,
-        page: u32,
-        image: &RenderedPage,
-        step: &ocrx_output::DegenerationRetryStep,
-        cancellation: &CancellationToken,
-        progress: &mut dyn FnMut(GenerationProgress),
-    ) -> std::io::Result<PageArtifactResult> {
-        if step.column_split && !self.column_split_enabled {
-            // O-5 type gate: disabled for this scan - the rung is skipped
-            // (the page commits from the penalty rung's last state).
-            return self.recognize_artifact_cancelled(model, page, image, cancellation, progress);
-        }
-        if step.column_split {
-            // Q1.1c final rung: whitespace-valley column bands, one plain
-            // decode per band, band markdowns merged in reading order.
-            let artifact = ocrx_ovisocr2::write_page_artifacts_column_split_cancelled(
-                model,
-                page,
-                image.width,
-                image.height,
-                image.rgb8.clone(),
-                self.max_tokens,
-                &self.output,
-                cancellation,
-                progress,
-            )
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-            let snapshot = model.telemetry();
-            let base = *self.telemetry_base.borrow();
-            *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
-            let profile_snapshot = model.step_profile();
-            let profile_base = self.step_profile_base.borrow().unwrap_or_default();
-            *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-            let mut png = Cursor::new(Vec::new());
-            image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
-                .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
-                .write_to(&mut png, ImageFormat::Png)
-                .map_err(std::io::Error::other)?;
-            return Ok(PageArtifactResult {
-                png: Some(png.into_inner()),
-                markdown: artifact.markdown,
-                page_json: artifact.page_json,
-                truncated: artifact.truncated,
-                degenerated: artifact.degenerated,
-                warnings: artifact.warnings,
-                think_blocks_stripped: artifact.think_blocks_stripped,
-                raw_output: artifact.raw_output,
-            });
-        }
-        if step.sampling.is_none() && step.image_tokens.is_none() {
-            // Rungs without decode variants (perturbation-only) keep the
-            // pre-Q1.2 plain decode.
-            return self.recognize_artifact_cancelled(model, page, image, cancellation, progress);
-        }
-        let artifact = ocrx_ovisocr2::write_page_artifacts_with_retry_sampling_cancelled(
-            model,
-            page,
-            image.width,
-            image.height,
-            image.rgb8.clone(),
-            self.max_tokens,
-            &self.output,
-            cancellation,
-            progress,
-            step.sampling,
-            step.image_tokens,
-        )
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let snapshot = model.telemetry();
-        let base = *self.telemetry_base.borrow();
-        *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
-        let profile_snapshot = model.step_profile();
-        let profile_base = self.step_profile_base.borrow().unwrap_or_default();
-        *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-        // Retry-committed pages need the same page raster as the plain path.
-        let mut png = Cursor::new(Vec::new());
-        image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
-            .ok_or_else(|| std::io::Error::other("invalid RGB8"))?
-            .write_to(&mut png, ImageFormat::Png)
-            .map_err(std::io::Error::other)?;
-        Ok(PageArtifactResult {
-            png: Some(png.into_inner()),
-            markdown: artifact.markdown,
-            page_json: artifact.page_json,
-            truncated: artifact.truncated,
-            degenerated: artifact.degenerated,
-            warnings: artifact.warnings,
-            think_blocks_stripped: artifact.think_blocks_stripped,
-            raw_output: artifact.raw_output,
-        })
-    }
-
-    fn recognize_window_cancelled(
-        &mut self,
-        model: &mut LlamaMtmdRuntime,
-        pages: &[(u32, RenderedPage)],
-        cancellation: &CancellationToken,
-        progress: &mut dyn FnMut(u32, GenerationProgress),
-    ) -> Vec<std::io::Result<PageArtifactResult>> {
-        let entries: Vec<(u32, u32, u32, Vec<u8>, u32)> = pages
-            .iter()
-            .map(|(page, image)| {
-                (
-                    *page,
-                    image.width,
-                    image.height,
-                    image.rgb8.clone(),
-                    self.max_tokens,
-                )
-            })
-            .collect();
-        let mut results = Vec::with_capacity(pages.len());
-        let outputs = ocrx_ovisocr2::write_window_artifacts_with_status_cancelled(
-            model,
-            &entries,
-            &self.output,
-            cancellation,
-            progress,
-        );
-        // Telemetry is cumulative across windows for this loaded model, so
-        // the scan-wide value is the runtime's current total.
-        let snapshot = model.telemetry();
-        let base = *self.telemetry_base.borrow();
-        *self.telemetry.borrow_mut() = snapshot.delta_from(&base);
-        let profile_snapshot = model.step_profile();
-        let profile_base = self.step_profile_base.borrow().unwrap_or_default();
-        *self.step_profile.borrow_mut() = Some(profile_snapshot.delta_from(&profile_base));
-        for (page, output) in pages.iter().zip(outputs) {
-            let output = match output {
-                Ok(output) => output,
-                Err(error) => {
-                    results.push(Err(std::io::Error::other(error.to_string())));
-                    continue;
-                }
-            };
-            let _ = page;
-            results.push(Ok(PageArtifactResult {
-                png: None,
-                markdown: output.markdown,
-                page_json: output.page_json,
-                truncated: output.truncated,
-                degenerated: output.degenerated,
-                warnings: output.warnings,
-                think_blocks_stripped: output.think_blocks_stripped,
-                raw_output: output.raw_output,
-            }));
-        }
-        results
-    }
-}
-
-/// Phase-4 W1: VRAM capacity probe for the resolved device. Vulkan uses the
-/// vulkano physical-device DEVICE_LOCAL heap (safe wrapper, same pattern as
-/// the availability probe); CUDA shells `nvidia-smi --query-gpu=memory.total`
-/// (same subprocess pattern as the VRAM sampler). `None` = CPU backend,
-/// probe failure, or non-Windows - the caller stays on the 8 tier.
-#[allow(clippy::too_many_lines)]
 fn probe_vram_bytes(device: &str) -> Option<u64> {
     match device {
         "vulkan" => probe_vulkan_vram_bytes(),
@@ -2403,1752 +1133,58 @@ fn probe_cuda_vram_bytes() -> Option<u64> {
 /// Phase-4 BLK-2: the batch depth that actually takes effect. The 16 tier
 /// is a GPU-VRAM decision; a CPU runtime (requested or GPU->CPU fallback)
 /// always runs the compiled floor.
-fn effective_depth_after_fallback(gpu_ok: bool, requested_depth: usize) -> usize {
-    if gpu_ok {
-        requested_depth
-    } else {
-        ocrx_core::WINDOW_DEPTH
-    }
+/// Resolves the PDFium library location (upstream hardening, main 2a415a4):
+/// the explicit `OCRX_PDFIUM_LIBRARY` override wins; otherwise the library
+/// shipped next to the installed executable (Windows `pdfium.dll`, macOS
+/// `../lib/libpdfium.dylib`, Linux `../lib/libpdfium.so`) is used so installs
+/// keep working after the vendored copy is laid out by the install scripts;
+/// the historical `"."` fallback comes last.
+fn pdfium_library_from_environment() -> PathBuf {
+    std::env::var_os("OCRX_PDFIUM_LIBRARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(default_pdfium_library)
 }
 
-/// Phase-4 BLK-2: rebuilds a compatibility key with a different `;batch=`
-/// depth (the GPU->CPU fallback drops the 16 tier to the floor). The rest of
-/// the key is preserved verbatim.
-fn with_batch_depth(
-    key: &ocrx_output::CompatibilityKey,
-    depth: usize,
-) -> ocrx_output::CompatibilityKey {
-    let parameters = key
-        .parameters
-        .split(';')
-        .map(|segment| {
-            // BLK-1: the fallback also drops the device (base key and
-            // ocr-device) to CPU — the 16 tier is a GPU-VRAM decision.
-            if segment.starts_with("batch=") {
-                format!("batch={depth}")
-            } else if segment.starts_with("ocr-device=") {
-                // The actual inference device after the fallback.
-                "ocr-device=cpu".to_owned()
-            } else {
-                segment.to_owned()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(";");
-    ocrx_output::CompatibilityKey {
-        input_sha256: key.input_sha256.clone(),
-        model: key.model.clone(),
-        profile: key.profile.clone(),
-        parameters,
+fn default_pdfium_library() -> PathBuf {
+    if let Ok(executable) = std::env::current_exe() {
+        let bundled = bundled_pdfium_path(&executable);
+        if bundled.is_file() {
+            return bundled;
+        }
     }
+    PathBuf::from(".")
 }
 
-/// Phase-4 W1: the effective window depth for this invocation - resolve the
-/// device (explicit `--device` wins; `auto` uses the same recommendation the
-/// model resolution will make), probe its VRAM, tier the depth.
+fn bundled_pdfium_path(executable: &Path) -> PathBuf {
+    let directory = executable.parent().unwrap_or_else(|| Path::new("."));
+    #[cfg(target_os = "macos")]
+    let bundled = directory.join("../lib/libpdfium.dylib");
+    #[cfg(target_os = "windows")]
+    let bundled = directory.join("pdfium.dll");
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let bundled = directory.join("../lib/libpdfium.so");
+    bundled
+}
+
 fn resolve_window_depth(requested_device: &str) -> usize {
-    let device = if requested_device == "auto" {
-        recommend_device(resource_snapshot(), "auto")
-            .unwrap_or_else(|_| requested_device.to_owned())
-    } else {
-        requested_device.to_owned()
-    };
-    ocrx_core::window_depth_for_vram(probe_vram_bytes(&device))
+    // The composed device manager owns select + VRAM probe + tiering.
+    let composed = compose::compose(None);
+    let device = composed
+        .inference
+        .devices()
+        .select(requested_device)
+        .unwrap_or_else(|_| ocrx_inference_api::BackendId::new("cpu").expect("cpu is valid"));
+    let vram = composed.inference.devices().vram_bytes(&device);
+    composed.inference.devices().window_depth(vram)
 }
 
 /// Per-invocation shared state for one document scan (X1.2). `owner` is
-/// `None` on the single-input path: `scan_document` then spawns the
+/// `None` on the single-input path: the scan then spawns the
 /// invocation's owner at the historical spawn point, byte-identically. The
 /// orchestrated path passes the invocation-wide owner and switches it
 /// between documents. `model_slot` decides whether the runtime is loaded per
 /// scan (PerCall, historical) or once per invocation and reused across
 /// documents (Shared).
-struct DocScanEnv<'a> {
-    options: &'a ScanOptions,
-    report_format: ReportFormat,
-    progress_mode: ProgressMode,
-    cancellation: &'a CancellationToken,
-    owner: Option<&'a Rc<RefCell<pdfium_owner::PdfiumOwnerHandle>>>,
-    model_slot: &'a mut ModelSlot,
-    /// Phase-4 W1: the VRAM-tiered window depth for this invocation.
-    window_depth: usize,
-    /// BLK-4 stdout contract: the single-input path prints its `result.json`
-    /// on stdout (the historical machine interface). The orchestrator
-    /// suppresses per-document stdout results - with `--report json` its
-    /// stdout carries exactly one aggregate JSON object, and per-document
-    /// results stay in their files.
-    stdout_results: bool,
-}
-
-/// Runtime lifetime policy (X1.2): the single-input path resolves and loads
-/// per scan and drops with the scan scope; the orchestrated path fills the
-/// shared slot on the first OCR-needing document and reuses it for the rest,
-/// so model verification and load happen once per invocation.
-enum ModelSlot {
-    PerCall,
-    Shared(Option<SharedRuntime>),
-}
-
-struct SharedRuntime {
-    runtime: LlamaMtmdRuntime,
-    profile: String,
-    device: String,
-    /// BLK-1: the ACTUAL window depth this runtime was loaded with (the 16
-    /// tier on the GPU, the floor 8 after a GPU->CPU fallback). Every later
-    /// document in the invocation derives its compat key and orchestration
-    /// from this, never from the GPU-tier guess.
-    window_depth: usize,
-    fallback_to_cpu: bool,
-    gpu_warning: Option<String>,
-}
-
-/// Phase-4 BLK-1: folds resume-incomplete checkpoints into the summary.
-/// Extracted from `scan_document` so the CLI re-matching + summary fold
-/// control flow is unit-testable without a real model (rereview BLK-1).
-/// Each checkpoint contributes at most one diagnostic and at most one
-/// truncated/degenerated count increment.
-fn fold_resume_incomplete_checkpoints(
-    checkpoints: &[ocrx_output::PageCheckpoint],
-    summary: &mut ocrx_output::JobSummary,
-) {
-    for checkpoint in checkpoints {
-        if checkpoint.degenerated {
-            summary.degenerated_pages += 1;
-        }
-        if checkpoint.truncated {
-            summary.truncated_pages += 1;
-        }
-        summary.warnings.extend(checkpoint.warnings.iter().cloned());
-        summary.diagnostics.push(ocrx_output::PageDiagnostic {
-            page: checkpoint.page_number,
-            status: if checkpoint.truncated || checkpoint.degenerated {
-                "partial"
-            } else {
-                "completed"
-            }
-            .to_owned(),
-            stage: "resume".to_owned(),
-            error_code: None,
-            message: None,
-            audit: checkpoint.audit,
-            warnings: checkpoint.warnings.clone(),
-        });
-    }
-}
-
-/// Scans ONE document end-to-end, reporting through `reporter`, and returns
-/// the would-be process exit code instead of exiting: the single-input
-/// caller exits with it directly (byte-identical behavior), while the X1
-/// orchestrator aggregates the codes across documents. Every failure path
-/// that used to `std::process::exit(N)` now reports and returns `N`.
-#[allow(clippy::too_many_lines)]
-fn scan_document(
-    env: &mut DocScanEnv,
-    input: &Path,
-    output: &Path,
-    reporter: &mut Reporter,
-) -> i32 {
-    let options = env.options;
-    let stdout_results = env.stdout_results;
-    let report_format = env.report_format;
-    let progress_mode = env.progress_mode;
-    let cancellation = env.cancellation;
-    // Rereview BLK-1: cancel = whole invocation. A signal that lands during
-    // the previous document's teardown must stop this document before any
-    // work (native documents have no ScanService cancellation checks).
-    if cancellation.is_cancelled() {
-        reporter.error(
-            &ErrorReport {
-                code: 130,
-                kind: "cancelled".to_owned(),
-                message: "scan cancelled by signal".to_owned(),
-                cause: None,
-                suggestion: Some("resume with --resume".to_owned()),
-            },
-            report_format,
-        );
-        emit_reporter(reporter);
-        return 130;
-    }
-    let started = Instant::now();
-    let canonical_input = std::fs::canonicalize(input).unwrap_or_else(|_| input.to_path_buf());
-    // Fail closed: a working directory that cannot be resolved (deleted cwd)
-    // must abort the scan instead of silently skipping the cwd rule below —
-    // an empty fallback path would make every output pass that rule.
-    let working_directory = match std::env::current_dir() {
-        Ok(directory) => directory,
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 9,
-                    kind: "output".to_owned(),
-                    message: "cannot resolve the working directory for output validation"
-                        .to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: Some("run ocrx from an existing directory".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 9;
-        }
-    };
-    let library = pdfium_library_from_environment();
-    // Validate the input before resolving or downloading model assets. Invalid,
-    // encrypted, and corrupt PDFs are input errors even on a machine with no
-    // installed OCR model.
-    // P3 (plan §6.1): from here on every in-process PDFium call (page count,
-    // analysis, render, scale) runs on the dedicated PdfiumOwner thread; the
-    // main thread requests through channels and never touches pdfium types.
-    // The render DPI is resolved up front because the owner holds it for the
-    // whole scan.
-    let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
-    // X1 protocol ①: one owner per invocation. The single-input path spawns
-    // it here (the historical spawn point, now scoped to the function); the
-    // orchestrated path reuses the invocation-wide owner, switched between
-    // documents through the SwitchDocument protocol at scheduling bounds.
-    // W2: the owner prefetches TWO windows ahead (current + next) so the
-    // next window's render burst hides inside the current window's decode -
-    // a single-window lookahead stalls during decode (no requests arrive),
-    // which the depth-16 measurement caught (render_wait stayed 1.7s).
-    let pdfium_owner_handle: Rc<RefCell<pdfium_owner::PdfiumOwnerHandle>> = match env.owner {
-        Some(owner) => Rc::clone(owner),
-        None => Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
-            library.clone(),
-            input.to_path_buf(),
-            RenderOptions { dpi },
-            options.password.clone(),
-            u32::try_from(env.window_depth * 2).unwrap_or(2),
-        ))),
-    };
-
-    let page_count = match pdfium_owner_handle.borrow_mut().page_count() {
-        Ok(count) => count,
-        Err(error) => {
-            let error_kind = match classify_input_error(input, &error.to_string()) {
-                PdfErrorKind::NonPdf => "pdf_non_pdf",
-                PdfErrorKind::Corrupt => "pdf_corrupt",
-                PdfErrorKind::Encrypted => "pdf_encrypted",
-                PdfErrorKind::DynamicLibrary => "pdf_dynamic_library",
-                PdfErrorKind::Unknown => "input",
-            };
-            reporter.error(
-                &ErrorReport {
-                    code: 3,
-                    kind: error_kind.to_owned(),
-                    message: "unable to read PDF page count".to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: Some("check the input PDF path".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 3;
-        }
-    };
-    let pages = options
-        .pages
-        .clone()
-        .unwrap_or_else(|| (1..=page_count).collect());
-    if pages.iter().any(|page| *page == 0 || *page > page_count) {
-        reporter.error(
-            &ErrorReport {
-                code: 2,
-                kind: "usage".to_owned(),
-                message: "page selection is out of range".to_owned(),
-                cause: Some(format!("pdf has {page_count} pages")),
-                suggestion: Some("adjust --pages".to_owned()),
-            },
-            report_format,
-        );
-        emit_reporter(reporter);
-        return 2;
-    }
-    // W1.4/W4.1: an explicit device request must fail diagnosably when the
-    // backend is not compiled into this binary, even when the document needs
-    // no OCR at all (native-text routing never reaches runtime resolution).
-    if options.device != "auto" {
-        if let Err(device_error) = recommend_device(resource_snapshot(), &options.device) {
-            reporter.error(
-                &ErrorReport {
-                    code: 6,
-                    kind: "runtime".to_owned(),
-                    message: "requested device is unavailable".to_owned(),
-                    cause: Some(format!("{device_error:?}")),
-                    suggestion: Some(
-                        "run `ocrx doctor --report json` to see available backends".to_owned(),
-                    ),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 6;
-        }
-    }
-    let required_tier = if options.quality_tier == "l1" {
-        QualityTier::L1
-    } else {
-        QualityTier::L2
-    };
-    // P3 (plan §6.1, review finding 2): native text extraction also runs on
-    // the owner thread — the main thread holds no pdfium type for the whole
-    // scan.
-    reporter.progress(
-        &ProgressEvent::for_stage(ProgressStage::Analyzing, None, 0, pages.len() as u32),
-        progress_mode,
-    );
-    let classifications = match pdfium_owner_handle
-        .borrow_mut()
-        .analyze(&pages, required_tier)
-    {
-        Ok(classifications) => classifications,
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 3,
-                    kind: "pdf_analysis".to_owned(),
-                    message: "unable to analyze PDF pages".to_owned(),
-                    cause: Some(error),
-                    suggestion: Some("check the input PDF and PDFium installation".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 3;
-        }
-    };
-    if options.pdf_mode == "text"
-        && let Err(error) = validate_text_mode_classifications(&classifications)
-    {
-        reporter.error(
-            &ErrorReport {
-                code: 3,
-                kind: "pdf_routing".to_owned(),
-                message: "text mode cannot process non-text PDF pages".to_owned(),
-                cause: Some(error.to_owned()),
-                suggestion: Some("use --pdf-mode auto or --pdf-mode ocr".to_owned()),
-            },
-            report_format,
-        );
-        emit_reporter(reporter);
-        return 3;
-    }
-    let initial_queue = initial_ocr_queue_for_mode(&options.pdf_mode, &pages, &classifications);
-    let cache = std::env::var_os("OCRX_MODEL_CACHE")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(ocrx_models::default_cache_root);
-    // W2.3 (review BLK-1): protected-root validation runs on EVERY scan, not
-    // only for --overwrite — a mistyped --output-dir must never write
-    // document.md/page-*/result.json into the model cache or the working
-    // directory. The input is compared through its absolute form so a
-    // relative spelling cannot slip past the overlap check (m2).
-    //
-    // The protected cache paths are the model subtrees (`<root>/ocrx/models`
-    // new layout, `<root>/ovisocr2` legacy layout), not the whole cache root:
-    // on Windows the default root is %LOCALAPPDATA%, which also contains
-    // %TEMP%, and protecting the root itself would outlaw every temp-dir
-    // output. An output AT the cache root is still rejected because it is an
-    // ancestor of the protected subtree.
-    //
-    // The working directory is NOT in this symmetric list: an output below it
-    // (`--output-dir out`, the default `<input dir>/<stem>-ocr`) is the normal
-    // layout and must pass. It gets the one-directional rule instead — the
-    // directory itself and every ancestor of it are still refused.
-    let protected_cache_roots = [cache.join("ocrx").join("models"), cache.join("ovisocr2")];
-    {
-        let protected = [
-            canonical_input.as_path(),
-            protected_cache_roots[0].as_path(),
-            protected_cache_roots[1].as_path(),
-        ];
-        if let Err(error) =
-            validate_scan_output_policy(&canonical_input, output, &protected, &working_directory)
-        {
-            reporter.error(
-                &ErrorReport {
-                    code: 9,
-                    kind: "output".to_owned(),
-                    // The cause distinguishes the rules (absolute spelling,
-                    // input overlap, protected root, working directory); the
-                    // top-level message must stay accurate for all of them.
-                    message: "output directory refused by the output policy".to_owned(),
-                    cause: Some(error),
-                    suggestion: Some("choose a dedicated output directory".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 9;
-        }
-    }
-    if output.exists()
-        && (output.join("document.md").exists() || output.join("result.json").exists())
-        && !options.resume
-        && !options.overwrite
-    {
-        reporter.error(
-            &ErrorReport {
-                code: 9,
-                kind: "output".to_owned(),
-                message: "output directory already contains results".to_owned(),
-                cause: Some(output.display().to_string()),
-                suggestion: Some("use --resume or --overwrite".to_owned()),
-            },
-            report_format,
-        );
-        emit_reporter(reporter);
-        return 9;
-    }
-    if options.overwrite {
-        // Same protected set as the per-scan check above (model subtrees, not
-        // the whole cache root) — the deletion target must not be able to
-        // reach the model layout through any spelling. The working-directory
-        // rule is applied inside remove_for_overwrite itself, so a direct
-        // library caller cannot delete the cwd (or anything above it) either.
-        let protected = [
-            canonical_input.as_path(),
-            protected_cache_roots[0].as_path(),
-            protected_cache_roots[1].as_path(),
-        ];
-        if let Err(error) =
-            remove_for_overwrite(&canonical_input, &output, &protected, &working_directory)
-        {
-            reporter.error(
-                &ErrorReport {
-                    code: 9,
-                    kind: "output".to_owned(),
-                    message: "overwrite refused for unsafe output path".to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: Some("choose a dedicated output directory".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 9;
-        }
-    }
-    let pages = options
-        .pages
-        .clone()
-        .unwrap_or_else(|| (1..=page_count).collect());
-    // Page-range validation happened above, immediately after analysis; this
-    // late copy of the check was unreachable (review m3).
-    reporter.progress(
-        &ProgressEvent::for_stage(ProgressStage::Extracting, None, 0, pages.len() as u32),
-        progress_mode,
-    );
-    // T1 commit-path profiler: one shared recorder per document scan — the
-    // renderer (owner work time), the recognizer (PNG encode) and the
-    // service (render wait / commit write / finalize) all hold clones.
-    let commit_recorder = ocrx_output::commit_profile::CommitRecorder::new_gated();
-    let renderer: Box<dyn PageRenderer> = if let Some(worker) = std::env::var_os("OCRX_PDF_WORKER")
-    {
-        let worker_output =
-            std::env::temp_dir().join(format!("ocrx-worker-render-{}", std::process::id()));
-        Box::new(WorkerScanRenderer {
-            scheduler: Arc::new(PdfWorkerScheduler {
-                worker_executable: PathBuf::from(worker),
-                library_dir: library.clone(),
-                segment_pages: 20,
-                timeout: Duration::from_secs(20 * 60),
-                dpi,
-                env: Vec::new(),
-                password: options.password.clone(),
-            }),
-            input: input.to_path_buf(),
-            output: worker_output,
-            page_count: Some(page_count),
-            segment_pages: 20,
-            rendered_end: 0,
-            active_segment: (0, 0),
-            has_active_segment: false,
-            prefetch: None,
-            // BLK-1: the renderer's Drop cancels its own lifecycle (prefetch
-            // drain, worker shutdown) - a child token keeps that teardown
-            // scoped so one document's renderer drop can never cancel the
-            // whole orchestrated invocation, while user Ctrl+C still reaches
-            // the renderer through the ancestor link.
-            cancellation: cancellation.child(),
-        })
-    } else {
-        // P3 (plan §6.2): the in-process render pipeline runs on the owner
-        // thread with a K=2 prefetch window; the wrapper only forwards.
-        Box::new(pdfium_owner::OwnerPageRenderer::new(
-            Rc::clone(&pdfium_owner_handle),
-            commit_recorder.clone(),
-        ))
-    };
-    let telemetry = Rc::new(RefCell::new(RuntimeTelemetry::default()));
-    let step_profile = Rc::new(RefCell::new(None));
-    // Rereview BLK-3: per-document baselines for the shared actor's
-    // cumulative telemetry; captured per document after model resolution.
-    let telemetry_base = Rc::new(RefCell::new(RuntimeTelemetry::default()));
-    let step_profile_base = Rc::new(RefCell::new(None));
-    let recognizer = OvisRecognizer {
-        output: output.to_path_buf(),
-        max_tokens: options.max_output_tokens.unwrap_or(16_384),
-        telemetry: Rc::clone(&telemetry),
-        step_profile: Rc::clone(&step_profile),
-        telemetry_base: Rc::clone(&telemetry_base),
-        step_profile_base: Rc::clone(&step_profile_base),
-        commit_recorder: commit_recorder.clone(),
-        column_split_enabled: options.column_split_retry,
-    };
-    // Phase-4 W3: extract the donated PNG encoder before the recognizer
-    // moves into the scan service.
-    let mut png_encoder = recognizer.png_encoder();
-    // Keep compatibility metadata stable without touching model resources.
-    // Actual profile/device resolution is deferred until the final OCR queue
-    // exists below.
-    let mut profile = options.profile.clone();
-    let mut device = options.device.clone();
-    let mut model = PathBuf::new();
-    let mut mmproj = PathBuf::new();
-    let input_sha256 = match file_sha256(input) {
-        Ok(hash) => hash,
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 3,
-                    kind: "input".to_owned(),
-                    message: "unable to hash input PDF".to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: None,
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 3;
-        }
-    };
-    // Phase-4 W1: the VRAM-tiered window depth rides the compatibility key
-    // (;batch=<depth>) and the scan service (window building) / runtime
-    // (context capacity).
-    // BLK-1: a shared runtime that already fell back to CPU carries its
-    // effective (floor) depth - every later document derives its compat key
-    // from the ACTUAL depth, never from the GPU-tier guess.
-    let window_depth = match env.model_slot {
-        ModelSlot::Shared(Some(shared)) => shared.window_depth,
-        _ => resolve_window_depth(&options.device),
-    };
-    let mut compatibility = CompatibilityKey {
-        input_sha256,
-        model: "ovisocr2".to_owned(),
-        profile: "native".to_owned(),
-        // `platform=` sits inside the first five parameters on purpose: the
-        // lenient native matching branch compares exactly those, so checkpoints
-        // stay isolated per platform (M-1: macOS cpu vs Windows cpu used to
-        // share one key). Checkpoints written before this field exist no
-        // longer match and are reprocessed instead of resumed.
-        parameters: format!(
-            "{};platform={};dpi={dpi};tokens={};max_image_tokens={};context_size={};device={};batch={};route=native;decode={}",
-            ocrx_output::pdf_compatibility_parameters(
-                &options.pdf_mode,
-                &options.quality_tier,
-                "pdf-route-v2",
-                "pdf-text-v2",
-            ),
-            current_platform(),
-            options.max_output_tokens.unwrap_or(16_384),
-            options.max_image_tokens.unwrap_or(1024),
-            options.context_size.unwrap_or(20_480),
-            options.device,
-            window_depth,
-            ocrx_runtime::DECODE_GENERATION
-        ),
-    };
-    let mut initial_queue = if options.resume {
-        recover_pending_ocr_queue(&output, &compatibility)
-            .map(|recovered| {
-                let recovered = restrict_ocr_queue_to_pages(&recovered, &pages);
-                merge_ocr_queue(&initial_queue, &recovered)
-            })
-            .unwrap_or(initial_queue)
-    } else {
-        initial_queue
-    };
-    let mut resume_committed_markdown = Vec::new();
-    let mut resume_skip_pages = std::collections::HashSet::new();
-    let mut resume_pending_pages = std::collections::HashSet::new();
-    // Incomplete state of pages reused as-is this run (BLK-2): a
-    // SkipCommitted truncated/degenerated page keeps its marker and must keep
-    // the result partial even though the page was not reprocessed.
-    let mut resume_incomplete_checkpoints = Vec::new();
-    let resume_effective_configuration = if options.resume {
-        resolve_effective_ocr_configuration(&options.profile, &options.device).ok()
-    } else {
-        None
-    };
-    // BLK-1: for doc 2+ in a shared invocation, the resume OCR compat key
-    // must use the shared runtime's ACTUAL profile/device (not the requested
-    // config), so it matches checkpoints written by the fallback path.
-    let resume_ocr_compatibility =
-        resume_effective_configuration
-            .as_ref()
-            .map(|(profile, device)| {
-                let (actual_profile, actual_device) = match env.model_slot {
-                    ModelSlot::Shared(Some(shared)) => {
-                        (shared.profile.as_str(), shared.device.as_str())
-                    }
-                    _ => (profile.as_str(), device.as_str()),
-                };
-                make_ocr_compatibility(&compatibility, actual_profile, actual_device)
-            });
-    if options.resume {
-        for page in &pages {
-            let path = output.join(format!("page-{page:04}.checkpoint"));
-            let Ok(checkpoint) = read_checkpoint(&path) else {
-                continue;
-            };
-            match checkpoint.resume_action(&compatibility, output, *page as u32) {
-                CheckpointResumeAction::SkipCommitted => {
-                    if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
-                        resume_committed_markdown.append(&mut markdown);
-                        resume_skip_pages.insert(*page as u32);
-                        if checkpoint.truncated || checkpoint.degenerated {
-                            resume_incomplete_checkpoints.push(checkpoint.clone());
-                        }
-                    }
-                }
-                CheckpointResumeAction::QueueOcr => {
-                    resume_pending_pages.insert(*page as u32);
-                }
-                CheckpointResumeAction::Reprocess => {}
-            }
-            // BLK-3: only ask the OCR compatibility key when the native key
-            // did not already commit this page. The lenient native branch of
-            // `matches_page_compatibility` matches on the shared parameter
-            // prefix, so an OCR-expected key also "matches" a native
-            // checkpoint — asking both unconditionally collected the same
-            // page twice and broke finalize with "duplicate page number".
-            if !resume_skip_pages.contains(&(*page as u32))
-                && let Some(expected_ocr) = &resume_ocr_compatibility
-                && checkpoint.resume_action(expected_ocr, output, *page as u32)
-                    == CheckpointResumeAction::SkipCommitted
-            {
-                if let Ok(mut markdown) = collect_page_markdowns(&output, &[*page as u32]) {
-                    resume_committed_markdown.append(&mut markdown);
-                    resume_skip_pages.insert(*page as u32);
-                    if checkpoint.truncated || checkpoint.degenerated {
-                        resume_incomplete_checkpoints.push(checkpoint.clone());
-                    }
-                }
-            }
-        }
-    }
-    initial_queue.retain(|page| !resume_skip_pages.contains(&page.page));
-    // Stage C (batch depth 8): the compatibility key carries `;batch=`, so
-    // checkpoints written by an older binary (different depth, parameters,
-    // or platform) never match and the whole document is reprocessed. That
-    // is an expected, documented behavior change — but a silent full rescan
-    // looks like data loss, so say why when it happens.
-    if options.resume
-        && resume_skip_pages.is_empty()
-        && output
-            .read_dir()
-            .map(|entries| {
-                entries.filter_map(Result::ok).any(|entry| {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    name.starts_with("page-") && name.ends_with(".checkpoint")
-                })
-            })
-            .unwrap_or(false)
-    {
-        eprintln!(
-            "note: --resume found checkpoints but none match the current compatibility key (options, platform, or batch depth changed); every selected page is reprocessed from the start"
-        );
-    }
-    let native_candidates = if options.pdf_mode == "ocr" {
-        Vec::new()
-    } else {
-        native_candidate_pages(&pages, &classifications)
-            .into_iter()
-            .filter(|page| {
-                !resume_skip_pages.contains(page) && !resume_pending_pages.contains(page)
-            })
-            .collect()
-    };
-    let resumed_completed_count = resume_committed_markdown.len() as u32;
-    let mut native_markdown = resume_committed_markdown;
-    let native_phase = run_native_first_phase(
-        &options.pdf_mode,
-        &native_candidates,
-        |page| {
-            let native = pdfium_owner_handle
-                .borrow_mut()
-                .extract_native(page)
-                .map_err(|error| error.to_string())?;
-            ocrx_pdf::validate_native_candidate(page, &native, required_tier)
-                .map(|_| ())
-                .map_err(|reason| reason.as_str().to_owned())
-        },
-        |page| {
-            // Rereview BLK-1: after the signal, in-flight native work must
-            // not keep committing - skip the page (the document's 130 return
-            // below discards its summary; committed pages stay for --resume).
-            if cancellation.is_cancelled() {
-                return Ok(());
-            }
-            let native = pdfium_owner_handle
-                .borrow_mut()
-                .extract_native(page)
-                .map_err(|error| error.to_string())?;
-            let classification = pages
-                .iter()
-                .position(|selected| *selected as u32 == page)
-                .and_then(|index| classifications.get(index).copied())
-                .ok_or_else(|| "native_classification_missing".to_owned())?;
-            let (markdown, page_json) =
-                ocrx_pdf::native_pdf_page_artifacts(page, &native, classification, required_tier)
-                    .map_err(|reason| reason.as_str().to_owned())?;
-            let checkpoint = ocrx_output::PageCheckpoint {
-                page_number: page,
-                compatibility: compatibility.clone(),
-                complete: true,
-                output_sha256: String::new(),
-                truncated: false,
-                degenerated: false,
-                attempts: 1,
-                raw: None,
-                warnings: Vec::new(),
-                think_blocks_stripped: 0,
-                audit: None,
-            };
-            let committed =
-                commit_native_page_and_collect(&output, page, &markdown, &page_json, &checkpoint)
-                    .map_err(|error| error.to_string())?;
-            native_markdown.push(committed);
-            Ok(())
-        },
-    );
-    let native_phase = match native_phase {
-        Ok(phase) => phase,
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 3,
-                    kind: "pdf_native".to_owned(),
-                    message: "native PDF text extraction failed".to_owned(),
-                    cause: Some(error),
-                    suggestion: Some("use --pdf-mode auto to allow OCR fallback".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 3;
-        }
-    };
-    let mut empty_markdown = Vec::new();
-    let mut empty_pages_committed = 0usize;
-    for (page, classification) in pages.iter().zip(&classifications) {
-        // Rereview BLK-1: stop committing empty pages after the signal.
-        if cancellation.is_cancelled() {
-            break;
-        }
-        if resume_skip_pages.contains(&(*page as u32)) {
-            continue;
-        }
-        if classification.page_type != PageType::Empty {
-            continue;
-        }
-        let (markdown, page_json) =
-            match ocrx_pdf::empty_pdf_page_artifacts(*page as u32, *classification) {
-                Ok(artifacts) => artifacts,
-                Err(error) => {
-                    reporter.error(
-                        &ErrorReport {
-                            code: 5,
-                            kind: "output".to_owned(),
-                            message: "unable to build empty page artifact".to_owned(),
-                            cause: Some(format!("{error:?}")),
-                            suggestion: Some("inspect the output directory".to_owned()),
-                        },
-                        report_format,
-                    );
-                    emit_reporter(reporter);
-                    return 5;
-                }
-            };
-        let checkpoint = ocrx_output::PageCheckpoint {
-            page_number: *page as u32,
-            compatibility: compatibility.clone(),
-            complete: true,
-            output_sha256: String::new(),
-            truncated: false,
-            degenerated: false,
-            attempts: 1,
-            raw: None,
-            warnings: Vec::new(),
-            think_blocks_stripped: 0,
-            audit: None,
-        };
-        match commit_native_page_and_collect(
-            &output,
-            *page as u32,
-            &markdown,
-            &page_json,
-            &checkpoint,
-        ) {
-            Ok(committed) => {
-                empty_markdown.push(committed);
-                empty_pages_committed += 1;
-            }
-            Err(error) => {
-                reporter.error(
-                    &ErrorReport {
-                        code: 5,
-                        kind: "output".to_owned(),
-                        message: "unable to commit empty page artifact".to_owned(),
-                        cause: Some(error.to_string()),
-                        suggestion: Some("inspect the output directory".to_owned()),
-                    },
-                    report_format,
-                );
-                emit_reporter(reporter);
-                return 5;
-            }
-        }
-    }
-    for fallback in &native_phase.fallback_pages {
-        let reason = fallback
-            .fallback_reason
-            .clone()
-            .unwrap_or_else(|| "native_validation_failed".to_owned());
-        // Rereview BLK-2: a COMPLETED checkpoint is a reusable final OCR
-        // result. Overwriting it with a pending marker before the actual
-        // runtime configuration is known (and the corrected-key re-match has
-        // run) would destroy exactly the record that --resume reuse depends
-        // on: with `--pdf-mode auto` + GPU->CPU fallback, the early match
-        // uses the GPU-guess key and misses the previous run's CPU-keyed
-        // checkpoints, so this pending write - not the matching - is what
-        // forced the re-recognition. Leave a completed checkpoint on disk;
-        // the service's per-page matching (and the post-fallback re-match)
-        // decides reuse vs reprocess with the ACTUAL key. A pending or
-        // unreadable checkpoint keeps the normal pending write.
-        let checkpoint_path = output.join(format!("page-{:04}.checkpoint", fallback.page));
-        if read_checkpoint(&checkpoint_path).is_ok_and(|checkpoint| checkpoint.complete) {
-            continue;
-        }
-        let checkpoint =
-            ocrx_output::pending_ocr_checkpoint(fallback.page, compatibility.clone(), reason);
-        if let Err(error) = ocrx_output::write_checkpoint(checkpoint_path, &checkpoint) {
-            reporter.error(
-                &ErrorReport {
-                    code: 5,
-                    kind: "output".to_owned(),
-                    message: "unable to persist OCR fallback checkpoint".to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: Some("inspect the output directory".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            return 5;
-        }
-    }
-    let final_ocr_queue = ocr_queue_after_native_phase(&initial_queue, &native_phase);
-    let ocr_service_pages = service_pages_from_ocr_queue(&final_ocr_queue);
-    let execution_plan = ScanExecutionPlan::from_final_ocr_queue(ocr_service_pages.len());
-    // BLK-2: on the orchestrated path a filled slot means the model was
-    // already resolved AND fully verified earlier in this invocation - reuse
-    // that config and skip `resolve_and_prepare_model` (and with it the
-    // per-document SHA-256 pass) entirely. Resolve+verify+load happen exactly
-    // once per invocation; only the first OCR-needing document pays them.
-    // Rereview BLK-2: only a document that itself needs OCR reuses the
-    // shared configuration - a pure-native document keeps the single-scan
-    // metadata (`backend` = the requested device, `ocr_model_loaded` false),
-    // regardless of whether an earlier document filled the slot.
-    let shared_reuse = match env.model_slot {
-        ModelSlot::Shared(Some(shared)) if execution_plan.initialize_runtime => {
-            Some((shared.profile.clone(), shared.device.clone()))
-        }
-        _ => None,
-    };
-    if let Some((reused_profile, reused_device)) = shared_reuse {
-        profile.clone_from(&reused_profile);
-        device.clone_from(&reused_device);
-    } else if execution_plan.initialize_runtime {
-        match resolve_and_prepare_model(
-            true,
-            &options.profile,
-            &options.device,
-            options.offline,
-            options.non_interactive,
-            &cache,
-        ) {
-            Ok((resolved_profile, resolved_device, resolved_model, resolved_mmproj)) => {
-                profile.clone_from(&resolved_profile);
-                device.clone_from(&resolved_device);
-                model = resolved_model;
-                mmproj = resolved_mmproj;
-                // X1.2 (review BLK-2): on the orchestrated path the runtime
-                // resolves, verifies, and loads HERE - exactly once per
-                // invocation. The first OCR-needing document fills the shared
-                // slot; later documents take the shared_reuse short-circuit
-                // above and never re-enter this match.
-                if let ModelSlot::Shared(slot) = env.model_slot
-                    && slot.is_none()
-                {
-                    let (loaded_model, gpu_fallback_warning, effective_depth) =
-                        match load_runtime_with_fallback(
-                            &model,
-                            &mmproj,
-                            resolved_device != "cpu",
-                            options.max_image_tokens.unwrap_or(1024),
-                            options.context_size.unwrap_or(20_480),
-                            env.window_depth,
-                        ) {
-                            Ok(value) => value,
-                            Err(error) => {
-                                reporter.error(
-                                &ErrorReport {
-                                    code: 6,
-                                    kind: "runtime".to_owned(),
-                                    message: "runtime initialization failed".to_owned(),
-                                    cause: Some(error.to_string()),
-                                    suggestion: Some(
-                                        "verify model/runtime compatibility or use --device cpu"
-                                            .to_owned(),
-                                    ),
-                                },
-                                report_format,
-                            );
-                                emit_reporter(reporter);
-                                return 6;
-                            }
-                        };
-                    // BLK-2: a GPU->CPU fallback must drop the 16 tier - the
-                    // runtime, window orchestration, prefetch and compat key
-                    // all follow the ACTUAL depth (8 on CPU).
-                    let fallback_to_cpu = gpu_fallback_warning.is_some();
-                    // BLK-1: the rebuild is keyed on the FALLBACK itself, not
-                    // on the effective depth value - the base key was built
-                    // with the GPU tier (batch=16), so a fallback must rewrite
-                    // it to the floor even though effective_depth == 8 == floor.
-                    if fallback_to_cpu {
-                        compatibility = with_batch_depth(&compatibility, ocrx_core::WINDOW_DEPTH);
-                        device = String::from("cpu");
-                        // BLK-1: the rolling prefetch follows the actual depth.
-                        if let Some(owner) = env.owner {
-                            owner.borrow_mut().set_prefetch_depth(
-                                u32::try_from(ocrx_core::WINDOW_DEPTH * 2).unwrap_or(2),
-                            );
-                        }
-                        // BLK-1: redo the resume checkpoint matching with the
-                        // corrected key - the initial matching used the
-                        // GPU-tier key which cannot match the previous
-                        // CPU-fallback run's checkpoints (batch=8). Without
-                        // this, committed pages would be unnecessarily
-                        // re-decoded.
-                        if options.resume {
-                            let rebuilt_ocr = resume_effective_configuration.as_ref().map(
-                                |(profile, _device)| {
-                                    make_ocr_compatibility(&compatibility, profile, "cpu")
-                                },
-                            );
-                            if let Some(ref rebuilt_ocr) = rebuilt_ocr {
-                                for page in &pages {
-                                    let page_u32 = *page as u32;
-                                    if resume_skip_pages.contains(&page_u32) {
-                                        continue;
-                                    }
-                                    let cp_path =
-                                        output.join(format!("page-{page_u32:04}.checkpoint"));
-                                    let Ok(checkpoint) = read_checkpoint(&cp_path) else {
-                                        continue;
-                                    };
-                                    if checkpoint.resume_action(rebuilt_ocr, output, page_u32)
-                                        == CheckpointResumeAction::SkipCommitted
-                                    {
-                                        // BLK-1 fix: the page's markdown is
-                                        // already on disk (page-*.md from the
-                                        // previous run); the service's per-page
-                                        // resume matching skips it, counts it
-                                        // (completed/truncated/degenerated), and
-                                        // adds its diagnostic — the CLI must not
-                                        // double-count via
-                                        // resume_incomplete_checkpoints.
-                                        resume_skip_pages.insert(page_u32);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    *slot = Some(SharedRuntime {
-                        runtime: loaded_model,
-                        profile: resolved_profile,
-                        device: if fallback_to_cpu {
-                            "cpu".to_owned()
-                        } else {
-                            resolved_device.clone()
-                        },
-                        window_depth: effective_depth,
-                        fallback_to_cpu,
-                        gpu_warning: gpu_fallback_warning,
-                    });
-                }
-            }
-            Err(error) => {
-                let unavailable_reason = "ocr_required_but_unavailable".to_owned();
-                for page in &ocr_service_pages {
-                    let checkpoint = ocrx_output::pending_ocr_checkpoint(
-                        *page,
-                        compatibility.clone(),
-                        unavailable_reason.clone(),
-                    );
-                    if let Err(write_error) = ocrx_output::write_checkpoint(
-                        output.join(format!("page-{page:04}.checkpoint")),
-                        &checkpoint,
-                    ) {
-                        reporter.error(
-                            &ErrorReport {
-                                code: 5,
-                                kind: "output".to_owned(),
-                                message: "unable to persist partial checkpoint".to_owned(),
-                                cause: Some(write_error.to_string()),
-                                suggestion: None,
-                            },
-                            report_format,
-                        );
-                        emit_reporter(reporter);
-                        return 5;
-                    }
-                }
-                let fallback_reasons = native_phase
-                    .fallback_pages
-                    .iter()
-                    .filter_map(|page| {
-                        page.fallback_reason
-                            .as_deref()
-                            .map(|reason| (page.page, pdf_reason_code_from_str(reason)))
-                    })
-                    .collect::<Vec<_>>();
-                let mut fallback_reasons = fallback_reasons;
-                for queued in &final_ocr_queue {
-                    if let Some(reason) = queued.fallback_reason.as_deref()
-                        && !fallback_reasons
-                            .iter()
-                            .any(|(page, _)| *page == queued.page)
-                    {
-                        fallback_reasons.push((queued.page, pdf_reason_code_from_str(reason)));
-                    }
-                }
-                let unavailable_pages = ocr_service_pages.iter().copied().collect();
-                if let Err(write_error) = write_routing_checkpoint_sidecars_with_states(
-                    output,
-                    &options.pdf_mode,
-                    &pages,
-                    &classifications,
-                    &fallback_reasons,
-                    &std::collections::HashSet::new(),
-                    &unavailable_pages,
-                ) {
-                    reporter.error(
-                        &ErrorReport {
-                            code: 5,
-                            kind: "output".to_owned(),
-                            message: "unable to persist partial routing sidecars".to_owned(),
-                            cause: Some(write_error.to_string()),
-                            suggestion: None,
-                        },
-                        report_format,
-                    );
-                    emit_reporter(reporter);
-                    return 5;
-                }
-                let total_pages = pages.len() as u32;
-                let completed_pages = native_phase.committed_native_pages.len() as u32
-                    + empty_pages_committed as u32
-                    + resumed_completed_count;
-                let result_json = serialize_scan_result(&ScanResultFields {
-                    status: "partial",
-                    input: &canonical_input,
-                    markdown_path: None,
-                    output_dir: output,
-                    profile: &profile,
-                    required_quality_tier: &options.quality_tier,
-                    document_type: ocrx_pdf::summarize_document_type(&classifications).as_str(),
-                    ocr_model_loaded: false,
-                    backend: &device,
-                    total_pages,
-                    completed_pages,
-                    failed_pages: ocr_service_pages.len() as u32,
-                    truncated_pages: 0,
-                    degenerated_pages: 0,
-                    think_blocks_stripped_total: 0,
-                    warnings: vec![unavailable_reason],
-                    diagnostics: ocr_service_pages
-                        .iter()
-                        .map(|page| PageDiagnostic {
-                            page: *page,
-                            status: "pending".to_owned(),
-                            stage: "model".to_owned(),
-                            error_code: Some("ocr_required_but_unavailable".to_owned()),
-                            message: Some("OCR model preparation failed".to_owned()),
-                            audit: None,
-                            warnings: vec!["ocr_required_but_unavailable".to_owned()],
-                        })
-                        .collect(),
-                    pdf_routing: final_routing_diagnostics_with_pending(
-                        &options.pdf_mode,
-                        &pages,
-                        &classifications,
-                        &fallback_reasons,
-                        &std::collections::HashSet::new(),
-                        &unavailable_pages,
-                    ),
-                    routing_counts: routing_counts_for_mode(
-                        &options.pdf_mode,
-                        &pages,
-                        &classifications,
-                        &fallback_reasons,
-                    ),
-                    image_dir: &output.join("images"),
-                    image_count: 0,
-                    elapsed_ms: started.elapsed().as_millis(),
-                });
-                if let Err(write_error) =
-                    ocrx_output::atomic_write(output.join("result.json"), result_json.as_bytes())
-                {
-                    reporter.error(
-                        &ErrorReport {
-                            code: 5,
-                            kind: "output".to_owned(),
-                            message: "unable to persist partial result".to_owned(),
-                            cause: Some(write_error.to_string()),
-                            suggestion: None,
-                        },
-                        report_format,
-                    );
-                    emit_reporter(reporter);
-                    return 5;
-                }
-                reporter.error(
-                    &ErrorReport {
-                        code: 4,
-                        kind: "model".to_owned(),
-                        message: error,
-                        cause: None,
-                        suggestion: Some("install or repair the selected profile first".to_owned()),
-                    },
-                    report_format,
-                );
-                emit_reporter(reporter);
-                return 4;
-            }
-        }
-    }
-    // Rereview BLK-3: capture this document's telemetry baselines now - the
-    // shared slot is settled (filled by this document or an earlier one), so
-    // `snapshot - baseline` isolates exactly this document's contribution.
-    // PerCall and the slot-filling document see a fresh runtime: zero base.
-    if let ModelSlot::Shared(Some(shared)) = env.model_slot {
-        *telemetry_base.borrow_mut() = shared.runtime.telemetry();
-        *step_profile_base.borrow_mut() = Some(shared.runtime.step_profile());
-    }
-    let mut ocr_compatibility = if execution_plan.initialize_runtime {
-        make_ocr_compatibility(&compatibility, &profile, &device)
-    } else {
-        compatibility.clone()
-    };
-    if execution_plan.initialize_runtime {
-        reporter.progress(
-            &ProgressEvent::for_stage(
-                ProgressStage::Rendering,
-                None,
-                0,
-                ocr_service_pages.len() as u32,
-            ),
-            progress_mode,
-        );
-        reporter.progress(
-            &ProgressEvent::for_stage(
-                ProgressStage::Recognizing,
-                None,
-                0,
-                ocr_service_pages.len() as u32,
-            ),
-            progress_mode,
-        );
-    }
-    // W4.4 GPU report: opt-in so a normal scan does not spawn a background
-    // sampler or write an extra file by default. Enabled only when OCR actually
-    // runs on a GPU backend and OCRX_GPU_REPORT is explicitly set.
-    let gpu_report_enabled = std::env::var_os("OCRX_GPU_REPORT").is_some() && device != "cpu";
-    let mut vram_sampler = if gpu_report_enabled && execution_plan.initialize_runtime {
-        start_vram_sampler()
-    } else {
-        None
-    };
-    // M-10: the reported backend must reflect the runtime that actually ran;
-    // set to "cpu" when the GPU→CPU fallback triggered inside the branch below.
-    let mut runtime_fallback_to_cpu = false;
-    // T1: captured inside the run branches (the service owns the recorder
-    // state); the write gate below suppresses cancelled/failed scans.
-    let mut commit_profile_snapshot = None;
-    let summary = if execution_plan.initialize_runtime {
-        match env.model_slot {
-            ModelSlot::PerCall => {
-                // W4.1: load once with GPU→CPU fallback so a machine whose GPU
-                // is absent or unusable degrades to CPU with a recorded
-                // warning instead of aborting the whole scan with exit 6.
-                let (loaded_model, gpu_fallback_warning, effective_depth) =
-                    match load_runtime_with_fallback(
-                        &model,
-                        &mmproj,
-                        device != "cpu",
-                        options.max_image_tokens.unwrap_or(1024),
-                        options.context_size.unwrap_or(20_480),
-                        env.window_depth,
-                    ) {
-                        Ok(value) => value,
-                        Err(error) => {
-                            reporter.error(
-                                &ErrorReport {
-                                    code: 6,
-                                    kind: "runtime".to_owned(),
-                                    message: "runtime initialization failed".to_owned(),
-                                    cause: Some(error.to_string()),
-                                    suggestion: Some(
-                                        "verify model/runtime compatibility or use --device cpu"
-                                            .to_owned(),
-                                    ),
-                                },
-                                report_format,
-                            );
-                            emit_reporter(reporter);
-                            return 6;
-                        }
-                    };
-                runtime_fallback_to_cpu = gpu_fallback_warning.is_some();
-                if runtime_fallback_to_cpu {
-                    // Review m4: the sampler reads SYSTEM-wide VRAM via
-                    // nvidia-smi, meaningless for a scan that now runs on CPU.
-                    let _peak_discarded = stop_vram_sampler(vram_sampler.take());
-                }
-                let loader = PreloadedLoader {
-                    model: Some(loaded_model),
-                };
-                let mut service = ScanService::with_commit_recorder(
-                    renderer,
-                    loader,
-                    recognizer,
-                    commit_recorder.clone(),
-                );
-                // BLK-2: unify depth + compat key with the ACTUAL runtime
-                // (a GPU->CPU fallback drops the 16 tier to the floor).
-                // Rereview BLK-4: the rebuild is keyed on the FALLBACK itself,
-                // never on whether the depth value changed - on a <12 GiB GPU
-                // the depth is already the floor (8 -> 8), but the inference
-                // device still switched to CPU, so `ocr-device` must follow
-                // or the checkpoint misrecords the device that actually ran.
-                let fallback_to_cpu = gpu_fallback_warning.is_some();
-                if fallback_to_cpu {
-                    compatibility = with_batch_depth(&compatibility, effective_depth);
-                    ocr_compatibility = make_ocr_compatibility(&compatibility, &profile, "cpu");
-                }
-                service.set_window_depth(effective_depth);
-                if fallback_to_cpu {
-                    pdfium_owner_handle
-                        .borrow_mut()
-                        .set_prefetch_depth(u32::try_from(effective_depth * 2).unwrap_or(2));
-                }
-                // Phase-4 W3: install the recognizer's donated encoder.
-                if let Some(encoder) = png_encoder.take() {
-                    service.set_png_encoder(encoder);
-                }
-                // W3.1/R-1 heartbeat wiring: forward the runtime's per-second
-                // generation progress to the reporter so multi-minute CPU
-                // pages show liveness between page boundaries.
-                let total_pages = ocr_service_pages.len() as u32;
-                let mut heartbeat = |page: u32, event: GenerationProgress| {
-                    reporter.progress(
-                        &ProgressEvent::for_stage(
-                            ProgressStage::Recognizing,
-                            Some(page),
-                            event.generated_tokens,
-                            total_pages,
-                        ),
-                        progress_mode,
-                    );
-                };
-                let run_result = service.run_with_checkpoints_heartbeat(
-                    &ocr_service_pages,
-                    output,
-                    &ocr_compatibility,
-                    options.resume,
-                    options.keep_pages,
-                    cancellation,
-                    &mut heartbeat,
-                );
-                commit_profile_snapshot = service.commit_profile();
-                run_result.map(|mut summary| {
-                    if let Some(warning) = gpu_fallback_warning {
-                        summary.warnings.push(warning);
-                    }
-                    summary
-                })
-            }
-            ModelSlot::Shared(slot) => {
-                let shared = slot
-                    .as_mut()
-                    .expect("shared runtime slot filled during resolution");
-                profile.clone_from(&shared.profile);
-                device.clone_from(&shared.device);
-                runtime_fallback_to_cpu = shared.fallback_to_cpu;
-                if runtime_fallback_to_cpu {
-                    let _peak_discarded = stop_vram_sampler(vram_sampler.take());
-                }
-                let loader = PreloadedLoader { model: None };
-                let mut service = ScanService::with_commit_recorder(
-                    renderer,
-                    loader,
-                    recognizer,
-                    commit_recorder.clone(),
-                );
-                // BLK-2: the service follows the shared runtime's ACTUAL
-                // depth (16 on the GPU, the floor after a fallback).
-                service.set_window_depth(shared.window_depth);
-                // Phase-4 W3: install the recognizer's donated encoder.
-                if let Some(encoder) = png_encoder.take() {
-                    service.set_png_encoder(encoder);
-                }
-                let total_pages = ocr_service_pages.len() as u32;
-                let mut heartbeat = |page: u32, event: GenerationProgress| {
-                    reporter.progress(
-                        &ProgressEvent::for_stage(
-                            ProgressStage::Recognizing,
-                            Some(page),
-                            event.generated_tokens,
-                            total_pages,
-                        ),
-                        progress_mode,
-                    );
-                };
-                // X1.2: the shared actor runs this document's windows and
-                // stays alive for the next document (run_pages_with_model).
-                let run_result = service.run_pages_with_model(
-                    &mut shared.runtime,
-                    &ocr_service_pages,
-                    output,
-                    &ocr_compatibility,
-                    options.resume,
-                    options.keep_pages,
-                    cancellation,
-                    &mut heartbeat,
-                );
-                commit_profile_snapshot = service.commit_profile();
-                run_result.map(|mut summary| {
-                    if let Some(warning) = &shared.gpu_warning {
-                        summary.warnings.push(warning.clone());
-                    }
-                    summary
-                })
-            }
-        }
-    } else {
-        Ok(ocrx_output::JobSummary {
-            selected_pages: 0,
-            completed_pages: 0,
-            failed_pages: 0,
-            truncated_pages: 0,
-            degenerated_pages: 0,
-            think_blocks_stripped: 0,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
-            cancelled: false,
-        })
-    };
-    // T0.1/A1: the opt-in step-profile debug channel — at most one JSON file
-    // per scan, and only when OCRX_STEP_PROFILE set it up. Default scans (and
-    // the byte-compare artifact set of every gate) never see this file.
-    if ocrx_runtime::StepProfile::env_enabled()
-        && let Some(profile) = step_profile.borrow().as_ref()
-        && let Err(error) = ocrx_output::atomic_write(
-            output.join("step-profile.json"),
-            profile.to_json().as_bytes(),
-        )
-    {
-        eprintln!("warning: step-profile.json write failed: {error}");
-    }
-    // T1: the commit-path profile — same opt-in switch, one JSON per
-    // document root; suppressed on cancelled/failed scans (v2.1 T1
-    // contract: no partial writes).
-    if ocrx_runtime::StepProfile::env_enabled()
-        && let Ok(summary) = &summary
-        && !summary.cancelled
-        && summary.failed_pages == 0
-        && let Some(commit_profile) = commit_profile_snapshot
-        && let Err(error) = ocrx_output::atomic_write(
-            output.join("commit-profile.json"),
-            commit_profile.to_json().as_bytes(),
-        )
-    {
-        eprintln!("warning: commit-profile.json write failed: {error}");
-    }
-    // P3 (plan §6.2, BLK-2): a poisoned owner aborts the scan fail-loud with
-    // a structured error — completed pages keep their checkpoints for
-    // --resume; the main thread never takes over PDFium rendering.
-    if let Some(cause) = pdfium_owner_handle.borrow().poisoned() {
-        reporter.error(
-            &ErrorReport {
-                code: 3,
-                kind: "pdf".to_owned(),
-                message: "scan aborted: pdfium owner failed".to_owned(),
-                cause: Some(cause),
-                suggestion: Some(
-                    "re-run with --resume to continue from committed checkpoints".to_owned(),
-                ),
-            },
-            report_format,
-        );
-        emit_reporter(reporter);
-        return 3;
-    }
-    let vram_peak_bytes = stop_vram_sampler(vram_sampler);
-    // Rereview BLK-1: any cancellation reaches here - the ScanService path
-    // via `summary.cancelled`, the native path (which never enters the
-    // service) via the token itself. Return 130 before any finalize/commit.
-    if cancellation.is_cancelled() {
-        reporter.error(
-            &ErrorReport {
-                code: 130,
-                kind: "cancelled".to_owned(),
-                message: "scan cancelled by signal".to_owned(),
-                cause: None,
-                suggestion: Some("resume with --resume".to_owned()),
-            },
-            report_format,
-        );
-        emit_reporter(reporter);
-        return 130;
-    }
-    // M-10: the effective backend label — a GPU→CPU fallback means the scan
-    // really ran on CPU even though `--device` requested a GPU backend.
-    let effective_device = if runtime_fallback_to_cpu {
-        "cpu".to_owned()
-    } else {
-        device.clone()
-    };
-    // The GPU resource report is opt-in telemetry: a failure to write it must
-    // not discard a fully completed scan, so the error is recorded as a
-    // warning instead of aborting with exit 6 before result.json/document.md
-    // are committed.
-    let mut gpu_report_warning = None;
-    if gpu_report_enabled && execution_plan.initialize_runtime && device != "cpu" {
-        let scan_telemetry = *telemetry.borrow();
-        let gpu_report = GpuResourceReport {
-            backend: effective_device.clone(),
-            vram_peak_bytes,
-            unified_memory_peak_bytes: None,
-            load_time_ms: Some(scan_telemetry.load_time_ms),
-            first_token_ms: Some(scan_telemetry.first_token_ms),
-            output_tokens: u32::try_from(scan_telemetry.generated_tokens).unwrap_or(u32::MAX),
-            output_tokens_per_sec: scan_telemetry.output_tokens_per_sec(),
-            peak_memory_bytes: None,
-        };
-        if let Err(error) = ocrx_output::atomic_write(
-            output.join("gpu-resource.json"),
-            gpu_report.to_json().as_bytes(),
-        ) {
-            gpu_report_warning = Some(format!("gpu-resource.json write failed: {error}"));
-        }
-    }
-    match summary {
-        Ok(mut summary) => {
-            // Reused (SkipCommitted) pages never re-enter the scan service, so
-            // their incomplete state must be merged here before any success
-            // decision is made (BLK-2). Pages reprocessed this run are not in
-            // the skip set, so counting them here cannot double-count.
-            fold_resume_incomplete_checkpoints(&resume_incomplete_checkpoints, &mut summary);
-            if let Some(warning) = gpu_report_warning {
-                eprintln!("warning: {warning}");
-                summary.warnings.push(warning);
-            }
-            let mut terminal_pending_pages = resume_pending_pages.clone();
-            for diagnostic in &summary.diagnostics {
-                if diagnostic.status == "completed"
-                    || diagnostic.status == "partial"
-                    || diagnostic.status == "failed"
-                {
-                    terminal_pending_pages.remove(&diagnostic.page);
-                }
-            }
-            if summary.failed_pages == 0
-                && summary.truncated_pages == 0
-                && summary.degenerated_pages == 0
-            {
-                for page in &ocr_service_pages {
-                    terminal_pending_pages.remove(page);
-                }
-            }
-            {
-                let mut all_pages = native_markdown;
-                all_pages.extend(empty_markdown);
-                if !ocr_service_pages.is_empty() {
-                    match collect_verified_page_markdowns(
-                        output,
-                        &ocr_service_pages,
-                        &ocr_compatibility,
-                    ) {
-                        Ok(mut ocr_pages) => all_pages.append(&mut ocr_pages),
-                        Err(error) => {
-                            reporter.error(
-                                &ErrorReport {
-                                    code: 5,
-                                    kind: "output".to_owned(),
-                                    message: "unable to collect page artifacts".to_owned(),
-                                    cause: Some(error.to_string()),
-                                    suggestion: Some("inspect the output directory".to_owned()),
-                                },
-                                report_format,
-                            );
-                            emit_reporter(reporter);
-                            return 5;
-                        }
-                    }
-                }
-                if all_pages.is_empty() {
-                    let document = output.join("document.md");
-                    if document.is_file() {
-                        if let Err(error) = std::fs::remove_file(&document) {
-                            reporter.error(
-                                &ErrorReport {
-                                    code: 5,
-                                    kind: "output".to_owned(),
-                                    message: "unable to remove stale document".to_owned(),
-                                    cause: Some(error.to_string()),
-                                    suggestion: Some("inspect the output directory".to_owned()),
-                                },
-                                report_format,
-                            );
-                            emit_reporter(reporter);
-                            return 5;
-                        }
-                    }
-                } else if let Err(error) = finalize_document(&output, all_pages) {
-                    reporter.error(
-                        &ErrorReport {
-                            code: 5,
-                            kind: "output".to_owned(),
-                            message: "unable to finalize document".to_owned(),
-                            cause: Some(error.to_string()),
-                            suggestion: Some("inspect the output directory".to_owned()),
-                        },
-                        report_format,
-                    );
-                    emit_reporter(reporter);
-                    return 5;
-                }
-            }
-            let native_completed_pages = native_phase.committed_native_pages.len() as u32;
-            let total_pages = pages.len() as u32;
-            let completed_pages = native_completed_pages
-                + empty_pages_committed as u32
-                + resumed_completed_count
-                + summary.completed_pages;
-            let report = ResultReport {
-                job_id: "scan".to_owned(),
-                status: if summary.failed_pages == 0
-                    && summary.truncated_pages == 0
-                    && summary.degenerated_pages == 0
-                {
-                    ocrx_output::ResultStatus::Success
-                } else {
-                    ocrx_output::ResultStatus::Partial
-                },
-                total_pages,
-                completed_pages,
-                failed_pages: summary.failed_pages,
-                output_dir: output.display().to_string(),
-            };
-            let fallback_reasons = native_phase
-                .fallback_pages
-                .iter()
-                .filter_map(|page| {
-                    page.fallback_reason
-                        .as_deref()
-                        .map(|reason| (page.page, pdf_reason_code_from_str(reason)))
-                })
-                .collect::<Vec<_>>();
-            let mut fallback_reasons = fallback_reasons;
-            for queued in &final_ocr_queue {
-                if let Some(reason) = queued.fallback_reason.as_deref()
-                    && !fallback_reasons
-                        .iter()
-                        .any(|(page, _)| *page == queued.page)
-                {
-                    fallback_reasons.push((queued.page, pdf_reason_code_from_str(reason)));
-                }
-            }
-            if let Err(error) = write_routing_checkpoint_sidecars_with_states(
-                output,
-                &options.pdf_mode,
-                &pages,
-                &classifications,
-                &fallback_reasons,
-                &terminal_pending_pages,
-                &std::collections::HashSet::new(),
-            ) {
-                reporter.error(
-                    &ErrorReport {
-                        code: 5,
-                        kind: "output".to_owned(),
-                        message: "routing checkpoint commit failed".to_owned(),
-                        cause: Some(error.to_string()),
-                        suggestion: None,
-                    },
-                    report_format,
-                );
-                emit_reporter(reporter);
-                return 5;
-            }
-            let markdown_output = output
-                .join("document.md")
-                .is_file()
-                .then(|| output.join("document.md"));
-            let result_json = serialize_scan_result(&ScanResultFields {
-                status: if summary.failed_pages == 0
-                    && summary.truncated_pages == 0
-                    && summary.degenerated_pages == 0
-                {
-                    "success"
-                } else {
-                    "partial"
-                },
-                input: &canonical_input,
-                markdown_path: markdown_output.as_deref(),
-                output_dir: output,
-                profile: &profile,
-                required_quality_tier: &options.quality_tier,
-                document_type: ocrx_pdf::summarize_document_type(&classifications).as_str(),
-                ocr_model_loaded: execution_plan.initialize_runtime,
-                backend: &effective_device,
-                total_pages,
-                completed_pages,
-                failed_pages: summary.failed_pages,
-                truncated_pages: summary.truncated_pages,
-                degenerated_pages: summary.degenerated_pages,
-                think_blocks_stripped_total: summary.think_blocks_stripped,
-                warnings: summary.warnings.clone(),
-                diagnostics: summary.diagnostics.clone(),
-                pdf_routing: final_routing_diagnostics_with_pending(
-                    &options.pdf_mode,
-                    &pages,
-                    &classifications,
-                    &fallback_reasons,
-                    &terminal_pending_pages,
-                    &std::collections::HashSet::new(),
-                ),
-                routing_counts: routing_counts_for_mode(
-                    &options.pdf_mode,
-                    &pages,
-                    &classifications,
-                    &fallback_reasons,
-                ),
-                image_dir: &output.join("images"),
-                image_count: std::fs::read_dir(output.join("images"))
-                    .map(|entries| {
-                        entries
-                            .filter_map(Result::ok)
-                            .filter(|entry| {
-                                entry.path().is_file()
-                                    && entry.path().extension().is_some_and(|ext| ext == "png")
-                                    && entry.file_name().to_string_lossy().starts_with("page-")
-                                    && entry.file_name().to_string_lossy().contains("-figure-")
-                            })
-                            .count()
-                    })
-                    .unwrap_or(0),
-                elapsed_ms: started.elapsed().as_millis(),
-            });
-            if let Err(error) =
-                ocrx_output::atomic_write(output.join("result.json"), result_json.as_bytes())
-            {
-                reporter.error(
-                    &ErrorReport {
-                        code: 5,
-                        kind: "output".to_owned(),
-                        message: "result.json commit failed".to_owned(),
-                        cause: Some(error.to_string()),
-                        suggestion: None,
-                    },
-                    report_format,
-                );
-                emit_reporter(reporter);
-                return 5;
-            }
-            if report_format == ReportFormat::Json {
-                // BLK-4: orchestrated invocations suppress per-document
-                // stdout results; the aggregate summary is the stdout item.
-                if stdout_results {
-                    reporter.stdout.push_str(&result_json);
-                    reporter.stdout.push('\n');
-                }
-            } else {
-                reporter.result(&report, report_format);
-                let counts = routing_counts_for_mode(
-                    &options.pdf_mode,
-                    &pages,
-                    &classifications,
-                    &fallback_reasons,
-                );
-                reporter.stdout.push_str(&format_routing_summary(
-                    ocrx_pdf::summarize_document_type(&classifications),
-                    counts,
-                ));
-                if let Some(line) = incomplete_pages_warning(&summary, options.max_output_tokens) {
-                    reporter.stdout.push_str(&line);
-                    reporter.stdout.push('\n');
-                }
-            }
-            reporter.progress(
-                &ProgressEvent::for_stage(
-                    ProgressStage::Merging,
-                    None,
-                    summary.completed_pages,
-                    summary.selected_pages,
-                ),
-                progress_mode,
-            );
-            emit_reporter(reporter);
-            if summary.failed_pages == 0
-                && summary.truncated_pages == 0
-                && summary.degenerated_pages == 0
-            {
-                0
-            } else {
-                10
-            }
-        }
-        Err(error) => {
-            let error_kind = match classify_pdf_error(&error.to_string()) {
-                PdfErrorKind::NonPdf => "pdf_non_pdf",
-                PdfErrorKind::Corrupt => "pdf_corrupt",
-                PdfErrorKind::Encrypted => "pdf_encrypted",
-                PdfErrorKind::DynamicLibrary => "pdf_dynamic_library",
-                PdfErrorKind::Unknown => "runtime",
-            };
-            reporter.error(
-                &ErrorReport {
-                    code: 6,
-                    kind: error_kind.to_owned(),
-                    message: "scan initialization or execution failed".to_owned(),
-                    cause: Some(error.to_string()),
-                    suggestion: Some("check doctor output and runtime assets".to_owned()),
-                },
-                report_format,
-            );
-            emit_reporter(reporter);
-            6
-        }
-    }
-}
-
-/// Flushes and resets a borrowed reporter (scan_document reports through
-/// `&mut Reporter`; each failure/success path prints what accumulated).
 fn emit_reporter(reporter: &mut Reporter) {
     let drained = std::mem::take(reporter);
     // `mem::take` resets to `Reporter::default()`, which would silently drop
@@ -4161,57 +1197,486 @@ fn emit_reporter(reporter: &mut Reporter) {
 /// pre-orchestrator `run_scan` - the output directory resolves up front, the
 /// owner spawns at the historical point, the runtime loads per invocation,
 /// and the document's exit code becomes the process exit code.
-fn run_scan(options: ScanOptions) -> ! {
-    // Install the Ctrl+C handler before any slow phase (PDF analysis, native
-    // extraction, runtime load), so "exit 130 -> resume with --resume" covers
-    // the whole scan window, not only the OCR loop (MINOR 3).
+/// Maps CLI scan options onto the scan application (T074/T075): builds the
+/// PDF/render ports over PdfiumOwner, drives the compose-root service, and
+/// serializes each outcome into the frozen result.json shape. Exit codes:
+/// cancel 130 > document failure 3 > partial 10 > 0; multi-input adds
+/// `scan-summary.json` and (JSON mode) exactly one stdout aggregate.
+#[allow(clippy::too_many_lines)]
+fn run_scan_via_application(options: ScanOptions) -> ! {
+    let started = std::time::Instant::now();
+    let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
+    let report_format = match options.report.as_str() {
+        "json" => ReportFormat::Json,
+        _ => ReportFormat::Text,
+    };
+    let multi = options.inputs.len() > 1
+        || Path::new(options.inputs.first().unwrap_or(&String::new())).is_dir();
+    // BLK-4: orchestrated invocations keep stdout to exactly one aggregate
+    // object - per-document errors are logs on stderr. Single input keeps
+    // the historical stdout error contract.
+    let mut reporter = Reporter {
+        json_errors_on_stderr: multi,
+        ..Reporter::default()
+    };
+    // Plain single-file scans skip input resolution entirely: their
+    // historical missing-file behavior is the page-count failure (exit 3),
+    // produced by the app's page-count gate (kind=input).
+    let resolved_inputs = if multi {
+        match resolve_scan_inputs(&options.inputs) {
+            Ok(inputs) => inputs,
+            Err(error) => {
+                eprintln!("error: {error}");
+                std::process::exit(2);
+            }
+        }
+    } else {
+        options.inputs.iter().map(PathBuf::from).collect()
+    };
+    if multi && options.output_dir.is_none() {
+        eprintln!("error: scanning multiple inputs requires --output-dir <output-root>");
+        std::process::exit(2);
+    }
+    // Multi-input: the relative output root resolves against the current
+    // directory up front (the X1 golden uses a relative spelling).
+    let output_root = options.output_dir.clone().map(|spelling| {
+        let root = PathBuf::from(spelling);
+        if root.is_absolute() {
+            root
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&root))
+                .unwrap_or(root)
+        }
+    });
+    let output_for = |input: &Path| -> PathBuf {
+        if multi {
+            output_dir_for_doc(output_root.as_deref().unwrap_or(Path::new(".")), input)
+        } else {
+            let input_str = input.to_string_lossy().into_owned();
+            resolve_output_dir(&input_str, options.output_dir.as_deref()).unwrap_or_else(|error| {
+                eprintln!("error: {error}");
+                std::process::exit(2);
+            })
+        }
+    };
+    // Ctrl+C: first request graceful, second forced 130 (frozen contract).
     let cancellation = CancellationToken::new();
     install_sigint_handler(cancellation.clone());
-    let report_format = if options.report == "json" {
-        ReportFormat::Json
-    } else {
-        ReportFormat::Text
-    };
-    let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
-    let mut reporter = Reporter::default();
-    let mut model_slot = ModelSlot::PerCall;
-    let input = PathBuf::from(&options.inputs[0]);
-    let output = match resolve_output_dir(&options.inputs[0], options.output_dir.as_deref()) {
-        Ok(path) => path,
-        Err(error) => {
+    // Frozen preflight (§6.3 step 1): an explicit unavailable device fails
+    // diagnosably (exit 6 kind runtime) even for native-only documents.
+    if options.device != "auto" {
+        let composed_gate = compose::compose(None);
+        if let Err(device_error) = composed_gate.inference.devices().select(&options.device) {
             reporter.error(
                 &ErrorReport {
-                    code: 2,
-                    kind: "usage".to_owned(),
-                    message: "output directory resolution failed".to_owned(),
-                    cause: Some(error),
-                    suggestion: Some("pass an explicit --output-dir".to_owned()),
+                    code: 6,
+                    kind: "runtime".to_owned(),
+                    message: "requested device is unavailable".to_owned(),
+                    cause: Some(format!("{device_error:?}")),
+                    suggestion: Some(
+                        "run `ocrx doctor --report json` to see available backends".to_owned(),
+                    ),
                 },
                 report_format,
             );
-            print_reporter(reporter);
-            std::process::exit(2);
+            emit_reporter(&mut reporter);
+            std::process::exit(6);
         }
-    };
-    let code = scan_document(
-        &mut DocScanEnv {
-            options: &options,
-            report_format,
-            progress_mode,
-            cancellation: &cancellation,
-            owner: None,
-            model_slot: &mut model_slot,
-            stdout_results: true,
-            window_depth: resolve_window_depth(&options.device),
+    }
+    // Output policy: the output tree may not overlap the input, the model
+    // cache, or the working directory (exit 9 kind output).
+    let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(ocrx_inference::default_cache_root);
+    let working_directory = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for input in &resolved_inputs {
+        let output = output_for(input);
+        if let Ok(canonical_input) = input.canonicalize() {
+            // W2.3/m2: the protected cache paths are the MODEL subtrees
+            // (`<root>/ocrx/models`, `<root>/ovisocr2`), not the whole cache
+            // root — on Windows the default root is %LOCALAPPDATA%, which
+            // also contains %TEMP%; protecting the root would outlaw every
+            // temp-dir output. An output AT the cache root is still refused
+            // (ancestor of the protected subtree).
+            let protected_cache_roots = [
+                cache_root.join("ocrx").join("models"),
+                cache_root.join("ovisocr2"),
+            ];
+            let protected = [
+                canonical_input.as_path(),
+                protected_cache_roots[0].as_path(),
+                protected_cache_roots[1].as_path(),
+            ];
+            if let Err(error) = validate_scan_output_policy(
+                &canonical_input,
+                &output,
+                &protected,
+                &working_directory,
+            ) {
+                reporter.error(
+                    &ErrorReport {
+                        code: 9,
+                        kind: "output".to_owned(),
+                        message: "output directory refused by the output policy".to_owned(),
+                        cause: Some(error),
+                        suggestion: Some("choose a dedicated output directory".to_owned()),
+                    },
+                    report_format,
+                );
+                emit_reporter(&mut reporter);
+                std::process::exit(9);
+            }
+        }
+    }
+    // Multi-input aggregate policy (upstream hardening, main 4376 hunk): the
+    // aggregate ROOT is validated against every input BEFORE the owner or any
+    // document starts — child-directory checks cannot protect
+    // scan-summary.json on failure paths — and an existing summary requires
+    // an explicit --resume or --overwrite.
+    if multi && let Some(root) = &output_root {
+        let policy_error = (|| -> Option<String> {
+            for input in &resolved_inputs {
+                if let Err(error) = validate_scan_output_policy(
+                    input,
+                    root,
+                    &[
+                        cache_root.join("ocrx").join("models").as_path(),
+                        cache_root.join("ovisocr2").as_path(),
+                    ],
+                    &working_directory,
+                ) {
+                    return Some(error);
+                }
+            }
+            if root.join("scan-summary.json").exists() && !options.overwrite && !options.resume {
+                return Some(
+                    "scan-summary.json already exists; use --resume or --overwrite".to_owned(),
+                );
+            }
+            None
+        })();
+        if let Some(error) = policy_error {
+            reporter.error(
+                &ErrorReport {
+                    code: 9,
+                    kind: "output".to_owned(),
+                    message: "output directory refused by the output policy".to_owned(),
+                    cause: Some(error),
+                    suggestion: Some(
+                        "choose a dedicated output directory; use --resume or --overwrite for existing results"
+                            .to_owned(),
+                    ),
+                },
+                report_format,
+            );
+            emit_reporter(&mut reporter);
+            std::process::exit(9);
+        }
+    }
+    let dpi = u16::try_from(options.dpi.unwrap_or(300)).unwrap_or(300);
+    let window_depth = resolve_window_depth(&options.device);
+    let pdfium_dir = pdfium_library_from_environment();
+    let mut composed = compose::compose(None);
+    let app_options = ocrx_scan::DocumentOptions {
+        pdf_mode: options.pdf_mode.clone(),
+        quality_tier: options.quality_tier.clone(),
+        dpi: options.dpi.unwrap_or(300),
+        max_image_tokens: options.max_image_tokens.unwrap_or(1024),
+        max_output_tokens: options.max_output_tokens.unwrap_or(16_384),
+        context_size: options.context_size.unwrap_or(20_480),
+        resume: options.resume,
+        keep_pages: options.keep_pages,
+        column_split_retry: options.column_split_retry,
+        pages: options.pages.clone(),
+        requested_profile: options.profile.clone(),
+        requested_device: options.device.clone(),
+        install: ocrx_inference_api::InstallPolicy {
+            offline: options.offline,
+            non_interactive: options.non_interactive,
+            license_accepted: true,
         },
-        &input,
-        &output,
-        &mut reporter,
+    };
+    // One owner for the whole invocation (X1): the first input spawns it,
+    // later documents SwitchDocument inside the port.
+    let first_input = resolved_inputs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("missing.pdf"));
+    let mut pdf_access = ocrx_scan::render::pdfium_owner::OwnerPdfAccess::spawn(
+        pdfium_dir.clone(),
+        first_input,
+        RenderOptions { dpi },
+        options.password.clone(),
+        u32::try_from(window_depth * 2).unwrap_or(2),
     );
-    std::process::exit(code);
+    let commit_recorder = ocrx_output::commit_profile::CommitRecorder::new_gated();
+    let renderer = pdf_access.renderer(commit_recorder.clone());
+    let mut renderer_box: Box<dyn ocrx_scan::window::PageRenderer> = Box::new(renderer);
+    let events = std::cell::RefCell::new(Vec::new());
+    let outcome = composed.scan.run(
+        &resolved_inputs,
+        &output_for,
+        &app_options,
+        &mut pdf_access,
+        renderer_box.as_mut(),
+        &mut composed.inference,
+        &commit_recorder,
+        &cancellation,
+        &mut |event| events.borrow_mut().push(event),
+    );
+    // Emit buffered events through the Reporter contract. Multi-doc
+    // boundary lines land on stderr (X1 golden "[doc i/n input]").
+    let mut doc_index = 0_usize;
+    for event in events.into_inner() {
+        match event {
+            ocrx_scan::ScanEvent::DocumentStarted { input, .. } => {
+                doc_index += 1;
+                if multi {
+                    eprintln!(
+                        "[doc {doc_index}/{} {}]",
+                        resolved_inputs.len(),
+                        input.display()
+                    );
+                }
+            }
+            ocrx_scan::ScanEvent::Analyzing { completed, total } => {
+                reporter.progress(
+                    &ProgressEvent::for_stage(ProgressStage::Analyzing, None, completed, total),
+                    progress_mode,
+                );
+            }
+            ocrx_scan::ScanEvent::PageProgress {
+                page,
+                generated_tokens,
+                elapsed_seconds,
+            } => {
+                reporter.progress(
+                    &ProgressEvent::for_stage(
+                        ProgressStage::Recognizing,
+                        Some(page),
+                        generated_tokens,
+                        generated_tokens,
+                    ),
+                    progress_mode,
+                );
+                let _ = elapsed_seconds;
+            }
+            ocrx_scan::ScanEvent::DocumentFinished { .. } => {}
+        }
+    }
+    // X1.2 owner contract (fail-loud): a poisoned owner — missing library,
+    // terminated or timed-out worker — aborts the whole invocation with the
+    // structured "pdfium owner failed" error, it never degrades into
+    // per-document skips.
+    if let Some(cause) = pdf_access.poisoned() {
+        reporter.error(
+            &ErrorReport {
+                code: 3,
+                kind: "pdf".to_owned(),
+                message: "scan aborted: pdfium owner failed".to_owned(),
+                cause: Some(cause),
+                suggestion: Some(
+                    "check the PDFium library location (OCRX_PDFIUM_LIBRARY or the bundled copy)"
+                        .to_owned(),
+                ),
+            },
+            report_format,
+        );
+        emit_reporter(&mut reporter);
+        std::process::exit(3);
+    }
+    let Ok(outcome) = outcome else {
+        // Whole-invocation infrastructure failure (rare: I/O abort).
+        eprintln!("error: scan invocation failed");
+        std::process::exit(3);
+    };
+    let cancelled = outcome.cancelled;
+    let mut doc_results: Vec<(PathBuf, i32)> = Vec::new();
+    for document in &outcome.documents {
+        if let Some(failure) = &document.failure {
+            // Document-level failure: an Err VALUE (the orchestrator skips
+            // it and keeps going, X1.2).
+            reporter.error(
+                &ErrorReport {
+                    code: failure.code,
+                    kind: failure.kind.clone(),
+                    message: failure.message.clone(),
+                    cause: failure.cause.clone(),
+                    suggestion: None,
+                },
+                report_format,
+            );
+            doc_results.push((document.input.clone(), i32::from(failure.code)));
+            continue;
+        }
+        let result_json = serialize_scan_result(&ScanResultFields {
+            status: if document.summary.failed_pages == 0
+                && document.summary.truncated_pages == 0
+                && document.summary.degenerated_pages == 0
+            {
+                "success"
+            } else {
+                "partial"
+            },
+            input: &document.input,
+            markdown_path: document.markdown_path.as_deref(),
+            output_dir: &document.output_dir,
+            profile: &options.profile,
+            required_quality_tier: &options.quality_tier,
+            document_type: &document.document_type,
+            ocr_model_loaded: document.identity.is_some(),
+            backend: document.backend.as_deref().unwrap_or("cpu"),
+            total_pages: document.summary.selected_pages,
+            completed_pages: document.summary.completed_pages,
+            failed_pages: document.summary.failed_pages,
+            truncated_pages: document.summary.truncated_pages,
+            degenerated_pages: document.summary.degenerated_pages,
+            think_blocks_stripped_total: document.summary.think_blocks_stripped,
+            warnings: document.summary.warnings.clone(),
+            diagnostics: document.summary.diagnostics.clone(),
+            pdf_routing: document.pdf_routing.clone(),
+            routing_counts: app_counts(&document.routing_counts),
+            image_dir: &document.output_dir.join("images"),
+            image_count: document.images_count,
+            elapsed_ms: document.elapsed_ms,
+        });
+        if let Err(error) = ocrx_output::atomic_write(
+            document.output_dir.join("result.json"),
+            result_json.as_bytes(),
+        ) {
+            reporter.error(
+                &ErrorReport {
+                    code: 5,
+                    kind: "output".to_owned(),
+                    message: "result.json commit failed".to_owned(),
+                    cause: Some(error.to_string()),
+                    suggestion: None,
+                },
+                report_format,
+            );
+            doc_results.push((document.input.clone(), 5));
+            continue;
+        }
+        if report_format == ReportFormat::Json {
+            if !multi {
+                reporter.stdout.push_str(&result_json);
+                reporter.stdout.push('\n');
+            }
+        } else {
+            reporter.stdout.push_str(&format!(
+                "document_type={} native_text={} ocr={} empty={} fallback={}\n",
+                document.document_type,
+                document.routing_counts.native_text,
+                document.routing_counts.ocr,
+                document.routing_counts.empty,
+                document.routing_counts.fallback
+            ));
+        }
+        // BLK-7: the frozen per-document mapping — page-level failures are
+        // PARTIAL (10, real_scan_fault_injection contract), not document
+        // failures (3). Document-level failures keep their own code.
+        let exit = document_exit_code(document, cancelled);
+        doc_results.push((document.input.clone(), exit));
+    }
+    // Multi-input: scan-summary.json + aggregate exit (X1.3/X1.4).
+    if multi {
+        let documents: Vec<ScanSummaryDocument> = doc_results
+            .iter()
+            .map(|(input, exit)| ScanSummaryDocument {
+                input: input.clone(),
+                output_dir: output_for(input),
+                status: match *exit {
+                    0 => "success",
+                    130 => "cancelled",
+                    code if (3..10).contains(&code) => "failed",
+                    _ => "partial",
+                },
+                exit_code: *exit,
+                elapsed_ms: 0,
+            })
+            .collect();
+        let summary = scan_summary_json(
+            &resolved_inputs,
+            output_root.as_deref().unwrap_or(Path::new(".")),
+            &documents,
+            started.elapsed().as_millis(),
+        );
+        if let Some(root) = &output_root {
+            if let Err(error) =
+                ocrx_output::atomic_write(root.join("scan-summary.json"), summary.as_bytes())
+            {
+                eprintln!("warning: scan-summary.json commit failed: {error}");
+            }
+            if report_format == ReportFormat::Json {
+                reporter.stdout.push_str(&summary);
+                reporter.stdout.push('\n');
+            }
+        }
+    }
+    emit_reporter(&mut reporter);
+    let codes: Vec<i32> = doc_results.iter().map(|(_, exit)| *exit).collect();
+    std::process::exit(final_scan_exit(cancelled, multi, &codes));
 }
 
-/// One orchestrated document's aggregate entry for `scan-summary.json`.
+/// Final scan exit (RBLK-3): cancellation dominates everything — including
+/// a cancel before the first document started, where empty codes must not
+/// fold into 0. Otherwise multi-input follows the X1.4 aggregation ladder
+/// (130 > document failure 3 > partial 10 > 0); single input keeps the
+/// document's own structured code (usage 2 must not collapse into 3).
+#[must_use]
+fn final_scan_exit(cancelled: bool, multi: bool, codes: &[i32]) -> i32 {
+    if cancelled {
+        return 130;
+    }
+    if multi {
+        return aggregate_scan_exit(codes);
+    }
+    codes.first().copied().unwrap_or(0)
+}
+
+/// Frozen per-document exit mapping (BLK-7): cancellation dominates
+/// everything (RBLK-3 — a document failure racing a global cancel still
+/// reports 130); page-level failures are partial (10); document-level
+/// failures carry their structured code; a clean document is 0.
+#[must_use]
+fn document_exit_code(document: &ocrx_scan::DocumentOutcome, cancelled: bool) -> i32 {
+    if cancelled || document.summary.cancelled {
+        return 130;
+    }
+    if let Some(failure) = &document.failure {
+        return i32::from(failure.code);
+    }
+    if document.summary.failed_pages > 0
+        || document.summary.truncated_pages > 0
+        || document.summary.degenerated_pages > 0
+    {
+        return 10;
+    }
+    0
+}
+
+/// Bridge the scan crate's counter type onto the legacy report shape.
+/// Frozen routing counters for result.json (moved from the deleted legacy
+/// helper block; the scan crate's `RoutingCounts` remains the source).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RoutingCounts {
+    pub native_text: usize,
+    pub ocr: usize,
+    pub empty: usize,
+    pub fallback: usize,
+}
+
+fn app_counts(counts: &ocrx_scan::app::RoutingCounts) -> RoutingCounts {
+    RoutingCounts {
+        native_text: usize::try_from(counts.native_text).unwrap_or(usize::MAX),
+        ocr: usize::try_from(counts.ocr).unwrap_or(usize::MAX),
+        empty: usize::try_from(counts.empty).unwrap_or(usize::MAX),
+        fallback: usize::try_from(counts.fallback).unwrap_or(usize::MAX),
+    }
+}
+
 struct ScanSummaryDocument {
     input: PathBuf,
     output_dir: PathBuf,
@@ -4289,316 +1754,6 @@ fn scan_summary_json(
 /// invocation, one inference actor reused across documents, document-level
 /// FIFO with windows never crossing documents, exit aggregation, and a
 /// `scan-summary.json` next to the per-document directories.
-fn run_scan_multi(options: ScanOptions) -> ! {
-    let started = Instant::now();
-    let cancellation = CancellationToken::new();
-    install_sigint_handler(cancellation.clone());
-    let report_format = if options.report == "json" {
-        ReportFormat::Json
-    } else {
-        ReportFormat::Text
-    };
-    let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
-    // BLK-4: per-document errors are logs here; stdout must stay exactly one
-    // aggregate JSON object under `--report json`.
-    let mut reporter = Reporter {
-        json_errors_on_stderr: true,
-        ..Reporter::default()
-    };
-    if options.output_dir.is_none() {
-        // parse_scan_args already enforces this for multi-input; kept as
-        // defense in depth for direct callers.
-        reporter.error(
-            &ErrorReport {
-                code: 2,
-                kind: "usage".to_owned(),
-                message: "scanning multiple inputs requires --output-dir <output-root>".to_owned(),
-                cause: None,
-                suggestion: Some("pass an explicit --output-dir".to_owned()),
-            },
-            report_format,
-        );
-        print_reporter(reporter);
-        std::process::exit(2);
-    }
-    let inputs = match resolve_scan_inputs(&options.inputs) {
-        Ok(inputs) if inputs.len() > 1 => inputs,
-        Ok(_) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 2,
-                    kind: "usage".to_owned(),
-                    message: "the orchestrated scan requires more than one resolved input"
-                        .to_owned(),
-                    cause: None,
-                    suggestion: Some("scan a single input without --output-dir".to_owned()),
-                },
-                report_format,
-            );
-            print_reporter(reporter);
-            std::process::exit(2);
-        }
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 2,
-                    kind: "usage".to_owned(),
-                    message: "input resolution failed".to_owned(),
-                    cause: Some(error),
-                    suggestion: Some(
-                        "check the input paths (files or directories of PDFs)".to_owned(),
-                    ),
-                },
-                report_format,
-            );
-            print_reporter(reporter);
-            std::process::exit(2);
-        }
-    };
-    // BLK-3: the per-document output policy requires absolute roots (the
-    // single-input path gets that from `resolve_output_dir`); resolve the
-    // orchestrator's root through the same logic so a relative `--output-dir`
-    // behaves identically for every document and for scan-summary.json.
-    let output_root = match resolve_output_dir(&options.inputs[0], options.output_dir.as_deref()) {
-        Ok(path) => path,
-        Err(error) => {
-            reporter.error(
-                &ErrorReport {
-                    code: 2,
-                    kind: "usage".to_owned(),
-                    message: "output directory resolution failed".to_owned(),
-                    cause: Some(error),
-                    suggestion: Some("pass an explicit --output-dir".to_owned()),
-                },
-                report_format,
-            );
-            print_reporter(reporter);
-            std::process::exit(2);
-        }
-    };
-    // Validate the aggregate root before starting the owner or any document.
-    // Child-directory checks cannot protect scan-summary.json on failure paths.
-    let output_policy = (|| -> Result<(), String> {
-        let working_directory = std::env::current_dir().map_err(|error| error.to_string())?;
-        let cache = std::env::var_os("OCRX_MODEL_CACHE")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(ocrx_models::default_cache_root);
-        let protected = [cache.join("ocrx/models"), cache.join("ovisocr2")];
-        for input in &inputs {
-            validate_scan_output_policy(
-                input,
-                &output_root,
-                &[protected[0].as_path(), protected[1].as_path()],
-                &working_directory,
-            )?;
-        }
-        if output_root.join("scan-summary.json").exists() && !options.overwrite && !options.resume {
-            return Err("scan-summary.json already exists; use --resume or --overwrite".to_owned());
-        }
-        Ok(())
-    })();
-    if let Err(error) = output_policy {
-        reporter.error(
-            &ErrorReport {
-                code: 9,
-                kind: "output".to_owned(),
-                message: "output directory refused by the output policy".to_owned(),
-                cause: Some(error),
-                suggestion: Some("choose a dedicated output directory; use --resume or --overwrite for existing results".to_owned()),
-            },
-            report_format,
-        );
-        print_reporter(reporter);
-        std::process::exit(9);
-    }
-    let dpi: u16 = options.dpi.unwrap_or(300).try_into().unwrap_or(300);
-    let library = pdfium_library_from_environment();
-    // X1 protocol ①: ONE owner for the whole invocation, spawned on the
-    // first input; documents switch through the protocol at scheduling
-    // boundaries. A per-document spawn is structurally impossible here.
-    let window_depth = resolve_window_depth(&options.device);
-    let owner = Rc::new(RefCell::new(pdfium_owner::PdfiumOwnerHandle::spawn(
-        library,
-        inputs[0].clone(),
-        RenderOptions { dpi },
-        options.password.clone(),
-        u32::try_from(window_depth * 2).unwrap_or(2),
-    )));
-
-    let mut model_slot = ModelSlot::Shared(None);
-    let mut documents: Vec<ScanSummaryDocument> = Vec::new();
-    let mut cancelled = false;
-    // Rereview BLK-1 test seam: deterministic cancellation injection at a
-    // document boundary (same pattern as the OCRX_E2E_INJECT_* seams).
-    let cancel_after_documents = std::env::var("OCRX_E2E_CANCEL_AFTER_DOCUMENTS")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok());
-    for (index, input) in inputs.iter().enumerate() {
-        // Rereview BLK-1: cancel = whole invocation - stop at the boundary,
-        // keep the already-committed documents, exit 130.
-        if cancellation.is_cancelled() {
-            cancelled = true;
-            break;
-        }
-        let canonical = std::fs::canonicalize(input).unwrap_or_else(|_| input.clone());
-        // BLK-4: document boundary lines are logs, not machine output - they
-        // belong on stderr so a `--report json` stdout stays parseable.
-        reporter.stderr.push_str(&format!(
-            "[doc {}/{} {}]\n",
-            index + 1,
-            inputs.len(),
-            input.display()
-        ));
-        let doc_output = output_dir_for_doc(&output_root, &canonical);
-        // X1 protocol ③/④: the switch happens at the document scheduling
-        // boundary; an Err VALUE skips this document and the invocation
-        // continues; owner poison is the fail-loud invocation abort.
-        let switch_result = owner.borrow_mut().switch_document(&canonical);
-        if let Err(error) = switch_result {
-            if let Some(poison) = owner.borrow().poisoned() {
-                reporter.error(
-                    &ErrorReport {
-                        code: 3,
-                        kind: "pdf".to_owned(),
-                        message: "scan aborted: pdfium owner failed".to_owned(),
-                        cause: Some(poison),
-                        suggestion: Some(
-                            "re-run with --resume to continue from committed checkpoints"
-                                .to_owned(),
-                        ),
-                    },
-                    report_format,
-                );
-                print_reporter(reporter);
-                std::process::exit(3);
-            }
-            eprintln!(
-                "warning: skipping unreadable document {}: {error}",
-                input.display()
-            );
-            documents.push(ScanSummaryDocument {
-                input: canonical,
-                output_dir: doc_output,
-                status: "skipped",
-                exit_code: 3,
-                elapsed_ms: 0,
-            });
-            continue;
-        }
-        let doc_started = Instant::now();
-        let code = scan_document(
-            &mut DocScanEnv {
-                options: &options,
-                report_format,
-                progress_mode,
-                cancellation: &cancellation,
-                owner: Some(&owner),
-                model_slot: &mut model_slot,
-                stdout_results: false,
-                window_depth,
-            },
-            &canonical,
-            &doc_output,
-            &mut reporter,
-        );
-        let doc_elapsed_ms = doc_started.elapsed().as_millis();
-        if code == 130 {
-            cancelled = true;
-            documents.push(ScanSummaryDocument {
-                input: canonical,
-                output_dir: doc_output,
-                status: "cancelled",
-                exit_code: code,
-                elapsed_ms: doc_elapsed_ms,
-            });
-            break;
-        }
-        documents.push(ScanSummaryDocument {
-            input: canonical,
-            output_dir: doc_output,
-            status: match code {
-                0 => "success",
-                10 => "partial",
-                _ => "failed",
-            },
-            exit_code: code,
-            elapsed_ms: doc_elapsed_ms,
-        });
-        if let Some(limit) = cancel_after_documents
-            && documents.len() >= limit
-        {
-            cancellation.request_cancel();
-        }
-    }
-    // X1.3: the aggregate summary rides next to the per-document dirs; a
-    // write failure is a warning, never a reason to discard finished scans.
-    let summary_json = scan_summary_json(
-        &inputs,
-        &output_root,
-        &documents,
-        started.elapsed().as_millis(),
-    );
-    // BLK-4 stdout contract: with `--report json` the orchestrated stdout is
-    // exactly one JSON object - this summary (per-document results live in
-    // their files and logs stay on stderr). Text mode keeps the human log.
-    if report_format == ReportFormat::Json {
-        reporter.stdout.push_str(&summary_json);
-        reporter.stdout.push('\n');
-    }
-    if let Err(error) = ocrx_output::atomic_write(
-        output_root.join("scan-summary.json"),
-        summary_json.as_bytes(),
-    ) {
-        eprintln!("warning: scan-summary.json write failed: {error}");
-    }
-    let codes: Vec<i32> = documents
-        .iter()
-        .map(|document| document.exit_code)
-        .collect();
-    print_reporter(reporter);
-    std::process::exit(if cancelled {
-        130
-    } else {
-        aggregate_scan_exit(&codes)
-    });
-}
-
-/// Builds the actionable exit-10 advice line (plan §3.5, G5): lists the
-/// affected pages with their cause and points at the working recovery path.
-fn incomplete_pages_warning(
-    summary: &ocrx_output::JobSummary,
-    requested_budget: Option<u32>,
-) -> Option<String> {
-    let mut entries = Vec::new();
-    let mut has_degenerated = false;
-    for diagnostic in &summary.diagnostics {
-        let degenerated = diagnostic.warnings.iter().any(|w| w == "degenerated");
-        let truncated = diagnostic.warnings.iter().any(|w| w == "truncated");
-        if degenerated {
-            entries.push(format!("page {} (degenerated)", diagnostic.page));
-            has_degenerated = true;
-        } else if truncated {
-            entries.push(format!("page {} (truncated)", diagnostic.page));
-        }
-    }
-    if entries.is_empty() {
-        return None;
-    }
-    let advice = if has_degenerated {
-        "rerun with --resume to retry degenerated pages"
-    } else if requested_budget.is_some_and(|budget| budget < ocrx_ovisocr2::MAX_OUTPUT_TOKENS) {
-        "rerun with the default --max-output-tokens to raise the per-page budget and rescan"
-    } else {
-        "the page exceeds the single-page output budget cap and stays marked incomplete"
-    };
-    Some(format!(
-        "warning: {} page(s) incomplete — {}; {advice}",
-        entries.len(),
-        entries.join(", ")
-    ))
-}
-
 fn classify_input_error(input: &Path, message: &str) -> PdfErrorKind {
     let classified = classify_pdf_error(message);
     if classified != PdfErrorKind::Unknown || !message.to_ascii_lowercase().contains("formaterror")
@@ -4681,8 +1836,8 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         format!(
             "{{\"id\":\"ovisocr2\",\"name\":\"OvisOCR2\",\"family\":\"Ovis\",\"profile\":\"{}\",\"revision\":\"{}\",\"mmproj_revision\":\"{}\",\"adapter\":\"ovisocr2\",\"adapter_version\":\"0.1.0\",\"prompt_schema_version\":1,\"runtime\":\"llama.cpp@0.1.152\",\"quantization\":\"{}\"}}",
             fields.profile,
-            ocrx_models::COMMUNITY_REVISION,
-            ocrx_models::COMMUNITY_REVISION,
+            ocrx_inference::builtin::OVISOCR2_REVISION,
+            ocrx_inference::builtin::OVISOCR2_REVISION,
             quantization
         )
     } else {
@@ -4745,15 +1900,6 @@ fn file_sha256(path: &Path) -> std::io::Result<String> {
     ocrx_core::sha256_file(path)
 }
 
-fn resolve_scan_profile(profile: &str, memory_gb: u64) -> Result<String, String> {
-    if profile == "auto" {
-        recommend_profile(memory_gb, &["compact", "balanced", "quality", "reference"])
-            .map_err(|error| format!("{error:?}"))
-    } else {
-        Ok(profile.to_owned())
-    }
-}
-
 fn resolve_progress_mode(progress: &str, log_level: &str) -> ProgressMode {
     // An explicit --progress always wins (review m6): `--log-level error`
     // used to silently override an explicit bar/plain. The downgrade only
@@ -4784,22 +1930,71 @@ fn install_sigint_handler(token: CancellationToken) {
     });
 }
 
-fn doctor_runtime_info(snapshot: ResourceSnapshot) -> RuntimeInfo {
-    // Mirrors `recommend_device`'s auto priority (metal > cuda > vulkan > cpu)
-    // so the reported backend can never contradict `recommended_device` on a
-    // Windows GPU machine (M10: Cuda/Vulkan used to be unreachable here).
-    RuntimeInfo {
-        backend: if snapshot.metal_available {
-            Backend::Metal
-        } else if snapshot.cuda_available {
-            Backend::Cuda
-        } else if snapshot.vulkan_available {
-            Backend::Vulkan
-        } else {
-            Backend::Cpu
-        },
+/// Derives the doctor [`ocrx_inference_api::DeviceDiagnostics`] from an
+/// already-intersected snapshot (same pure rule as the device manager's
+/// diagnose: recommend ladder + auto priority + installed overview).
+fn doctor_diagnostics_from_snapshot(
+    snapshot: &ocrx_inference_api::ResourceSnapshot,
+    cache_root: &Path,
+) -> ocrx_inference_api::DeviceDiagnostics {
+    let recommended_profile = ocrx_inference::recommend::recommend_profile(
+        &["compact", "balanced", "quality", "reference"],
+        snapshot.memory_gb,
+    )
+    .map(|profile| profile.to_string())
+    .unwrap_or_else(|_| "unavailable".to_owned());
+    let recommended_device = if snapshot.metal_available {
+        "metal"
+    } else if snapshot.cuda_available {
+        "cuda"
+    } else if snapshot.vulkan_available {
+        "vulkan"
+    } else if snapshot.cpu_available {
+        "cpu"
+    } else {
+        "unavailable"
+    };
+    let installed_profiles = ["compact", "balanced", "quality", "reference"]
+        .into_iter()
+        .filter(|profile| {
+            ocrx_inference::builtin::ovisocr2_manifest(profile)
+                .ok()
+                .and_then(|manifest| {
+                    ocrx_inference::verify::is_installed(cache_root, &manifest).ok()
+                })
+                .unwrap_or(false)
+        })
+        .map(ToOwned::to_owned)
+        .collect();
+    ocrx_inference_api::DeviceDiagnostics {
+        platform: platform_paths::detect().as_str().to_owned(),
+        backend: ocrx_inference_api::BackendId::new(recommended_device)
+            .unwrap_or_else(|_| ocrx_inference_api::BackendId::new("cpu").expect("cpu is valid")),
         image_token_limit: 1024,
+        memory_gb: snapshot.memory_gb,
+        metal_available: snapshot.metal_available,
+        cpu_available: snapshot.cpu_available,
+        recommended_profile,
+        recommended_device: recommended_device.to_owned(),
+        cache_root: cache_root.to_string_lossy().into_owned(),
+        installed_profiles,
+        profiles: vec![
+            "compact".to_owned(),
+            "balanced".to_owned(),
+            "quality".to_owned(),
+            "reference".to_owned(),
+        ],
     }
+}
+
+/// Doctor backend display: the frozen title-case strings ("Cpu"/"Metal"/
+/// "Cuda"/"Vulkan") derived from the device manager's backend id.
+fn doctor_backend_display(diagnostics: &ocrx_inference_api::DeviceDiagnostics) -> String {
+    let mut display = diagnostics.backend.as_str().to_owned();
+    if let Some(first) = display.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    display
 }
 
 fn print_reporter(reporter: Reporter) {
@@ -4851,80 +2046,45 @@ fn print_help(topic: Option<&str>) {
     }
 }
 
-fn resource_snapshot_with_probe(
-    probe: &dyn system_probe::SystemProbe,
-    env_memory_gb: Option<u64>,
-) -> ResourceSnapshot {
-    let memory_gb = resolve_config(env_memory_gb, probe.detected_memory_gb(), None, 16).value;
-    // W1.1: hardware presence is intersected with the compiled-in backend set.
-    // A backend reports available only when the probe sees it AND this binary
-    // was built with its cargo feature, so `auto` and `doctor` can never
-    // select a backend that is not compiled in — and a compiled-in backend
-    // with no hardware (e.g. vulkan build without an ICD) is not recommended.
-    ResourceSnapshot {
-        memory_gb,
-        metal_available: probe.metal_available() && Backend::Metal.is_compiled(),
-        cuda_available: probe.cuda_available() && Backend::Cuda.is_compiled(),
-        vulkan_available: probe.vulkan_available() && Backend::Vulkan.is_compiled(),
-        cpu_available: probe.cpu_available(),
-    }
-}
-
-fn resource_snapshot() -> ResourceSnapshot {
-    resource_snapshot_with_probe(
-        &RealSystemProbe,
-        std::env::var("OCRX_MEMORY_GB")
-            .ok()
-            .and_then(|value| value.parse().ok()),
-    )
-}
-
 /// Reports the current platform identifier for compatibility keys and the
 /// doctor JSON report (single spelling source: `platform_paths::detect`).
 fn current_platform() -> &'static str {
     platform_paths::detect().as_str()
 }
 
-fn doctor_json_report(snapshot: ResourceSnapshot, info: RuntimeInfo) -> String {
+fn doctor_json_report(snapshot: ocrx_inference_api::ResourceSnapshot) -> String {
     let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(ocrx_models::default_cache_root);
-    doctor_json_report_with_cache(snapshot, info, cache_root)
+        .unwrap_or_else(ocrx_inference::default_cache_root);
+    doctor_json_report_with_cache(snapshot, cache_root)
 }
 
 fn doctor_json_report_with_cache(
-    snapshot: ResourceSnapshot,
-    info: RuntimeInfo,
+    snapshot: ocrx_inference_api::ResourceSnapshot,
     cache_root: PathBuf,
 ) -> String {
-    doctor_json_report_with_paths(snapshot, info, cache_root, None)
+    doctor_json_report_with_paths(snapshot, cache_root, None)
 }
 
 fn doctor_json_report_with_paths(
-    snapshot: ResourceSnapshot,
-    info: RuntimeInfo,
+    snapshot: ocrx_inference_api::ResourceSnapshot,
     cache_root: PathBuf,
     home: Option<&Path>,
 ) -> String {
-    let profile = recommend_profile(snapshot.memory_gb, &["compact", "balanced", "quality"])
-        .unwrap_or_else(|_| "unavailable".to_owned());
-    let device = recommend_device(snapshot, "auto").unwrap_or_else(|_| "unavailable".to_owned());
-    let platform = platform_paths::detect().as_str();
+    // T073: doctor flows through the DeviceManager DTO shape. The injected
+    // snapshot is ALREADY hardware∩compiled-intersected (production builds
+    // it via resource_snapshot()), so the DTO derives from it without
+    // re-probing — the formatter tests inject artificial snapshots and the
+    // JSON must mirror them (golden behavior).
+    let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root);
+    let profile = diagnostics.recommended_profile.clone();
+    let device = diagnostics.recommended_device.clone();
+    let platform = diagnostics.platform.clone();
     // Single source of the doctor spelling; the frozen golden strings
-    // ("Metal"/"Cuda"/"Vulkan"/"Cpu") live in `Backend::as_str`.
-    let backend = info.backend.as_str();
-    let installed_profiles = ["compact", "balanced", "quality", "reference"]
-        .into_iter()
-        .filter(|profile| {
-            ocrx_models::community_manifest(profile)
-                .and_then(|manifest| {
-                    ocrx_models::cache_paths(&cache_root, &manifest.identity.revision, profile)
-                })
-                .map(|(model, mmproj)| model.is_file() && mmproj.is_file())
-                .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
+    // ("Metal"/"Cuda"/"Vulkan"/"Cpu") map from the backend id.
+    let backend = doctor_backend_display(&diagnostics);
+    let installed_profiles: Vec<String> = diagnostics.installed_profiles.clone();
     // `home_dir` covers the Windows USERPROFILE/HOMEDRIVE+HOMEPATH chain; a
     // bare $HOME read is always unset in cmd.exe, which used to force
     // skill_installed=false on Windows even after a successful install.
@@ -4939,10 +2099,10 @@ fn doctor_json_report_with_paths(
         .unwrap_or(false);
     format!(
         "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
-        info.image_token_limit,
-        snapshot.memory_gb,
-        snapshot.metal_available,
-        snapshot.cpu_available,
+        diagnostics.image_token_limit,
+        diagnostics.memory_gb,
+        diagnostics.metal_available,
+        diagnostics.cpu_available,
         json_escape_path(&cache_root),
         installed_profiles
             .iter()
@@ -4955,62 +2115,28 @@ fn doctor_json_report_with_paths(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn bundled_pdfium_is_resolved_from_installed_executable_layout() {
-        let root = std::env::temp_dir().join(format!("ocrx-bundled-pdfium-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let bin = root.join("bin");
-        let lib = root.join("lib");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::create_dir_all(&lib).unwrap();
-        let executable = bin.join(if cfg!(windows) { "ocrx.exe" } else { "ocrx" });
-        std::fs::write(&executable, b"binary").unwrap();
-        #[cfg(target_os = "macos")]
-        let library = lib.join("libpdfium.dylib");
-        #[cfg(target_os = "windows")]
-        let library = bin.join("pdfium.dll");
-        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-        let library = lib.join("libpdfium.so");
-        std::fs::write(&library, b"pdfium").unwrap();
-        assert_eq!(
-            super::bundled_pdfium_path(&executable)
-                .canonicalize()
-                .unwrap(),
-            library.canonicalize().unwrap()
-        );
-        let _ = std::fs::remove_dir_all(root);
-    }
-
     use std::path::{Path, PathBuf};
     use std::process::Command;
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use ocrx_output::PageRenderer;
 
     use super::{
-        CancellationToken, CliCommand, ConfigSource, NativeFirstPhaseResult, NativeOnlyDecision,
-        NativeValidationRoute, ResolvedConfig, ResourceSnapshot, RoutingCounts, ScanExecutionPlan,
-        ScanOptions, ScanResultFields, ScanSummaryDocument, SegmentRenderer, WorkerScanRenderer,
-        aggregate_scan_exit, build_final_ocr_queue, current_platform, doctor_json_report,
-        dynamic_fallback_requires_model_assets, effective_depth_after_fallback,
-        final_routing_diagnostics, fold_resume_incomplete_checkpoints, format_routing_summary,
-        initial_ocr_queue, initial_ocr_queue_for_mode, injected_failure,
-        load_runtime_with_fallback, native_candidate_outcome, native_candidate_pages,
-        native_only_decision, ocr_queue_after_native_phase, output_dir_for_doc, parse_command,
-        parse_injected_failure_page, parse_page_selection, parse_scan_args,
-        pdf_reason_code_from_str, planned_ocr_pages, prepare_model_if_required, resolve_config,
-        resolve_scan_inputs, restrict_ocr_queue_to_pages, route_native_validation, routing_counts,
-        routing_counts_for_mode, routing_diagnostic_json, routing_diagnostic_with_processing,
-        run_native_first_phase, scan_summary_json, service_pages_from_ocr_queue,
-        should_initialize_ocr_runtime, try_routing_diagnostic_with_processing,
-        validate_text_mode_classifications, with_batch_depth, with_ocr_runtime,
-        write_routing_checkpoint_sidecars,
+        CliCommand, ConfigSource, ResolvedConfig, RoutingCounts, ScanOptions, ScanResultFields,
+        ScanSummaryDocument, aggregate_scan_exit, current_platform, doctor_json_report,
+        document_exit_code, final_scan_exit, injected_failure, output_dir_for_doc, parse_command,
+        parse_injected_failure_page, parse_page_selection, parse_scan_args, planned_ocr_pages,
+        resolve_config, resolve_scan_inputs, scan_summary_json,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
     };
-    use ocrx_output::{OcrQueuePage, PageDiagnostic, RenderAudit, ResultReport, ResultStatus};
+    use ocrx_output::{PageDiagnostic, RenderAudit, ResultReport, ResultStatus};
+    use ocrx_scan::app::initial_ocr_queue_for_mode;
+    use ocrx_scan::native::{
+        NativeFirstPhaseResult, NativeOnlyDecision, NativeValidationRoute, build_final_ocr_queue,
+        native_only_decision, ocr_queue_after_native_phase, run_native_first_phase,
+        service_pages_from_ocr_queue,
+    };
+    use ocrx_scan::plan::dynamic_fallback_requires_model_assets;
+    use ocrx_scan::state::OcrQueuePage;
 
     // --- X1.3: orchestrated output layout and exit aggregation -------------
 
@@ -5118,275 +2244,6 @@ mod tests {
             "one input key per document entry: {json}"
         );
         assert!(json.contains("\"inputs\":[\"D:"), "{json}");
-    }
-
-    #[test]
-    fn effective_depth_drops_to_floor_on_gpu_cpu_fallback() {
-        // BLK-2: the 16 tier is a GPU-VRAM decision; a CPU runtime (requested
-        // or GPU->CPU fallback) always runs the compiled floor.
-        assert_eq!(effective_depth_after_fallback(true, 16), 16);
-        assert_eq!(
-            effective_depth_after_fallback(false, 16),
-            ocrx_core::WINDOW_DEPTH
-        );
-        assert_eq!(effective_depth_after_fallback(false, 8), 8);
-    }
-
-    #[test]
-    fn rebuilt_key_matches_the_previous_fallback_run_checkpoints() {
-        // BLK-1: a previous run loaded with GPU->CPU fallback writes
-        // checkpoints with batch=8 + ocr-device=cpu (the base key had
-        // device=vulkan;batch=16 but was rebuilt on fallback). A later
-        // invocation with the same request config must produce a key that
-        // MATCHES those checkpoints — otherwise committed pages re-decode.
-        // What the previous fallback run actually wrote: base device stays
-        // vulkan (it was the REQUESTED device at GPU-tier resolution time),
-        // but batch drops to 8 and ocr-device becomes cpu (the ACTUAL
-        // inference device after the fallback).
-        let previous_run_key = ocrx_output::CompatibilityKey {
-            input_sha256: "abc".to_owned(),
-            model: "ovisocr2".to_owned(),
-            profile: "native".to_owned(),
-            parameters: concat!(
-                "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;",
-                "extractor=pdf-text-v1;platform=windows;dpi=300;tokens=16384;",
-                "max_image_tokens=1024;context_size=20480;device=vulkan;",
-                "batch=8;route=native;ocr-profile=compact;ocr-device=cpu"
-            )
-            .to_owned(),
-        };
-        // The next invocation resolves the GPU tier again (batch=16) and
-        // falls back to CPU, rebuilding to the floor + cpu device.
-        let gpu_tier_key = ocrx_output::CompatibilityKey {
-            input_sha256: "abc".to_owned(),
-            model: "ovisocr2".to_owned(),
-            profile: "native".to_owned(),
-            parameters: concat!(
-                "pdf-mode=auto;quality-tier=l2;classifier=pdf-route-v1;",
-                "extractor=pdf-text-v1;platform=windows;dpi=300;tokens=16384;",
-                "max_image_tokens=1024;context_size=20480;device=vulkan;",
-                "batch=16;route=native;ocr-profile=compact;ocr-device=vulkan"
-            )
-            .to_owned(),
-        };
-        let rebuilt = with_batch_depth(&gpu_tier_key, ocrx_core::WINDOW_DEPTH);
-        // The rebuilt key's OCR form must match the checkpoint's key.
-        assert!(
-            rebuilt.matches_page_compatibility(&previous_run_key),
-            "rebuilt key must match the previous fallback run's checkpoints
-rebuilt: {}
-previous: {}",
-            rebuilt.parameters,
-            previous_run_key.parameters
-        );
-    }
-
-    #[test]
-    fn with_batch_depth_rewrites_only_the_batch_segment() {
-        // BLK-2: the GPU->CPU fallback rebuilds the compat key with the floor
-        // depth; every other segment stays verbatim so unrelated config
-        // changes still invalidate.
-        let key = ocrx_output::CompatibilityKey {
-            input_sha256: "abc".to_owned(),
-            model: "ovisocr2".to_owned(),
-            profile: "native".to_owned(),
-            parameters: "pdf-mode=auto;quality-tier=l2;platform=windows;batch=16;route=native"
-                .to_owned(),
-        };
-        let rebuilt = with_batch_depth(&key, 8);
-        assert_eq!(
-            rebuilt.parameters,
-            "pdf-mode=auto;quality-tier=l2;platform=windows;batch=8;route=native"
-        );
-        assert_eq!(rebuilt.input_sha256, "abc");
-        assert_eq!(rebuilt.model, "ovisocr2");
-        // Depth unchanged -> key verbatim.
-        assert_eq!(with_batch_depth(&key, 16).parameters, key.parameters);
-    }
-
-    #[test]
-    fn low_vram_percall_fallback_rewrites_ocr_device_at_unchanged_depth() {
-        // Rereview BLK-4: on a <12 GiB GPU the fallback is depth 8 -> 8, so a
-        // rebuild gated on a depth CHANGE never fired and the checkpoint kept
-        // ocr-device=vulkan although the actual runtime ran on CPU. The
-        // rebuild is keyed on the fallback itself: the depth stays the floor
-        // and only the device segment follows the real inference device.
-        let requested_key = ocrx_output::CompatibilityKey {
-            input_sha256: "abc".to_owned(),
-            model: "ovisocr2".to_owned(),
-            profile: "native".to_owned(),
-            parameters: concat!(
-                "pdf-mode=auto;quality-tier=l2;platform=windows;dpi=300;",
-                "device=vulkan;batch=8;route=native;ocr-profile=compact;ocr-device=vulkan"
-            )
-            .to_owned(),
-        };
-        // effective_depth_after_fallback(false, 8) == 8: the rebuild runs at
-        // the SAME depth and must still flip ocr-device to cpu.
-        let rebuilt = with_batch_depth(&requested_key, ocrx_core::WINDOW_DEPTH);
-        assert_eq!(
-            rebuilt.parameters,
-            concat!(
-                "pdf-mode=auto;quality-tier=l2;platform=windows;dpi=300;",
-                "device=vulkan;batch=8;route=native;ocr-profile=compact;ocr-device=cpu"
-            )
-        );
-    }
-
-    #[test]
-    fn explicit_cpu_load_failure_is_single_attempt_not_gpu_fallback() {
-        // Rereview BLK-3: an explicit CPU request loads CPU exactly ONCE. A
-        // failed load must surface as its own error - never wrapped in
-        // "gpu load failed ...; cpu fallback failed ..." (both attempts would
-        // be the same CPU load) and never misreported through the
-        // "gpu init failed; fallback to cpu" warning path (there was no GPU).
-        let error = load_runtime_with_fallback(
-            &PathBuf::from("nonexistent-model.gguf"),
-            &PathBuf::from("nonexistent-mmproj.gguf"),
-            false,
-            1024,
-            20_480,
-            ocrx_core::WINDOW_DEPTH,
-        )
-        .expect_err("a nonexistent model must fail to load");
-        let text = error.to_string();
-        assert!(
-            !text.contains("gpu load failed"),
-            "explicit CPU load error must not be framed as a GPU attempt: {text}"
-        );
-        assert!(
-            !text.contains("cpu fallback failed"),
-            "explicit CPU load must not retry with identical parameters: {text}"
-        );
-        assert!(
-            !text.contains("fallback to cpu"),
-            "explicit CPU load must not produce a GPU-fallback warning: {text}"
-        );
-    }
-
-    #[test]
-    fn gpu_load_failure_reports_both_attempts_in_the_combined_error() {
-        // The GPU branch contract, documented from the other side: when the
-        // GPU attempt fails, the CPU fallback attempt runs; if BOTH fail the
-        // caller sees the combined error naming both attempts. (A nonexistent
-        // model fails both loads without needing a real GPU or model.)
-        let error = load_runtime_with_fallback(
-            &PathBuf::from("nonexistent-model.gguf"),
-            &PathBuf::from("nonexistent-mmproj.gguf"),
-            true,
-            1024,
-            20_480,
-            ocrx_core::WINDOW_DEPTH,
-        )
-        .expect_err("both GPU and CPU loads must fail for a nonexistent model");
-        let text = error.to_string();
-        assert!(
-            text.contains("gpu load failed"),
-            "combined error must name the GPU attempt: {text}"
-        );
-        assert!(
-            text.contains("cpu fallback failed"),
-            "combined error must name the CPU fallback attempt: {text}"
-        );
-    }
-
-    #[test]
-    fn fold_resume_incomplete_truncated_page_counted_once() {
-        // Rereview BLK-1: after the CLI re-match, a truncated page must be
-        // counted exactly once. The old buggy code double-counted because
-        // the re-match pushed into resume_incomplete_checkpoints AND the
-        // service already counted it — this test exercises the fold
-        // function with a single truncated checkpoint and asserts exactly
-        // one diagnostic and truncated_pages=1.
-        let cp = ocrx_output::PageCheckpoint {
-            page_number: 1,
-            compatibility: ocrx_output::CompatibilityKey {
-                input_sha256: String::new(),
-                model: "ovisocr2".to_owned(),
-                profile: "native".to_owned(),
-                parameters: "batch=8".to_owned(),
-            },
-            complete: true,
-            output_sha256: String::new(),
-            truncated: true,
-            degenerated: false,
-            attempts: 1,
-            raw: None,
-            warnings: vec!["truncated".to_owned()],
-            think_blocks_stripped: 0,
-            audit: None,
-        };
-        let mut summary = ocrx_output::JobSummary {
-            selected_pages: 1,
-            completed_pages: 0,
-            failed_pages: 0,
-            truncated_pages: 0,
-            degenerated_pages: 0,
-            think_blocks_stripped: 0,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
-            cancelled: false,
-        };
-        fold_resume_incomplete_checkpoints(&[cp], &mut summary);
-        assert_eq!(
-            summary.truncated_pages, 1,
-            "truncated must be counted exactly once"
-        );
-        assert_eq!(summary.diagnostics.len(), 1, "exactly one diagnostic");
-        assert_eq!(summary.diagnostics[0].page, 1);
-        assert_eq!(summary.diagnostics[0].status, "partial");
-        assert_eq!(summary.diagnostics[0].stage, "resume");
-        // No double-count: running the fold again would be a bug (the
-        // caller must not re-fold the same checkpoints).
-        assert_eq!(summary.degenerated_pages, 0);
-    }
-
-    #[test]
-    fn fold_resume_incomplete_mixed_pages_produce_correct_counts() {
-        // Multiple checkpoints (1 truncated + 1 degenerated + 1 clean) must
-        // produce exactly matching counts and diagnostics — no double-count.
-        let checkpoints: Vec<ocrx_output::PageCheckpoint> = [
-            (true, false, 1u32),
-            (false, true, 2u32),
-            (false, false, 3u32),
-        ]
-        .iter()
-        .map(
-            |&(truncated, degenerated, page)| ocrx_output::PageCheckpoint {
-                page_number: page,
-                compatibility: ocrx_output::CompatibilityKey {
-                    input_sha256: String::new(),
-                    model: "ovisocr2".to_owned(),
-                    profile: "native".to_owned(),
-                    parameters: "batch=8".to_owned(),
-                },
-                complete: true,
-                output_sha256: String::new(),
-                truncated,
-                degenerated,
-                attempts: 1,
-                raw: None,
-                warnings: Vec::new(),
-                think_blocks_stripped: 0,
-                audit: None,
-            },
-        )
-        .collect();
-        let mut summary = ocrx_output::JobSummary {
-            selected_pages: 3,
-            completed_pages: 0,
-            failed_pages: 0,
-            truncated_pages: 0,
-            degenerated_pages: 0,
-            think_blocks_stripped: 0,
-            warnings: Vec::new(),
-            diagnostics: Vec::new(),
-            cancelled: false,
-        };
-        fold_resume_incomplete_checkpoints(&checkpoints, &mut summary);
-        assert_eq!(summary.truncated_pages, 1);
-        assert_eq!(summary.degenerated_pages, 1);
-        assert_eq!(summary.diagnostics.len(), 3);
     }
 
     #[test]
@@ -5508,30 +2365,6 @@ previous: {}",
     }
 
     #[test]
-    fn text_mode_classification_validation_rejects_non_text_and_allows_empty() {
-        let classification = |page_type, method| PageClassification {
-            page_type,
-            confidence: RouteConfidence::High,
-            recommended_method: method,
-            reason: PdfReasonCode::NativeTextReliable,
-        };
-        assert!(
-            validate_text_mode_classifications(&[
-                classification(PageType::Text, ProcessingMethod::NativeText),
-                classification(PageType::Empty, ProcessingMethod::Empty),
-            ])
-            .is_ok()
-        );
-        assert!(
-            validate_text_mode_classifications(&[classification(
-                PageType::Image,
-                ProcessingMethod::Ocr,
-            )])
-            .is_err()
-        );
-    }
-
-    #[test]
     fn scan_parser_rejects_resume_overwrite_and_missing_values() {
         assert!(parse_scan_args(&["input.pdf", "--resume", "--overwrite"]).is_err());
         assert!(parse_scan_args(&["input.pdf", "--pages"]).is_err());
@@ -5572,413 +2405,6 @@ previous: {}",
         assert!(!dynamic_fallback_requires_model_assets(0, 1, true));
         assert!(dynamic_fallback_requires_model_assets(0, 1, false));
         assert!(!dynamic_fallback_requires_model_assets(1, 1, false));
-    }
-
-    #[test]
-    fn prepare_model_if_required_is_noop_without_ocr_or_with_valid_assets() {
-        assert!(
-            prepare_model_if_required(false, false, true, true, "balanced", Path::new("/missing"))
-                .is_ok()
-        );
-        assert!(
-            prepare_model_if_required(true, true, true, true, "balanced", Path::new("/missing"))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn initial_ocr_queue_preserves_selected_page_numbers_and_skips_native_pages() {
-        let native = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: ocrx_core::PdfReasonCode::NativeTextReliable,
-        };
-        let ocr = ocrx_core::PageClassification {
-            page_type: PageType::Image,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::Ocr,
-            reason: ocrx_core::PdfReasonCode::ImageCoverageHigh,
-        };
-        assert_eq!(
-            initial_ocr_queue(&[4, 9], &[native, ocr]),
-            vec![ocrx_output::OcrQueuePage {
-                page: 9,
-                fallback_reason: None
-            }]
-        );
-    }
-
-    #[test]
-    fn ocr_mode_places_all_non_empty_selected_pages_in_initial_queue() {
-        let text = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: ocrx_core::PdfReasonCode::NativeTextReliable,
-        };
-        let empty = ocrx_core::PageClassification {
-            page_type: PageType::Empty,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::Empty,
-            reason: ocrx_core::PdfReasonCode::NoVisibleContent,
-        };
-
-        let queue = initial_ocr_queue_for_mode("ocr", &[1, 2], &[text, empty]);
-
-        assert_eq!(
-            queue.iter().map(|page| page.page).collect::<Vec<_>>(),
-            vec![1]
-        );
-    }
-
-    #[test]
-    fn native_candidate_outcome_turns_validation_failure_into_a_reasoned_fallback() {
-        assert!(native_candidate_outcome(1, Ok(())).is_ok());
-        assert_eq!(
-            native_candidate_outcome(8, Err("native_structure_unresolved".to_owned())),
-            Err(OcrQueuePage {
-                page: 8,
-                fallback_reason: Some("native_structure_unresolved".to_owned())
-            })
-        );
-    }
-
-    #[test]
-    fn pdf_reason_code_mapping_preserves_stable_fallback_values() {
-        assert_eq!(
-            pdf_reason_code_from_str("native_structure_unresolved"),
-            ocrx_core::PdfReasonCode::NativeStructureUnresolved
-        );
-        assert_eq!(
-            pdf_reason_code_from_str("unknown_reason"),
-            ocrx_core::PdfReasonCode::NativeValidationFailed
-        );
-    }
-
-    #[test]
-    fn routing_diagnostic_includes_classification_and_planned_processing() {
-        let classification = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: ocrx_core::PdfReasonCode::NativeTextReliable,
-        };
-        let json = routing_diagnostic_json(4, classification);
-        assert!(json.contains("\"page\":4"));
-        assert!(json.contains("\"page_type\":\"text\""));
-        assert!(json.contains("\"planned_method\":\"native_text\""));
-        assert!(json.contains("\"actual_method\":null"));
-    }
-
-    #[test]
-    fn routing_diagnostic_records_actual_method_and_fallback_reason() {
-        let classification = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: ocrx_core::PdfReasonCode::NativeTextReliable,
-        };
-        let native = routing_diagnostic_with_processing(
-            1,
-            classification,
-            ProcessingMethod::NativeText,
-            None,
-        );
-        assert!(native.contains("\"actual_method\":\"native_text\""));
-        let fallback = routing_diagnostic_with_processing(
-            1,
-            classification,
-            ProcessingMethod::Ocr,
-            Some(ocrx_core::PdfReasonCode::NativeStructureUnresolved),
-        );
-        assert!(fallback.contains("\"actual_method\":\"ocr\""));
-        assert!(fallback.contains("\"fallback_reason\":\"native_structure_unresolved\""));
-    }
-
-    #[test]
-    fn final_routing_diagnostics_assigns_actual_methods_and_dynamic_fallbacks() {
-        let native = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: ocrx_core::PdfReasonCode::NativeTextReliable,
-        };
-        let scan = ocrx_core::PageClassification {
-            page_type: PageType::Image,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::Ocr,
-            reason: ocrx_core::PdfReasonCode::ImageCoverageHigh,
-        };
-        let result = final_routing_diagnostics(
-            "auto",
-            &[2, 5],
-            &[native, scan],
-            &[(2, ocrx_core::PdfReasonCode::NativeStructureUnresolved)],
-        );
-        assert!(result[0].contains("\"actual_method\":\"ocr\""));
-        assert!(result[0].contains("native_structure_unresolved"));
-        assert!(result[1].contains("\"actual_method\":\"ocr\""));
-    }
-
-    #[test]
-    fn routing_checkpoint_sidecars_are_written_for_each_selected_page() {
-        let root =
-            std::env::temp_dir().join(format!("ocrx-routing-sidecars-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        let classification = PageClassification {
-            page_type: PageType::Text,
-            confidence: RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: PdfReasonCode::NativeTextReliable,
-        };
-        write_routing_checkpoint_sidecars(&root, "auto", &[2], &[classification], &[]).unwrap();
-        let json = std::fs::read_to_string(root.join("page-0002.routing.json")).unwrap();
-        assert!(json.contains("\"schema\":\"ocrx-routing-checkpoint-v1\""));
-        assert!(json.contains("\"page\":2"));
-        assert!(json.contains("\"processing\""));
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn forced_ocr_routing_records_ocr_as_planned_and_actual_method() {
-        let classification = PageClassification {
-            page_type: PageType::Text,
-            confidence: RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: PdfReasonCode::NativeTextReliable,
-        };
-        let result = final_routing_diagnostics("ocr", &[1], &[classification], &[]);
-        assert!(result[0].contains("\"recommended_method\":\"native_text\""));
-        assert!(result[0].contains("\"planned_method\":\"ocr\""));
-        assert!(result[0].contains("\"actual_method\":\"ocr\""));
-        assert!(result[0].contains("\"page_type\":\"text\""));
-    }
-
-    #[test]
-    fn routing_counts_separate_native_ocr_empty_and_fallback_pages() {
-        let classifications = vec![
-            PageClassification {
-                page_type: PageType::Text,
-                confidence: RouteConfidence::High,
-                recommended_method: ProcessingMethod::NativeText,
-                reason: PdfReasonCode::NativeTextReliable,
-            },
-            PageClassification {
-                page_type: PageType::Image,
-                confidence: RouteConfidence::High,
-                recommended_method: ProcessingMethod::Ocr,
-                reason: PdfReasonCode::ImageCoverageHigh,
-            },
-            PageClassification {
-                page_type: PageType::Empty,
-                confidence: RouteConfidence::High,
-                recommended_method: ProcessingMethod::Empty,
-                reason: PdfReasonCode::NoVisibleContent,
-            },
-        ];
-        let counts = routing_counts(
-            &[1, 2, 3],
-            &classifications,
-            &[(1, PdfReasonCode::NativeValidationFailed)],
-        );
-        assert_eq!(
-            counts,
-            RoutingCounts {
-                native_text: 0,
-                ocr: 2,
-                empty: 1,
-                fallback: 1,
-            }
-        );
-    }
-
-    #[test]
-    fn forced_ocr_counts_non_empty_pages_as_ocr() {
-        let classifications = vec![
-            PageClassification {
-                page_type: PageType::Text,
-                confidence: RouteConfidence::High,
-                recommended_method: ProcessingMethod::NativeText,
-                reason: PdfReasonCode::NativeTextReliable,
-            },
-            PageClassification {
-                page_type: PageType::Empty,
-                confidence: RouteConfidence::High,
-                recommended_method: ProcessingMethod::Empty,
-                reason: PdfReasonCode::NoVisibleContent,
-            },
-        ];
-        let counts = routing_counts_for_mode("ocr", &[5, 6], &classifications, &[]);
-        assert_eq!(counts.native_text, 0);
-        assert_eq!(counts.ocr, 1);
-        assert_eq!(counts.empty, 1);
-    }
-
-    #[test]
-    fn text_routing_summary_is_machine_stable() {
-        assert_eq!(
-            format_routing_summary(
-                ocrx_pdf::DocumentType::Mixed,
-                RoutingCounts {
-                    native_text: 2,
-                    ocr: 3,
-                    empty: 1,
-                    fallback: 1,
-                }
-            ),
-            "document_type=mixed native_text=2 ocr=3 empty=1 fallback=1\n"
-        );
-    }
-
-    #[test]
-    fn runtime_initialization_depends_only_on_final_ocr_queue() {
-        assert!(!should_initialize_ocr_runtime(0));
-        assert!(should_initialize_ocr_runtime(1));
-        assert!(should_initialize_ocr_runtime(7));
-    }
-
-    #[test]
-    fn execution_plan_distinguishes_native_only_from_ocr_work() {
-        let native = ScanExecutionPlan::from_final_ocr_queue(0);
-        assert!(native.native_only());
-        assert!(!native.initialize_runtime);
-        let mixed = ScanExecutionPlan::from_final_ocr_queue(2);
-        assert!(!mixed.native_only());
-        assert!(mixed.initialize_runtime);
-    }
-
-    #[test]
-    fn runtime_preparation_callback_is_not_called_for_native_only_plan() {
-        let native = ScanExecutionPlan::from_final_ocr_queue(0);
-        let mut called = false;
-        assert_eq!(
-            with_ocr_runtime(native, || {
-                called = true;
-                7
-            }),
-            None
-        );
-        assert!(!called);
-        let mixed = ScanExecutionPlan::from_final_ocr_queue(1);
-        assert_eq!(with_ocr_runtime(mixed, || 7), Some(7));
-    }
-
-    #[test]
-    fn native_validation_route_respects_auto_fallback_and_text_failure() {
-        assert_eq!(
-            route_native_validation("auto", 3, Ok(())),
-            NativeValidationRoute::Native
-        );
-        assert_eq!(
-            route_native_validation("auto", 3, Err("bad_structure".to_owned())),
-            NativeValidationRoute::OcrFallback(OcrQueuePage {
-                page: 3,
-                fallback_reason: Some("bad_structure".to_owned())
-            })
-        );
-        assert_eq!(
-            route_native_validation("text", 3, Err("bad_structure".to_owned())),
-            NativeValidationRoute::TextFailure("bad_structure".to_owned())
-        );
-    }
-
-    #[test]
-    fn final_ocr_queue_merges_only_auto_fallbacks_in_page_order() {
-        let initial = vec![OcrQueuePage {
-            page: 5,
-            fallback_reason: None,
-        }];
-        let routes = vec![
-            (2, NativeValidationRoute::Native),
-            (
-                3,
-                NativeValidationRoute::OcrFallback(OcrQueuePage {
-                    page: 3,
-                    fallback_reason: Some("bad".to_owned()),
-                }),
-            ),
-            (4, NativeValidationRoute::TextFailure("fail".to_owned())),
-            (
-                5,
-                NativeValidationRoute::OcrFallback(OcrQueuePage {
-                    page: 5,
-                    fallback_reason: Some("late".to_owned()),
-                }),
-            ),
-        ];
-        assert_eq!(
-            build_final_ocr_queue(&initial, &routes),
-            vec![
-                OcrQueuePage {
-                    page: 3,
-                    fallback_reason: Some("bad".to_owned())
-                },
-                OcrQueuePage {
-                    page: 5,
-                    fallback_reason: Some("late".to_owned())
-                }
-            ]
-        );
-    }
-
-    #[test]
-    fn routing_queues_sort_and_deduplicate_pages_at_their_boundary() {
-        let ocr = ocrx_core::PageClassification {
-            page_type: PageType::Image,
-            confidence: RouteConfidence::High,
-            recommended_method: ProcessingMethod::Ocr,
-            reason: PdfReasonCode::ImageCoverageHigh,
-        };
-        let native = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: PdfReasonCode::NativeTextReliable,
-        };
-        assert_eq!(
-            initial_ocr_queue_for_mode("auto", &[9, 4, 9], &[ocr, native, ocr])
-                .into_iter()
-                .map(|page| page.page)
-                .collect::<Vec<_>>(),
-            vec![9]
-        );
-        assert_eq!(
-            native_candidate_pages(&[9, 4, 9], &[ocr, native, ocr]),
-            vec![4]
-        );
-        assert!(initial_ocr_queue_for_mode("auto", &[2], &[native]).is_empty());
-    }
-
-    #[test]
-    fn native_first_phase_commits_success_and_collects_auto_fallbacks() {
-        let mut committed = Vec::new();
-        let result = run_native_first_phase(
-            "auto",
-            &[1, 2],
-            |page| {
-                if page == 2 {
-                    Err("bad_structure".to_owned())
-                } else {
-                    Ok(())
-                }
-            },
-            |page| {
-                committed.push(page);
-                Ok(())
-            },
-        )
-        .unwrap();
-        assert_eq!(committed, vec![1]);
-        assert_eq!(result.committed_native_pages, vec![1]);
-        assert_eq!(
-            result.fallback_pages,
-            vec![OcrQueuePage {
-                page: 2,
-                fallback_reason: Some("bad_structure".to_owned())
-            }]
-        );
     }
 
     #[test]
@@ -6035,7 +2461,6 @@ previous: {}",
             queue.iter().map(|page| page.page).collect::<Vec<_>>(),
             vec![2, 3]
         );
-        assert!(should_initialize_ocr_runtime(queue.len()));
         assert_eq!(service_pages_from_ocr_queue(&queue), vec![2, 3]);
     }
 
@@ -6104,88 +2529,6 @@ previous: {}",
                     fallback_reason: Some("bad".to_owned())
                 }
             ]
-        );
-    }
-
-    #[test]
-    fn native_candidate_pages_select_only_native_recommendations() {
-        let native = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: ocrx_core::PdfReasonCode::NativeTextReliable,
-        };
-        let ocr = ocrx_core::PageClassification {
-            page_type: PageType::Image,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::Ocr,
-            reason: ocrx_core::PdfReasonCode::ImageCoverageHigh,
-        };
-        assert_eq!(native_candidate_pages(&[3, 7], &[native, ocr]), vec![3]);
-    }
-
-    #[test]
-    fn service_pages_are_sorted_and_deduplicated_from_queue_only() {
-        let queue = vec![
-            OcrQueuePage {
-                page: 8,
-                fallback_reason: None,
-            },
-            OcrQueuePage {
-                page: 2,
-                fallback_reason: Some("bad".to_owned()),
-            },
-            OcrQueuePage {
-                page: 8,
-                fallback_reason: Some("duplicate".to_owned()),
-            },
-        ];
-        assert_eq!(service_pages_from_ocr_queue(&queue), vec![2, 8]);
-    }
-
-    #[test]
-    fn recovered_ocr_queue_is_restricted_to_selected_pages() {
-        let queue = vec![
-            OcrQueuePage {
-                page: 1,
-                fallback_reason: None,
-            },
-            OcrQueuePage {
-                page: 2,
-                fallback_reason: Some("native_failed".to_owned()),
-            },
-            OcrQueuePage {
-                page: 4,
-                fallback_reason: None,
-            },
-        ];
-        let restricted = restrict_ocr_queue_to_pages(&queue, &[1, 4]);
-        assert_eq!(
-            restricted.iter().map(|page| page.page).collect::<Vec<_>>(),
-            vec![1, 4]
-        );
-    }
-
-    #[test]
-    fn routing_diagnostic_validation_rejects_ocr_without_fallback_reason() {
-        let classification = ocrx_core::PageClassification {
-            page_type: PageType::Text,
-            confidence: ocrx_core::RouteConfidence::High,
-            recommended_method: ProcessingMethod::NativeText,
-            reason: ocrx_core::PdfReasonCode::NativeTextReliable,
-        };
-        assert!(
-            try_routing_diagnostic_with_processing(1, classification, ProcessingMethod::Ocr, None)
-                .is_err()
-        );
-        assert!(
-            try_routing_diagnostic_with_processing(
-                1,
-                classification,
-                ProcessingMethod::Ocr,
-                Some(ocrx_core::PdfReasonCode::NativeValidationFailed)
-            )
-            .is_ok()
         );
     }
 
@@ -6259,38 +2602,90 @@ previous: {}",
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let input_sha = ocrx_core::sha256_file(&input).unwrap();
-        let compatibility = ocrx_output::CompatibilityKey {
-            input_sha256: input_sha,
-            model: "ovisocr2".to_owned(),
-            profile: "native".to_owned(),
-            parameters: format!(
-                "{};platform={};dpi={};tokens={};max_image_tokens={};context_size={};device={};route=native",
-                ocrx_output::pdf_compatibility_parameters(
-                    "ocr",
-                    "l2",
-                    "pdf-route-v1",
-                    "pdf-text-v1"
-                ),
-                current_platform(),
-                300,
-                16_384,
-                1024,
-                20_480,
-                "cpu"
-            ),
+        // T100-era seed: a V6 OCR-complete checkpoint carrying the true
+        // reference identity (pinned hashes), truncated=true — so `--resume`
+        // must REUSE it (pre-compare + integrity pass; zero decode since the
+        // page is the only selected page) and keep the page partial.
+        let assets = ocrx_inference::builtin::OVISOCR2_MODEL_ASSETS
+            .iter()
+            .find(|asset| asset.profile == "reference")
+            .expect("pinned reference asset");
+        let identity = ocrx_inference_api::InferenceIdentity {
+            model: ocrx_inference_api::ModelIdentity::new(
+                ocrx_inference_api::ModelId::new("ovisocr2").unwrap(),
+                ocrx_inference_api::ProfileId::new("reference").unwrap(),
+                ocrx_inference::builtin::OVISOCR2_REVISION,
+                vec![
+                    ocrx_inference_api::AssetIdentity {
+                        role: ocrx_inference_api::AssetRole::new("mmproj").unwrap(),
+                        sha256: ocrx_inference::builtin::OVISOCR2_MMPROJ_SHA256.to_owned(),
+                        byte_len: ocrx_inference::builtin::OVISOCR2_MMPROJ_BYTES,
+                    },
+                    ocrx_inference_api::AssetIdentity {
+                        role: ocrx_inference_api::AssetRole::new("model").unwrap(),
+                        sha256: assets.sha256.to_owned(),
+                        byte_len: assets.bytes,
+                    },
+                ],
+            )
+            .unwrap(),
+            runtime: ocrx_inference_api::RuntimeIdentity {
+                runtime: ocrx_inference_api::RuntimeId::new("llama.cpp").unwrap(),
+                wrapper_version: "0.1.161".to_owned(),
+                sys_version: "0.1.161".to_owned(),
+                upstream_revision: "d81235049384534c167caea52b85a694f6103d14".to_owned(),
+            },
+            adapter: ocrx_inference_api::AdapterIdentity {
+                adapter: ocrx_inference_api::AdapterId::new("ovisocr2").unwrap(),
+                version: "0.1.0".to_owned(),
+            },
+            backend: ocrx_inference_api::BackendId::new("cpu").unwrap(),
+            decode_generation: 3,
+            batch_depth: 8,
+            display: ocrx_inference_api::ModelDisplayMeta {
+                display_name: "OvisOCR2".to_owned(),
+                family: "Ovis".to_owned(),
+                quantization: "BF16".to_owned(),
+            },
         };
-        let page_json = r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated","degenerated"]}"#;
-        ocrx_output::commit_page(
-            &root,
-            1,
-            b"png",
-            "truncated page body",
-            page_json,
-            &ocrx_output::PageCheckpoint {
+        let compatibility = ocrx_output::ScanCompatibility::ocr(
+            &input_sha,
+            ocrx_output::PdfIdentity {
+                pdf_mode: "ocr".to_owned(),
+                quality_tier: "l2".to_owned(),
+                classifier_version: "pdf-route-v2".to_owned(),
+                extractor_version: "pdf-text-v2".to_owned(),
+                platform: current_platform().to_owned(),
+            },
+            ocrx_output::OcrIdentity {
+                inference: identity,
+                prompt_id: "ocr-markdown".to_owned(),
+                prompt_version: "ocr-markdown-v1".to_owned(),
+                prompt_schema_version: 1,
+                dpi: 300,
+                max_image_tokens: 1024,
+                max_output_tokens: 16_384,
+                context_size: 20_480,
+                batch_depth: 8,
+                decode_generation: 3,
+                pixel_width_budget: 2880,
+                pixel_height_budget: 2880,
+                page_parser_version: "ovis-page-v1".to_owned(),
+            },
+        );
+        // Artifacts must be intact for reuse: the md the checkpoint hashes.
+        let markdown_body = "truncated page body";
+        std::fs::write(root.join("page-0001.md"), markdown_body).unwrap();
+        let page_json = r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}"#;
+        std::fs::write(root.join("page-0001.json"), page_json).unwrap();
+        ocrx_output::write_v6(
+            root.join("page-0001.checkpoint"),
+            &ocrx_output::V6Checkpoint {
                 page_number: 1,
-                compatibility: compatibility.clone(),
-                complete: true,
-                output_sha256: String::new(),
+                status: ocrx_output::V6Status::Complete,
+                compatibility,
+                output_sha256: ocrx_output::artifact_sha256(&root.join("page-0001.md"), &root)
+                    .unwrap(),
                 truncated: true,
                 degenerated: false,
                 attempts: 1,
@@ -6365,6 +2760,35 @@ previous: {}",
     // which spawns the binary directly. A `cargo run`-based twin here
     // intermittently captured cargo's own "Blocking waiting for file lock"
     // stderr chatter under parallel test load and false-failed.
+
+    #[test]
+    fn bundled_pdfium_is_resolved_from_installed_executable_layout() {
+        // Upstream hardening (main 2a415a4): the install layout keeps pdfium
+        // beside the executable (Windows) or under ../lib (macOS/Linux), and
+        // the default resolution must find it without OCRX_PDFIUM_LIBRARY.
+        let root = std::env::temp_dir().join(format!("ocrx-bundled-pdfium-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = root.join("bin");
+        let lib = root.join("lib");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&lib).unwrap();
+        let executable = bin.join(if cfg!(windows) { "ocrx.exe" } else { "ocrx" });
+        std::fs::write(&executable, b"binary").unwrap();
+        #[cfg(target_os = "macos")]
+        let library = lib.join("libpdfium.dylib");
+        #[cfg(target_os = "windows")]
+        let library = bin.join("pdfium.dll");
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        let library = lib.join("libpdfium.so");
+        std::fs::write(&library, b"pdfium").unwrap();
+        assert_eq!(
+            super::bundled_pdfium_path(&executable)
+                .canonicalize()
+                .unwrap(),
+            library.canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
@@ -6673,7 +3097,7 @@ previous: {}",
             super::validate_numeric_options(
                 Some(300),
                 Some(1024),
-                Some(ocrx_ovisocr2::MAX_OUTPUT_TOKENS),
+                Some(ocrx_scan::ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS),
                 Some(20_480)
             )
             .is_ok()
@@ -6683,7 +3107,7 @@ previous: {}",
         assert!(super::validate_numeric_options(None, None, None, None).is_ok());
         // n_ctx_train=262144 for the frozen model (D5.0): no fallback needed,
         // defaults stay at the §3.7.1/§3.7.2 values.
-        assert_eq!(ocrx_ovisocr2::MAX_OUTPUT_TOKENS, 16_384);
+        assert_eq!(ocrx_scan::ocr::prompt::DEFAULT_MAX_OUTPUT_TOKENS, 16_384);
     }
 
     #[test]
@@ -6692,16 +3116,12 @@ previous: {}",
         let _ = std::fs::remove_dir_all(&empty);
         std::fs::create_dir_all(&empty).unwrap();
         let report = super::doctor_json_report_with_paths(
-            ResourceSnapshot {
+            ocrx_inference_api::ResourceSnapshot {
                 memory_gb: 16,
                 metal_available: true,
                 cuda_available: false,
                 vulkan_available: false,
                 cpu_available: true,
-            },
-            ocrx_runtime::RuntimeInfo {
-                backend: ocrx_runtime::Backend::Metal,
-                image_token_limit: 1024,
             },
             empty.clone(),
             Some(&empty),
@@ -6760,19 +3180,13 @@ previous: {}",
 
     #[test]
     fn doctor_json_report_redacts_sensitive_cache_paths() {
-        let report = doctor_json_report(
-            ResourceSnapshot {
-                memory_gb: 16,
-                metal_available: true,
-                cuda_available: false,
-                vulkan_available: false,
-                cpu_available: true,
-            },
-            ocrx_runtime::RuntimeInfo {
-                backend: ocrx_runtime::Backend::Metal,
-                image_token_limit: 1024,
-            },
-        );
+        let report = doctor_json_report(ocrx_inference_api::ResourceSnapshot {
+            memory_gb: 16,
+            metal_available: true,
+            cuda_available: false,
+            vulkan_available: false,
+            cpu_available: true,
+        });
         assert!(!report.to_ascii_lowercase().contains("authorization="));
         assert!(!report.to_ascii_lowercase().contains("token:"));
         assert!(report.contains("\"backend\":\"Metal\""));
@@ -6933,225 +3347,138 @@ previous: {}",
         };
         assert!(super::validate_scan_output_policy(input, ancestor, &[cache], cwd).is_err());
     }
-    // --- P3 §6.3: worker prefetch, narrowed cleanup, perturbation. -----------
 
-    /// Fake segment renderer: writes a tiny PNG + audit per page, records
-    /// segment calls, can fail chosen segment starts and delay.
-    struct FakeSegments {
-        calls: std::sync::Mutex<Vec<(usize, usize)>>,
-        /// Segment starts that fail on their FIRST render only (the
-        /// foreground retry recovers, mirroring a transient worker fault).
-        fail_starts: std::sync::Mutex<Vec<usize>>,
-        delay: Duration,
+    #[test]
+    fn document_exit_code_maps_page_failures_to_partial_blk7() {
+        let base = || ocrx_scan::DocumentOutcome {
+            input: PathBuf::from("in.pdf"),
+            output_dir: PathBuf::from("out"),
+            summary: ocrx_scan::state::JobSummary {
+                selected_pages: 1,
+                completed_pages: 1,
+                failed_pages: 0,
+                truncated_pages: 0,
+                degenerated_pages: 0,
+                think_blocks_stripped: 0,
+                warnings: Vec::new(),
+                diagnostics: Vec::new(),
+                cancelled: false,
+            },
+            pages: vec![1],
+            backend: None,
+            identity: None,
+            telemetry_delta: None,
+            step_profile_delta: None,
+            markdown_path: None,
+            document_type: "text".to_owned(),
+            routing_counts: ocrx_scan::app::RoutingCounts::default(),
+            pdf_routing: Vec::new(),
+            images_count: 0,
+            elapsed_ms: 0,
+            failure: None,
+        };
+        // Clean document → 0.
+        assert_eq!(document_exit_code(&base(), false), 0);
+        // Page-level failure → PARTIAL 10 (real_scan_fault_injection contract).
+        let mut failed = base();
+        failed.summary.failed_pages = 1;
+        assert_eq!(document_exit_code(&failed, false), 10);
+        // Truncated → 10.
+        let mut truncated = base();
+        truncated.summary.truncated_pages = 1;
+        assert_eq!(document_exit_code(&truncated, false), 10);
+        // Document-level failure → its structured code (3/4/5/9).
+        let mut doc_failed = base();
+        doc_failed.failure = Some(ocrx_scan::DocumentFailure {
+            code: 3,
+            kind: "input".to_owned(),
+            message: "unreadable".to_owned(),
+            cause: None,
+        });
+        assert_eq!(document_exit_code(&doc_failed, false), 3);
+        // Cancel → 130.
+        assert_eq!(document_exit_code(&base(), true), 130);
+        // RBLK-3: a document failure racing a global cancel still reports the
+        // cancel — 130 dominates the failure code in both orderings.
+        assert_eq!(document_exit_code(&doc_failed, true), 130);
+        let mut doc_cancelled = base();
+        doc_cancelled.summary.cancelled = true;
+        doc_cancelled.failure = Some(ocrx_scan::DocumentFailure {
+            code: 9,
+            kind: "runtime".to_owned(),
+            message: "runtime died as cancel landed".to_owned(),
+            cause: None,
+        });
+        assert_eq!(document_exit_code(&doc_cancelled, false), 130);
+        // Final aggregation follows the frozen ladder.
+        assert_eq!(aggregate_scan_exit(&[0, 0]), 0);
+        assert_eq!(aggregate_scan_exit(&[0, 10]), 10);
+        assert_eq!(aggregate_scan_exit(&[10, 3]), 3);
+        assert_eq!(aggregate_scan_exit(&[3, 130]), 130);
     }
 
-    impl FakeSegments {
-        fn new() -> Arc<Self> {
-            Arc::new(Self {
-                calls: std::sync::Mutex::new(Vec::new()),
-                fail_starts: std::sync::Mutex::new(Vec::new()),
-                delay: Duration::ZERO,
-            })
-        }
+    #[test]
+    fn final_scan_exit_gives_cancellation_absolute_priority_rblk3() {
+        // Zero documents started (cancel before the first document) must not
+        // fold into 0 — single and multi input alike.
+        assert_eq!(final_scan_exit(true, false, &[]), 130);
+        assert_eq!(final_scan_exit(true, true, &[]), 130);
+        // Failure + cancel → 130 (cancellation dominates document failures).
+        assert_eq!(final_scan_exit(true, false, &[3]), 130);
+        assert_eq!(final_scan_exit(true, true, &[3, 10]), 130);
+        // No cancel: multi keeps the X1.4 ladder; single keeps its own code.
+        assert_eq!(final_scan_exit(false, true, &[0, 10]), 10);
+        assert_eq!(final_scan_exit(false, true, &[0, 3]), 3);
+        assert_eq!(final_scan_exit(false, false, &[2]), 2);
+        assert_eq!(final_scan_exit(false, false, &[10]), 10);
+        assert_eq!(final_scan_exit(false, false, &[]), 0);
+    }
 
-        fn with_fail_start(mut self: Arc<Self>, start: usize) -> Arc<Self> {
-            Arc::get_mut(&mut self)
-                .unwrap()
-                .fail_starts
-                .lock()
-                .unwrap()
-                .push(start);
-            self
+    #[test]
+    fn cli_out_of_range_pages_is_usage_error_blk4() {
+        // BLK-4: an out-of-range --pages selection is a usage error (exit 2),
+        // never a silent empty scan (the app validates the RAW selection
+        // before filtering; page_count runs first per §6.3 step 1).
+        let pdfium_candidate =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/pdfium/bin/pdfium.dll");
+        if !pdfium_candidate.is_file() {
+            eprintln!("skipping: no vendored pdfium available");
+            return;
         }
-
-        fn calls(&self) -> Vec<(usize, usize)> {
-            self.calls.lock().unwrap().clone()
-        }
-
-        fn wait_for_call(&self, start: usize, end: usize) {
-            for _ in 0..200 {
-                if self.calls().contains(&(start, end)) {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(10));
+        // Canonical spelling: the upstream hardened output policy refuses a
+        // raw `..` before lexical normalization, so the historical
+        // manifest-relative spelling would be refused before the pages
+        // validation this test targets.
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../benchmarks/fixtures/pdf/normal-1-page.pdf")
+            .canonicalize()
+            .expect("fixture resolves");
+        let mut command = match std::env::var("CARGO_BIN_EXE_ocrx") {
+            Ok(binary) => std::process::Command::new(binary),
+            Err(_) => {
+                let mut command = std::process::Command::new("cargo");
+                command
+                    .args(["run", "--quiet", "--bin", "ocrx", "--"])
+                    .current_dir(env!("CARGO_MANIFEST_DIR"));
+                command
             }
-            panic!("segment ({start},{end}) was never rendered");
-        }
-    }
-
-    impl SegmentRenderer for FakeSegments {
-        fn run_segment(
-            &self,
-            _input: &Path,
-            output: &Path,
-            start: usize,
-            end: usize,
-            _cancellation: &CancellationToken,
-        ) -> Result<(), String> {
-            std::thread::sleep(self.delay);
-            self.calls.lock().unwrap().push((start, end));
-            // Bind first so the guard temporary drops before the re-lock.
-            let fail_position = self
-                .fail_starts
-                .lock()
-                .unwrap()
-                .iter()
-                .position(|&s| s == start);
-            if let Some(position) = fail_position {
-                self.fail_starts.lock().unwrap().remove(position);
-                return Err(format!("injected segment failure at {start}"));
-            }
-            std::fs::create_dir_all(output).map_err(|e| e.to_string())?;
-            for page in start..end {
-                let page_number = u32::try_from(page + 1).unwrap();
-                let png = output.join(format!("page-{page_number:04}.png"));
-                image::RgbImage::from_fn(8, 6, |x, y| {
-                    image::Rgb([page_number as u8, x as u8, y as u8])
-                })
-                .save(&png)
-                .map_err(|e| e.to_string())?;
-                std::fs::write(
-                    output.join(format!("page-{page_number:04}.audit")),
-                    "original=100x200;rendered=8x6",
-                )
-                .map_err(|e| e.to_string())?;
-            }
-            Ok(())
-        }
-    }
-
-    fn worker_renderer(
-        fake: Arc<FakeSegments>,
-        page_count: usize,
-        output: &Path,
-    ) -> WorkerScanRenderer<FakeSegments> {
-        WorkerScanRenderer {
-            scheduler: fake,
-            input: PathBuf::from("input.pdf"),
-            output: output.to_path_buf(),
-            page_count: Some(page_count),
-            segment_pages: 2,
-            rendered_end: 0,
-            active_segment: (0, 0),
-            has_active_segment: false,
-            prefetch: None,
-            cancellation: CancellationToken::new(),
-        }
-    }
-
-    fn unique_worker_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("ocrx-worker-p3-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
-    }
-
-    #[test]
-    fn worker_prefetch_renders_next_segment_in_background_once() {
-        let fake = FakeSegments::new();
-        let output = unique_worker_dir("prefetch");
-        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
-        renderer.render(1).unwrap();
-        // Segment (0,2) ran synchronously; the background prefetch (2,4) is
-        // in flight or done. Serving page 3 must consume it, not re-run it;
-        // consuming immediately launches the next prefetch (4,6).
-        renderer.render(3).unwrap();
-        fake.wait_for_call(2, 4);
-        fake.wait_for_call(4, 6);
-        assert_eq!(fake.calls(), vec![(0, 2), (2, 4), (4, 6)]);
-        // Page 4 is inside the consumed (2,4) segment: served from disk with
-        // no further segment render.
-        renderer.render(4).unwrap();
-        assert_eq!(fake.calls(), vec![(0, 2), (2, 4), (4, 6)]);
-        let _ = std::fs::remove_dir_all(&output);
-    }
-
-    #[test]
-    fn worker_cleanup_removes_only_consumed_segment_page_files() {
-        let fake = FakeSegments::new();
-        let output = unique_worker_dir("cleanup");
-        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
-        renderer.render(1).unwrap();
-        assert!(output.join("page-0001.png").is_file());
-        renderer.render(3).unwrap();
-        // Segment (0,2) fully consumed: its page files are gone; the active
-        // segment (2,4) survives in the shared root (plan §6.3 narrowed
-        // cleanup — the old code removed the whole directory).
-        assert!(!output.join("page-0001.png").exists());
-        assert!(!output.join("page-0002.audit").exists());
-        assert!(output.join("page-0003.png").is_file());
-        assert!(output.join("page-0004.audit").is_file());
-        renderer.render(5).unwrap();
-        assert!(!output.join("page-0003.png").exists());
-        assert!(output.join("page-0005.png").is_file());
-        let _ = std::fs::remove_dir_all(&output);
-    }
-
-    #[test]
-    fn worker_render_perturbed_resamples_and_records_the_ratio() {
-        let fake = FakeSegments::new();
-        let output = unique_worker_dir("perturb");
-        let mut renderer = worker_renderer(Arc::clone(&fake), 4, &output);
-        let attempt0 = renderer.render(1).unwrap();
-        let attempt1 = renderer.render_perturbed(1, 47, 50).unwrap();
-        let attempt2 = renderer.render_perturbed(1, 53, 50).unwrap();
-        // 8x6 PNG: 47/50 -> 7x5; 53/50 floors to 8x6: all three model inputs
-        // differ in pixels (attempt inputs must actually rotate, BLK-1).
-        assert_eq!((attempt0.width, attempt0.height), (8, 6));
-        assert_eq!((attempt1.width, attempt1.height), (7, 5));
-        assert_ne!(attempt0.rgb8, attempt1.rgb8);
-        assert_ne!(attempt1.rgb8, attempt2.rgb8);
-        // The audit records the pre-perturbation render and the final model
-        // input faithfully (v3.10 BLK-1: the fallback silently ignored this).
-        assert_eq!(attempt1.audit.rendered_width, 8);
-        assert_eq!(attempt1.audit.model_width, 7);
-        assert_eq!(attempt1.audit.original_width, 100);
-        assert_eq!(attempt2.audit.model_width, 8);
-        assert_eq!(attempt2.audit.scale_ratio_numerator, 1);
-        let _ = std::fs::remove_dir_all(&output);
-    }
-
-    #[test]
-    fn worker_prefetch_failure_fails_the_prefetched_page_not_an_earlier_one() {
-        let fake = FakeSegments::new().with_fail_start(2);
-        let output = unique_worker_dir("fail");
-        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
-        // Page 1 (segment 0) succeeds; the background prefetch of segment 2
-        // fails. The failure must surface at page 3, not page 1.
-        renderer.render(1).unwrap();
-        fake.wait_for_call(2, 4);
-        let error = renderer.render(3).unwrap_err();
-        assert!(error.to_string().contains("injected segment failure at 2"));
-        // Later pages recover: the failed segment re-runs in the foreground
-        // when the scan needs it (failure-continues stays per page).
-        renderer.render(5).unwrap();
-        assert!(output.join("page-0005.png").is_file());
-        let _ = std::fs::remove_dir_all(&output);
-    }
-
-    #[test]
-    fn worker_drop_cancels_and_cleans_unconsumed_prefetch_pages() {
-        let fake = FakeSegments::new();
-        let output = unique_worker_dir("drop");
-        let mut renderer = worker_renderer(Arc::clone(&fake), 8, &output);
-        renderer.render(1).unwrap();
-        // Wait for the prefetch segment files to appear, then drop: the
-        // unconsumed segment (2,4) page files must be cleaned best effort.
-        fake.wait_for_call(2, 4);
-        drop(renderer);
-        assert!(!output.join("page-0003.png").exists());
-        assert!(!output.join("page-0004.audit").exists());
-        let _ = std::fs::remove_dir_all(&output);
-    }
-
-    #[test]
-    fn worker_out_of_range_page_is_rejected_before_any_segment_run() {
-        let fake = FakeSegments::new();
-        let output = unique_worker_dir("range");
-        let mut renderer = worker_renderer(Arc::clone(&fake), 4, &output);
-        assert!(renderer.render(0).is_err());
-        assert!(renderer.render(5).is_err());
-        assert!(fake.calls().is_empty());
-        let _ = std::fs::remove_dir_all(&output);
+        };
+        let output = command
+            .args([
+                "scan",
+                fixture.to_str().expect("fixture path is utf-8"),
+                "--pages",
+                "2",
+                "--report",
+                "json",
+            ])
+            .env("OCRX_PDFIUM_LIBRARY", &pdfium_candidate)
+            .output()
+            .expect("CLI subprocess should run");
+        assert_eq!(output.status.code(), Some(2));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("\"schema_version\":1"));
+        assert!(stdout.contains("\"code\":2"));
+        assert!(stdout.contains("page selection is out of range"));
     }
 }

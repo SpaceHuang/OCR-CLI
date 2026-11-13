@@ -1,0 +1,126 @@
+{
+    "page-f9583127-1277-4424-be9d-35430e0aedd6.png_[0]": {
+        "TEDS": 0.953968253968254,
+        "TEDS_structure_only": 1.0
+    },
+    "page-573c437e-c309-4483-a038-ef2f440b104a.png_[0]": {
+        "TEDS": 0.8295501486958401,
+        "TEDS_structure_only": 1.0
+    },
+    "page-28657a85-95cc-4bfa-8156-cc98518a0b4c.png_[0]": {
+        "TEDS": 0.98,
+        "TEDS_structure_only": 1.0
+    },
+    "page-9f6bc620-1983-4503-bb0f-f9c7949ccb77.png_[0]": {
+        "TEDS": 0.9988365328679465,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-ceat.200600410.pdf_5.jpg_[0]": {
+        "TEDS": 0.9976851851851852,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-ceat.200600410.pdf_5.jpg_[1]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_dianzishu_zhongwenzaixian-o.O-61520788.pdf_391.jpg_[0]": {
+        "TEDS": 0.9833333333333333,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_dianzishu_zhongwenzaixian-o.O-61569751.pdf_155.jpg_[0]": {
+        "TEDS": 0.9904081632653061,
+        "TEDS_structure_only": 1.0
+    },
+    "yanbaopptmerge_3aa9b6677e17fd012b0a7a230b9f18db.pdf_1327.jpg_[0]": {
+        "TEDS": 0.9622331691297209,
+        "TEDS_structure_only": 1.0
+    },
+    "yanbaopptmerge_d4fc7cba428625974e93183edfccea73.pdf_89.jpg_[0]": {
+        "TEDS": 0.8951121760122522,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocai_71434495.pdf_0.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-ceat.200407001.pdf_3.jpg_[0]": {
+        "TEDS": 0.6335188997190823,
+        "TEDS_structure_only": 0.8857142857142857
+    },
+    "docstructbench_llm-raw-scihub-o.O-s00128-008-9367-z.pdf_4.jpg_[0]": {
+        "TEDS": 0.8958718440142589,
+        "TEDS_structure_only": 1.0
+    },
+    "docstructbench_llm-raw-scihub-o.O-s00128-008-9367-z.pdf_4.jpg_[1]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_20608808.pdf_0.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_33137159.pdf_3.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_38247658.pdf_0.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_42351289.pdf_1.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_jiaocai_needrop_en_1349.jpg_[0]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "jiaocaineedrop_jiaocai_needrop_en_1910.jpg_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "jiaocaineedrop_jiaocai_needrop_en_2211.jpg_[0]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "jiaocaineedrop_jiaocai_needrop_en_999.jpg_[0]": {
+        "TEDS": 0.0,
+        "TEDS_structure_only": 0.0
+    },
+    "book_zh_DLT10902008_extracted_page_8.png_[0]": {
+        "TEDS": 0.9574916150670795,
+        "TEDS_structure_only": 1.0
+    },
+    "book_zh_YDT10512018_extracted_page_30.png_[0]": {
+        "TEDS": 0.9857142857142858,
+        "TEDS_structure_only": 1.0
+    },
+    "book_zh_GB115041989_extracted_page_9.png_[0]": {
+        "TEDS": 0.9688920454545454,
+        "TEDS_structure_only": 1.0
+    },
+    "book_zh_CNASGL0262018_extracted_page_82.png_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "book_zh_CNASGL082006_extracted_page_50.png_[0]": {
+        "TEDS": 0.9498554204290411,
+        "TEDS_structure_only": 1.0
+    },
+    "book_zh_GB14536.11998_extracted_page_145.png_[0]": {
+        "TEDS": 0.6208333333333333,
+        "TEDS_structure_only": 0.6666666666666667
+    },
+    "book_zh_HGT51022016_extracted_page_12.png_[0]": {
+        "TEDS": 0.9645146021371511,
+        "TEDS_structure_only": 1.0
+    },
+    "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0100.png_[0]": {
+        "TEDS": 1.0,
+        "TEDS_structure_only": 1.0
+    },
+    "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0100.png_[1]": {
+        "TEDS": 0.9695238095238096,
+        "TEDS_structure_only": 1.0
+    }
+}

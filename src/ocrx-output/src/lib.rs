@@ -285,9 +285,21 @@ use std::path::{Path, PathBuf};
 
 // Single cancellation source of truth (W3.1): the SIGINT token created by the
 // CLI must be passable to the runtime's token-generation loop, so the trait
-// below shares `ocrx_core::CancellationToken` instead of keeping a private,
+// below shares `ocrx_primitives::CancellationToken` instead of keeping a private,
 // type-incompatible duplicate.
-pub use ocrx_core::{CancellationToken, GenerationProgress};
+pub use ocrx_primitives::{CancellationToken, GenerationProgress};
+
+pub mod compatibility;
+pub use compatibility::{
+    OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute, ocr_final_compare,
+    ocr_pre_compare,
+};
+
+pub mod checkpoint_v6;
+pub use checkpoint_v6::{
+    CheckpointFile, V5Disposition, V6Checkpoint, V6Status, artifacts_intact, commit_native_page_v6,
+    commit_page_v6, commit_pending_ocr_v6, read_any, write_v6,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
@@ -1422,7 +1434,7 @@ fn classify_recognition_error(error: &std::io::Error) -> (&'static str, &'static
 }
 
 /// Removes full-page PNG copies after merge; figure crops and page Markdown stay for resume.
-fn cleanup_full_page_images(root: &Path, page_numbers: &[u32]) -> io::Result<()> {
+pub fn cleanup_full_page_images(root: &Path, page_numbers: &[u32]) -> io::Result<()> {
     for &page in page_numbers {
         let _ = fs::remove_file(root.join("images").join(format!("page-{page:04}.png")));
     }
@@ -2374,7 +2386,22 @@ impl PageCheckpoint {
     }
 }
 
-fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
+/// Deterministic artifact digest for one committed page: relative paths plus
+/// bytes of the markdown, the REQUIRED page JSON, and every image the JSON's
+/// `visual_region` blocks reference (frozen baseline algorithm — the write
+/// path and every verifier share it).
+///
+/// # Errors
+///
+/// [`io::Error`] when the markdown or page JSON cannot be read/parsed, or a
+/// referenced image is missing.
+///
+/// # Panics
+///
+/// Never for well-formed inputs: the image-directory unwrap only runs when
+/// at least one `visual_region` block exists, which is exactly when the
+/// directory was created above.
+pub fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
     let page_json = markdown.with_extension("json");
     // JSON contains structured block content and provenance that Markdown
     // cannot reconstruct. Treat it as a required member of the committed page.
@@ -2459,7 +2486,7 @@ pub fn write_checkpoint(path: impl AsRef<Path>, checkpoint: &PageCheckpoint) -> 
     atomic_write(path, content.as_bytes())
 }
 
-fn write_render_audit(root: &Path, page: u32, audit: RenderAudit) -> io::Result<()> {
+pub fn write_render_audit(root: &Path, page: u32, audit: RenderAudit) -> io::Result<()> {
     let path = root.join(format!("page-{page:04}.render-audit"));
     let temporary = root.join(format!(".page-{page:04}.render-audit.part"));
     atomic_write(&temporary, audit.as_checkpoint_fragment().as_bytes())?;
@@ -2701,7 +2728,11 @@ pub fn paths_overlap(left: &Path, right: &Path) -> bool {
 /// through the deepest existing ancestor also unfolds `..`, 8.3 short names
 /// (`PROGRA~1`), and reparse points for the parts of the path that exist
 /// (review BLK-2: component-wise comparison alone was bypassable).
-fn canonical_form(path: &Path) -> PathBuf {
+pub fn canonical_form(path: &Path) -> PathBuf {
+    canonical_form_public(path)
+}
+
+pub fn canonical_form_public(path: &Path) -> PathBuf {
     if let Ok(canonical) = fs::canonicalize(path) {
         return canonical;
     }
@@ -6050,5 +6081,18 @@ audit=none
         assert_eq!(controller.start_next().unwrap(), None);
         controller.finish(2, PageStatus::Failed).unwrap();
         assert_eq!(controller.summary().status(), JobStatus::Cancelled);
+    }
+}
+
+#[cfg(test)]
+mod overlap_debug {
+    #[test]
+    fn debug_overlap_temp_vs_models() {
+        let output = std::path::Path::new("C:/Users/WIN11/AppData/Local/Temp/ocrx-gate-t5");
+        let protected = std::path::Path::new(r"C:\Users\WIN11\AppData\Local\ocrx\models");
+        let result = super::paths_overlap(output, protected);
+        eprintln!("OVERLAP: {result}");
+        eprintln!("out canon: {:?}", super::canonical_form(output));
+        eprintln!("prot canon: {:?}", super::canonical_form(protected));
     }
 }

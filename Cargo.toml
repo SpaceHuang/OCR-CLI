@@ -3,11 +3,16 @@ resolver = "2"
 members = [
     "src/ocrx-cli",
     "src/ocrx-core",
+    "src/ocrx-primitives",
+    "src/ocrx-inference-api",
+    "src/ocrx-inference",
     "src/ocrx-runtime",
     "src/ocrx-pdf",
     "src/ocrx-models",
     "src/ocrx-output",
     "src/ocrx-ovisocr2",
+    "src/ocrx-scan",
+    "src/ocrx-eval",
     "src/ocrx-skill",
 ]
 

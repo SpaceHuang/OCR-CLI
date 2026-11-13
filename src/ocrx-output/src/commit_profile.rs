@@ -211,6 +211,20 @@ impl CommitRecorder {
         }
     }
 
+    /// Per-document isolation (X1): clears rows/generations so the same
+    /// page numbers of a later document never contaminate the snapshot.
+    /// The enabled flag and totals are preserved (totals are overwritten by
+    /// the next document's own finalize snapshot).
+    pub fn reset(&self) {
+        let mut state = match self.inner.lock() {
+            Ok(state) => state,
+            Err(_) => return,
+        };
+        state.generations.clear();
+        state.rows.clear();
+        state.totals = CommitProfile::default();
+    }
+
     pub fn record_finalize(&self, micros: u64) {
         let mut state = match self.inner.lock() {
             Ok(state) => state,
