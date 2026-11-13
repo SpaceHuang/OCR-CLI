@@ -160,6 +160,19 @@ jobs:
         shell: pwsh
         run: Add-Content $env:GITHUB_ENV 'CMAKE_CUDA_ARCHITECTURES=75;80;86;89'
 
+      # Even the newest CUDA minor rejects the hosted runner's fresher MSVC in
+      # nvcc's compiler-id step (C1189 at CMakeDetermineCompilerId — observed
+      # with 12.4 AND 12.9). Inject -allow-unsupported-compiler through
+      # CUDAFLAGS so the flag reaches BOTH the compiler-id probe and the real
+      # build (llama.cpp upstream CI runs exactly this combination; MSVC 19.4x
+      # works with CUDA 12.9 in practice — the check is conservative).
+      - name: allow the runner's MSVC as nvcc host compiler (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-Content $env:GITHUB_ENV 'CUDAFLAGS=-allow-unsupported-compiler'
+          Add-Content $env:GITHUB_ENV 'NVCC_PREPEND_FLAGS=-allow-unsupported-compiler'
+
       - name: package (windows, cpu + cuda)
         if: runner.os == 'Windows'
         shell: pwsh
