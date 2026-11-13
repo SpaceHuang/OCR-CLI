@@ -579,3 +579,66 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
     assert!(image::load_from_memory(&png).is_ok(), "page 2 png decodes");
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn resume_reuses_candidate_pages_even_with_pending_decode() {
+    // Real-model T106 regression: the window-loop resume classification built
+    // its ResumeContext with statik: None, so every OCR candidate died at the
+    // phase-1 gate ("no static identity for OCR pre-compare") and a resume
+    // with ANY pending page re-decoded the whole document (observed on real
+    // assets: 20/20 pages re-decoded on --resume). Seed page 1 as a reusable
+    // checkpoint under THIS run's compatibility; page 2 is pending — page 1
+    // must be reused (no decode, checkpoint untouched), page 2 decoded.
+    let root = temp_root("resume-candidate-pending");
+    let compatibility = crate::test_support::ocr_compatibility();
+    let mut checkpoint = crate::test_support::v6_ocr(1);
+    std::fs::write(root.join("page-0001.md"), "seeded body").unwrap();
+    std::fs::write(
+        root.join("page-0001.json"),
+        "{\"schema_version\":1,\"blocks\":[]}",
+    )
+    .unwrap();
+    checkpoint.output_sha256 =
+        ocrx_output::artifact_sha256(&root.join("page-0001.md"), &root).unwrap();
+    ocrx_output::write_v6(root.join("page-0001.checkpoint"), &checkpoint).unwrap();
+    let before = std::fs::metadata(root.join("page-0001.checkpoint"))
+        .unwrap()
+        .modified()
+        .unwrap();
+
+    // Depth 8 matches the seeded identity's batch_depth — a mismatching
+    // session identity would (correctly) fail phase 2 and reprocess.
+    let session = FakeSession::with_depth(8);
+    // Only page 2 has a program: a page-1 decode would panic the queue
+    // lookup — the submit counts below are the precise assertion.
+    session.push(2, eos(2));
+    let mut renderer = FakeRenderer::new();
+    let mut config = config(&compatibility);
+    config.resume = true;
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1, 2],
+        &root,
+        &config,
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 2);
+    assert_eq!(
+        session.core.single_calls.get() + session.core.window_calls.get(),
+        1,
+        "only the pending page may decode — the candidate must reuse"
+    );
+    let after = std::fs::metadata(root.join("page-0001.checkpoint"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    assert_eq!(
+        before, after,
+        "a reused page's checkpoint must not be rewritten"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

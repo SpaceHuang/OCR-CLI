@@ -494,7 +494,8 @@ impl ScanApplication {
                 let Ok(file) = ocrx_output::read_any(&path) else {
                     continue;
                 };
-                match classify(&file, output, &static_context(false)) {
+                let disposition = classify(&file, output, &static_context(false));
+                match disposition {
                     PageDisposition::Reuse {
                         think_blocks_stripped,
                         truncated,
@@ -762,11 +763,16 @@ impl ScanApplication {
                 else {
                     continue;
                 };
+                // Phase 1 re-gates on the SAME static identity the
+                // pre-compare used; phase 2 is authoritative against the
+                // executing session. `statik: None` here rejected every
+                // candidate at the pre-compare gate — real-model resume
+                // demoted and re-decoded the whole document.
                 let context = ResumeContext {
                     input_sha256: &input_sha256,
                     pdf: &pdf_identity,
                     side: &side,
-                    statik: None,
+                    statik: statik.as_ref(),
                     session_identity: executing.as_ref(),
                     has_pending_decode: true,
                 };
@@ -781,8 +787,6 @@ impl ScanApplication {
                     final_compare_failures.push(*page);
                 }
             }
-            #[cfg(test)]
-            eprintln!("DEBUG-FC failures={final_compare_failures:?}");
             if !final_compare_failures.is_empty() {
                 // Inconsistent candidates reprocess: never a mixed document.
                 // BLK-2: the demoted pages must JOIN the decode queue AND

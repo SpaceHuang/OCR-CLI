@@ -161,13 +161,21 @@ pub fn run_pages_with_session(
             if config.resume
                 && let Ok(file) = read_any(&checkpoint_path)
             {
-                // The window loop runs post-prepare: the final compare uses
-                // the executing session identity (RBLK-6/8).
+                // The window loop runs post-prepare: phase 1 derives the
+                // static subset from THIS run's prepared compatibility (the
+                // same resolution the checkpoints were written under) and
+                // phase 2 is authoritative against the executing session
+                // identity (RBLK-6/8). `statik: None` would reprocess every
+                // OCR candidate at the pre-compare gate — real-model resume
+                // re-ran the whole document before this was caught.
+                let statik = config.compatibility.ocr.as_ref().map(|ocr| {
+                    ocrx_inference_api::StaticInferenceIdentity::from_execution(&ocr.inference)
+                });
                 let context = crate::resume::ResumeContext {
                     input_sha256: &config.compatibility.input_sha256,
                     pdf: &config.compatibility.pdf,
                     side: &resume_side(config.compatibility),
-                    statik: None,
+                    statik: statik.as_ref(),
                     session_identity: Some(session.identity()),
                     has_pending_decode: true,
                 };
