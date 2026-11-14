@@ -32,6 +32,10 @@ use platform_paths::home_dir;
 /// authoritative — this spelling backs CLI defaults/display).
 const DEFAULT_MODEL: &str = "ovisocr2";
 
+/// Registered model ids the `--model` selector accepts (D-6: the default
+/// stays `ovisocr2`; unknown ids share the scan error spelling).
+const SUPPORTED_MODELS: [&str; 2] = ["ovisocr2", "ovisocr3"];
+
 #[derive(Debug, PartialEq, Eq)]
 enum CliCommand {
     Version,
@@ -42,6 +46,8 @@ enum CliCommand {
     Scan(ScanOptions),
     Model {
         action: String,
+        /// `--model` selector; `None` = the historical default shape.
+        model: Option<String>,
         profile: Option<String>,
         offline: bool,
         non_interactive: bool,
@@ -661,13 +667,17 @@ fn parse_command(args: &[&str]) -> Result<CliCommand, String> {
         ["model", action] if matches!(*action, "list" | "info" | "recommend") => {
             Ok(CliCommand::Model {
                 action: (*action).to_owned(),
+                model: None,
                 profile: None,
                 offline: false,
                 non_interactive: false,
             })
         }
         ["model", action, rest @ ..]
-            if matches!(*action, "info" | "install" | "remove" | "verify") =>
+            if matches!(
+                *action,
+                "list" | "info" | "recommend" | "install" | "remove" | "verify"
+            ) =>
         {
             parse_model_command(action, rest)
         }
@@ -679,6 +689,7 @@ fn parse_command(args: &[&str]) -> Result<CliCommand, String> {
 }
 
 fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String> {
+    let mut model = None;
     let mut profile = None;
     let mut offline = false;
     let mut non_interactive = false;
@@ -687,6 +698,14 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
         match args[index] {
             flag @ ("--offline" | "--non-interactive") if action == "remove" => {
                 return Err(format!("model {action} does not support {flag}"));
+            }
+            "--model" => {
+                index += 1;
+                let value = required_value(args, index, "--model")?;
+                if !SUPPORTED_MODELS.contains(&value) {
+                    return Err(format!("unsupported model: {value}"));
+                }
+                model = Some(value.to_owned());
             }
             "--offline" => offline = true,
             "--non-interactive" => non_interactive = true,
@@ -708,6 +727,7 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
     }
     Ok(CliCommand::Model {
         action: action.to_owned(),
+        model,
         profile,
         offline,
         non_interactive,
@@ -783,21 +803,42 @@ fn main() {
         }
         CliCommand::Model {
             action,
+            model,
             profile,
             offline: _,
             non_interactive: _,
         } if action == "list" || action == "info" || action == "recommend" => {
             // T071: everything flows through the production ModelManager
-            // (compose root); the output strings stay byte-identical.
+            // (compose root); the default output strings stay byte-identical
+            // (O3-T09: an explicit `--model` narrows the face; the no-flag
+            // `list` walks every registered model in declaration order, SS83 item 1).
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
                 .unwrap_or_else(ocrx_inference::default_cache_root);
             let composed = compose::compose(Some(cache_root));
-            let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
-                .unwrap_or_else(|_| unreachable!("pinned model id"));
+            let narrowed = model.is_some();
+            let selected = model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_owned());
+            let model = ocrx_inference_api::ModelId::new(&selected)
+                .unwrap_or_else(|_| unreachable!("model id validated by the CLI parser"));
             if action == "list" {
-                println!("model={DEFAULT_MODEL}");
+                if narrowed {
+                    // Explicit selector: list exactly that model's line
+                    // (frozen shape on creation, SS83 item 8).
+                    println!("model={}", model.as_str());
+                } else {
+                    match composed.inference.manager().list() {
+                        Ok(summaries) => {
+                            for summary in summaries {
+                                println!("model={}", summary.model);
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("model list failed: {error:?}");
+                            std::process::exit(4);
+                        }
+                    }
+                }
             } else if action == "info" {
                 let detail = match composed.inference.manager().info(&model) {
                     Ok(detail) => detail,
@@ -818,7 +859,7 @@ fn main() {
                 let installed: Vec<String> = profile.into_iter().collect();
                 println!(
                     "model={} profiles={} installed={}",
-                    DEFAULT_MODEL,
+                    selected,
                     profiles.join(","),
                     installed.join(",")
                 );
@@ -827,7 +868,7 @@ fn main() {
                 match composed.inference.manager().recommend(&model, &snapshot) {
                     Ok(recommendation) => println!(
                         "model={} profile={} memory_gb={} device={}",
-                        DEFAULT_MODEL,
+                        selected,
                         recommendation.profile,
                         snapshot.memory_gb,
                         composed
@@ -846,6 +887,7 @@ fn main() {
         }
         CliCommand::Model {
             action,
+            model,
             profile,
             offline,
             non_interactive,
@@ -853,6 +895,14 @@ fn main() {
             let Some(profile) = profile else {
                 eprintln!("model {action} requires a profile");
                 std::process::exit(2);
+            };
+            // O3-T09: the selector defaults to the historical DEFAULT_MODEL
+            // so the default success strings stay byte-identical.
+            let selected = model.unwrap_or_else(|| DEFAULT_MODEL.to_owned());
+            let revision = match selected.as_str() {
+                "ovisocr2" => ocrx_inference::builtin::OVISOCR2_REVISION,
+                "ovisocr3" => ocrx_inference::builtin::ovisocr3::OVISOCR3_REVISION,
+                other => unreachable!("model selector validated by the CLI parser: {other}"),
             };
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .filter(|value| !value.is_empty())
@@ -863,14 +913,13 @@ fn main() {
                 "verify" => {
                     // T072: verify = content + registry binding via the
                     // injected port (never downloads, never loads).
-                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
+                    let model = ocrx_inference_api::ModelId::new(&selected)
                         .unwrap_or_else(|_| unreachable!("pinned model id"));
                     let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
-                    let revision = ocrx_inference::builtin::OVISOCR2_REVISION;
                     match composed.inference.manager().verify(&model, &profile_id) {
                         Ok(()) => println!(
-                            "model=ovisocr2 profile={profile} revision={revision} status=installed"
+                            "model={selected} profile={profile} revision={revision} status=installed"
                         ),
                         Err(error) => {
                             eprintln!("model verification failed: {error:?}");
@@ -882,11 +931,10 @@ fn main() {
                     // T072: install via the manager (revision-scoped group
                     // transaction; trusted apache-2.0 community assets may
                     // install non-interactively, so the interaction accepts).
-                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
+                    let model = ocrx_inference_api::ModelId::new(&selected)
                         .unwrap_or_else(|_| unreachable!("pinned model id"));
                     let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
-                    let revision = ocrx_inference::builtin::OVISOCR2_REVISION;
                     let mut interaction = TrustedInstallInteraction;
                     match composed.inference.manager_mut().install(
                         &model,
@@ -897,7 +945,7 @@ fn main() {
                         &mut interaction,
                     ) {
                         Ok(_receipt) => println!(
-                            "model=ovisocr2 profile={profile} revision={revision} status=installed"
+                            "model={selected} profile={profile} revision={revision} status=installed"
                         ),
                         Err(ocrx_inference_api::InferenceError::Offline) => {
                             eprintln!("model install blocked: offline mode");
@@ -920,12 +968,14 @@ fn main() {
                 "remove" => {
                     // T072: removal via the manager (per-asset deletion with
                     // the shared-projector reference check, review m9).
-                    let model = ocrx_inference_api::ModelId::new(DEFAULT_MODEL)
+                    let model = ocrx_inference_api::ModelId::new(&selected)
                         .unwrap_or_else(|_| unreachable!("pinned model id"));
                     let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
                     match composed.inference.manager_mut().remove(&model, &profile_id) {
-                        Ok(_report) => println!("model=ovisocr2 profile={profile} status=removed"),
+                        Ok(_report) => {
+                            println!("model={selected} profile={profile} status=removed")
+                        }
                         Err(error) => {
                             eprintln!("model removal failed: {error:?}");
                             std::process::exit(9);
@@ -2034,12 +2084,16 @@ fn print_help(topic: Option<&str>) {
         }
         Some("doctor") => println!("ocrx doctor [--report json]"),
         Some("model") => {
-            println!("ocrx model list");
-            println!("ocrx model info [PROFILE]");
-            println!("ocrx model recommend");
-            println!("ocrx model install PROFILE [--offline] [--non-interactive]");
-            println!("ocrx model remove PROFILE");
-            println!("ocrx model verify PROFILE [--offline] [--non-interactive]");
+            println!("ocrx model list [--model ovisocr2|ovisocr3]");
+            println!("ocrx model info [--model ovisocr2|ovisocr3] [PROFILE]");
+            println!("ocrx model recommend [--model ovisocr2|ovisocr3]");
+            println!(
+                "ocrx model install [--model ovisocr2|ovisocr3] PROFILE [--offline] [--non-interactive]"
+            );
+            println!("ocrx model remove [--model ovisocr2|ovisocr3] PROFILE");
+            println!(
+                "ocrx model verify [--model ovisocr2|ovisocr3] PROFILE [--offline] [--non-interactive]"
+            );
         }
         Some("skill") => println!("ocrx skill <install|uninstall>"),
         Some(topic) => eprintln!("unknown help topic: {topic}"),
@@ -2566,6 +2620,23 @@ mod tests {
             .expect("cargo should launch the CLI test binary")
     }
 
+    fn run_cli_with_cache(args: &[&str], cache: &Path) -> std::process::Output {
+        if let Ok(binary) = std::env::var("CARGO_BIN_EXE_ocrx") {
+            return Command::new(binary)
+                .args(args)
+                .env("OCRX_MODEL_CACHE", cache)
+                .output()
+                .expect("CLI test binary should run");
+        }
+        Command::new("cargo")
+            .args(["run", "--quiet", "--bin", "ocrx", "--"])
+            .args(args)
+            .env("OCRX_MODEL_CACHE", cache)
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .expect("cargo should launch the CLI test binary")
+    }
+
     #[test]
     fn cli_resume_of_truncated_page_keeps_partial_status_and_exit_10() {
         // BLK-2 regression (real CLI subprocess): a same-parameter --resume
@@ -2811,6 +2882,173 @@ mod tests {
                 "model {action}: {stderr}"
             );
         }
+    }
+
+    #[test]
+    fn model_command_parser_accepts_the_model_selector() {
+        match parse_command(&["model", "list"]).unwrap() {
+            CliCommand::Model { action, model, .. } => {
+                assert_eq!(action, "list");
+                assert_eq!(model, None);
+            }
+            other => panic!("{other:?}"),
+        }
+        match parse_command(&["model", "info", "--model", "ovisocr3", "quality"]).unwrap() {
+            CliCommand::Model {
+                action,
+                model,
+                profile,
+                ..
+            } => {
+                assert_eq!(action, "info");
+                assert_eq!(model.as_deref(), Some("ovisocr3"));
+                assert_eq!(profile.as_deref(), Some("quality"));
+            }
+            other => panic!("{other:?}"),
+        }
+        // Unknown selector: scan-family error spelling (D-6).
+        let error = parse_command(&["model", "list", "--model", "qwen3.8"]).unwrap_err();
+        assert_eq!(error, "unsupported model: qwen3.8");
+        // Profile-required actions still require a profile under a selector.
+        let error = parse_command(&["model", "install", "--model", "ovisocr3"]).unwrap_err();
+        assert_eq!(error, "model install requires a profile");
+        // remove keeps rejecting the transaction flags under a selector.
+        let error = parse_command(&[
+            "model",
+            "remove",
+            "--model",
+            "ovisocr3",
+            "quality",
+            "--offline",
+        ])
+        .unwrap_err();
+        assert_eq!(error, "model remove does not support --offline");
+    }
+
+    #[test]
+    fn cli_model_list_default_lists_both_models_and_the_selector_narrows() {
+        // C6: (a) the no-flag list gains the ovisocr3 line in declaration
+        // order; (b) the first line keeps the historical bytes;
+        // (c) the explicit `--model ovisocr2` shape is frozen on creation.
+        let cache = std::env::temp_dir().join(format!("ocrx-model-list-{}", std::process::id()));
+        std::fs::create_dir_all(&cache).unwrap();
+        let output = run_cli_with_cache(&["model", "list"], &cache);
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            "model=ovisocr2
+model=ovisocr3
+"
+        );
+        for (args, expected) in [
+            (
+                &["model", "list", "--model", "ovisocr2"][..],
+                "model=ovisocr2
+",
+            ),
+            (
+                &["model", "list", "--model", "ovisocr3"][..],
+                "model=ovisocr3
+",
+            ),
+        ] {
+            let output = run_cli_with_cache(args, &cache);
+            assert!(output.status.success(), "{args:?}");
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                expected,
+                "{args:?}"
+            );
+            assert!(
+                String::from_utf8(output.stderr).unwrap().is_empty(),
+                "{args:?}"
+            );
+        }
+        // Unknown selector: no stdout, scan-family error on stderr, exit 2.
+        let output = run_cli_with_cache(&["model", "list", "--model", "qwen3.8"], &cache);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("unsupported model: qwen3.8")
+        );
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    fn cli_model_info_default_and_selector_golden() {
+        let cache = std::env::temp_dir().join(format!("ocrx-model-info-{}", std::process::id()));
+        std::fs::create_dir_all(&cache).unwrap();
+        // Default face: byte-frozen historical shape (empty cache → nothing
+        // installed; profiles render sorted).
+        let output = run_cli_with_cache(&["model", "info"], &cache);
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            "model=ovisocr2 profiles=balanced,compact,quality,reference installed=
+"
+        );
+        // OvisOCR3 selector face: frozen on creation (single rung).
+        for (args, expected) in [
+            (
+                &["model", "info", "--model", "ovisocr3"][..],
+                "model=ovisocr3 profiles=quality installed=
+",
+            ),
+            (
+                &["model", "info", "--model", "ovisocr3", "quality"][..],
+                "model=ovisocr3 profiles=quality installed=quality
+",
+            ),
+        ] {
+            let output = run_cli_with_cache(args, &cache);
+            assert!(output.status.success(), "{args:?}");
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                expected,
+                "{args:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    fn cli_model_recommend_selector_resolves_the_single_rung() {
+        let cache =
+            std::env::temp_dir().join(format!("ocrx-model-recommend-{}", std::process::id()));
+        std::fs::create_dir_all(&cache).unwrap();
+        let output = run_cli_with_cache(&["model", "recommend", "--model", "ovisocr3"], &cache);
+        assert!(output.status.success());
+        // The memory/device suffixes are host-dependent; the model/profile
+        // prefix is the frozen shape (single-rung set resolves to quality).
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.starts_with("model=ovisocr3 profile=quality memory_gb="),
+            "got: {stdout}"
+        );
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    fn cli_model_verify_error_path_for_ovisocr3_missing_assets() {
+        // Phase-1 shape (plan O3-T09 item 4): the ovisocr3 verify face
+        // exists and errors on the error path; its success path lights up
+        // with O3-T10 (per-model binding).
+        let cache = std::env::temp_dir().join(format!("ocrx-model-verify-{}", std::process::id()));
+        std::fs::create_dir_all(&cache).unwrap();
+        let output = run_cli_with_cache(
+            &["model", "verify", "--model", "ovisocr3", "quality"],
+            &cache,
+        );
+        assert_eq!(output.status.code(), Some(4));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            stderr.contains("model verification failed"),
+            "stderr: {stderr}"
+        );
+        let _ = std::fs::remove_dir_all(&cache);
     }
 
     #[test]
@@ -3234,6 +3472,7 @@ mod tests {
             parse_command(&["model", "info"]),
             Ok(CliCommand::Model {
                 action: "info".to_owned(),
+                model: None,
                 profile: None,
                 offline: false,
                 non_interactive: false,

@@ -29,7 +29,16 @@ pub use telemetry::{start_vram_sampler, stop_vram_sampler};
 // must not depend on the models crate directly (plan §8.13).
 pub use ocrx_models::default_cache_root;
 pub mod builtin {
-    pub use ocrx_models::builtin::ovisocr2::*;
+    // Per-model submodules: the two freeze tables keep their own namespaces
+    // (shared type names like OvisProfileAsset stay unambiguous).
+    pub mod ovisocr2 {
+        pub use ocrx_models::builtin::ovisocr2::*;
+    }
+    pub mod ovisocr3 {
+        pub use ocrx_models::builtin::ovisocr3::*;
+    }
+    // Historical flat spellings kept for the CLI revision/manifest lookups.
+    pub use ovisocr2::*;
 }
 pub use ocrx_models::{CurlTransport, ModelManagerImpl, recommend as recommend_module};
 pub mod recommend {

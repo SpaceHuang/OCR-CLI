@@ -90,6 +90,22 @@ mod tests {
     }
 
     #[test]
+    fn verifier_rejects_the_ovisocr3_binding_until_per_model_mapping_lands() {
+        // C1 prerequisite (plan O3-T09 item 4): the OvisOCR3 manifest
+        // declares adapter ovisocr3 while the registry still holds the
+        // single frozen ovisocr2 group — `model verify --model ovisocr3`
+        // must fail with IncompatibleBinding in Phase 1. O3-T10 flips this
+        // assertion when the per-model mapping lands.
+        let manifest = crate::builtin_test_manifest();
+        assert_eq!(RegistryVerifier.verify_binding(&manifest), Ok(()));
+        let manifest = ocrx_models::builtin::ovisocr3::ovisocr3_manifest("quality").unwrap();
+        assert!(matches!(
+            RegistryVerifier.verify_binding(&manifest),
+            Err(InferenceError::IncompatibleBinding(field)) if field == "adapter id"
+        ));
+    }
+
+    #[test]
     fn verifier_rejects_any_registry_mismatch() {
         let mut manifest = builtin_test_manifest();
         manifest.runtime_binding.sys_version = "0.1.160".to_owned();
