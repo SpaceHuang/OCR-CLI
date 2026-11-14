@@ -771,6 +771,7 @@ dependencies = [
  "ocrx-inference-api",
  "ocrx-models",
  "ocrx-ovisocr2",
+ "ocrx-ovisocr3",
  "ocrx-primitives",
  "ocrx-runtime",
  "serde",

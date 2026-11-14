@@ -333,32 +333,32 @@ README/README.zh-CN 的 Scope 从"One supported OCR model"扩展为双模型（`
 - [x] O3-T05 spike 结论冻结回写（D-2/D-4/D-5 全部【已冻结】；**D-2 分支裁定即 O3-T13b 触发状态——Phase 2 开工前已知**）
 
 **Phase 1（资产与目录）**
-- [ ] O3-T06 `builtin/ovisocr3.rs` 按冻结表**实际可用档位集** manifest + 注册（可变档位集，非无条件四档）
-- [ ] O3-T07 catalog 按模型 id 分派泛化 + 可变档位集（list/info display 源改声明序首个可用档；C15 判别）
-- [ ] O3-T08 缓存/安装/校验/移除路径参数化验证与双模型判别测试
-- [ ] O3-T09 model 子命令族 `--model` 选择器新增 + handler 参数化 + golden（新建/保持两类；ovisocr3 行格式定稿后冻结）；verify 双模型仅错误路径（成功路径随 O3-T10 复核——BLOCK-3 收窄）
+- [x] O3-T06 `builtin/ovisocr3.rs` 按冻结表**实际可用档位集** manifest + 注册（可变档位集，非无条件四档）
+- [x] O3-T07 catalog 按模型 id 分派泛化 + 可变档位集（list/info display 源改声明序首个可用档；C15 判别）
+- [x] O3-T08 缓存/安装/校验/移除路径参数化验证与双模型判别测试
+- [x] O3-T09 model 子命令族 `--model` 选择器新增 + handler 参数化 + golden（新建/保持两类；ovisocr3 行格式定稿后冻结）；verify 双模型仅错误路径（成功路径随 O3-T10 复核——BLOCK-3 收窄）
 
 **Phase 2（registry、adapter 与 service；条件任务 O3-T13b 排序先于 O3-T11——v1.4 复审 BLOCK-3）**
-- [ ] O3-T10 registry/binding per-model 映射 + 错配矩阵测试
+- [x] O3-T10 registry/binding per-model 映射 + 错配矩阵测试
 - [ ] O3-T13b【不触发——D-2 分支 1（原生直喂），2026-11-14 spike 裁定；~~runtime 媒体标记策略（`BeforePrompt`/`EmbeddedInPrompt`，串行+窗口两路径；C13 = OvisOCR2 逐字节不变——OvisOCR3 联合 golden 随 O3-T11/C13b）~~】
-- [ ] O3-T11 `ocrx-ovisocr3` adapter crate（encode 按 D-2 分支落点，分支 3 依赖 T13b 策略字段）+ 漂移检测 golden + 架构白名单增补；分支 3 时执行 C13b（实际 adapter + runtime 联合 MTMD golden）
-- [ ] O3-T12 service adapter **三读取点统一**（session ×2 + `static_identity`）按 `manifest.adapter_binding.adapter` 映射 + per-model 身份断言
-- [ ] O3-T13 backend 协议约束复核 + 身份单源化（backend.rs 与 registry 常量消重；分支判定已归 O3-T05）
-- [ ] O3-T14 fake 双模型 **service/prepare 矩阵**（不含 scan 全链路——移 O3-T19；BLOCK-1）
+- [x] O3-T11 `ocrx-ovisocr3` adapter crate（encode 按 D-2 分支落点，分支 3 依赖 T13b 策略字段）+ 漂移检测 golden + 架构白名单增补；分支 3 时执行 C13b（实际 adapter + runtime 联合 MTMD golden）
+- [x] O3-T12 service adapter **三读取点统一**（session ×2 + `static_identity`）按 `manifest.adapter_binding.adapter` 映射 + per-model 身份断言
+- [x] O3-T13 backend 协议约束复核 + 身份单源化（backend.rs 与 registry 常量消重；分支判定已归 O3-T05）
+- [x] O3-T14 fake 双模型 **service/prepare 矩阵**（不含 scan 全链路——移 O3-T19；BLOCK-1）
 
 **Phase 3（scan 接入）**
-- [ ] O3-T15 prompt pack 模块化 + **全读取点贯穿**（请求构造/预比较/checkpoint；静态检查无残留全局常量读取点——BLOCK-3）
-- [ ] O3-T16 模型 id CLI→app 贯穿 + **scan `--model` 解析放行前移**（`ScanOptions.model` 死字段接线 + `DocumentOptions` 承载 + CLI 层端到端断言 + **实际请求 prompt 捕获断言**；缺省 ovisocr2 行为不变）
-- [ ] O3-T17 跨模型 checkpoint 否决判别测试（双方向）
-- [ ] O3-T18 阶梯 rung 网格按裁定 + think/警告通道适用性测试
-- [ ] O3-T19 scan **双模型全链路 fake 矩阵**（承接 O3-T14 拆分——BLOCK-1）+ C14 续判别 + 架构脚本 0
+- [x] O3-T15 prompt pack 模块化 + **全读取点贯穿**（请求构造/预比较/checkpoint；静态检查无残留全局常量读取点——BLOCK-3）
+- [x] O3-T16 模型 id CLI→app 贯穿 + **scan `--model` 解析放行前移**（`ScanOptions.model` 死字段接线 + `DocumentOptions` 承载 + CLI 层端到端断言 + **实际请求 prompt 捕获断言**；缺省 ovisocr2 行为不变）
+- [x] O3-T17 跨模型 checkpoint 否决判别测试（双方向）
+- [x] O3-T18 阶梯 rung 网格按裁定 + think/警告通道适用性测试
+- [x] O3-T19 scan **双模型全链路 fake 矩阵**（承接 O3-T14 拆分——BLOCK-1）+ C14 续判别 + 架构脚本 0
 
 **Phase 4（CLI、文档与打包）**
-- [ ] O3-T20 CLI 收口——scan/model 两面（help/错误串/golden；解析放行已在 O3-T16；§8.3 ①②④ 复核——doctor 面归 O3-T21）
-- [ ] O3-T21 doctor 双模型面（解析/实现/help/用例/golden 同任务闭环——D-11）+ 报告接线（result.json 从 `DocumentOutcome.identity` **接线**为主要实现工作——N1）+ §8.3 ③ 复核
-- [ ] O3-T22 README 双语 + THIRD_PARTY_NOTICES 双语（Apache-2.0 + GGUF provenance）
-- [ ] O3-T23 打包/CI 复核与发布说明模板
-- [ ] O3-T24 实施日志滚动 + 勾选同步
+- [x] O3-T20 CLI 收口——scan/model 两面（help/错误串/golden；解析放行已在 O3-T16；§8.3 ①②④ 复核——doctor 面归 O3-T21）
+- [x] O3-T21 doctor 双模型面（解析/实现/help/用例/golden 同任务闭环——D-11）+ 报告接线（result.json 从 `DocumentOutcome.identity` **接线**为主要实现工作——N1）+ §8.3 ③ 复核
+- [x] O3-T22 README 双语 + THIRD_PARTY_NOTICES 双语（Apache-2.0 + GGUF provenance）
+- [x] O3-T23 打包/CI 复核与发布说明模板
+- [x] O3-T24 实施日志滚动 + 勾选同步
 
 **Phase 5（质量评估与验收）**
 - [ ] O3-T25 fixture gold 双模型分册（`assets/regression/` 新目录，与 `ovisocr2-draft-v1/` 同级同形态）

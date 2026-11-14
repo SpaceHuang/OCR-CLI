@@ -13,14 +13,18 @@ OCR-CLI is a local Rust command-line tool for extracting structured content from
 
 The current v0.1 scope is intentionally narrow:
 
-- One supported OCR model: [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2).
+- Two supported OCR models selected with `--model`:
+  [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) (default) and
+  [OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3).
 - Local PDF input and page rendering through PDFium.
 - Multimodal inference through llama.cpp/libmtmd and a separate `mmproj` GGUF file.
 - OvisOCR2 profiles: `compact`, `balanced`, `quality`, and `reference`.
+- OvisOCR3 profile: `quality` (Q8_0; the actually available community
+  conversion set — see the release notes for the freeze table).
 - Markdown, JSON, progress, resume, and diagnostic workflows exposed by the CLI.
 - A macOS arm64 release/Skill packaging path.
 
-Other OCR models are not part of the v0.1 public contract. In particular, the project does not claim support for HunyuanOCR or other model families.
+Other OCR models are not part of the v0.1 public contract. In particular, the project does not claim support for HunyuanOCR or other model families. The default model stays OvisOCR2; selecting OvisOCR3 is always explicit (`--model ovisocr3`).
 
 ## Current implementation status
 
@@ -65,10 +69,12 @@ cargo run -p ocrx -- help
 cargo run -p ocrx -- doctor
 cargo run -p ocrx -- doctor --report json
 
-# Inspect or manage the supported OvisOCR2 model.
+# Inspect or manage the supported OCR models.
 cargo run -p ocrx -- model list
 cargo run -p ocrx -- model info ovisocr2
+cargo run -p ocrx -- model info --model ovisocr3
 cargo run -p ocrx -- model recommend
+cargo run -p ocrx -- model recommend --model ovisocr3
 
 # Scan a PDF using the automatically selected OvisOCR2 profile.
 cargo run -p ocrx -- scan /absolute/path/to/input.pdf \

@@ -6,7 +6,7 @@ OCR-CLI source code is intended to be distributed under the Apache License, Vers
 
 ## OvisOCR2
 
-OCR-CLI uses OvisOCR2 as its only formally supported OCR model for v0.1.
+OCR-CLI uses OvisOCR2 as its default supported OCR model for v0.1.
 
 - Original model: [ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2)
 - Technical report: [OvisOCR2 Technical Report](https://arxiv.org/abs/2607.13639)
@@ -18,6 +18,21 @@ OCR-CLI uses OvisOCR2 as its only formally supported OCR model for v0.1.
 The GGUF model and `mmproj` files are not part of the OCR-CLI source-code license. Users and distributors must retain the upstream model metadata and comply with the terms of the exact model revision being used. Model files must not be redistributed with an OCR-CLI release unless their provenance, license, and redistribution status have been reviewed for that release.
 
 The OvisOCR2 manifest identifies [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) as its base-model lineage. Verify the model card and terms for the exact model revision before redistribution.
+
+## OvisOCR3
+
+OCR-CLI additionally supports OvisOCR3 as an explicitly selected (`--model ovisocr3`) OCR model; it is never the default.
+
+- Original model: [ATH-MaaS/OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3)
+- Technical report: [OvisOCR3 Technical Report](https://arxiv.org/abs/2610.33066)
+- Selected GGUF distribution (community conversion): [michalland/OvisOCR3-GGUF](https://huggingface.co/michalland/OvisOCR3-GGUF)
+- Selected GGUF revision: `7be644a312005c3a55e2c826aee985a5c93d06b2`
+- Declared model license: Apache License 2.0 (`Apache-2.0`), as declared by the upstream model repositories at the time of review.
+- Provenance note: the official upstream releases Transformers/Safetensors weights only; the pinned GGUF files (including the F16 `mmproj` projector) are a community conversion of that upstream, verified by SHA-256 at freeze time. A disaster-backup community repository (`prithivMLmods/ATH-MaaS-OvisOCR3-GGUF`) was evaluated and recorded during selection but is not used by the manifest.
+
+The GGUF model and `mmproj` files are not part of the OCR-CLI source-code license. Users and distributors must retain the upstream model metadata and comply with the terms of the exact model revision being used. Model files must not be redistributed with an OCR-CLI release unless their provenance, license, and redistribution status have been reviewed for that release.
+
+The OvisOCR3 manifest identifies [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) as its base-model lineage. Verify the model card and terms for the exact model revision before redistribution.
 
 ## llama.cpp and libmtmd
 
