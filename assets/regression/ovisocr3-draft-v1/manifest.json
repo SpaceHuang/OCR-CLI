@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "set_id": "ovisocr3-draft-v1",
+  "page_count": 30,
+  "input_sha256": "ab3235512ef1f60122c3b060c5cf43c12947839e82875d940e10c36e37963477",
+  "renderer": {
+    "dpi": 300,
+    "pixel_budget": 1048576
+  },
+  "prompt_revision": "ovisocr3-prompt-schema-1",
+  "adapter_revision": "ovisocr3-adapter-0.1.0",
+  "runtime_revision": "llama.cpp@0.1.161",
+  "model_revision": "7be644a312005c3a55e2c826aee985a5c93d06b2",
+  "license": {
+    "redistributable": false,
+    "provenance": "Private 30-page composite from the two local PDFs recorded in inputs/acquisition.md; source PDFs and composite are not redistributable."
+  },
+  "required_categories": [
+    "text",
+    "formula",
+    "table",
+    "visual",
+    "mixed",
+    "blank"
+  ],
+  "truth_inclusion_policy": {
+    "visible_cover_elements": true,
+    "visible_icons_and_illustrations": true,
+    "visible_page_numbers": true,
+    "visible_watermarks": true,
+    "note": "Any visibly present element is included in truth, even when decorative or peripheral."
+  },
+  "bootstrap": {
+    "selector": "ovisocr3-scan-draft",
+    "status": "draft",
+    "generated_at": "2026-11-14T00:00:00+08:00",
+    "note": "Page-level draft blocks from a real OvisOCR3 scan of the same composite as ovisocr2-draft-v1; categories carried over from the approved page review. NOT approved truth."
+  }
+}

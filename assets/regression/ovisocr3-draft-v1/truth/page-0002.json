@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "page_number": 2,
+  "categories": [
+    "text"
+  ],
+  "blocks": [
+    {
+      "type": "markdown",
+      "content": "# captured\n\nbody",
+      "bbox": {
+        "left": 0.0,
+        "top": 0.0,
+        "right": 1.0,
+        "bottom": 1.0
+      },
+      "source_order": 0
+    }
+  ],
+  "termination": "eos",
+  "warnings": [
+    "DRAFT bootstrap from a real OvisOCR3 scan (2026-11-14): block-level truth, bboxes, and category boundaries require full human review before approval."
+  ],
+  "review_status": "draft",
+  "bootstrap": {
+    "source": "ovisocr3-scan-draft",
+    "generated_at": "2026-11-14T00:00:00+08:00",
+    "model_revision": "7be644a312005c3a55e2c826aee985a5c93d06b2",
+    "needs_human": [
+      "all blocks"
+    ]
+  }
+}
