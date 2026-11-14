@@ -229,6 +229,10 @@ fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
         keep_pages: false,
         column_split_enabled: true,
         max_output_tokens: 16_384,
+        prompt: crate::ocr::prompt::pack_for(
+            &ocrx_inference_api::ModelId::new("ovisocr2").expect("built-in id is valid"),
+        )
+        .prompt,
     }
 }
 

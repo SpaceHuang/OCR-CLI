@@ -13,6 +13,7 @@ pub mod telemetry;
 // Runtime factory re-export: the CLI composition root builds the llama
 // factory without a direct runtime dependency (plan §8.13).
 pub use ocrx_runtime::LlamaRuntimeFactory;
+pub use ocrx_runtime::platform_runtime_identity;
 
 pub use device::DeviceManagerImpl;
 

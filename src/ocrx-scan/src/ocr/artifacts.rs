@@ -156,6 +156,9 @@ fn assemble(
 pub struct SessionRecognizer<'s> {
     session: &'s mut dyn InferenceSession,
     max_output_tokens: u32,
+    /// The selected model's frozen pack prompt (O3-T15: the request
+    /// construction reads the per-model pack, never a global constant).
+    prompt: &'static str,
     output_root: std::path::PathBuf,
 }
 
@@ -165,10 +168,12 @@ impl<'s> SessionRecognizer<'s> {
         session: &'s mut dyn InferenceSession,
         output_root: impl Into<std::path::PathBuf>,
         max_output_tokens: u32,
+        prompt: &'static str,
     ) -> Self {
         Self {
             session,
             max_output_tokens,
+            prompt,
             output_root: output_root.into(),
         }
     }
@@ -189,8 +194,8 @@ impl<'s> SessionRecognizer<'s> {
         let image = ImageInput::new(id, width, height, rgb8).map_err(|error| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
         })?;
-        let mut request = TaskRequest::new(super::prompt::OCR_MARKDOWN_V1, vec![image], generation)
-            .map_err(|error| {
+        let mut request =
+            TaskRequest::new(self.prompt, vec![image], generation).map_err(|error| {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
             })?;
         if let Some(step) = step {

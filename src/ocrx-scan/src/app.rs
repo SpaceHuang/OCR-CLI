@@ -87,6 +87,9 @@ pub struct DocumentOptions {
     /// Model/profile/device request strings (`auto` allowed).
     pub requested_profile: String,
     pub requested_device: String,
+    /// O3-T16: the requested model id ("ovisocr2" default — the frozen
+    /// default face; "ovisocr3" rides the CLI gate open in the same task).
+    pub model: String,
     pub install: InstallPolicy,
 }
 
@@ -105,6 +108,7 @@ impl Default for DocumentOptions {
             pages: None,
             requested_profile: "auto".to_owned(),
             requested_device: "auto".to_owned(),
+            model: "ovisocr2".to_owned(),
             install: InstallPolicy::offline(),
         }
     }
@@ -431,10 +435,15 @@ impl ScanApplication {
             pdf_identity.clone(),
         );
         // Step 3: resume classification (static pre-compare; zero-load path).
+        // O3-T15: the prompt triplet comes from the requested model's pack.
+        let request_model = ocrx_inference_api::ModelId::new(&options.model).map_err(|error| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+        })?;
+        let pack = crate::ocr::prompt::pack_for(&request_model);
         let side = ScanOcrSide {
-            prompt_id: crate::ocr::prompt::PROMPT_ID.to_owned(),
-            prompt_version: crate::ocr::prompt::PROMPT_VERSION.to_owned(),
-            prompt_schema_version: crate::ocr::prompt::PROMPT_SCHEMA_VERSION,
+            prompt_id: pack.id.to_owned(),
+            prompt_version: pack.version.to_owned(),
+            prompt_schema_version: pack.schema_version,
             dpi: options.dpi,
             max_image_tokens: options.max_image_tokens,
             max_output_tokens: options.max_output_tokens,
@@ -445,24 +454,14 @@ impl ScanApplication {
         };
         let statik: Option<StaticInferenceIdentity> = if shared_prepared.is_none() {
             service
-                .static_identity(
-                    &ocrx_inference_api::ModelId::new("ovisocr2").map_err(|error| {
-                        std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
-                    })?,
-                    &options.requested_profile,
-                )
+                .static_identity(&request_model, &options.requested_profile)
                 .ok()
         } else {
             // A shared session already exists: its identity is authoritative
             // for later final compares, but the static query stays the
             // pre-compare source (RBLK-4).
             service
-                .static_identity(
-                    &ocrx_inference_api::ModelId::new("ovisocr2").map_err(|error| {
-                        std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
-                    })?,
-                    &options.requested_profile,
-                )
+                .static_identity(&request_model, &options.requested_profile)
                 .ok()
         };
         let mut resume_reuse: Vec<u32> = Vec::new();
@@ -713,7 +712,7 @@ impl ScanApplication {
             if session.is_none() {
                 // Prepare once (invocation-shared).
                 let request = PrepareRequest {
-                    model: ocrx_inference_api::ModelId::new("ovisocr2").map_err(|error| {
+                    model: ocrx_inference_api::ModelId::new(&options.model).map_err(|error| {
                         std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
                     })?,
                     requested_profile: options.requested_profile.clone(),
@@ -872,6 +871,9 @@ impl ScanApplication {
                     max_image_tokens: options.max_image_tokens,
                     max_output_tokens: options.max_output_tokens,
                     context_size: options.context_size,
+                    prompt_id: pack.id.to_owned(),
+                    prompt_version: pack.version.to_owned(),
+                    prompt_schema_version: pack.schema_version,
                     ..crate::compatibility::ScanOcrConfig::default()
                 },
             );
@@ -881,6 +883,7 @@ impl ScanApplication {
                 keep_pages: options.keep_pages,
                 column_split_enabled: options.column_split_retry,
                 max_output_tokens: options.max_output_tokens,
+                prompt: pack.prompt,
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
             ocr_summary = run_pages_with_session(

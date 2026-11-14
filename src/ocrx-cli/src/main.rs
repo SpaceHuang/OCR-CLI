@@ -178,7 +178,10 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             "--model" => {
                 index += 1;
                 let model = required_value(args, index, "--model")?;
-                if model != DEFAULT_MODEL {
+                // O3-T16: the scan gate opens to the registered models
+                // (DEFAULT_MODEL unchanged; unknown ids share the frozen
+                // error spelling).
+                if !SUPPORTED_MODELS.contains(&model) {
                     return Err(format!("unsupported model: {model}"));
                 }
                 model.clone_into(&mut options.model);
@@ -1442,6 +1445,7 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
         pages: options.pages.clone(),
         requested_profile: options.profile.clone(),
         requested_device: options.device.clone(),
+        model: options.model.clone(),
         install: ocrx_inference_api::InstallPolicy {
             offline: options.offline,
             non_interactive: options.non_interactive,
@@ -2062,7 +2066,7 @@ fn print_help(topic: Option<&str>) {
             println!("  one <stem>-<hash8> subdirectory per document plus scan-summary.json.");
             println!("  -o, --output-dir DIR");
             println!("  --pages SPEC                 page range, e.g. 1,3-5");
-            println!("  --model ovisocr2");
+            println!("  --model ovisocr2|ovisocr3");
             println!("  --model-profile auto|compact|balanced|quality|reference");
             println!("  --pdf-mode auto|text|ocr");
             println!("  --quality-tier l1|l2 (default l2)");
@@ -2173,11 +2177,11 @@ mod tests {
     use std::process::Command;
 
     use super::{
-        CliCommand, ConfigSource, ResolvedConfig, RoutingCounts, ScanOptions, ScanResultFields,
-        ScanSummaryDocument, aggregate_scan_exit, current_platform, doctor_json_report,
-        document_exit_code, final_scan_exit, injected_failure, output_dir_for_doc, parse_command,
-        parse_injected_failure_page, parse_page_selection, parse_scan_args, planned_ocr_pages,
-        resolve_config, resolve_scan_inputs, scan_summary_json,
+        CliCommand, ConfigSource, DEFAULT_MODEL, ResolvedConfig, RoutingCounts, ScanOptions,
+        ScanResultFields, ScanSummaryDocument, aggregate_scan_exit, current_platform,
+        doctor_json_report, document_exit_code, final_scan_exit, injected_failure,
+        output_dir_for_doc, parse_command, parse_injected_failure_page, parse_page_selection,
+        parse_scan_args, planned_ocr_pages, resolve_config, resolve_scan_inputs, scan_summary_json,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
@@ -2620,6 +2624,50 @@ mod tests {
             .expect("cargo should launch the CLI test binary")
     }
 
+    /// Resolves the compiled CLI binary (CARGO_BIN_EXE or a cargo run
+    /// fallback), matching `run_cli`.
+    fn cli_binary() -> Command {
+        if let Ok(binary) = std::env::var("CARGO_BIN_EXE_ocrx") {
+            return Command::new(binary);
+        }
+        let mut command = Command::new("cargo");
+        command
+            .args(["run", "--quiet", "--bin", "ocrx", "--"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"));
+        command
+    }
+
+    /// The vendored PDFium library directory: the repo root itself, or the
+    /// main checkout two levels up from a nested worktree.
+    fn pdfium_library_for_tests() -> PathBuf {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let root = std::fs::canonicalize(&root).unwrap_or(root);
+        let mut candidates = vec![root.join("vendor/pdfium/bin")];
+        if let Some(above) = root.parent().and_then(|dir| dir.parent()) {
+            candidates.push(above.join("vendor/pdfium/bin"));
+        }
+        for candidate in candidates {
+            if candidate.join("pdfium.dll").is_file() || candidate.join("libpdfium.dylib").is_file()
+            {
+                return std::fs::canonicalize(&candidate).unwrap_or(candidate);
+            }
+        }
+        root.join("vendor/pdfium/bin")
+    }
+
+    /// The non-redistributable golden composite: the repo root, or the main
+    /// checkout for a nested worktree (gitignored inputs).
+    fn golden_source_pdf() -> Option<PathBuf> {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let root = std::fs::canonicalize(&root).unwrap_or(root);
+        let mut candidates =
+            vec![root.join("assets/regression/ovisocr2-draft-v1/inputs/source.pdf")];
+        if let Some(above) = root.parent().and_then(|dir| dir.parent()) {
+            candidates.push(above.join("assets/regression/ovisocr2-draft-v1/inputs/source.pdf"));
+        }
+        candidates.into_iter().find(|path| path.is_file())
+    }
+
     fn run_cli_with_cache(args: &[&str], cache: &Path) -> std::process::Output {
         if let Ok(binary) = std::env::var("CARGO_BIN_EXE_ocrx") {
             return Command::new(binary)
@@ -3047,6 +3095,110 @@ model=ovisocr3
             "model=ovisocr3 profile=quality revision=7be644a312005c3a55e2c826aee985a5c93d06b2 status=installed
 "
         );
+    }
+
+    #[test]
+    fn scan_parser_accepts_registered_models_and_rejects_unknown() {
+        // O3-T16 item 2: the scan gate opens to the registered models.
+        let parsed = parse_scan_args(&["input.pdf", "--model", "ovisocr3"]).unwrap();
+        assert_eq!(parsed.model, "ovisocr3");
+        let parsed = parse_scan_args(&["input.pdf", "--model", "ovisocr2"]).unwrap();
+        assert_eq!(parsed.model, "ovisocr2");
+        let parsed = parse_scan_args(&["input.pdf"]).unwrap();
+        assert_eq!(parsed.model, DEFAULT_MODEL);
+        let error = parse_scan_args(&["input.pdf", "--model", "qwen3.8"]).unwrap_err();
+        assert_eq!(error, "unsupported model: qwen3.8");
+    }
+
+    #[test]
+    fn scan_model_selector_errors_cleanly_without_assets() {
+        // Always-on e2e shape: the accepted selector reaches the asset gate
+        // and fails with the standard blocked spelling (no panic, no
+        // partial output) when the cache has no ovisocr3 assets.
+        let cache = std::env::temp_dir().join(format!("ocrx-scan-gate-{}", std::process::id()));
+        std::fs::create_dir_all(&cache).unwrap();
+        let output = run_cli_with_cache(
+            &[
+                "scan",
+                "missing-input.pdf",
+                "--model",
+                "ovisocr3",
+                "--offline",
+            ],
+            &cache,
+        );
+        assert_eq!(output.status.code(), Some(3));
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    #[ignore = "env-gated: OCRX_E2E_MODEL=1 with the real assets installed, the golden PDF, and PDFium"]
+    fn scan_prompt_capture_asserts_the_frozen_pack_bytes_per_model() {
+        // C7 (O3-T16): the assertion rides the real CLI subprocess path —
+        // every encoded TaskRequest.prompt must byte-equal the selected
+        // model's frozen pack (ovisocr3 explicit == ovisocr2 default ==
+        // the historical bytes, per the spike). The v6 checkpoint
+        // compatibility triplet must name the same pack.
+        if std::env::var_os("OCRX_E2E_MODEL").is_none() {
+            eprintln!("skipped: set OCRX_E2E_MODEL=1");
+            return;
+        }
+        let source = golden_source_pdf();
+        let Some(source) = source else {
+            eprintln!("skipping: golden source.pdf unavailable");
+            return;
+        };
+        for (selector, model) in [("", "ovisocr2"), ("--model ovisocr3", "ovisocr3")] {
+            let work =
+                std::env::temp_dir().join(format!("ocrx-capture-{model}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&work);
+            std::fs::create_dir_all(&work).unwrap();
+            let capture = work.join("prompts.txt");
+            let output_dir = work.join("out");
+            let mut args: Vec<&str> = vec!["scan", source.to_str().unwrap()];
+            args.extend(selector.split_whitespace());
+            args.extend(["-o", output_dir.to_str().unwrap()]);
+            let output = cli_binary()
+                .args(&args)
+                .env("OCRX_E2E_CAPTURE_OUT", &capture)
+                .env("OCRX_PDFIUM_LIBRARY", pdfium_library_for_tests())
+                .output()
+                .expect("CLI binary should run");
+            assert!(
+                output.status.success(),
+                "capture scan failed for {model}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let prompts = std::fs::read_to_string(&capture).unwrap();
+            let prompts: Vec<&str> = prompts
+                .split("---PROMPT---\n")
+                .map(|prompt| prompt.trim_end_matches('\n'))
+                .filter(|prompt| !prompt.is_empty())
+                .collect();
+            assert!(!prompts.is_empty(), "no prompts captured for {model}");
+            let pack =
+                ocrx_scan::ocr::prompt::pack_for(&ocrx_inference_api::ModelId::new(model).unwrap());
+            for prompt in &prompts {
+                assert_eq!(
+                    *prompt, pack.prompt,
+                    "captured prompt drifted from the {model} frozen pack"
+                );
+            }
+            // Checkpoint triplet agreement (C7 tail assertion).
+            let checkpoint = output_dir.join("page-0001.checkpoint");
+            let file =
+                ocrx_output::read_any(&checkpoint).expect("first page checkpoint must exist");
+            if let ocrx_output::CheckpointFile::V6(checkpoint) = file {
+                let ocr = checkpoint.compatibility.ocr.as_ref().expect("ocr route");
+                assert_eq!(ocr.prompt_id, pack.id);
+                assert_eq!(ocr.prompt_version, pack.version);
+                assert_eq!(ocr.prompt_schema_version, pack.schema_version);
+                assert_eq!(ocr.inference.model.model.as_str(), model);
+            } else {
+                panic!("expected a v6 checkpoint");
+            }
+            let _ = std::fs::remove_dir_all(&work);
+        }
     }
 
     #[test]

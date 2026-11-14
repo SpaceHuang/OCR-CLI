@@ -7,6 +7,8 @@ use ocrx_inference_api::InferenceIdentity;
 use ocrx_output::{OcrIdentity, PdfIdentity, ScanCompatibility, ScanRoute};
 
 /// Scan-side OCR configuration entering the compatibility identity.
+/// O3-T15: the prompt identity triplet comes from the selected model's
+/// frozen pack (carried in explicitly — no global-constant read sites).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanOcrConfig {
     pub dpi: u32,
@@ -17,10 +19,17 @@ pub struct ScanOcrConfig {
     pub pixel_width_budget: u32,
     pub pixel_height_budget: u32,
     pub page_parser_version: String,
+    pub prompt_id: String,
+    pub prompt_version: String,
+    pub prompt_schema_version: u32,
 }
 
 impl Default for ScanOcrConfig {
     fn default() -> Self {
+        // The default face stays the historical (default-model) pack.
+        let pack = crate::ocr::prompt::pack_for(
+            &ocrx_inference_api::ModelId::new("ovisocr2").expect("built-in id is valid"),
+        );
         Self {
             dpi: 300,
             max_image_tokens: 1024,
@@ -29,6 +38,9 @@ impl Default for ScanOcrConfig {
             pixel_width_budget: 2880,
             pixel_height_budget: 2880,
             page_parser_version: "ovis-page-v1".to_owned(),
+            prompt_id: pack.id.to_owned(),
+            prompt_version: pack.version.to_owned(),
+            prompt_schema_version: pack.schema_version,
         }
     }
 }
@@ -59,9 +71,9 @@ pub fn ocr_compatibility(
         pdf,
         OcrIdentity {
             inference: identity.clone(),
-            prompt_id: crate::ocr::prompt::PROMPT_ID.to_owned(),
-            prompt_version: crate::ocr::prompt::PROMPT_VERSION.to_owned(),
-            prompt_schema_version: crate::ocr::prompt::PROMPT_SCHEMA_VERSION,
+            prompt_id: config.prompt_id.clone(),
+            prompt_version: config.prompt_version.clone(),
+            prompt_schema_version: config.prompt_schema_version,
             dpi: config.dpi,
             max_image_tokens: config.max_image_tokens,
             max_output_tokens: config.max_output_tokens,
