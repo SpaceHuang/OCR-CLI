@@ -291,11 +291,25 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
     validate_output_policy(Path::new(&options.inputs[0]), &output_dir, &[])?;
     validate_numeric_options(
         options.dpi,
-        options.max_image_tokens,
+        Some(
+            options
+                .max_image_tokens
+                .unwrap_or_else(|| default_max_image_tokens(&options.model)),
+        ),
         options.max_output_tokens,
         options.context_size,
     )?;
     Ok(options)
+}
+
+/// O3-T18/D-5 revision: the scan-level image-token budget DEFAULT is
+/// per-model. OvisOCR3's projector needs the 2048 grid on dense pages (the
+/// 1024 OvisOCR2 default leaves them effectively unread — real-scan
+/// evidence in the implementation log); the OvisOCR2 default stays 1024
+/// byte-for-byte (iron rule 1).
+#[must_use]
+fn default_max_image_tokens(model: &str) -> u32 {
+    if model == "ovisocr3" { 2048 } else { 1024 }
 }
 
 /// Resolves the X1.1 multi-input set: directories expand to their `*.pdf`
@@ -1469,7 +1483,9 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
         pdf_mode: options.pdf_mode.clone(),
         quality_tier: options.quality_tier.clone(),
         dpi: options.dpi.unwrap_or(300),
-        max_image_tokens: options.max_image_tokens.unwrap_or(1024),
+        max_image_tokens: options
+            .max_image_tokens
+            .unwrap_or_else(|| default_max_image_tokens(&options.model)),
         max_output_tokens: options.max_output_tokens.unwrap_or(16_384),
         context_size: options.context_size.unwrap_or(20_480),
         resume: options.resume,
@@ -3492,6 +3508,43 @@ model=ovisocr3
         assert_eq!(stdout.lines().count(), 1);
         assert!(stdout.contains("\"schema_version\":1"));
         assert!(!stdout.contains("input.pdf"));
+    }
+
+    #[test]
+    fn image_token_budget_default_is_per_model() {
+        // O3-T18/D-5 revision: the default scan-level image budget is
+        // 2048 for ovisocr3 (projector needs the larger grid on dense
+        // pages) and 1024 for ovisocr2 (unchanged).
+        assert_eq!(super::default_max_image_tokens("ovisocr2"), 1024);
+        assert_eq!(super::default_max_image_tokens("ovisocr3"), 2048);
+        // The context-fit gate applies the resolved default: ovisocr3
+        // (2048 + 16384 + 1024 = 19456) fits the 20480 default context but
+        // not a deliberately smaller one.
+        let ok = parse_scan_args(&[
+            "input.pdf",
+            "--model",
+            "ovisocr3",
+            "--context-size",
+            "19456",
+        ]);
+        assert!(ok.is_ok(), "ovisocr3 resolved budget must fit 19456");
+        let err = parse_scan_args(&[
+            "input.pdf",
+            "--model",
+            "ovisocr3",
+            "--context-size",
+            "19455",
+        ]);
+        assert!(
+            err.is_err(),
+            "expected the resolved budget to overflow 19455"
+        );
+        // The default model keeps the historical 1024-based gate untouched.
+        assert!(
+            parse_scan_args(&["input.pdf", "--context-size", "18431"]).is_err(),
+            "ovisocr2 resolved budget (1024+16384+1024=18432) overflows 18431"
+        );
+        assert!(parse_scan_args(&["input.pdf", "--context-size", "18432"]).is_ok());
     }
 
     #[test]

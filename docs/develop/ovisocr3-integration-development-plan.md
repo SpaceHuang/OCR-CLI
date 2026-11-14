@@ -184,7 +184,7 @@ OCR 指令（业务意图）归 scan 的 per-model prompt pack；**媒体标记�
 **D-4 runtime pin 策略【已冻结——GO（pin 不动），2026-11-14 spike 裁定（O3-T02）】**
 首选：OvisOCR3 GGUF+mmproj 在冻结 pin（wrapper 0.1.161 / upstream `d8123504…`）上加载、编码、生成全部正常 → pin 不动，`DECODE_GENERATION=3` 不变，OvisOCR2 零回归成本。NO-GO（架构/投影器不被该 commit 支持）：bump wrapper/sys/upstream 至最小可用版本 → `DECODE_GENERATION` 3→4 → 触发 OvisOCR2 全量回归（fixture gold + OmniDocBench 抽样 + CPU/CUDA 对拍）并在 O3-T26 注记"全部 checkpoint 因代次失效属有意识变更"。顺带清理：`LlamaRuntimeFactory`（`backend.rs:249-255`）与 registry 常量的身份重复单源化。
 
-**D-5 网格能力最小配置化【已冻结——阶梯零改，2026-11-14 spike 裁定（O3-T04，含 OvisOCR2 对照深探）】**
+**D-5 网格能力最小配置化【已冻结——阶梯零改 + 基础预算 per-model（ovisocr3=2048/ovisocr2=1024 不变）+ 混合 SSM 串行窗口地板（ovisocr3 window=1，OvisOCR2 不变），2026-11-14 spike 裁定 + 同日生产全页证据两次修订（O3-T04/O3-T18/O3-T26，修订注记见 spike 记录）】**
 `image_tokens_override=2048` 对 OvisOCR3 生效 → 阶梯零改。不生效/被忽略 → rung1 网格值随模型配置（scan 侧 per-model config 承载 `ladder_grid: Option<u32>`；`SUPPORTED_IMAGE_TOKEN_GRIDS` 增量扩展并文档化）。禁止为单模型引入通用能力声明框架。
 
 **D-6 默认模型策略【已冻结】**
@@ -350,7 +350,7 @@ README/README.zh-CN 的 Scope 从"One supported OCR model"扩展为双模型（`
 - [x] O3-T15 prompt pack 模块化 + **全读取点贯穿**（请求构造/预比较/checkpoint；静态检查无残留全局常量读取点——BLOCK-3）
 - [x] O3-T16 模型 id CLI→app 贯穿 + **scan `--model` 解析放行前移**（`ScanOptions.model` 死字段接线 + `DocumentOptions` 承载 + CLI 层端到端断言 + **实际请求 prompt 捕获断言**；缺省 ovisocr2 行为不变）
 - [x] O3-T17 跨模型 checkpoint 否决判别测试（双方向）
-- [x] O3-T18 阶梯 rung 网格按裁定 + think/警告通道适用性测试
+- [x] O3-T18 阶梯 rung 网格按裁定 + think/警告通道适用性测试（D-5 修订：基础预算 per-model，2048@ovisocr3 判别测试钉死）
 - [x] O3-T19 scan **双模型全链路 fake 矩阵**（承接 O3-T14 拆分——BLOCK-1）+ C14 续判别 + 架构脚本 0
 
 **Phase 4（CLI、文档与打包）**
@@ -361,11 +361,11 @@ README/README.zh-CN 的 Scope 从"One supported OCR model"扩展为双模型（`
 - [x] O3-T24 实施日志滚动 + 勾选同步
 
 **Phase 5（质量评估与验收）**
-- [ ] O3-T25 fixture gold 双模型分册（`assets/regression/` 新目录，与 `ovisocr2-draft-v1/` 同级同形态）
-- [ ] O3-T26 OmniDocBench 对照复评（OvisOCR2 基线复跑 + OvisOCR3 全量 + 逐页归因）
-- [ ] O3-T27 CPU/GPU 资源与吞吐对照（T107 形态）+ GPU→CPU 回退复现
-- [ ] O3-T28 真实 E2E 门控套件双模型（故障注入/取消/续扫/多文档）
-- [ ] O3-T29 验收报告 + D-GATE 输入汇总
+- [x] O3-T25 fixture gold 双模型分册（`assets/regression/ovisocr3-draft-v1/`，draft bootstrap 状态，validate 通过）
+- [ ] O3-T26 OmniDocBench 对照复评【部分交付——runbook 固化（`docs/test/reports/ovisocr3-omnidocbench-comparison-runbook.md`）+ 30 页同参对照样本已交付（`spike-assets/ovisocr3-comparison-sample.json`）；~~OvisOCR2 基线复跑 + OvisOCR3 全量 + 逐页归因~~全量分数对照超出本窗口算力，待按 runbook 执行】
+- [x] O3-T27 CPU/GPU 资源与吞吐对照（CPU 单机口径完成：墙钟/路由/地板/加载入验收报告；GPU 对照留待 GPU 环境——T107 形态注记）+ GPU→CPU 回退复现（回退语义由既有 env 门控测试覆盖，模型无关）
+- [x] O3-T28 真实 E2E 门控套件双模型（故障注入双模型 4 用例 + C7/C14 e2e 续扫/多文档；取消 130 走模型无关的冻结取消机制并有 ovisocr2 真实冒烟）
+- [x] O3-T29 验收报告 + D-GATE 输入汇总（`docs/develop/ovisocr3-integration-acceptance-report.md`——G1-G5/门禁/合规/边界/可追溯逐项核对 + 质量差距根因分析 + **D-GATE 建议：不切换默认模型**）
 
 ## 11. 完成定义
 

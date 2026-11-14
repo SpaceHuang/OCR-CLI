@@ -10,7 +10,7 @@
   "blocks": [
     {
       "type": "markdown",
-      "content": "# captured\n\nbody",
+      "content": "一块石头从离海面 45 m 高的绝壁上落下，试估计这块石头经过多少时间落到海面.\n\n<img src=\"images/page-0019-figure-001.png\" />\n\n设石头在下落过程中离海面的高度 h 与下落的时间 t 有如下的关系：\n\n$$ h=-5t^{2}+45. $$\n\n1. 填表：\n\n<table border=1><tr><td>t/s</td><td>0</td><td>0.5</td><td>1</td><td>1.5</td><td>2</td><td>2.5</td><td>...</td></tr><tr><td>h/m</td><td></td><td></td><td></td><td></td><td></td><td></td><td>...</td></tr></table>\n\n2. 石头经过多少时间落到海面？\n\n本章将学习一元二次方程的概念、解法和应用.",
       "bbox": {
         "left": 0.0,
         "top": 0.0,

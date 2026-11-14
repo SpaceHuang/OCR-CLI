@@ -6,19 +6,7 @@
     "visual",
     "mixed"
   ],
-  "blocks": [
-    {
-      "type": "markdown",
-      "content": "# captured\n\nbody",
-      "bbox": {
-        "left": 0.0,
-        "top": 0.0,
-        "right": 1.0,
-        "bottom": 1.0
-      },
-      "source_order": 0
-    }
-  ],
+  "blocks": [],
   "termination": "eos",
   "warnings": [
     "DRAFT bootstrap from a real OvisOCR3 scan (2026-11-14): block-level truth, bboxes, and category boundaries require full human review before approval."

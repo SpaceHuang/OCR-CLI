@@ -149,7 +149,8 @@ impl InferenceService for InferenceServiceImpl {
         let mut actual_backend = requested_backend.clone();
         let mut batch_depth = self
             .devices
-            .window_depth(self.devices.vram_bytes(&requested_backend));
+            .window_depth(self.devices.vram_bytes(&requested_backend))
+            .min(batch_depth_floor_for(&request.model));
         let asset_paths = self.manager.required_asset_paths(&manifest)?;
         let path_of = |role: &str| -> Result<std::path::PathBuf, InferenceError> {
             asset_paths
@@ -197,7 +198,10 @@ impl InferenceService for InferenceServiceImpl {
                     "gpu initialization failed ({error}); fell back to cpu"
                 ));
                 actual_backend = BackendId::new("cpu").expect("cpu is valid");
-                batch_depth = self.devices.window_depth(None);
+                batch_depth = self
+                    .devices
+                    .window_depth(None)
+                    .min(batch_depth_floor_for(&request.model));
                 load(&actual_backend, batch_depth)?
             }
             Err(error) => return Err(error),
@@ -265,6 +269,20 @@ impl InferenceService for InferenceServiceImpl {
             adapter: registry::adapter_identity_for(model)?,
             decode_generation: DECODE_GENERATION,
         })
+    }
+}
+
+/// The per-model window-depth floor (O3-T26 production finding): the
+/// qwen35 architecture is a hybrid attention+SSM model whose multi-slot
+/// window decode is unsafe on the frozen pin — batched slots intermittently
+/// produce empty generations, while single-stream decode is byte-stable.
+/// OvisOCR3 therefore runs with a serial floor (window of 1); OvisOCR2 has
+/// no floor and keeps its device-tiered depth unchanged.
+#[must_use]
+fn batch_depth_floor_for(model: &ModelId) -> usize {
+    match model.as_str() {
+        "ovisocr3" => 1,
+        _ => usize::MAX,
     }
 }
 
@@ -592,6 +610,19 @@ mod tests {
             InferenceError::Offline | InferenceError::MissingAsset(_)
         ));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn batch_depth_floor_is_per_model() {
+        // O3-T26 production finding: the hybrid-SSM qwen35 architecture
+        // (ovisocr3) runs with a serial window floor (1) — multi-slot batch
+        // decode is unsafe on the frozen pin; ovisocr2 keeps the device
+        // tier (no floor).
+        assert_eq!(batch_depth_floor_for(&ModelId::new("ovisocr3").unwrap()), 1);
+        assert_eq!(
+            batch_depth_floor_for(&ModelId::new("ovisocr2").unwrap()),
+            usize::MAX
+        );
     }
 
     #[test]

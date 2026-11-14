@@ -1,0 +1,253 @@
+{
+  "comparison": "ovisocr2-quality(Q8_0) vs ovisocr3-quality(Q8_0, 2048 image budget, serial floor)",
+  "pages": 30,
+  "device": "cpu",
+  "runtime_pin": "llama.cpp wrapper/sys 0.1.161 (upstream d8123504)",
+  "elapsed_ms": {
+    "ovisocr2": 528217,
+    "ovisocr3": 819471
+  },
+  "pages_obj": {
+    "ovisocr2": {
+      "total": 30,
+      "completed": 30,
+      "failed": 0,
+      "truncated": 0,
+      "degenerated": 0,
+      "think_blocks_stripped_total": 0
+    },
+    "ovisocr3": {
+      "total": 30,
+      "completed": 30,
+      "failed": 0,
+      "truncated": 0,
+      "degenerated": 0,
+      "think_blocks_stripped_total": 15
+    }
+  },
+  "routing_counts": {
+    "ovisocr2": {
+      "native_text": 1,
+      "ocr": 27,
+      "empty": 2,
+      "fallback": 0
+    },
+    "ovisocr3": {
+      "native_text": 1,
+      "ocr": 27,
+      "empty": 2,
+      "fallback": 0
+    }
+  },
+  "per_page": [
+    {
+      "page": 1,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 456,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 2,
+      "similarity": 1.0,
+      "bytes_ovisocr2": 49,
+      "bytes_ovisocr3": 49
+    },
+    {
+      "page": 3,
+      "similarity": 0.9696,
+      "bytes_ovisocr2": 1380,
+      "bytes_ovisocr3": 1373
+    },
+    {
+      "page": 4,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 1859,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 5,
+      "similarity": 0.8866,
+      "bytes_ovisocr2": 3306,
+      "bytes_ovisocr3": 2984
+    },
+    {
+      "page": 6,
+      "similarity": 0.9866,
+      "bytes_ovisocr2": 2873,
+      "bytes_ovisocr3": 2892
+    },
+    {
+      "page": 7,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 1601,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 8,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 2420,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 9,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 3199,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 10,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 2617,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 11,
+      "similarity": 1.0,
+      "bytes_ovisocr2": 49,
+      "bytes_ovisocr3": 49
+    },
+    {
+      "page": 12,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 3329,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 13,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 2893,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 14,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 2675,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 15,
+      "similarity": 0.9921,
+      "bytes_ovisocr2": 3613,
+      "bytes_ovisocr3": 3593
+    },
+    {
+      "page": 16,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 1279,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 17,
+      "similarity": 0.9517,
+      "bytes_ovisocr2": 1496,
+      "bytes_ovisocr3": 1544
+    },
+    {
+      "page": 18,
+      "similarity": 1.0,
+      "bytes_ovisocr2": 0,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 19,
+      "similarity": 0.9535,
+      "bytes_ovisocr2": 631,
+      "bytes_ovisocr3": 600
+    },
+    {
+      "page": 20,
+      "similarity": 0.8535,
+      "bytes_ovisocr2": 941,
+      "bytes_ovisocr3": 890
+    },
+    {
+      "page": 21,
+      "similarity": 0.8947,
+      "bytes_ovisocr2": 1103,
+      "bytes_ovisocr3": 1075
+    },
+    {
+      "page": 22,
+      "similarity": 0.6728,
+      "bytes_ovisocr2": 1328,
+      "bytes_ovisocr3": 1321
+    },
+    {
+      "page": 23,
+      "similarity": 0.9095,
+      "bytes_ovisocr2": 1521,
+      "bytes_ovisocr3": 1547
+    },
+    {
+      "page": 24,
+      "similarity": 0.9723,
+      "bytes_ovisocr2": 226,
+      "bytes_ovisocr3": 227
+    },
+    {
+      "page": 25,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 1024,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 26,
+      "similarity": 0.5572,
+      "bytes_ovisocr2": 761,
+      "bytes_ovisocr3": 446
+    },
+    {
+      "page": 27,
+      "similarity": 0.9868,
+      "bytes_ovisocr2": 2292,
+      "bytes_ovisocr3": 2280
+    },
+    {
+      "page": 28,
+      "similarity": 0.0,
+      "bytes_ovisocr2": 1977,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 29,
+      "similarity": 1.0,
+      "bytes_ovisocr2": 0,
+      "bytes_ovisocr3": 0
+    },
+    {
+      "page": 30,
+      "similarity": 1.0,
+      "bytes_ovisocr2": 89,
+      "bytes_ovisocr3": 89
+    }
+  ],
+  "similarity_stats": {
+    "mean": 0.5529,
+    "min": 0.0,
+    "max": 1.0,
+    "identical_pages": 5,
+    "below_0_9": [
+      1,
+      4,
+      5,
+      7,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      16,
+      20,
+      21,
+      22,
+      25,
+      26,
+      28
+    ]
+  },
+  "output_volume": {
+    "ovisocr2_total_chars": 46987,
+    "ovisocr3_total_chars": 20959
+  }
+}

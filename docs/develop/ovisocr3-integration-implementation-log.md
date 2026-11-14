@@ -77,7 +77,34 @@
 - O3-T23：打包/安装脚本模型无关复核（package-windows-x64.ps1/install.ps1 无模型假设，权重永不随包）；发布说明模板 `docs/plan/release-notes-dual-model-template.md`（双模型安装指引 + 冻结表 + 供应链）；CI 真实模型 E2E 保持 env 门控（不强求 runner 资产）。
 - O3-T24：本日志滚动 + 计划 §10.2 勾选同步。
 
-## Phase 5 🔄（O3-T25–T29）
+## Phase 5 ✅（O3-T25–T29；T26 部分交付——定界诚实）
+
+- **O3-T18/D-5 生产证据修订（两次）**：① 真实全页扫描暴露基础预算不足——单页矩阵实证
+  页 6 在 2048 网格下从 0 字节恢复 2892 字节 → **基础预算 per-model**（ovisocr3=2048 /
+  ovisocr2=1024 不变，`default_max_image_tokens` + 判别测试）；② 串行地板假设被复用探针
+  证伪后如实修订——**混合 SSM 串行窗口地板**作为防御性语义保留（判别测试钉死），scan
+  路径生成退化根因仍未定位（直驱路径同页完美 → 差异收敛在 scan 路径，候选因素登记）。
+- O3-T25：`assets/regression/ovisocr3-draft-v1/`（30 页 draft bootstrap，页分类承自已评审
+  同页复核，块内容来自真实扫描；validate-regression-set.py 通过；明确 NOT approved truth）。
+- O3-T26（部分交付）：全量复评 runbook 固化 + 30 页同参对照样本（`spike-assets/
+  ovisocr3-comparison-sample.json`；均值相似度 0.553、输出量 21KB vs 47KB）；全量分数
+  对照超出本窗口算力，未执行。
+- O3-T27：CPU 单机口径资源观测入验收报告（墙钟 819s vs 528s、串行地板、加载 502ms；
+  GPU 口径留待 GPU 环境）。
+- O3-T28：故障注入双模型 4 用例全绿（`real_scan_fault_injection.rs` 参数化）；续扫/多文档
+  由 C7/C14 e2e 覆盖。
+- O3-T29：验收报告落 `docs/develop/ovisocr3-integration-acceptance-report.md`——
+  §11 完成定义逐项核对（G1 能力面✅/质量面⚠️、G2✅、G3✅、G5✅、门禁✅、G4 部分交付、
+  合规✅、边界✅、可追溯✅）+ 质量差距根因分析（已排除四假设 + 候选因素）+
+  **D-GATE 建议：不切换默认模型（R5 口径），接入按"能力可用 + 差距入档"交付**。
+
+## 后续工作（验收报告 §遗留）
+
+1. scan 路径生成退化 root-cause 立项（最高优先）。
+2. 修复后按 runbook 执行全量 OmniDocBench 对照。
+3. 检空盲区（立即 EOS 不被退化阶梯拦截，双模型通用）。
+4. ovisocr3-draft-v1 升级 approved truth（人工评审）。
+5. 串行地板移除条件：上游 pin 修复混合模型批量语义。
 
 ---
 
