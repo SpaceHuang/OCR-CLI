@@ -3098,6 +3098,44 @@ model=ovisocr3
     }
 
     #[test]
+    fn help_text_lists_the_model_selector_on_both_faces() {
+        // SS83 item 4 / O3-T20: the registered help lines for scan and the
+        // model subcommand family.
+        let output = run_cli(&["help", "scan"]);
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("--model ovisocr2|ovisocr3"),
+            "scan help: {stdout}"
+        );
+        let output = run_cli(&["help", "model"]);
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("ocrx model list [--model ovisocr2|ovisocr3]"),
+            "model help: {stdout}"
+        );
+        assert!(
+            stdout.contains("ocrx model verify [--model ovisocr2|ovisocr3] PROFILE"),
+            "model help: {stdout}"
+        );
+    }
+
+    #[test]
+    fn scan_model_error_shares_the_frozen_error_spelling() {
+        // D-6: scan and the model family share the same unsupported-model
+        // error shape (no stdout, exit 2).
+        let output = run_cli(&["scan", "input.pdf", "--model", "qwen3.8"]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            stderr.contains("unsupported model: qwen3.8"),
+            "stderr: {stderr}"
+        );
+    }
+
+    #[test]
     fn scan_parser_accepts_registered_models_and_rejects_unknown() {
         // O3-T16 item 2: the scan gate opens to the registered models.
         let parsed = parse_scan_args(&["input.pdf", "--model", "ovisocr3"]).unwrap();
