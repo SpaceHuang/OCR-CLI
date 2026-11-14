@@ -13,8 +13,8 @@ mod llama {
     use ocrx_inference_api::identity::RuntimeTelemetry;
     use ocrx_inference_api::{
         BackendHandle, BackendOutput, DecodeEcho, EncodedTask, ImagePlacement, InferenceError,
-        NativeFinishReason, RetrySampling, RuntimeBackend, RuntimeFactory, RuntimeIdentity,
-        RuntimeLoadRequest, TokenUsage,
+        NativeFinishReason, RetrySampling, RuntimeBackend, RuntimeFactory, RuntimeLoadRequest,
+        TokenUsage,
     };
     use ocrx_primitives::{CancellationToken, GenerationProgress};
 
@@ -246,13 +246,7 @@ mod llama {
             let info = runtime.info();
             Ok(BackendHandle {
                 backend: Box::new(LlamaBackend::new(runtime, info.image_token_limit)),
-                runtime: RuntimeIdentity {
-                    runtime: ocrx_inference_api::RuntimeId::new("llama.cpp")
-                        .map_err(|error| InferenceError::InvalidManifest(error.to_string()))?,
-                    wrapper_version: "0.1.161".to_owned(),
-                    sys_version: "0.1.161".to_owned(),
-                    upstream_revision: "d81235049384534c167caea52b85a694f6103d14".to_owned(),
-                },
+                runtime: super::platform_runtime_identity()?,
                 backend_id: request.device.clone(),
                 image_token_limit: info.image_token_limit,
             })
@@ -389,9 +383,27 @@ pub use llama::{LlamaBackend, LlamaRuntimeFactory};
 use ocrx_inference_api::identity::RuntimeTelemetry;
 use ocrx_inference_api::{
     BackendOutput, DecodeEcho, EncodedTask, InferenceError, NativeFinishReason, RetrySampling,
-    RuntimeBackend, TokenUsage,
+    RuntimeBackend, RuntimeId, RuntimeIdentity, TokenUsage,
 };
 use ocrx_primitives::{CancellationToken, GenerationProgress};
+
+/// The frozen platform runtime identity (O3-T13 single source): built from
+/// the inference-api platform constants so the runtime factory's reported
+/// identity and the registry's binding constants can never drift.
+///
+/// # Errors
+///
+/// [`InferenceError::InvalidManifest`] when the frozen id is not a valid
+/// runtime id (a compile-time constant failure, validated by tests).
+pub fn platform_runtime_identity() -> Result<RuntimeIdentity, InferenceError> {
+    Ok(RuntimeIdentity {
+        runtime: RuntimeId::new(ocrx_inference_api::PLATFORM_RUNTIME_ID)
+            .map_err(|error| InferenceError::InvalidManifest(error.to_string()))?,
+        wrapper_version: ocrx_inference_api::PLATFORM_WRAPPER_VERSION.to_owned(),
+        sys_version: ocrx_inference_api::PLATFORM_SYS_VERSION.to_owned(),
+        upstream_revision: ocrx_inference_api::PLATFORM_UPSTREAM_REVISION.to_owned(),
+    })
+}
 
 /// Programmable fake backend (plan §8.6 fake contract): captures requests,
 /// queues responses (EOS / max_tokens / repetition_loop / backend error /

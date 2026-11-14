@@ -26,6 +26,14 @@ pub const WINDOW_DEPTH_HIGH_VRAM: usize = 16;
 /// parameters so results produced by a different generation are reprocessed.
 pub const DECODE_GENERATION: u32 = 3;
 
+/// The frozen llama.cpp runtime pin (O3-T13 single source): the registry's
+/// binding constants and the runtime factory's reported identity both read
+/// these values, so the two can never drift apart (D-4 GO branch pins).
+pub const PLATFORM_RUNTIME_ID: &str = "llama.cpp";
+pub const PLATFORM_WRAPPER_VERSION: &str = "0.1.161";
+pub const PLATFORM_SYS_VERSION: &str = "0.1.161";
+pub const PLATFORM_UPSTREAM_REVISION: &str = "d81235049384534c167caea52b85a694f6103d14";
+
 /// MTMD token-grid bindings the platform accepts for
 /// `image_tokens_override` (frozen ladder uses 2048 only; `None` = the
 /// scan-level 1024 budget).

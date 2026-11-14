@@ -8,13 +8,14 @@ use ocrx_inference_api::{
 };
 
 /// The internal runtime id (new definition, plan §6.1: not a copy of the
-/// result.json display string).
-pub const REGISTRY_RUNTIME_ID: &str = "llama.cpp";
+/// result.json display string). O3-T13: aliases of the single-source
+/// platform constants in the inference API.
+pub const REGISTRY_RUNTIME_ID: &str = ocrx_inference_api::PLATFORM_RUNTIME_ID;
 
 /// Frozen wrapper/sys/upstream values (Q1.3 pins revision, plan §5.1).
-pub const REGISTRY_WRAPPER_VERSION: &str = "0.1.161";
-pub const REGISTRY_SYS_VERSION: &str = "0.1.161";
-pub const REGISTRY_UPSTREAM_REVISION: &str = "d81235049384534c167caea52b85a694f6103d14";
+pub const REGISTRY_WRAPPER_VERSION: &str = ocrx_inference_api::PLATFORM_WRAPPER_VERSION;
+pub const REGISTRY_SYS_VERSION: &str = ocrx_inference_api::PLATFORM_SYS_VERSION;
+pub const REGISTRY_UPSTREAM_REVISION: &str = ocrx_inference_api::PLATFORM_UPSTREAM_REVISION;
 
 /// The single registered protocol adapter.
 pub const REGISTRY_ADAPTER_ID: &str = "ovisocr2";
@@ -102,6 +103,21 @@ impl BindingVerifier for RegistryVerifier {
 mod tests {
     use super::*;
     use crate::builtin_test_manifest;
+
+    #[test]
+    fn registry_and_runtime_factory_share_one_identity_source() {
+        // O3-T13: the backend factory's reported identity and the registry
+        // binding constants derive from the same inference-api platform
+        // constants — a bump can never update one side only.
+        assert_eq!(
+            ocrx_runtime::platform_runtime_identity().unwrap(),
+            runtime_identity()
+        );
+        assert_eq!(
+            REGISTRY_WRAPPER_VERSION,
+            ocrx_inference_api::PLATFORM_WRAPPER_VERSION
+        );
+    }
 
     #[test]
     fn registry_identities_are_the_frozen_values() {
