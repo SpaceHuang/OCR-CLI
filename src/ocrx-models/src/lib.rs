@@ -372,6 +372,58 @@ mod tests {
     }
 
     #[test]
+    fn install_plans_cover_both_models_from_their_freeze_tables() {
+        // O3-T14 management face (via the manager, not the CLI): each
+        // model's install plan carries its own URL base, byte sizes, and
+        // cache paths; nothing is hardcoded to one model.
+        let root = std::env::temp_dir().join(format!("ocrx-manager-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("temp cache root");
+        let manager = ModelManagerImpl::new(
+            root.clone(),
+            Box::new(AcceptAllVerifier),
+            Box::new(crate::transport::FakeTransport::new()),
+            None,
+        );
+        let plan2 = manager
+            .install_plan(
+                &ocrx_inference_api::ModelId::new("ovisocr2").unwrap(),
+                &ocrx_inference_api::ProfileId::new("compact").unwrap(),
+            )
+            .unwrap();
+        assert_eq!(plan2.items.len(), 2);
+        assert!(
+            plan2.items.iter().all(|item| item
+                .url
+                .starts_with("https://huggingface.co/Abiray/OvisOCR2-GGUF/resolve/")),
+            "ovisocr2 urls: {:?}",
+            plan2.items
+        );
+        let plan3 = manager
+            .install_plan(
+                &ocrx_inference_api::ModelId::new("ovisocr3").unwrap(),
+                &ocrx_inference_api::ProfileId::new("quality").unwrap(),
+            )
+            .unwrap();
+        assert_eq!(plan3.items.len(), 2);
+        assert_eq!(plan3.license_id, "apache-2.0");
+        let model_item = plan3
+            .items
+            .iter()
+            .find(|item| item.role.as_str() == "model")
+            .unwrap();
+        assert_eq!(model_item.byte_len, 811_843_712);
+        assert!(
+            model_item
+                .url
+                .starts_with("https://huggingface.co/michalland/OvisOCR3-GGUF/resolve/"),
+            "ovisocr3 url: {}",
+            model_item.url
+        );
+        assert!(!model_item.cached, "empty cache: nothing pre-cached");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn recommendation_goes_through_the_generalized_fallback_per_model() {
         // C15: `recommend` (manager face) and catalog auto resolve share the
         // same generalized rule — the single-rung ovisocr3 set resolves

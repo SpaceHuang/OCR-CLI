@@ -595,6 +595,45 @@ mod tests {
     }
 
     #[test]
+    fn prepare_reaches_the_asset_gate_for_both_registered_models() {
+        // O3-T14 matrix (fake): with the binding gate now per-model (T10),
+        // both models traverse profile resolution, manifest + binding, and
+        // device selection, then fail at the asset gate in an empty cache —
+        // proving the whole pre-asset chain is model-agnostic.
+        let backend = Arc::new(Mutex::new(FakeRuntimeBackend::new()));
+        let (mut service, root) = service_with(backend, FakeSystemProbe::default());
+        for (model, profile) in [("ovisocr2", "compact"), ("ovisocr3", "quality")] {
+            let mut interaction = NonInteractive;
+            let error = match service.prepare(
+                PrepareRequest {
+                    model: ModelId::new(model).unwrap(),
+                    requested_profile: profile.to_owned(),
+                    requested_device: "cpu".to_owned(),
+                    max_image_tokens: 1024,
+                    context_size: 20_480,
+                    install: InstallPolicy {
+                        offline: true,
+                        non_interactive: true,
+                        license_accepted: false,
+                    },
+                },
+                &mut interaction,
+            ) {
+                Err(error) => error,
+                Ok(_) => panic!("{model} must fail without assets"),
+            };
+            assert!(
+                matches!(
+                    error,
+                    InferenceError::Offline | InferenceError::MissingAsset(_)
+                ),
+                "{model}: unexpected error {error:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn prepare_fails_loudly_for_unknown_models() {
         let backend = Arc::new(Mutex::new(FakeRuntimeBackend::new()));
         let (mut service, root) = service_with(backend, FakeSystemProbe::default());
