@@ -3184,6 +3184,76 @@ model=ovisocr3
                     "captured prompt drifted from the {model} frozen pack"
                 );
             }
+            // C14 zero-load resume reuse: a second --resume run over the
+            // intact checkpoints must pass the pre-compare with the SAME
+            // model and never prepare/load (the capture backend only exists
+            // once the runtime factory is asked for a device — an empty
+            // capture file proves the zero-load path end to end).
+            let capture2 = work.join("prompts-resume.txt");
+            let mut resume_args: Vec<&str> = vec!["scan", source.to_str().unwrap()];
+            resume_args.extend(selector.split_whitespace());
+            resume_args.extend(["-o", output_dir.to_str().unwrap(), "--resume"]);
+            let output = cli_binary()
+                .args(&resume_args)
+                .env("OCRX_E2E_CAPTURE_OUT", &capture2)
+                .env("OCRX_PDFIUM_LIBRARY", pdfium_library_for_tests())
+                .output()
+                .expect("CLI binary should run");
+            assert!(
+                output.status.success(),
+                "resume scan failed for {model}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                !capture2.exists(),
+                "resume reuse for {model} must be zero-load (no session factory use)"
+            );
+
+            // D-8/X1 multi-document shared session: two inputs ride one
+            // invocation (one prepare/load), each document produces its own
+            // output tree, and every prompt still byte-equals the pack.
+            // (Identical paths dedup, so the second input is a real copy.)
+            let source_copy = work.join("source-copy.pdf");
+            std::fs::copy(&source, &source_copy).expect("golden copy for the multi-doc leg");
+            let multi_out = work.join("multi");
+            let capture3 = work.join("prompts-multi.txt");
+            let source_spelling = source.to_str().unwrap();
+            let copy_spelling = source_copy.to_str().unwrap();
+            let output = cli_binary()
+                .args([
+                    "scan",
+                    source_spelling,
+                    copy_spelling,
+                    "-o",
+                    multi_out.to_str().unwrap(),
+                ])
+                .args(selector.split_whitespace())
+                .env("OCRX_E2E_CAPTURE_OUT", &capture3)
+                .env("OCRX_PDFIUM_LIBRARY", pdfium_library_for_tests())
+                .output()
+                .expect("CLI binary should run");
+            assert!(
+                output.status.success(),
+                "multi-doc scan failed for {model}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let doc_dirs = std::fs::read_dir(&multi_out)
+                .expect("multi output root")
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().is_dir())
+                .count();
+            assert_eq!(doc_dirs, 2, "one output directory per document");
+            let multi_prompts = std::fs::read_to_string(&capture3).unwrap();
+            let multi_prompts: Vec<&str> = multi_prompts
+                .split("---PROMPT---\n")
+                .map(|prompt| prompt.trim_end_matches('\n'))
+                .filter(|prompt| !prompt.is_empty())
+                .collect();
+            assert!(!multi_prompts.is_empty());
+            for prompt in &multi_prompts {
+                assert_eq!(*prompt, pack.prompt);
+            }
+
             // Checkpoint triplet agreement (C7 tail assertion).
             let checkpoint = output_dir.join("page-0001.checkpoint");
             let file =
