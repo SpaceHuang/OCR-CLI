@@ -123,6 +123,7 @@ spike 记录（D-2 三分支裁定 + 最终 MTMD 输入证据 + 两次生产证�
 
 1. **scan 路径生成退化 root-cause 立项**（最高优先；证据与候选因素齐备，见 §差距）。
 2. 全量 OmniDocBench 对照复评（runbook 就绪；修复后执行）。
-3. 检空盲区：立即 EOS 的空输出不被退化阶梯拦截（双模型通用，独立质量工作）。
+3. ~~检空盲区~~ 已修复（评审 BLOCK 响应）：空 OCR 输出进入退化阶梯，耗尽后提交为退化页
+   （不再静默 Complete、不再被 --resume 复用）；判别测试钉死。
 4. ovisocr3-draft-v1 fixture 升级为 approved truth（人工评审块级内容与 bbox）。
 5. 混合 SSM 串行地板的移除条件：上游 pin 修复混合模型批量语义后重评（D-5 修订注记）。

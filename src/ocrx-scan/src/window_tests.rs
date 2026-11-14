@@ -106,7 +106,11 @@ impl FakeSession {
             .map(|image| image.id.clone())
             .unwrap_or_default()
             .trim_start_matches("page-")
-            .parse::<u32>()
+            // Column-split band requests are `page-N-band-M`; the page
+            // number is the leading segment (the ladder still keys per page).
+            .split('-')
+            .next()
+            .and_then(|head| head.parse::<u32>().ok())
             .unwrap_or(0);
         let index = self
             .core
@@ -246,6 +250,15 @@ fn temp_root(tag: &str) -> PathBuf {
 fn eos(page: u32) -> Program {
     Program {
         text: format!("body {page}"),
+        finish: FinishReason::Eos,
+    }
+}
+
+fn empty_eos() -> Program {
+    // Review BLOCK fix: the immediate-EOS empty result the OvisOCR3
+    // 30-page evidence produced.
+    Program {
+        text: String::new(),
         finish: FinishReason::Eos,
     }
 }
@@ -644,5 +657,92 @@ fn resume_reuses_candidate_pages_even_with_pending_decode() {
         before, after,
         "a reused page's checkpoint must not be rewritten"
     );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn empty_eos_output_enters_the_ladder_and_lands_degenerated() {
+    // Review BLOCK fix: an immediate-EOS empty OCR page must retry through
+    // the ladder (4 attempts: plain + 3 rungs) and commit as DEGENERATED —
+    // never as a clean success that --resume would silently reuse.
+    let root = temp_root("empty-ladder");
+    let mut session = FakeSession::with_depth(1);
+    for _ in 0..4 {
+        session.push(1, empty_eos());
+    }
+    let mut renderer = FakeRenderer::new();
+    let summary = run_pages_with_session(
+        &mut session,
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility()),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert!(
+        root.join("page-0001.checkpoint").is_file() || root.join("page-0001.md").is_file(),
+        "committed page must write artifacts"
+    );
+    // 4 submits: attempt-1 + the three frozen rungs.
+    assert_eq!(session.core.single_calls.get(), 4);
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(
+        summary.degenerated_pages, 1,
+        "empty output counts degenerated"
+    );
+    assert_eq!(summary.truncated_pages, 0);
+    // The checkpoint must carry the degenerated flag (resume never reuses
+    // degenerated pages) and the page json must explain why.
+    let checkpoint = std::fs::read_to_string(root.join("page-0001.checkpoint")).unwrap();
+    assert!(
+        checkpoint.contains("degenerated=true"),
+        "checkpoint: {checkpoint}"
+    );
+    let page_json = std::fs::read_to_string(root.join("page-0001.json")).unwrap();
+    assert!(
+        page_json.contains("empty_ocr_output") || page_json.contains("degenerated"),
+        "page json: {page_json}"
+    );
+    let checkpoint = std::fs::read_to_string(root.join("page-0001.checkpoint")).unwrap();
+    assert!(
+        checkpoint.contains("degenerated=true"),
+        "checkpoint: {checkpoint}"
+    );
+    let page_json = std::fs::read_to_string(root.join("page-0001.json")).unwrap();
+    assert!(
+        page_json.contains("empty_ocr_output") || page_json.contains("degenerated"),
+        "page json: {page_json}"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn empty_output_recovered_by_a_rung_commits_clean() {
+    // A rung that produces real content finishes the ladder early: the
+    // page commits with attempts=2 and NO degenerated flag.
+    let root = temp_root("empty-recovered");
+    let mut session = FakeSession::with_depth(1);
+    session.push(1, empty_eos());
+    session.push(1, eos(1));
+    let mut renderer = FakeRenderer::new();
+    let summary = run_pages_with_session(
+        &mut session,
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility()),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(session.core.single_calls.get(), 2);
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.degenerated_pages, 0);
+    let md = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
+    assert_eq!(md, "body 1");
     let _ = std::fs::remove_dir_all(root);
 }

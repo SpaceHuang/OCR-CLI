@@ -93,7 +93,13 @@ fn assemble(
     // `<think>`; the tail crop runs once here and the cropped text drives
     // every downstream artifact.
     let crop = degenerate_tail_crop(&response.text);
-    let degenerated = crop.degenerated || response.finish_reason == FinishReason::RepetitionLoop;
+    // Review BLOCK fix: an immediate-EOS EMPTY OCR result must never pass
+    // as a clean success — it is a degeneration case, so it enters the
+    // retry ladder and, once the ladder is exhausted, commits as a
+    // degenerated page (never silently reused by resume).
+    let empty_output = response.text.trim().is_empty();
+    let degenerated =
+        crop.degenerated || response.finish_reason == FinishReason::RepetitionLoop || empty_output;
     // The adapter owns the nonempty-strip knowledge (single source); the
     // page document reproduces the baseline ThinkRemoved warning from it.
     let think_nonempty = usize::from(response.warnings.iter().any(|w| w == "think_removed"));
@@ -134,6 +140,9 @@ fn assemble(
         .collect::<Vec<_>>();
     if dropped_links > 0 {
         warnings.push("invalid_image_link_dropped".to_owned());
+    }
+    if empty_output {
+        warnings.push("empty_ocr_output".to_owned());
     }
     Ok(PageArtifactResult {
         png: None,
@@ -361,6 +370,12 @@ impl<'s> SessionRecognizer<'s> {
                 merged_text.push_str(&band_markdown);
             }
         }
+        // Review BLOCK fix: an all-bands-empty merge is a degeneration
+        // case exactly like the single-path empty output.
+        if merged_text.trim().is_empty() {
+            degenerated = true;
+            warnings.push("empty_ocr_output".to_owned());
+        }
         let crop = DegenerateTailCrop {
             text: merged_text.clone(),
             degenerated,
@@ -468,4 +483,90 @@ fn frozen_rung() -> Option<RetrySampling> {
     crate::state::DEGENERATION_RETRY_LADDER
         .iter()
         .find_map(|step| step.sampling)
+}
+
+#[cfg(test)]
+mod empty_output_tests {
+    use super::*;
+    use ocrx_inference_api::{DecodeEcho, FinishReason, TokenUsage};
+
+    fn empty_eos_response() -> TaskResponse {
+        TaskResponse {
+            text: String::new(),
+            raw_text: String::new(),
+            finish_reason: FinishReason::Eos,
+            usage: TokenUsage::default(),
+            think_blocks_stripped: 0,
+            decode_echo: DecodeEcho::default(),
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn empty_eos_output_is_degenerated_with_an_explaining_warning() {
+        // Review BLOCK fix: an immediate-EOS empty OCR result must never
+        // look like a clean success — it is a degeneration case (ladder
+        // worthy; degenerated pages are never resume-reused).
+        let root = std::env::temp_dir().join(format!("ocrx-empty-artifact-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let artifact = assemble(
+            1,
+            2,
+            2,
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            &empty_eos_response(),
+            &root,
+        )
+        .unwrap();
+        assert!(
+            artifact.degenerated,
+            "empty output must be flagged degenerated"
+        );
+        assert!(!artifact.truncated);
+        assert!(
+            artifact
+                .warnings
+                .iter()
+                .any(|warning| warning == "empty_ocr_output"),
+            "warnings: {:?}",
+            artifact.warnings
+        );
+        // Whitespace-only output counts as empty too.
+        let mut blank = empty_eos_response();
+        blank.text = "   
+	"
+        .to_owned();
+        let artifact = assemble(
+            2,
+            2,
+            2,
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            &blank,
+            &root,
+        )
+        .unwrap();
+        assert!(artifact.degenerated);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn non_empty_output_is_not_flagged_by_the_empty_rule() {
+        let root =
+            std::env::temp_dir().join(format!("ocrx-nonempty-artifact-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut response = empty_eos_response();
+        response.text = "body text".to_owned();
+        let artifact = assemble(
+            1,
+            2,
+            2,
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            &response,
+            &root,
+        )
+        .unwrap();
+        assert!(!artifact.degenerated);
+        assert!(artifact.warnings.is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

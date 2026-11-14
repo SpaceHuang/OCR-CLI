@@ -103,8 +103,12 @@ root-cause 立项。
 - **质量结论（D-GATE 输入，R5 口径）**：本机 30 页复合样本上 OvisOCR3 scan 产物显著
   差于 OvisOCR2（~11.7KB vs ~30KB，14/27 OCR 页近空）；**默认模型不切换**；接入按
   "能力可用 + 差距分析入档" 交付（G1 面全部走通）。
-- **检空盲区（独立质量工作）**：空输出（立即 EOS）不被退化阶梯拦截（status complete、
-  termination eos、非 truncated/degenerated），对双模型同样存在。
+- **检空盲区（已修复，2026-11-14 评审 BLOCK 响应）**：空输出（立即 EOS）原本绕过退化
+  阶梯被静默提交为 Complete（且可被 --resume 复用）——已修复：空 OCR 最终文本即
+  degeneration 案例（`empty_ocr_output` 警告），进入阶梯重试；阶梯耗尽仍空则提交为
+  退化页（result.json partial + 退化计数 + 简历永不复用）。判别测试：artifact 层 2 例 +
+  window 层 2 例（阶梯全走 + rung 恢复早退）。附带健壮性修复：`detect_column_bands`
+  对 1 像素宽等退化几何回退单带（原会越界 panic）。
 
 ## O3-T05 结论冻结回写 ✅
 

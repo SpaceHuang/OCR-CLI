@@ -98,6 +98,17 @@
   合规✅、边界✅、可追溯✅）+ 质量差距根因分析（已排除四假设 + 候选因素）+
   **D-GATE 建议：不切换默认模型（R5 口径），接入按"能力可用 + 差距入档"交付**。
 
+## 评审响应（2026-11-14，代码评审 BLOCK 修复）
+
+- **BLOCK（检空盲区）**：立即 EOS 的空 OCR 结果原本绕过退化阶梯——被写成 Complete、计入
+  成功页、可被 `--resume` 复用（14/27 实测空页 = 静默内容丢失风险）。修复（TDD，判别
+  测试 4 例）：① 空 OCR 最终文本（含纯空白）即 degeneration 案例，附 `empty_ocr_output`
+  警告——进入阶梯重试（rung 恢复则干净提交，早退）；② 阶梯耗尽仍空 → 提交为退化页
+  （result.json `partial` + 退化计数；退化页永不复用——既有 resume 语义自动生效）。
+  双模型同时生效（共享安全网，ovisocr2 goldens 无空 OCR 页不受影响）。附带修复
+  `detect_column_bands` 对退化几何（1 像素宽页）的越界 panic → 回退单带。
+  附带测试假体修复：FakeSession slot 解析支持 `page-N-band-M` 请求 id。
+
 ## 后续工作（验收报告 §遗留）
 
 1. scan 路径生成退化 root-cause 立项（最高优先）。
