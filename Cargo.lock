@@ -818,6 +818,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocrx-ovisocr3"
+version = "0.1.0"
+dependencies = [
+ "ocrx-inference-api",
+ "ocrx-ovisocr2",
+]
+
+[[package]]
 name = "ocrx-pdf"
 version = "0.1.0"
 dependencies = [

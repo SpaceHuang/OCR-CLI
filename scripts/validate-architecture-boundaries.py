@@ -25,6 +25,8 @@ ALLOWED_DEPS: dict[str, set[str]] = {
     "ocrx-models": {"ocrx-core", "ocrx-primitives", "ocrx-inference-api"},
     "ocrx-runtime": {"ocrx-core", "ocrx-primitives", "ocrx-inference-api"},
     "ocrx-ovisocr2": {"ocrx-primitives", "ocrx-inference-api"},
+    # OvisOCR3 adapter (D-1): same family dependency face as ovisocr2.
+    "ocrx-ovisocr3": {"ocrx-primitives", "ocrx-inference-api"},
     "ocrx-output": {
         "ocrx-core",
         "ocrx-primitives",
@@ -72,6 +74,8 @@ ALLOWED_DEPS: dict[str, set[str]] = {
 # strict per ALLOWED_DEPS; these pairs are test fixtures only.
 ALLOWED_DEV_DEPS: dict[str, set[str]] = {
     "ocrx-runtime": {"ocrx-models", "ocrx-pdf"},
+    # C4 drift-detection golden: same-input dual-adapter output equality.
+    "ocrx-ovisocr3": {"ocrx-ovisocr2"},
 }
 
 # Forbidden identifiers per crate source (§3.2 + RBLK-3).
