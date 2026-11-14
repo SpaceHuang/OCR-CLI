@@ -78,6 +78,63 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
 /// Frozen attempts range written to checkpoints: 1 + ladder length (Q1.4a).
 pub const ATTEMPTS_MAX: u32 = 1 + DEGENERATION_RETRY_LADDER.len() as u32;
 
+#[cfg(test)]
+mod ovisocr3_ladder_tests {
+    use super::*;
+    use ocrx_inference_api::{GenerationParams, ImageInput, SUPPORTED_IMAGE_TOKEN_GRIDS};
+
+    #[test]
+    fn the_frozen_ladder_composition_is_model_agnostic() {
+        // C8/O3-T18 (D-5 zero-change): the 2048 grid rung, the 1200-milli
+        // repeat-penalty rung (window 64), and the column-split rung stay
+        // exactly as frozen — the same ladder serves both registered models.
+        assert_eq!(DEGENERATION_RETRY_LADDER.len(), 3);
+        assert_eq!(DEGENERATION_RETRY_LADDER[0].image_tokens, Some(2048));
+        assert_eq!(DEGENERATION_RETRY_LADDER[0].sampling, None);
+        assert_eq!(
+            DEGENERATION_RETRY_LADDER[1].sampling,
+            Some(RetrySampling {
+                repeat_penalty_milli: 1_200,
+                penalty_window: 64,
+            })
+        );
+        assert!(DEGENERATION_RETRY_LADDER[2].column_split);
+        assert_eq!(ATTEMPTS_MAX, 4);
+        // The grid contract keeps its single frozen rung.
+        assert_eq!(SUPPORTED_IMAGE_TOKEN_GRIDS, &[2048]);
+    }
+
+    #[test]
+    fn ovisocr3_requests_ride_the_frozen_grid_and_sampling_contract() {
+        // The OvisOCR3 request path accepts the frozen 2048 rung (spike:
+        // accepted and effective) and rejects non-contract grids through the
+        // same validation the ovisocr2 path uses.
+        let request = ocrx_inference_api::TaskRequest::new(
+            "ovisocr3 probe",
+            vec![ImageInput::new("img", 1, 1, vec![1, 2, 3]).unwrap()],
+            GenerationParams {
+                max_output_tokens: 16,
+                temperature_milli: 0,
+                thinking: false,
+            },
+        )
+        .unwrap();
+        let rung = request
+            .clone()
+            .with_image_tokens_override(2048)
+            .expect("2048 is the frozen grid rung for both models");
+        assert_eq!(rung.image_tokens_override, Some(2048));
+        assert!(request.clone().with_image_tokens_override(1024).is_err());
+        let rung =
+            request.with_retry_sampling(RetrySampling::new(1_200, 64).expect("frozen sampling"));
+        assert_eq!(
+            rung.retry_sampling
+                .map(|sampling| sampling.repeat_penalty_milli),
+            Some(1_200)
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageStatus {
     Pending,

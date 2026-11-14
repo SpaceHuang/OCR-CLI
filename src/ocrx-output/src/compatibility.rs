@@ -349,6 +349,56 @@ mod tests {
     }
 
     #[test]
+    fn cross_model_checkpoint_reuse_is_vetoed_in_both_directions() {
+        // G3/O3-T17 (iron rule 2): a checkpoint written under one model must
+        // never be reused by a scan requesting the other — the structured
+        // identity's model field (id/profile/revision/assets) carries the
+        // veto in both directions, at both the static pre-compare and the
+        // authoritative final compare.
+        let ovisocr2 = identity("cpu", 8, "Q4_K_M");
+        let mut ovisocr3 = identity("cpu", 8, "Q4_K_M");
+        ovisocr3.model = ModelIdentity::new(
+            ModelId::new("ovisocr3").unwrap(),
+            ProfileId::new("quality").unwrap(),
+            "rev-3",
+            vec![asset("mmproj", "b"), asset("model", "a")],
+        )
+        .unwrap();
+        ovisocr3.adapter = AdapterIdentity {
+            adapter: AdapterId::new("ovisocr3").unwrap(),
+            version: "0.1.0".to_owned(),
+        };
+        // ovisocr2 checkpoint x ovisocr3 request: vetoed.
+        let statik3 = StaticInferenceIdentity::from_execution(&ovisocr3);
+        assert!(
+            !ocr_pre_compare(&stored(&ovisocr2), &statik3, &side()),
+            "ovisocr2 checkpoint must not pass an ovisocr3 pre-compare"
+        );
+        assert!(!ocr_final_compare(&stored(&ovisocr2), &ovisocr3));
+        // ovisocr3 checkpoint x ovisocr2 request: vetoed (reverse direction).
+        let statik2 = StaticInferenceIdentity::from_execution(&ovisocr2);
+        assert!(!ocr_pre_compare(&stored(&ovisocr3), &statik2, &side()));
+        assert!(!ocr_final_compare(&stored(&ovisocr3), &ovisocr2));
+        // Same-model reuse still passes (the veto is cross-model only).
+        assert!(ocr_pre_compare(&stored(&ovisocr3), &statik3, &side()));
+        assert!(ocr_final_compare(&stored(&ovisocr3), &ovisocr3));
+        // Mixed-profile same-model reuse keeps its existing veto semantics.
+        let mut ovisocr3_other_profile = ovisocr3.clone();
+        ovisocr3_other_profile.model = ModelIdentity::new(
+            ModelId::new("ovisocr3").unwrap(),
+            ProfileId::new("quality").unwrap(),
+            "rev-other",
+            vec![asset("mmproj", "b"), asset("model", "a")],
+        )
+        .unwrap();
+        assert!(!ocr_pre_compare(
+            &stored(&ovisocr3),
+            &StaticInferenceIdentity::from_execution(&ovisocr3_other_profile),
+            &side()
+        ));
+    }
+
+    #[test]
     fn pre_compare_ignores_actual_backend_and_batch_depth() {
         // Stored page was written by a CPU/depth-8 run; the static identity
         // of a would-be GPU/16 run agrees on every static field → the
