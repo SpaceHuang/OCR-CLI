@@ -42,6 +42,9 @@ enum CliCommand {
     Help(Option<String>),
     Doctor {
         json: bool,
+        /// `--model` selector (O3-T21/D-11); `None` = the frozen default
+        /// (default-model readiness) shape.
+        model: Option<String>,
     },
     Scan(ScanOptions),
     Model {
@@ -660,8 +663,35 @@ fn parse_command(args: &[&str]) -> Result<CliCommand, String> {
         [] | ["version"] => Ok(CliCommand::Version),
         ["help"] => Ok(CliCommand::Help(None)),
         ["help", topic] => Ok(CliCommand::Help(Some((*topic).to_owned()))),
-        ["doctor"] => Ok(CliCommand::Doctor { json: false }),
-        ["doctor", "--report", "json"] => Ok(CliCommand::Doctor { json: true }),
+        ["doctor", rest @ ..] => {
+            let mut json = false;
+            let mut model = None;
+            let mut index = 0;
+            while index < rest.len() {
+                match rest[index] {
+                    "--report" => {
+                        index += 1;
+                        if rest.get(index) != Some(&"json") {
+                            return Err("unsupported or incomplete command: doctor".to_owned());
+                        }
+                        json = true;
+                    }
+                    "--model" => {
+                        index += 1;
+                        let Some(&value) = rest.get(index) else {
+                            return Err("unsupported or incomplete command: doctor".to_owned());
+                        };
+                        if !SUPPORTED_MODELS.contains(&value) {
+                            return Err(format!("unsupported model: {value}"));
+                        }
+                        model = Some(value.to_owned());
+                    }
+                    _ => return Err("unsupported or incomplete command: doctor".to_owned()),
+                }
+                index += 1;
+            }
+            Ok(CliCommand::Doctor { json, model })
+        }
         ["scan", input, rest @ ..] if !input.is_empty() && !input.starts_with('-') => {
             let mut scan_args = vec![*input];
             scan_args.extend(rest.iter().copied());
@@ -780,23 +810,26 @@ fn main() {
     match command {
         CliCommand::Version => println!("ocrx 0.1.0"),
         CliCommand::Help(topic) => print_help(topic.as_deref()),
-        CliCommand::Doctor { json } => {
+        CliCommand::Doctor { json, model } => {
             // T073/T077: doctor flows through the composed DeviceManager;
             // the snapshot is the manager's probe (hardware ∩ compiled).
+            // D-11/O3-T21: no-flag = the frozen default-model readiness
+            // shape (byte-identical); `--model` selects the readiness face.
+            let selected = model.unwrap_or_else(|| DEFAULT_MODEL.to_owned());
             let composed = compose::compose(None);
             let snapshot = composed.inference.devices().snapshot();
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
                 .unwrap_or_else(ocrx_inference::default_cache_root);
-            let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root);
+            let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root, &selected);
             let backend_display = doctor_backend_display(&diagnostics);
             if json {
-                println!("{}", doctor_json_report(snapshot));
+                println!("{}", doctor_json_report(snapshot, &selected));
             } else {
                 println!(
                     "model={} backend={} image_token_limit={} memory_gb={} metal_available={}",
-                    DEFAULT_MODEL,
+                    selected,
                     backend_display,
                     diagnostics.image_token_limit,
                     snapshot.memory_gb,
@@ -1566,6 +1599,7 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             continue;
         }
         let result_json = serialize_scan_result(&ScanResultFields {
+            model_identity: document.identity.as_ref(),
             status: if document.summary.failed_pages == 0
                 && document.summary.truncated_pages == 0
                 && document.summary.degenerated_pages == 0
@@ -1853,6 +1887,10 @@ fn json_quote(value: &str) -> String {
 struct ScanResultFields<'a> {
     status: &'a str,
     input: &'a Path,
+    /// O3-T21/N1: the actual inference identity — the model object for
+    /// non-default models derives from it; the default (ovisocr2) shape
+    /// keeps the historical frozen string byte-identically.
+    model_identity: Option<&'a ocrx_inference_api::InferenceIdentity>,
     markdown_path: Option<&'a Path>,
     output_dir: &'a Path,
     profile: &'a str,
@@ -1887,13 +1925,42 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         _ => "BF16",
     };
     let model = if fields.ocr_model_loaded {
-        format!(
-            "{{\"id\":\"ovisocr2\",\"name\":\"OvisOCR2\",\"family\":\"Ovis\",\"profile\":\"{}\",\"revision\":\"{}\",\"mmproj_revision\":\"{}\",\"adapter\":\"ovisocr2\",\"adapter_version\":\"0.1.0\",\"prompt_schema_version\":1,\"runtime\":\"llama.cpp@0.1.152\",\"quantization\":\"{}\"}}",
-            fields.profile,
-            ocrx_inference::builtin::OVISOCR2_REVISION,
-            ocrx_inference::builtin::OVISOCR2_REVISION,
-            quantization
-        )
+        match fields.model_identity {
+            // N1 derivation for the non-default faces: every field comes
+            // from the actual identity the platform reported.
+            Some(identity) if identity.model.model.as_str() != "ovisocr2" => {
+                let mmproj_revision = identity
+                    .model
+                    .assets
+                    .iter()
+                    .find(|asset| asset.role.as_str() == "mmproj")
+                    .map(|asset| asset.sha256.clone())
+                    .unwrap_or_default();
+                format!(
+                    "{{\"id\":\"{}\",\"name\":\"{}\",\"family\":\"{}\",\"profile\":\"{}\",\"revision\":\"{}\",\"mmproj_revision\":\"{}\",\"adapter\":\"{}\",\"adapter_version\":\"{}\",\"prompt_schema_version\":1,\"runtime\":\"llama.cpp@{}\",\"quantization\":\"{}\"}}",
+                    identity.model.model.as_str(),
+                    identity.display.display_name,
+                    identity.display.family,
+                    identity.model.profile.as_str(),
+                    identity.model.source_revision,
+                    mmproj_revision,
+                    identity.adapter.adapter.as_str(),
+                    identity.adapter.version,
+                    identity.runtime.wrapper_version,
+                    identity.display.quantization
+                )
+            }
+            // The default-model shape is frozen byte-for-byte (SS83 item 5:
+            // the historical `llama.cpp@0.1.152` runtime string stays; the
+            // 0.1.152 -> current correction is a separate contract change).
+            _ => format!(
+                "{{\"id\":\"ovisocr2\",\"name\":\"OvisOCR2\",\"family\":\"Ovis\",\"profile\":\"{}\",\"revision\":\"{}\",\"mmproj_revision\":\"{}\",\"adapter\":\"ovisocr2\",\"adapter_version\":\"0.1.0\",\"prompt_schema_version\":1,\"runtime\":\"llama.cpp@0.1.152\",\"quantization\":\"{}\"}}",
+                fields.profile,
+                ocrx_inference::builtin::OVISOCR2_REVISION,
+                ocrx_inference::builtin::OVISOCR2_REVISION,
+                quantization
+            ),
+        }
     } else {
         "null".to_owned()
     };
@@ -1990,13 +2057,25 @@ fn install_sigint_handler(token: CancellationToken) {
 fn doctor_diagnostics_from_snapshot(
     snapshot: &ocrx_inference_api::ResourceSnapshot,
     cache_root: &Path,
+    model: &str,
 ) -> ocrx_inference_api::DeviceDiagnostics {
-    let recommended_profile = ocrx_inference::recommend::recommend_profile(
-        &["compact", "balanced", "quality", "reference"],
-        snapshot.memory_gb,
-    )
-    .map(|profile| profile.to_string())
-    .unwrap_or_else(|_| "unavailable".to_owned());
+    // O3-T21/D-11: the readiness face derives its ladder and installed
+    // overview from the SELECTED model's frozen catalog entries — the
+    // no-flag shape (default model) stays byte-identical.
+    let catalog = ocrx_inference::ModelCatalogV2::builtin();
+    let model_id =
+        ocrx_inference_api::ModelId::new(model).unwrap_or_else(|_| unreachable!("validated id"));
+    let profiles = catalog
+        .profiles(&model_id)
+        .unwrap_or_else(|_| unreachable!("doctor model gate validated by the CLI parser"));
+    let profile_names: Vec<&str> = profiles
+        .iter()
+        .map(ocrx_inference_api::ProfileId::as_str)
+        .collect();
+    let recommended_profile =
+        ocrx_inference::recommend::recommend_profile(&profile_names, snapshot.memory_gb)
+            .map(|profile| profile.to_string())
+            .unwrap_or_else(|_| "unavailable".to_owned());
     let recommended_device = if snapshot.metal_available {
         "metal"
     } else if snapshot.cuda_available {
@@ -2008,10 +2087,15 @@ fn doctor_diagnostics_from_snapshot(
     } else {
         "unavailable"
     };
-    let installed_profiles = ["compact", "balanced", "quality", "reference"]
-        .into_iter()
+    let installed_profiles = profile_names
+        .iter()
+        .copied()
         .filter(|profile| {
-            ocrx_inference::builtin::ovisocr2_manifest(profile)
+            catalog
+                .manifest(
+                    &model_id,
+                    &ocrx_inference_api::ProfileId::new(*profile).expect("checked id is valid"),
+                )
                 .ok()
                 .and_then(|manifest| {
                     ocrx_inference::verify::is_installed(cache_root, &manifest).ok()
@@ -2032,12 +2116,10 @@ fn doctor_diagnostics_from_snapshot(
         recommended_device: recommended_device.to_owned(),
         cache_root: cache_root.to_string_lossy().into_owned(),
         installed_profiles,
-        profiles: vec![
-            "compact".to_owned(),
-            "balanced".to_owned(),
-            "quality".to_owned(),
-            "reference".to_owned(),
-        ],
+        profiles: profile_names
+            .iter()
+            .map(|profile| (*profile).to_owned())
+            .collect(),
     }
 }
 
@@ -2086,7 +2168,7 @@ fn print_help(topic: Option<&str>) {
             println!("  --password VALUE             PDF open password (never logged)");
             println!("  --resume | --overwrite       mutually exclusive");
         }
-        Some("doctor") => println!("ocrx doctor [--report json]"),
+        Some("doctor") => println!("ocrx doctor [--report json] [--model ovisocr2|ovisocr3]"),
         Some("model") => {
             println!("ocrx model list [--model ovisocr2|ovisocr3]");
             println!("ocrx model info [--model ovisocr2|ovisocr3] [PROFILE]");
@@ -2110,32 +2192,34 @@ fn current_platform() -> &'static str {
     platform_paths::detect().as_str()
 }
 
-fn doctor_json_report(snapshot: ocrx_inference_api::ResourceSnapshot) -> String {
+fn doctor_json_report(snapshot: ocrx_inference_api::ResourceSnapshot, model: &str) -> String {
     let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(ocrx_inference::default_cache_root);
-    doctor_json_report_with_cache(snapshot, cache_root)
+    doctor_json_report_with_cache(snapshot, cache_root, model)
 }
 
 fn doctor_json_report_with_cache(
     snapshot: ocrx_inference_api::ResourceSnapshot,
     cache_root: PathBuf,
+    model: &str,
 ) -> String {
-    doctor_json_report_with_paths(snapshot, cache_root, None)
+    doctor_json_report_with_paths(snapshot, cache_root, None, model)
 }
 
 fn doctor_json_report_with_paths(
     snapshot: ocrx_inference_api::ResourceSnapshot,
     cache_root: PathBuf,
     home: Option<&Path>,
+    model: &str,
 ) -> String {
     // T073: doctor flows through the DeviceManager DTO shape. The injected
     // snapshot is ALREADY hardware∩compiled-intersected (production builds
     // it via resource_snapshot()), so the DTO derives from it without
     // re-probing — the formatter tests inject artificial snapshots and the
     // JSON must mirror them (golden behavior).
-    let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root);
+    let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root, model);
     let profile = diagnostics.recommended_profile.clone();
     let device = diagnostics.recommended_device.clone();
     let platform = diagnostics.platform.clone();
@@ -2155,8 +2239,14 @@ fn doctor_json_report_with_paths(
                 .map(|home| home.join(".codex/skills/ocrx/SKILL.md").is_file())
         })
         .unwrap_or(false);
+    let profiles_json = diagnostics
+        .profiles
+        .iter()
+        .map(|profile| format!("\"{profile}\""))
+        .collect::<Vec<_>>()
+        .join(",");
     format!(
-        "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}",
+        "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"{model}\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[{profiles_json}]}}",
         diagnostics.image_token_limit,
         diagnostics.memory_gb,
         diagnostics.metal_available,
@@ -2626,6 +2716,29 @@ mod tests {
 
     /// Resolves the compiled CLI binary (CARGO_BIN_EXE or a cargo run
     /// fallback), matching `run_cli`.
+    /// A base ovisocr2 identity fixture (tests mutate the model face).
+    fn test_support_identity() -> ocrx_inference_api::InferenceIdentity {
+        ocrx_inference_api::InferenceIdentity {
+            model: ocrx_inference_api::ModelIdentity::new(
+                ocrx_inference_api::ModelId::new("ovisocr2").unwrap(),
+                ocrx_inference_api::ProfileId::new("compact").unwrap(),
+                "rev",
+                Vec::new(),
+            )
+            .unwrap(),
+            runtime: ocrx_inference::registry::runtime_identity(),
+            adapter: ocrx_inference::registry::adapter_identity(),
+            backend: ocrx_inference_api::BackendId::new("cpu").unwrap(),
+            decode_generation: 3,
+            batch_depth: 8,
+            display: ocrx_inference_api::ModelDisplayMeta {
+                display_name: "OvisOCR2".to_owned(),
+                family: "Ovis".to_owned(),
+                quantization: "Q4_K_M".to_owned(),
+            },
+        }
+    }
+
     fn cli_binary() -> Command {
         if let Ok(binary) = std::env::var("CARGO_BIN_EXE_ocrx") {
             return Command::new(binary);
@@ -3222,6 +3335,27 @@ model=ovisocr3
                     "captured prompt drifted from the {model} frozen pack"
                 );
             }
+            // N1: the result.json model object for the non-default face
+            // derives from the actual identity (real-asset evidence; read
+            // BEFORE the zero-load resume run rewrites the file with the
+            // honest model:null zero-load shape).
+            let result_json = std::fs::read_to_string(output_dir.join("result.json"))
+                .expect("result.json written");
+            assert!(ocrx_core::is_valid_json(&result_json));
+            if model == "ovisocr3" {
+                assert!(
+                    result_json.contains("\"id\":\"ovisocr3\""),
+                    "result: {result_json}"
+                );
+                assert!(result_json.contains("\"name\":\"OvisOCR3\""));
+                assert!(result_json.contains("\"adapter\":\"ovisocr3\""));
+                assert!(result_json.contains("\"runtime\":\"llama.cpp@0.1.161\""));
+                assert!(
+                    result_json
+                        .contains("\"revision\":\"7be644a312005c3a55e2c826aee985a5c93d06b2\"")
+                );
+            }
+
             // C14 zero-load resume reuse: a second --resume run over the
             // intact checkpoints must pass the pre-compare with the SAME
             // model and never prepare/load (the capture backend only exists
@@ -3246,6 +3380,12 @@ model=ovisocr3
                 !capture2.exists(),
                 "resume reuse for {model} must be zero-load (no session factory use)"
             );
+            // The zero-load resume rewrote result.json with the honest
+            // no-session shape (identity absent -> model null).
+            let resumed_json =
+                std::fs::read_to_string(output_dir.join("result.json")).expect("resume result");
+            assert!(resumed_json.contains("\"ocr_model_loaded\":false"));
+            assert!(resumed_json.contains("\"model\":null"));
 
             // D-8/X1 multi-document shared session: two inputs ride one
             // invocation (one prepare/load), each document produces its own
@@ -3451,6 +3591,7 @@ model=ovisocr3
     fn scan_result_json_preserves_truncation_and_escapes_paths() {
         let input = Path::new("/tmp/input\tname\n.pdf");
         let json = super::serialize_scan_result(&ScanResultFields {
+            model_identity: None,
             degenerated_pages: 0,
             think_blocks_stripped_total: 0,
             status: "partial",
@@ -3495,6 +3636,7 @@ model=ovisocr3
     fn scan_result_json_exposes_routing_metadata_alias() {
         let routing = "{\"page\":3,\"classification\":{},\"processing\":{\"planned_method\":\"native_text\",\"actual_method\":\"ocr\",\"fallback_reason\":\"native_validation_failed\"}}".to_owned();
         let json = super::serialize_scan_result(&ScanResultFields {
+            model_identity: None,
             degenerated_pages: 0,
             think_blocks_stripped_total: 0,
             status: "partial",
@@ -3530,6 +3672,7 @@ model=ovisocr3
     #[test]
     fn scan_result_json_preserves_page_diagnostic_warnings_and_audit() {
         let json = super::serialize_scan_result(&ScanResultFields {
+            model_identity: None,
             degenerated_pages: 0,
             think_blocks_stripped_total: 0,
             status: "partial",
@@ -3642,6 +3785,7 @@ model=ovisocr3
             },
             empty.clone(),
             Some(&empty),
+            DEFAULT_MODEL,
         );
         let _ = std::fs::remove_dir_all(&empty);
         // The platform field follows the running OS (macos/windows; other
@@ -3696,14 +3840,224 @@ model=ovisocr3
     }
 
     #[test]
-    fn doctor_json_report_redacts_sensitive_cache_paths() {
-        let report = doctor_json_report(ocrx_inference_api::ResourceSnapshot {
+    fn doctor_selector_faces_are_frozen_on_creation() {
+        // D-11/O3-T21: `--model ovisocr2` is byte-identical to the no-flag
+        // default shape; `--model ovisocr3` is the new readiness face
+        // (single-rung ladder, own subtree install overview).
+        let empty = std::env::temp_dir().join(format!("ocrx-doctor-face-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&empty);
+        std::fs::create_dir_all(&empty).unwrap();
+        let snapshot = ocrx_inference_api::ResourceSnapshot {
             memory_gb: 16,
-            metal_available: true,
+            metal_available: false,
             cuda_available: false,
             vulkan_available: false,
             cpu_available: true,
-        });
+        };
+        let default_face = super::doctor_json_report_with_paths(
+            snapshot,
+            empty.clone(),
+            Some(&empty),
+            DEFAULT_MODEL,
+        );
+        let explicit_default =
+            super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr2");
+        assert_eq!(default_face, explicit_default);
+        let ovisocr3 =
+            super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr3");
+        let platform = super::current_platform();
+        let escaped_cache_root = super::json_escape_path(&empty);
+        assert_eq!(
+            ovisocr3,
+            format!(
+                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Cpu\",\"image_token_limit\":1024,\"memory_gb\":16,\"metal_available\":false,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"cpu\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}"
+            )
+        );
+        assert!(ocrx_core::is_valid_json(&ovisocr3));
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn cli_doctor_selector_face_reports_the_selected_model() {
+        let output = run_cli(&["doctor", "--model", "ovisocr3", "--report", "json"]);
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(stdout.lines().count(), 1);
+        assert!(stdout.contains("\"schema_version\":2"));
+        assert!(stdout.contains("\"model\":\"ovisocr3\""));
+        assert!(stdout.contains("\"profiles\":[\"quality\"]"));
+        assert!(ocrx_core::is_valid_json(&stdout));
+        // The no-flag JSON face keeps the default-model spelling.
+        let output = run_cli(&["doctor", "--report", "json"]);
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("\"model\":\"ovisocr2\""),
+            "stdout: {stdout}"
+        );
+        // Unknown selector: frozen error spelling, exit 2.
+        let output = run_cli(&["doctor", "--model", "qwen3.8"]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("unsupported model: qwen3.8")
+        );
+    }
+
+    #[test]
+    fn doctor_parser_validates_the_model_selector() {
+        match parse_command(&["doctor", "--model", "ovisocr3"]).unwrap() {
+            CliCommand::Doctor { json, model, .. } => {
+                assert!(!json);
+                assert_eq!(model.as_deref(), Some("ovisocr3"));
+            }
+            other => panic!("{other:?}"),
+        }
+        match parse_command(&["doctor", "--report", "json", "--model", "ovisocr2"]).unwrap() {
+            CliCommand::Doctor { json, model, .. } => {
+                assert!(json);
+                assert_eq!(model.as_deref(), Some("ovisocr2"));
+            }
+            other => panic!("{other:?}"),
+        }
+        let error = parse_command(&["doctor", "--model", "qwen3.8"]).unwrap_err();
+        assert_eq!(error, "unsupported model: qwen3.8");
+        let error = parse_command(&["doctor", "--report", "text"]).unwrap_err();
+        assert!(error.contains("doctor"), "error: {error}");
+    }
+
+    #[test]
+    fn scan_result_model_object_derives_from_the_identity_for_ovisocr3() {
+        // N1: the non-default face derives every field from the actual
+        // identity; the default face keeps the frozen historical string.
+        let mut identity = test_support_identity();
+        identity.model = ocrx_inference_api::ModelIdentity::new(
+            ocrx_inference_api::ModelId::new("ovisocr3").unwrap(),
+            ocrx_inference_api::ProfileId::new("quality").unwrap(),
+            "7be644a312005c3a55e2c826aee985a5c93d06b2",
+            vec![
+                ocrx_inference_api::AssetIdentity {
+                    role: ocrx_inference_api::AssetRole::new("model").unwrap(),
+                    sha256: "11af29712f08d7f76e6ec06e25d368cc5e25259d51d9fe6cf5ddbb9f1b894ca6"
+                        .to_owned(),
+                    byte_len: 811_843_712,
+                },
+                ocrx_inference_api::AssetIdentity {
+                    role: ocrx_inference_api::AssetRole::new("mmproj").unwrap(),
+                    sha256: "698d199cf44ff10f99825bbd71ad9715e03a6cf7ad041c8ec1db979bfce905cd"
+                        .to_owned(),
+                    byte_len: 204_987_136,
+                },
+            ],
+        )
+        .unwrap();
+        identity.adapter = ocrx_inference_api::AdapterIdentity {
+            adapter: ocrx_inference_api::AdapterId::new("ovisocr3").unwrap(),
+            version: "0.1.0".to_owned(),
+        };
+        identity.runtime = ocrx_inference::registry::runtime_identity();
+        identity.display = ocrx_inference_api::ModelDisplayMeta {
+            display_name: "OvisOCR3".to_owned(),
+            family: "Ovis".to_owned(),
+            quantization: "Q8_0".to_owned(),
+        };
+        let fields = ScanResultFields {
+            model_identity: Some(&identity),
+            status: "success",
+            input: Path::new("in.pdf"),
+            markdown_path: None,
+            output_dir: Path::new("out"),
+            profile: "quality",
+            required_quality_tier: "l2",
+            document_type: "ocr",
+            ocr_model_loaded: true,
+            backend: "cpu",
+            total_pages: 1,
+            completed_pages: 1,
+            failed_pages: 0,
+            truncated_pages: 0,
+            degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            pdf_routing: Vec::new(),
+            routing_counts: RoutingCounts {
+                native_text: 0,
+                ocr: 0,
+                empty: 0,
+                fallback: 0,
+            },
+            image_dir: Path::new("out/images"),
+            image_count: 0,
+            elapsed_ms: 5,
+        };
+        let json = super::serialize_scan_result(&fields);
+        assert!(json.contains("\"id\":\"ovisocr3\""), "json: {json}");
+        assert!(json.contains("\"name\":\"OvisOCR3\""));
+        assert!(json.contains("\"profile\":\"quality\""));
+        assert!(json.contains("\"revision\":\"7be644a312005c3a55e2c826aee985a5c93d06b2\""));
+        assert!(json.contains(
+            "\"mmproj_revision\":\"698d199cf44ff10f99825bbd71ad9715e03a6cf7ad041c8ec1db979bfce905cd\""
+        ));
+        assert!(json.contains("\"adapter\":\"ovisocr3\""));
+        assert!(json.contains("\"runtime\":\"llama.cpp@0.1.161\""));
+        assert!(json.contains("\"quantization\":\"Q8_0\""));
+        assert!(ocrx_core::is_valid_json(&json));
+    }
+
+    #[test]
+    fn scan_result_default_face_keeps_the_frozen_ovisocr2_string() {
+        // SS83 item 5: even with an identity present, the default-model
+        // shape keeps the historical bytes (including llama.cpp@0.1.152).
+        let identity = test_support_identity();
+        let fields = ScanResultFields {
+            model_identity: Some(&identity),
+            status: "success",
+            input: Path::new("in.pdf"),
+            markdown_path: None,
+            output_dir: Path::new("out"),
+            profile: "compact",
+            required_quality_tier: "l2",
+            document_type: "ocr",
+            ocr_model_loaded: true,
+            backend: "cpu",
+            total_pages: 1,
+            completed_pages: 1,
+            failed_pages: 0,
+            truncated_pages: 0,
+            degenerated_pages: 0,
+            think_blocks_stripped_total: 0,
+            warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            pdf_routing: Vec::new(),
+            routing_counts: RoutingCounts {
+                native_text: 0,
+                ocr: 0,
+                empty: 0,
+                fallback: 0,
+            },
+            image_dir: Path::new("out/images"),
+            image_count: 0,
+            elapsed_ms: 5,
+        };
+        let json = super::serialize_scan_result(&fields);
+        assert!(json.contains("\"id\":\"ovisocr2\""));
+        assert!(json.contains("\"runtime\":\"llama.cpp@0.1.152\""));
+    }
+
+    #[test]
+    fn doctor_json_report_redacts_sensitive_cache_paths() {
+        let report = doctor_json_report(
+            ocrx_inference_api::ResourceSnapshot {
+                memory_gb: 16,
+                metal_available: true,
+                cuda_available: false,
+                vulkan_available: false,
+                cpu_available: true,
+            },
+            DEFAULT_MODEL,
+        );
         assert!(!report.to_ascii_lowercase().contains("authorization="));
         assert!(!report.to_ascii_lowercase().contains("token:"));
         assert!(report.contains("\"backend\":\"Metal\""));
@@ -3714,11 +4068,17 @@ model=ovisocr3
         assert_eq!(parse_command(&["version"]), Ok(CliCommand::Version));
         assert_eq!(
             parse_command(&["doctor"]),
-            Ok(CliCommand::Doctor { json: false })
+            Ok(CliCommand::Doctor {
+                json: false,
+                model: None
+            })
         );
         assert_eq!(
             parse_command(&["doctor", "--report", "json"]),
-            Ok(CliCommand::Doctor { json: true })
+            Ok(CliCommand::Doctor {
+                json: true,
+                model: None
+            })
         );
         assert_eq!(
             parse_command(&["scan", "input.pdf"]),

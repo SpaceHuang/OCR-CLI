@@ -41,7 +41,9 @@ pub mod builtin {
     // Historical flat spellings kept for the CLI revision/manifest lookups.
     pub use ovisocr2::*;
 }
-pub use ocrx_models::{CurlTransport, ModelManagerImpl, recommend as recommend_module};
+pub use ocrx_models::{
+    CurlTransport, ModelCatalogV2, ModelManagerImpl, recommend as recommend_module,
+};
 pub mod recommend {
     pub use ocrx_models::recommend::*;
 }
