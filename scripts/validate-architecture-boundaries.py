@@ -39,6 +39,7 @@ ALLOWED_DEPS: dict[str, set[str]] = {
         "ocrx-models",
         "ocrx-runtime",
         "ocrx-ovisocr2",
+        "ocrx-ovisocr3",
     },
     "ocrx-scan": {
         "ocrx-core",

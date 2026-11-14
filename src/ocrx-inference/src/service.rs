@@ -6,9 +6,9 @@
 
 use ocrx_inference_api::{
     BackendHandle, BackendId, DECODE_GENERATION, InferenceError, InferenceService,
-    InferenceSession, ModelDisplayMeta, ModelId, ModelIdentity, PrepareRequest, PreparedInference,
-    ProtocolAdapter, RuntimeTelemetry, StaticInferenceIdentity, StepProfile, TaskRequest,
-    TaskResponse,
+    InferenceSession, ModelDisplayMeta, ModelId, ModelIdentity, ModelManifest, PrepareRequest,
+    PreparedInference, ProtocolAdapter, RuntimeTelemetry, StaticInferenceIdentity, StepProfile,
+    TaskRequest, TaskResponse,
 };
 use ocrx_inference_api::{DeviceManager, ModelManager};
 use ocrx_models::ModelManagerImpl;
@@ -204,10 +204,13 @@ impl InferenceService for InferenceServiceImpl {
         };
         // 6. Identity: actual backend + actual batch depth + platform
         // decode generation + display metadata from the resolved manifest.
+        // The adapter identity comes from the manifest binding (O3-T12),
+        // matching the adapter instance that serves the session.
+        let adapter = adapter_for(&manifest)?;
         let identity = ocrx_inference_api::InferenceIdentity {
             model: Self::model_identity(&request.model, &manifest)?,
             runtime: handle.runtime.clone(),
-            adapter: registry::adapter_identity(),
+            adapter: adapter.identity().clone(),
             backend: actual_backend,
             decode_generation: DECODE_GENERATION,
             batch_depth,
@@ -216,7 +219,7 @@ impl InferenceService for InferenceServiceImpl {
         let requested = requested_backend;
         let session = InferenceSessionImpl {
             backend: handle.backend,
-            adapter: Box::new(ovis_adapter()),
+            adapter,
             identity,
         };
         Ok(PreparedInference {
@@ -256,16 +259,31 @@ impl InferenceService for InferenceServiceImpl {
         Ok(StaticInferenceIdentity {
             model: Self::model_identity(model, &manifest)?,
             runtime: registry::runtime_identity(),
-            adapter: registry::adapter_identity(),
+            // O3-T12: per-model adapter identity (the same mapping the
+            // binding check uses — the pre-compare can never disagree with
+            // the binding gate about which adapter serves a model).
+            adapter: registry::adapter_identity_for(model)?,
             decode_generation: DECODE_GENERATION,
         })
     }
 }
 
-/// The single registered protocol adapter for prepare (composition root
-/// wiring; the adapter crate knows nothing about sessions).
-fn ovis_adapter() -> impl ProtocolAdapter {
-    ocrx_ovisocr2::adapter::OvisProtocolAdapter::new()
+/// The protocol adapter for one resolved manifest (O3-T12: the read points
+/// — session construction and the session identity — all derive from the
+/// manifest's adapter binding instead of a single hardcoded adapter).
+///
+/// # Errors
+///
+/// [`InferenceError::InvalidManifest`] when the manifest names an adapter
+/// the platform does not register.
+fn adapter_for(manifest: &ModelManifest) -> Result<Box<dyn ProtocolAdapter>, InferenceError> {
+    match manifest.adapter_binding.adapter.as_str() {
+        "ovisocr2" => Ok(Box::new(ocrx_ovisocr2::adapter::OvisProtocolAdapter::new())),
+        "ovisocr3" => Ok(Box::new(ocrx_ovisocr3::adapter::OvisProtocolAdapter::new())),
+        other => Err(InferenceError::InvalidManifest(format!(
+            "no registered protocol adapter for {other}"
+        ))),
+    }
 }
 
 /// One bound session (plan §3.3): created once per scan invocation, serving
@@ -486,9 +504,78 @@ mod tests {
     fn session_with(backend: FakeRuntimeBackend) -> InferenceSessionImpl {
         InferenceSessionImpl {
             backend: Box::new(backend),
-            adapter: Box::new(ovis_adapter()),
+            adapter: Box::new(ocrx_ovisocr2::adapter::OvisProtocolAdapter::new()),
             identity: identity(),
         }
+    }
+
+    #[test]
+    #[ignore = "env-gated: OCRX_E2E_MODEL=1 with the real ovisocr3 assets installed"]
+    fn real_prepare_binds_the_ovisocr3_session_identity_and_adapter() {
+        // O3-T12/T14 real evidence: prepare over the installed ovisocr3
+        // assets produces a session whose identity (and decode behavior)
+        // is the ovisocr3 adapter pair — the full static/session/checkpoint
+        // three-read-point agreement (C14).
+        if std::env::var_os("OCRX_E2E_MODEL").is_none() {
+            eprintln!("skipped: set OCRX_E2E_MODEL=1");
+            return;
+        }
+        let cache_root = ocrx_models::default_cache_root();
+        let manager = ModelManagerImpl::new(
+            cache_root,
+            Box::new(registry::RegistryVerifier),
+            Box::new(ocrx_models::CurlTransport),
+            None,
+        );
+        let devices = DeviceManagerImpl::new(
+            Box::new(FakeSystemProbe::default()),
+            None,
+            std::env::temp_dir(),
+        );
+        let mut service =
+            InferenceServiceImpl::new(manager, devices, Box::new(FakeFactory::default()));
+        let mut interaction = NonInteractive;
+        let prepared = service
+            .prepare(
+                PrepareRequest {
+                    model: ModelId::new("ovisocr3").unwrap(),
+                    requested_profile: "quality".to_owned(),
+                    requested_device: "cpu".to_owned(),
+                    max_image_tokens: 1024,
+                    context_size: 20_480,
+                    install: InstallPolicy {
+                        offline: true,
+                        non_interactive: true,
+                        license_accepted: false,
+                    },
+                },
+                &mut interaction,
+            )
+            .expect("installed ovisocr3 assets must prepare offline");
+        let identity = prepared.session.identity();
+        assert_eq!(identity.model.model.as_str(), "ovisocr3");
+        assert_eq!(identity.model.profile.as_str(), "quality");
+        assert_eq!(identity.adapter.adapter.as_str(), "ovisocr3");
+        assert_eq!(identity.adapter.version, "0.1.0");
+        // One submit rides the ovisocr3 adapter decode path end to end.
+        let mut session = prepared.session;
+        let response = session
+            .submit(
+                TaskRequest::new(
+                    "probe",
+                    vec![ImageInput::new("img", 1, 1, vec![3; 3]).unwrap()],
+                    GenerationParams {
+                        max_output_tokens: 16,
+                        temperature_milli: 0,
+                        thinking: false,
+                    },
+                )
+                .unwrap(),
+                &CancellationToken::new(),
+                &mut |_| {},
+            )
+            .expect("fake backend serves the task");
+        assert_eq!(response.think_blocks_stripped, 0);
     }
 
     #[test]
@@ -591,6 +678,49 @@ mod tests {
             results[1],
             Err(InferenceError::BackendExecution(_))
         ));
+    }
+
+    #[test]
+    fn adapter_for_dispatches_by_the_manifest_binding() {
+        // O3-T12: the adapter instance and identity follow the manifest's
+        // adapter binding — one dispatch for every read point.
+        let ovisocr2 = crate::builtin_test_manifest();
+        let adapter = adapter_for(&ovisocr2).unwrap();
+        assert_eq!(adapter.identity().adapter.as_str(), "ovisocr2");
+        assert_eq!(adapter.identity().version, "0.1.0");
+        let ovisocr3 = ocrx_models::builtin::ovisocr3::ovisocr3_manifest("quality").unwrap();
+        let adapter = adapter_for(&ovisocr3).unwrap();
+        assert_eq!(adapter.identity().adapter.as_str(), "ovisocr3");
+        assert_eq!(adapter.identity().version, "0.1.0");
+        // An unregistered adapter binding is a manifest error.
+        let mut unknown = crate::builtin_test_manifest();
+        unknown.adapter_binding.adapter = ocrx_inference_api::AdapterId::new("qwen").unwrap();
+        assert!(matches!(
+            adapter_for(&unknown),
+            Err(InferenceError::InvalidManifest(_))
+        ));
+    }
+
+    #[test]
+    fn static_identity_resolves_the_per_model_adapter() {
+        // C14 prerequisite: the static (pre-compare) identity names the
+        // model's own adapter for both registered models.
+        let backend = Arc::new(Mutex::new(FakeRuntimeBackend::new()));
+        let (service, root) = service_with(backend, FakeSystemProbe::default());
+        let ovisocr2 = service
+            .static_identity(&ModelId::new("ovisocr2").unwrap(), "auto")
+            .unwrap();
+        assert_eq!(ovisocr2.adapter.adapter.as_str(), "ovisocr2");
+        let ovisocr3 = service
+            .static_identity(&ModelId::new("ovisocr3").unwrap(), "auto")
+            .unwrap();
+        assert_eq!(ovisocr3.adapter.adapter.as_str(), "ovisocr3");
+        assert_eq!(ovisocr3.adapter.version, "0.1.0");
+        // The model side of the static identity resolves over the single
+        // rung set.
+        assert_eq!(ovisocr3.model.profile.as_str(), "quality");
+        assert_eq!(ovisocr3.decode_generation, DECODE_GENERATION);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
