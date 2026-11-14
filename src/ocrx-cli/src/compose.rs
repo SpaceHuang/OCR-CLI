@@ -72,20 +72,24 @@ mod tests {
     };
 
     #[test]
-    fn composition_resolves_the_single_registered_model() {
+    fn composition_resolves_the_registered_models_in_declaration_order() {
         // Rooted in a temp cache so the test never touches the user cache.
         let root = std::env::temp_dir().join(format!("ocrx-compose-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let composed = compose(Some(root.clone()));
-        // model list through the manager: exactly one model, frozen metadata.
+        // model list through the manager: ovisocr2 first (declaration
+        // order), then the OvisOCR3 addition (§8.3 expected difference ①).
         let summaries = composed.inference.manager().list().unwrap();
-        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries.len(), 2);
         assert_eq!(summaries[0].model.as_str(), "ovisocr2");
         assert_eq!(summaries[0].display.display_name, "OvisOCR2");
+        assert_eq!(summaries[1].model.as_str(), "ovisocr3");
+        assert_eq!(summaries[1].display.display_name, "OvisOCR3");
         // Device manager reports the doctor overview without a model load.
         let diagnostics = composed.inference.devices().diagnose();
         assert_eq!(diagnostics.profiles.len(), 4);
-        // Static identity resolves via the frozen memory ladder.
+        // Static identity resolves via the frozen memory ladder (both
+        // models share the frozen runtime pin, D-4 GO branch).
         let statik = composed
             .inference
             .static_identity(&ModelId::new("ovisocr2").unwrap(), "auto")
@@ -94,6 +98,13 @@ mod tests {
         // Upstream main bumped the decode generation to 3 (token pieces
         // accumulate as bytes before UTF-8 decoding); identity must match.
         assert_eq!(statik.decode_generation, 3);
+        // The ovisocr3 static identity resolves over its single-rung set.
+        let statik3 = composed
+            .inference
+            .static_identity(&ModelId::new("ovisocr3").unwrap(), "auto")
+            .unwrap();
+        assert_eq!(statik3.decode_generation, 3);
+        assert_eq!(statik3.model.profile.as_str(), "quality");
         let _ = std::fs::remove_dir_all(root);
     }
 }
