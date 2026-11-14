@@ -1,0 +1,37 @@
+{
+  "ovisocr2-reference-control": [
+    {
+      "grid2048_bytes": 448,
+      "page": 0,
+      "plain_bytes": 426
+    },
+    {
+      "grid2048_bytes": 49,
+      "page": 1,
+      "plain_bytes": 52
+    },
+    {
+      "grid2048_bytes": 1373,
+      "page": 2,
+      "plain_bytes": 1378
+    }
+  ],
+  "ovisocr3-quality": [
+    {
+      "grid2048_bytes": 460,
+      "page": 0,
+      "plain_bytes": 458
+    },
+    {
+      "grid2048_bytes": 68,
+      "page": 1,
+      "plain_bytes": 68
+    },
+    {
+      "grid2048_bytes": 1393,
+      "page": 2,
+      "plain_bytes": 1390
+    }
+  ],
+  "spike": "ovisocr3-grid-2048"
+}

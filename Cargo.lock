@@ -841,6 +841,8 @@ dependencies = [
  "ocrx-models",
  "ocrx-pdf",
  "ocrx-primitives",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
