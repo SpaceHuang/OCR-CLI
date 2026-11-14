@@ -3031,6 +3031,25 @@ model=ovisocr3
     }
 
     #[test]
+    #[ignore = "env-gated: OCRX_E2E_MODEL=1 with the real ovisocr3 assets installed"]
+    fn cli_model_verify_ovisocr3_success_path_with_real_assets() {
+        // O3-T10 completion check: content + binding both pass once the
+        // per-model binding mapping lands; the success line is frozen on
+        // first light (plan O3-T09 item 4 handoff).
+        if std::env::var_os("OCRX_E2E_MODEL").is_none() {
+            eprintln!("skipped: set OCRX_E2E_MODEL=1");
+            return;
+        }
+        let output = run_cli(&["model", "verify", "--model", "ovisocr3", "quality"]);
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            "model=ovisocr3 profile=quality revision=7be644a312005c3a55e2c826aee985a5c93d06b2 status=installed
+"
+        );
+    }
+
+    #[test]
     fn cli_model_verify_error_path_for_ovisocr3_missing_assets() {
         // Phase-1 shape (plan O3-T09 item 4): the ovisocr3 verify face
         // exists and errors on the error path; its success path lights up

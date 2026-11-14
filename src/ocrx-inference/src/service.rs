@@ -117,7 +117,7 @@ impl InferenceService for InferenceServiceImpl {
         binding::check_binding(
             &manifest,
             &registry::runtime_identity(),
-            &registry::adapter_identity(),
+            &registry::adapter_identity_for(&manifest.model)?,
         )?;
         // 3. Device selection: explicit-unavailable fails here, before any
         // asset work.
