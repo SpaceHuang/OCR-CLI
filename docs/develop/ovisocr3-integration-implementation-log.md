@@ -109,6 +109,16 @@
   `detect_column_bands` 对退化几何（1 像素宽页）的越界 panic → 回退单带。
   附带测试假体修复：FakeSession slot 解析支持 `page-N-band-M` 请求 id。
 
+## 复审 PASS（2026-11-15）
+
+- 代码评审重审 **PASS**（`docs/review/ovisocr3-integration-code-review.md`）——检空安全网
+  BLOCK 闭环，未发现新的合并阻断。门禁全绿（bootstrap-check.sh 的 Python 失败与 main
+  基线相同，既有问题非本分支回归）。
+- **复审实测（重要证据）**：真实 30 页 OvisOCR3 扫描 30/30 完成、退出码 0；此前空输出的
+  12 页**全部在第 3 次尝试（重试采样链）恢复非空正文**（scan 路径退化 = 阶梯可救回）；
+  仅 18/29 为空白路由页。全文档续扫 629 ms 零加载复用。墙钟 30 页 ≈ 1535s（重试成本，
+  登记为 root-cause 立项的优化目标）。
+
 ## 后续工作（验收报告 §遗留）
 
 1. scan 路径生成退化 root-cause 立项（最高优先）。
