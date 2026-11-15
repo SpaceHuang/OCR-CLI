@@ -97,6 +97,13 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
     },
 ];
 
+/// B-M2.3 diag (D-17, spike-faithful): the raised raster budget applies to
+/// the WHOLE retry walk (attempts >= 2) — every retry decode sees the
+/// supersampled raster; the model input keeps the frozen 2880² fit
+/// (render_direct_budgeted). Normal pages never see it. The M2 rung's
+/// `render_budget` pair is the canonical value.
+pub const RETRY_RASTER_BUDGET: (u32, u32) = (4096, 4096);
+
 /// Frozen attempts range written to checkpoints: 1 + ladder length (Q1.4a).
 pub const ATTEMPTS_MAX: u32 = 1 + DEGENERATION_RETRY_LADDER.len() as u32;
 

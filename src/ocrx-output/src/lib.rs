@@ -866,13 +866,23 @@ where
                 Some((numerator, denominator)) => {
                     self.renderer.render_perturbed(page, numerator, denominator)
                 }
-                _ => match step.and_then(|rung| rung.render_budget) {
-                    Some((width_budget, height_budget)) => {
-                        self.renderer
-                            .render_budgeted(page, width_budget, height_budget)
+                _ => {
+                    // B-M2.3 diag: raised raster on the whole retry walk
+                    // (mirror of the scan window port; the model input
+                    // keeps the frozen 2880² fit).
+                    let budget = if attempts >= 2 {
+                        Some((4096, 4096))
+                    } else {
+                        None
+                    };
+                    match budget {
+                        Some((width_budget, height_budget)) => {
+                            self.renderer
+                                .render_budgeted(page, width_budget, height_budget)
+                        }
+                        None => self.renderer.render(page),
                     }
-                    None => self.renderer.render(page),
-                },
+                }
             };
             self.commit_recorder.record_render_wait(
                 page,
@@ -4528,12 +4538,9 @@ mod tests {
             .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
             .unwrap();
         assert_eq!(summary.degenerated_pages, 1);
-        // Non-budget rungs render plain (1,1,1) — perturbed rungs walk their
-        // ratios, the M2 rung walks its pixel budget.
-        let expected_rungs = DEGENERATION_RETRY_LADDER.iter().map(|rung| {
-            let (first, second) = rung.render_budget.or(rung.perturbed).unwrap_or((1, 1));
-            (1, first, second)
-        });
+        // B-M2.3 diag: every retry render (attempts 2..=5) walks the raised
+        // raster budget; the frozen table has no perturbation rungs.
+        let expected_rungs = (1..=DEGENERATION_RETRY_LADDER.len()).map(|_| (1, 4096, 4096));
         assert_eq!(
             *log.borrow(),
             vec![(1, 1, 1)]

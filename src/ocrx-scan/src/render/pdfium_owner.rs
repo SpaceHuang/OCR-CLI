@@ -249,8 +249,7 @@ impl<E: PdfiumExecutor> OwnerState<E> {
         let input = self
             .executor
             .render_raw_budgeted(page, width_budget, height_budget)?;
-        compose_rendered_page(input, 1, 1, DEFAULT_MODEL_PIXEL_BUDGET)
-            .map_err(|e| e.to_string())
+        compose_rendered_page(input, 1, 1, DEFAULT_MODEL_PIXEL_BUDGET).map_err(|e| e.to_string())
     }
 }
 

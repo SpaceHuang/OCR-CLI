@@ -19,8 +19,8 @@ use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use crate::ocr::artifacts::{RecognizeError, SessionRecognizer};
 use crate::state::{
-    DegenerationRetryStep, JobSummary, PageArtifactResult, PageDiagnostic, RenderAudit,
-    RenderedPage,
+    DegenerationRetryStep, JobSummary, PageArtifactResult, PageDiagnostic, RETRY_RASTER_BUDGET,
+    RenderAudit, RenderedPage,
 };
 
 /// Render port for the OCR pipeline (the legacy `PageRenderer` trait,
@@ -641,14 +641,24 @@ fn serial_attempt_outcome(
             Some((numerator, denominator)) => {
                 renderer.render_perturbed(page, numerator, denominator)
             }
-            _ => match step.and_then(|rung| rung.render_budget) {
-                // B-M2.1/D-17: the M2 rung re-renders at the raised budget
-                // (rasterization + model input) for this attempt only.
-                Some((width_budget, height_budget)) => {
-                    renderer.render_budgeted(page, width_budget, height_budget)
+            _ => {
+                // B-M2.1/D-17 + B-M2.3 diag: the raised raster budget applies
+                // to the WHOLE retry walk (attempts >= 2) — the spike's
+                // adjudicated shape (supersampled raster on every retry
+                // decode; the model input keeps the frozen 2880² fit).
+                // Attempt 1 (normal pages) never sees it.
+                let budget = if attempts >= 2 {
+                    Some((RETRY_RASTER_BUDGET.0, RETRY_RASTER_BUDGET.1))
+                } else {
+                    None
+                };
+                match budget {
+                    Some((width_budget, height_budget)) => {
+                        renderer.render_budgeted(page, width_budget, height_budget)
+                    }
+                    None => renderer.render(page),
                 }
-                None => renderer.render(page),
-            },
+            }
         };
         commit_recorder.record_render_wait(
             page,

@@ -510,6 +510,173 @@ fn degenerated_pages_retry_through_the_frozen_ladder() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// Reads the committed v6 checkpoint's attempts value for `page`.
+fn committed_attempts(root: &Path, page: u32) -> (u32, bool) {
+    let file = ocrx_output::read_any(root.join(format!("page-{page:04}.checkpoint")))
+        .expect("v6 checkpoint committed");
+    let ocrx_output::CheckpointFile::V6(checkpoint) = file else {
+        panic!("expected a v6 checkpoint");
+    };
+    (checkpoint.attempts, checkpoint.degenerated)
+}
+
+#[test]
+fn m2_rung_renders_budgeted_4096_and_escapes_with_the_2048_grid() {
+    // B-M2.1 (D-17): the M2 rung 2048@4096² sits after penalty, before the
+    // column split; its decode rides the 2048 grid. B-M2.3 diag: the
+    // spike's raised raster applies to the WHOLE retry walk (attempts >= 2).
+    let root = temp_root("m2-rung-escape");
+    let session = FakeSession::with_depth(1);
+    for _ in 0..3 {
+        session.push(
+            1,
+            Program {
+                text: "循环片段".repeat(9),
+                finish: FinishReason::RepetitionLoop,
+            },
+        );
+    }
+    session.push(
+        1,
+        Program {
+            text: "m2 rescue".into(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.degenerated_pages, 0, "escaped on the M2 rung");
+    // B-M2.3 diag: the spike's raised raster applies to the WHOLE retry
+    // walk — every retry render (attempts 2..=4) is budgeted.
+    assert_eq!(
+        renderer.budgets.borrow().as_slice(),
+        &[(1, 4096, 4096), (1, 4096, 4096), (1, 4096, 4096)]
+    );
+    // The ladder walked in order: plain → 2048-grid → penalty → M2(2048).
+    let captured = session.core.captured.borrow();
+    assert_eq!(captured.len(), 4);
+    assert_eq!(captured[1].image_tokens_override, Some(2048));
+    assert!(captured[1].retry_sampling.is_none());
+    assert!(captured[2].retry_sampling.is_some());
+    assert_eq!(captured[3].image_tokens_override, Some(2048));
+    assert!(captured[3].retry_sampling.is_none());
+    drop(captured);
+    assert_eq!(committed_attempts(&root, 1), (4, false));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn m2_rung_stays_unused_when_the_penalty_rung_escapes() {
+    // Escaping at the penalty rung: retry renders stay budgeted, the M2
+    // rung's decode never fires.
+    let root = temp_root("m2-rung-untouched");
+    let session = FakeSession::with_depth(1);
+    session.push(
+        1,
+        Program {
+            text: "循环片段".repeat(9),
+            finish: FinishReason::RepetitionLoop,
+        },
+    );
+    session.push(
+        1,
+        Program {
+            text: "循环片段".repeat(9),
+            finish: FinishReason::RepetitionLoop,
+        },
+    );
+    session.push(
+        1,
+        Program {
+            text: "penalty rescue".into(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.degenerated_pages, 0);
+    // Raised raster on the two retry attempts; only ONE 2048-grid decode
+    // (rung 1) — the M2 rung's decode never fires on an attempt-3 escape.
+    assert_eq!(
+        renderer.budgets.borrow().as_slice(),
+        &[(1, 4096, 4096), (1, 4096, 4096)]
+    );
+    let captured = session.core.captured.borrow();
+    assert_eq!(captured.len(), 3);
+    assert!(captured[2].retry_sampling.is_some());
+    assert_eq!(
+        captured
+            .iter()
+            .filter(|r| r.image_tokens_override == Some(2048))
+            .count(),
+        1
+    );
+    drop(captured);
+    assert_eq!(committed_attempts(&root, 1), (3, false));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn exhausted_five_attempt_ladder_commits_the_m2_terminal_attempt_marked() {
+    // 5-attempt exhaustion: plain → 2048@2880² → penalty → 2048@4096² →
+    // column split; the terminal (5th) attempt commits with attempts = 5
+    // and the degenerated marker (D-17 cap 4→5).
+    let root = temp_root("m2-rung-exhaust");
+    let session = FakeSession::with_depth(1);
+    for _ in 0..5 {
+        session.push(
+            1,
+            Program {
+                text: "循环片段".repeat(9),
+                finish: FinishReason::RepetitionLoop,
+            },
+        );
+    }
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.degenerated_pages, 1, "exhaustion commits marked");
+    // Every retry render (attempts 2..=5) budgeted.
+    assert_eq!(renderer.budgets.borrow().as_slice(), &[(1, 4096, 4096); 4]);
+    assert_eq!(committed_attempts(&root, 1), (5, true));
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn window_batch_failure_falls_back_to_depth_one() {
     let root = temp_root("fallback");
