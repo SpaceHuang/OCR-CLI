@@ -1,10 +1,16 @@
 # Scan 路径空输出生成退化 root-cause 立项
 
-**状态：** 已立项，待实施（v1.1，2026-11-15 评审响应修订；初稿 v1.0 评审 **BLOCK（2 项）**，
-见 `docs/review/scan-path-empty-generation-root-cause-plan-review.md`）
+**状态：** 已立项，待实施（v1.2，2026-11-15 复审响应修订；v1.0 初评 **BLOCK（2 项）**已闭环，
+v1.1 复审 **BLOCK（1 项残余）**，见 `docs/review/scan-path-empty-generation-root-cause-plan.v1.1-review.md`）
 
 **修订记录：**
-
+- v1.2（2026-11-15）复审响应：
+  - **BLOCK（对拍硬门作用域）**：SP-T02 前置校验收窄为"**每条纳入 E1 的 scan
+    attempt-1 记录**必须恰好匹配一条同页、同参数、direct attempt=1 的记录"；attempt≥2
+    的阶梯重试记录**不进入**双路径首尝试对拍、也不因缺少 direct 匹配而使 E1 无效，
+    转入归档请求重放 / 单变量对照数据集。（v1.1 的"每条 scan attempt 同 attempt 匹配"
+    与"direct 恒 attempt=1"互斥——目标故障本身就会产生 attempt 2/3，硬门会使越成功
+    复现目标问题越必然判实验无效。）
 - v1.1（2026-11-15）评审响应：
   - **BLOCK-1（E1 对拍键缺失）**：冻结页身份约定（对外一律 1 基 `page_number`，渲染时
     显式换算 `page_index = page_number - 1`，记录双写两字段）；定义可连接的
@@ -145,11 +151,16 @@ actor 的 `Generate` 处理与直驱 `generate_with_progress` 在上下文创建
       调用方作用域内）——`WorkerTask` 无页码/attempt/run 字段，**不作为采集点**
       （`backend.rs:75-90` 转换丢弃 `ImageInput.id`，v1.0 设计在此失效）；
     - direct 侧：探针内，渲染前显式换算 `page_index`，记录双字段。
-  - **attempt 语义**：scan attempt-1 = 直驱对照的可比对象（直驱恒 attempt=1）。
+  - **attempt 语义（v1.2 收窄）**：仅 scan **attempt-1** 与直驱对拍（直驱恒
+    attempt=1）；attempt≥2 的重试记录不参与双路径对拍（direct harness 若需重放
+    attempt≥2 的 grid/sampling/上下文状态，属归档重放数据集的扩展，不改变本硬门）。
 - **SP-T02 判别实验 E1/E2/E3**：
-  - **对拍前置校验（硬性）**：每条 scan attempt 记录必须恰好匹配一条**同
-    `page_number`、同 attempt（=1）、同参数**的 direct 记录；缺失或重复匹配 ⇒ 实验
-    无效，禁止输出任何根因结论。
+  - **对拍前置校验（硬性，作用域 = E1 的 attempt-1 数据集，v1.2 修订）**：每条
+    **纳入 E1 的 scan attempt-1 记录**必须恰好匹配一条**同 `page_number`、同参数、
+    direct attempt=1** 的记录；该数据集内缺失或重复匹配 ⇒ 实验无效，禁止输出任何
+    根因结论。**attempt≥2 的阶梯重试记录不进入该对拍、也不触发无效判定**——它们是
+    目标故障的组成部分（首尝试空页触发恢复），转入归档请求重放（B2）与单变量对照
+    （E 阶段）数据集。
   - E1：匹配对上比对 `rgb8_sha256`/`prompt_sha256`/全部请求字段；差异 ⇒ 导出两侧
     缓冲落盘做模式 diff（全零区/行错位/尾部垃圾各指向不同损坏类）。
   - E2（E1 字节相同）：WorkerTask 字段与 actor 上下文创建参数逐项比对（n_ctx、线程
