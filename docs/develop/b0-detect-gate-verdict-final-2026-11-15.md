@@ -38,6 +38,23 @@ plus-L letterbox 无实质变化（表格 95.8%、公式 60.4%）——公式缺
   或 GT 公式语义与检测类定义对齐后的复评）；候选评估器
   `scripts/omnidocbench-b0-detect-probe{,-paddle}.py` 与 B0a/B0b 冻结资产全部可复用。
 
+## 3b. 补充（同日）：专用公式检测器（两阶段架构）验证——同样平台期
+
+借鉴主流产品架构（Pix2Text/PaddleX：通用版面模型管表格 + 专用 MFD 管公式），
+实测 Pix2Text MFD 1.5（YOLO11m，AGPL，仅作门证据）：744 页全量公式召回
+**58.5%**（18,498 检出 / precision 0.07 / 匹配 IoU 0.91）。至此**五个模型
+（四版面 + 一专用 MFD）、两种范式全部停在 ~60% 平台期**——错位在基准 GT
+公式语义与区域检测范式的系统性差异，非选型可解。
+
+生态对齐的复测路径（重开时执行）：OmniDocBench 官方有独立**检测轨道**
+（display/inline 公式分类召回，工具链匹配器与我们的端到端匹配器不同）；
+用本地 `eval/` 仓库的检测评估跑 V2/MFD 输出，得到与生态可比的召回基线，
+再判断 90% 门是否需要按检测轨道口径重校。
+
+调研来源：Pix2Text MFD 权重与两阶段架构（breezedeus/pix2text-mfd-1.5）、
+PaddleOCR-VL/PP-DocLayoutV2 两阶段设计、MinerU 1.x 版面+公式检测分立管线、
+MinerU2.5 端到端路线、OmniDocBench CVPR 2025 论文与官方检测轨道文档。
+
 ## 4. 沿用资产清单
 
 - `benchmarks/omnidocbench/region-truth/`（B0a 冻结，744 页 GT 区域 + 类内序数）
