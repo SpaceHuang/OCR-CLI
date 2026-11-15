@@ -61,6 +61,18 @@ pub struct OcrIdentity {
     pub pixel_width_budget: u32,
     pub pixel_height_budget: u32,
     pub page_parser_version: String,
+    /// B4.2/D-25: effective region-reread switches and the layout model
+    /// identity (id + asset hash) — compatibility fields on the
+    /// `pixel_width_budget` precedent; `#[serde(default)]` keeps older
+    /// checkpoints readable (off/empty = the default pipeline).
+    #[serde(default)]
+    pub table_reread: bool,
+    #[serde(default)]
+    pub formula_reread: bool,
+    #[serde(default)]
+    pub layout_model_id: String,
+    #[serde(default)]
+    pub layout_model_assets_sha256: String,
 }
 
 /// Versioned structured scan compatibility (`schema_version = 1`).
@@ -145,6 +157,11 @@ pub struct ScanOcrSide {
     pub pixel_width_budget: u32,
     pub pixel_height_budget: u32,
     pub page_parser_version: String,
+    /// B4.2/D-25 — see [`OcrIdentity`] (defaults = off/empty pipeline).
+    pub table_reread: bool,
+    pub formula_reread: bool,
+    pub layout_model_id: String,
+    pub layout_model_assets_sha256: String,
 }
 
 fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
@@ -158,6 +175,10 @@ fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
         && ocr.pixel_width_budget == side.pixel_width_budget
         && ocr.pixel_height_budget == side.pixel_height_budget
         && ocr.page_parser_version == side.page_parser_version
+        && ocr.table_reread == side.table_reread
+        && ocr.formula_reread == side.formula_reread
+        && ocr.layout_model_id == side.layout_model_id
+        && ocr.layout_model_assets_sha256 == side.layout_model_assets_sha256
 }
 
 /// Phase 1 — static pre-comparison (RBLK-2/RBLK-4, prepare-free fast path).
@@ -217,6 +238,10 @@ pub fn ocr_final_compare(stored: &ScanCompatibility, identity: &InferenceIdentit
             pixel_width_budget: ocr.pixel_width_budget,
             pixel_height_budget: ocr.pixel_height_budget,
             page_parser_version: ocr.page_parser_version.clone(),
+            table_reread: ocr.table_reread,
+            formula_reread: ocr.formula_reread,
+            layout_model_id: ocr.layout_model_id.clone(),
+            layout_model_assets_sha256: ocr.layout_model_assets_sha256.clone(),
         },
     ) && ocr.inference.backend == identity.backend
         && ocr.inference.batch_depth == identity.batch_depth
@@ -290,6 +315,10 @@ mod tests {
             pixel_width_budget: 2880,
             pixel_height_budget: 2880,
             page_parser_version: "ovis-page-v1".to_owned(),
+            table_reread: false,
+            formula_reread: false,
+            layout_model_id: String::new(),
+            layout_model_assets_sha256: String::new(),
         }
     }
 
@@ -317,6 +346,10 @@ mod tests {
                 pixel_width_budget: 2880,
                 pixel_height_budget: 2880,
                 page_parser_version: "ovis-page-v1".to_owned(),
+                table_reread: false,
+                formula_reread: false,
+                layout_model_id: String::new(),
+                layout_model_assets_sha256: String::new(),
             },
         )
     }
@@ -488,6 +521,70 @@ mod tests {
         // … and round-trips.
         let round: ScanCompatibility = serde_json::from_str(&json).unwrap();
         assert_eq!(round, compatibility);
+    }
+
+    #[test]
+    fn reread_switches_and_layout_model_identity_gate_reuse() {
+        // B4.2/D-25: the effective reread switches and the layout model
+        // identity (id + asset hash) are compatibility fields — mode = the
+        // pixel_width_budget precedent. A stored reread-on page never
+        // reuses against an off configuration and vice versa; a layout
+        // model switch or asset-hash drift reprocesses too.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let statik = StaticInferenceIdentity::from_execution(&current);
+        let mut stored_compat = stored(&current);
+        let ocr = stored_compat.ocr.as_mut().unwrap();
+        ocr.table_reread = true;
+        ocr.formula_reread = true;
+        ocr.layout_model_id = "pp-doclayout-v2".to_owned();
+        ocr.layout_model_assets_sha256 = "hash-lm".to_owned();
+        // Off side → mismatch (on→off switch must not reuse).
+        assert!(!ocr_pre_compare(&stored_compat, &statik, &side()));
+        let mut matching_side = side();
+        matching_side.table_reread = true;
+        matching_side.formula_reread = true;
+        matching_side.layout_model_id = "pp-doclayout-v2".to_owned();
+        matching_side.layout_model_assets_sha256 = "hash-lm".to_owned();
+        assert!(ocr_pre_compare(&stored_compat, &statik, &matching_side));
+        // Layout model switch → mismatch.
+        let mut model_switch = matching_side.clone();
+        model_switch.layout_model_id = "mineru-layout".to_owned();
+        assert!(!ocr_pre_compare(&stored_compat, &statik, &model_switch));
+        // Layout asset hash drift → mismatch.
+        let mut hash_drift = matching_side.clone();
+        hash_drift.layout_model_assets_sha256 = "other-hash".to_owned();
+        assert!(!ocr_pre_compare(&stored_compat, &statik, &hash_drift));
+        // Off stored / on side → mismatch (mixed configuration reprocess).
+        let fresh = stored(&current);
+        assert!(!ocr_pre_compare(&fresh, &statik, &matching_side));
+    }
+
+    #[test]
+    fn old_identities_without_reread_fields_deserialize_with_defaults() {
+        // Additive compat (pixel_width_budget precedent): a compatibility
+        // written before B4.2 has no reread/layout fields; it deserializes
+        // with off/empty defaults and stays reusable against an off run.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let json = serde_json::to_string(&stored(&current)).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let ocr = value.get_mut("ocr").unwrap().as_object_mut().unwrap();
+        for field in [
+            "table_reread",
+            "formula_reread",
+            "layout_model_id",
+            "layout_model_assets_sha256",
+        ] {
+            ocr.remove(field).unwrap();
+        }
+        let stripped = serde_json::to_string(&value).unwrap();
+        let parsed: ScanCompatibility = serde_json::from_str(&stripped).unwrap();
+        let ocr = parsed.ocr.as_ref().unwrap();
+        assert!(!ocr.table_reread);
+        assert!(!ocr.formula_reread);
+        assert_eq!(ocr.layout_model_id, "");
+        assert_eq!(ocr.layout_model_assets_sha256, "");
+        let statik = StaticInferenceIdentity::from_execution(&current);
+        assert!(ocr_pre_compare(&parsed, &statik, &side()));
     }
 
     #[test]

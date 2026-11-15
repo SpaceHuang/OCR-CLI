@@ -35,6 +35,10 @@ pub fn side() -> ScanOcrSide {
         pixel_width_budget: 2880,
         pixel_height_budget: 2880,
         page_parser_version: "ovis-page-v1".to_owned(),
+        table_reread: false,
+        formula_reread: false,
+        layout_model_id: String::new(),
+        layout_model_assets_sha256: String::new(),
     }
 }
 
@@ -105,6 +109,10 @@ pub fn ocr_compatibility() -> ScanCompatibility {
             pixel_width_budget: 2880,
             pixel_height_budget: 2880,
             page_parser_version: "ovis-page-v1".to_owned(),
+            table_reread: false,
+            formula_reread: false,
+            layout_model_id: String::new(),
+            layout_model_assets_sha256: String::new(),
         },
     )
 }

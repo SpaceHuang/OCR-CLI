@@ -591,6 +591,10 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             pixel_width_budget: ocr.pixel_width_budget,
             pixel_height_budget: ocr.pixel_height_budget,
             page_parser_version: ocr.page_parser_version.clone(),
+            table_reread: ocr.table_reread,
+            formula_reread: ocr.formula_reread,
+            layout_model_id: ocr.layout_model_id.clone(),
+            layout_model_assets_sha256: ocr.layout_model_assets_sha256.clone(),
         },
         None => ScanOcrSide {
             prompt_id: String::new(),
@@ -603,6 +607,10 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             pixel_width_budget: 0,
             pixel_height_budget: 0,
             page_parser_version: String::new(),
+            table_reread: false,
+            formula_reread: false,
+            layout_model_id: String::new(),
+            layout_model_assets_sha256: String::new(),
         },
     }
 }

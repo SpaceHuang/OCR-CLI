@@ -22,6 +22,13 @@ pub struct ScanOcrConfig {
     pub prompt_id: String,
     pub prompt_version: String,
     pub prompt_schema_version: u32,
+    /// B4.2/D-25: effective region-reread switches + layout model identity
+    /// (id + asset hash) entering the compatibility identity. Defaults =
+    /// off/empty (no region pipeline).
+    pub table_reread: bool,
+    pub formula_reread: bool,
+    pub layout_model_id: String,
+    pub layout_model_assets_sha256: String,
 }
 
 impl Default for ScanOcrConfig {
@@ -41,6 +48,10 @@ impl Default for ScanOcrConfig {
             prompt_id: pack.id.to_owned(),
             prompt_version: pack.version.to_owned(),
             prompt_schema_version: pack.schema_version,
+            table_reread: false,
+            formula_reread: false,
+            layout_model_id: String::new(),
+            layout_model_assets_sha256: String::new(),
         }
     }
 }
@@ -83,6 +94,10 @@ pub fn ocr_compatibility(
             pixel_width_budget: config.pixel_width_budget,
             pixel_height_budget: config.pixel_height_budget,
             page_parser_version: config.page_parser_version.clone(),
+            table_reread: config.table_reread,
+            formula_reread: config.formula_reread,
+            layout_model_id: config.layout_model_id.clone(),
+            layout_model_assets_sha256: config.layout_model_assets_sha256.clone(),
         },
     )
 }
