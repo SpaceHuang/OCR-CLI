@@ -58,10 +58,11 @@ pub trait PageRenderer {
     }
 
     /// Renders a raised-pixel-budget variant (B-M2.1/D-17, the M2 rung
-    /// `2048@4096²`): the budgets relax the pre-raster and model-input
-    /// clamps for THIS retry attempt only. Default: plain render — the
-    /// retry path is the only consumer (normal pages keep the frozen
-    /// 2880² budget, byte-identical renders).
+    /// `2048@4096²`): the budgets relax the PRE-RASTER clamp for THIS
+    /// retry attempt only; the model input keeps the frozen 2880² fit
+    /// (spike-faithful supersampling shape, see render_direct_budgeted).
+    /// Default: plain render — the retry path is the only consumer
+    /// (normal pages keep the frozen 2880² budget, byte-identical renders).
     ///
     /// # Errors
     ///

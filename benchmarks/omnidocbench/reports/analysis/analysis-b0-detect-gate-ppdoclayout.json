@@ -1,0 +1,314 @@
+{
+  "schema_version": 1,
+  "artifact": "omnidocbench-b0-detect-gate",
+  "model": "PP-DocLayout-L (paddle.inference, pixel-scale=255.0)",
+  "runtime": "paddle-cpu",
+  "gate": "recall >= 90% @ IoU >= 0.7 (conf >= 0.25)",
+  "pages_scored": 744,
+  "pages_errored": [],
+  "pages_skipped_unreadable": [],
+  "page_time_ms_mean": 1671.27675672043,
+  "summary": {
+    "table": {
+      "gt_total": 665,
+      "det_total": 704,
+      "matched_total": 572,
+      "recall": 0.8601503759398497,
+      "precision": 0.8125,
+      "mean_iou_of_matched": 0.9605068719950779,
+      "gate_pass": false
+    },
+    "formula": {
+      "gt_total": 2226,
+      "det_total": 13624,
+      "matched_total": 1314,
+      "recall": 0.5902964959568733,
+      "precision": 0.0964474456840869,
+      "mean_iou_of_matched": 0.8495773815455794,
+      "gate_pass": false
+    }
+  },
+  "missed_top": [
+    {
+      "image_path": "PPT_8076_MEYER_Chapter_2_-_Language_Change_page_021.png",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_PresentationSpecification_page_010.png",
+      "class": "table",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_020.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 4,
+      "matched_n": 2
+    },
+    {
+      "image_path": "PPT_ch7_page_030.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 2,
+      "matched_n": 1
+    },
+    {
+      "image_path": "PPT_ch7_page_034.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 2,
+      "matched_n": 1
+    },
+    {
+      "image_path": "PPT_ch7_page_057.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 2,
+      "matched_n": 1
+    },
+    {
+      "image_path": "PPT_ch7_page_132.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 4,
+      "matched_n": 3
+    },
+    {
+      "image_path": "PPT_ch7_page_136.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_142.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_fundamental_theorem_of_calculus___page_006.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_fundamental_theorem_of_calculus___page_013.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lecture1_page_009.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 4,
+      "matched_n": 3
+    },
+    {
+      "image_path": "PPT_lecture1_page_022.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 2,
+      "matched_n": 1
+    },
+    {
+      "image_path": "book_en_5.Advanced.Modern.Algebra.-.J.Rotman.2003_page_887.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 7,
+      "matched_n": 6
+    },
+    {
+      "image_path": "book_en_国外数学教材-An Excursion through Elementary Mathematics（初等数学漫游）-An excursion through elementary mathematics, Vol.3 (Caminha Muniz Neto A)_0092.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 6,
+      "matched_n": 5
+    },
+    {
+      "image_path": "book_en_国外数学教材-数论-Melvyn B. Nathanson—Elementary Methods in Number Theory_0451.png",
+      "class": "formula",
+      "missed_n": 3,
+      "gt_n": 7,
+      "matched_n": 4
+    },
+    {
+      "image_path": "book_en_国外数学教材-非数学专业教材-线性代数-Gilbert Strang—Linear Algebra and Its Applications 4e_0100.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 2,
+      "matched_n": 1
+    },
+    {
+      "image_path": "book_zh_CNASGL0092018_extracted_page_69.png",
+      "class": "formula",
+      "missed_n": 4,
+      "gt_n": 10,
+      "matched_n": 6
+    },
+    {
+      "image_path": "book_zh_CNASGL0092018_extracted_page_70.png",
+      "class": "formula",
+      "missed_n": 3,
+      "gt_n": 7,
+      "matched_n": 4
+    },
+    {
+      "image_path": "book_zh_CNASGL0092018_extracted_page_73.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 3,
+      "matched_n": 2
+    },
+    {
+      "image_path": "book_zh_CNASGL082006_extracted_page_50.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 4,
+      "matched_n": 2
+    },
+    {
+      "image_path": "book_zh_GB115041989_extracted_page_9.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 2,
+      "matched_n": 1
+    },
+    {
+      "image_path": "book_zh_JGJ1022003_extracted_page_27.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 6,
+      "matched_n": 4
+    },
+    {
+      "image_path": "book_zh_JJD10031991_extracted_page_6.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 4,
+      "matched_n": 3
+    },
+    {
+      "image_path": "book_zh_SYT57941993_extracted_page_3.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 4,
+      "matched_n": 3
+    },
+    {
+      "image_path": "book_zh_TB100782001_extracted_page_21.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 6,
+      "matched_n": 5
+    },
+    {
+      "image_path": "book_zh_YDT10512018_extracted_page_30.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 3,
+      "matched_n": 1
+    },
+    {
+      "image_path": "docstructbench_dianzishu_zhongwenzaixian-o.O-61520788.pdf_391.jpg",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "docstructbench_dianzishu_zhongwenzaixian-o.O-61569751.pdf_155.jpg",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "docstructbench_enbook-zlib-o.O-19091739.pdf_181.jpg",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 8,
+      "matched_n": 6
+    },
+    {
+      "image_path": "docstructbench_llm-raw-scihub-o.O-chem.200700285.pdf_4.jpg",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "docstructbench_llm-raw-scihub-o.O-ijc.22994.pdf_3.jpg",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 3,
+      "matched_n": 2
+    },
+    {
+      "image_path": "docstructbench_llm-raw-scihub-o.O-j.physletb.2004.06.101.pdf_3.jpg",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 12,
+      "matched_n": 10
+    },
+    {
+      "image_path": "docstructbench_llm-raw-scihub-o.O-j.physletb.2004.11.060.pdf_2.jpg",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 7,
+      "matched_n": 6
+    },
+    {
+      "image_path": "docstructbench_llm-raw-scihub-o.O-s00348-006-0117-x.pdf_11.jpg",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 4,
+      "matched_n": 3
+    },
+    {
+      "image_path": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+      "class": "table",
+      "missed_n": 4,
+      "gt_n": 6,
+      "matched_n": 2
+    },
+    {
+      "image_path": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+      "class": "table",
+      "missed_n": 4,
+      "gt_n": 4,
+      "matched_n": 0
+    },
+    {
+      "image_path": "eastmoney_66eea274d39b939da0f10253d279e119d87646f10fd21b3942eaf6c5d93b8134.pdf_0.jpg",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 2,
+      "matched_n": 1
+    },
+    {
+      "image_path": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+      "class": "table",
+      "missed_n": 4,
+      "gt_n": 4,
+      "matched_n": 0
+    },
+    {
+      "image_path": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+      "class": "table",
+      "missed_n": 5,
+      "gt_n": 5,
+      "matched_n": 0
+    }
+  ],
+  "missed_n": 187
+}

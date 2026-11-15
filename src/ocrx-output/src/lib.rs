@@ -390,8 +390,9 @@ pub struct DegenerationRetryStep {
     /// merge in reading order. The heaviest rung: final position only.
     pub column_split: bool,
     /// B-M2.1 (D-17): render pixel budget override as a (width, height)
-    /// square — the M2 rung re-renders the page at the raised 4096² budget
-    /// instead of the frozen 2880². Retry-path-only; `None` = default.
+    /// square — the M2 rung re-rasterizes the page at the raised 4096²
+    /// clamp (model input keeps the frozen 2880² fit, spike-faithful
+    /// supersampling). Retry-path-only; `None` = default.
     pub render_budget: Option<(u32, u32)>,
 }
 

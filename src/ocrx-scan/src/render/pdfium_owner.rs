@@ -235,8 +235,11 @@ impl<E: PdfiumExecutor> OwnerState<E> {
     }
 
     /// B-M2.1 (D-17): the M2 rung's on-demand render — the raised budget
-    /// applies BOTH to the rasterization clamp and to the model-input fit
-    /// (the spike's 4096²×2048 shape); never through the prefetch window.
+    /// applies to the RASTERIZATION clamp only (the spike-faithful shape,
+    /// B-M2.3 diag 2026-11-15: the spike binary rasterized 2754×3939 at the
+    /// 4096² cap and Triangle-downsampled into the FROZEN 2880² model input
+    /// — supersampling rescues agate-size text; feeding the raw 4096²-fitted
+    /// bitmap to the model LOOPS). Never through the prefetch window.
     fn render_direct_budgeted(
         &mut self,
         page: u32,
@@ -246,13 +249,8 @@ impl<E: PdfiumExecutor> OwnerState<E> {
         let input = self
             .executor
             .render_raw_budgeted(page, width_budget, height_budget)?;
-        compose_rendered_page(
-            input,
-            1,
-            1,
-            u64::from(width_budget) * u64::from(height_budget),
-        )
-        .map_err(|e| e.to_string())
+        compose_rendered_page(input, 1, 1, DEFAULT_MODEL_PIXEL_BUDGET)
+            .map_err(|e| e.to_string())
     }
 }
 

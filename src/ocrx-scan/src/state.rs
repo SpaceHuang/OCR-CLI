@@ -32,8 +32,9 @@ pub struct DegenerationRetryStep {
     /// merge in reading order. The heaviest rung: final position only.
     pub column_split: bool,
     /// B-M2.1 (D-17): render pixel budget override as a (width, height)
-    /// square — the M2 rung re-renders the page at the raised 4096² budget
-    /// (rasterization AND model input) instead of the frozen 2880².
+    /// square — the M2 rung re-rasterizes the page at the raised 4096²
+    /// clamp, then the model input keeps the frozen 2880² fit
+    /// (supersampling; B-M2.3 diag confirmed the raster-only semantics).
     /// Retry-path-only: normal pages never see a raised budget. `None`
     /// keeps the default budget.
     pub render_budget: Option<(u32, u32)>,
