@@ -6,7 +6,7 @@ OCR-CLI 源代码拟按 Apache License, Version 2.0 分发。该许可仅适用�
 
 ## OvisOCR2
 
-OCR-CLI 使用 OvisOCR2 作为 v0.1 唯一正式支持的 OCR 模型。
+OCR-CLI 使用 OvisOCR2 作为 v0.1 默认支持的 OCR 模型。
 
 - 原始模型：[ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2)
 - 技术报告：[OvisOCR2 技术报告](https://arxiv.org/abs/2607.13639)
@@ -18,6 +18,21 @@ OCR-CLI 使用 OvisOCR2 作为 v0.1 唯一正式支持的 OCR 模型。
 GGUF 模型和 `mmproj` 文件不属于 OCR-CLI 源代码许可的范围。用户和分发者必须保留上游模型元数据，并遵守所使用具体模型版本的条款。除非已针对该发布版本审查了模型文件的来源、许可和再分发状态，否则不得随 OCR-CLI 发布版本一同再分发模型文件。
 
 OvisOCR2 清单将 [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) 标识为其基础模型谱系。再分发前，请核对确切模型版本对应的模型卡和条款。
+
+## OvisOCR3
+
+OCR-CLI 另外支持通过显式选择（`--model ovisocr3`）使用的 OvisOCR3；它绝不是默认模型。
+
+- 原始模型：[ATH-MaaS/OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3)
+- 技术报告：[OvisOCR3 技术报告](https://arxiv.org/abs/2610.33066)
+- 所选 GGUF 分发（社区转换）：[michalland/OvisOCR3-GGUF](https://huggingface.co/michalland/OvisOCR3-GGUF)
+- 所选 GGUF 版本：`7be644a312005c3a55e2c826aee985a5c93d06b2`
+- 声明的模型许可：Apache License 2.0（`Apache-2.0`），以评审时上游模型仓库的声明为准。
+- 来源说明：上游官方仅发布 Transformers/Safetensors 权重；清单所固定的 GGUF 文件（含 F16 `mmproj` 投影器）是对该上游的社区转换，冻结时已按 SHA-256 校验。选型过程中评估并记录了灾备社区仓库（`prithivMLmods/ATH-MaaS-OvisOCR3-GGUF`），但清单不使用它。
+
+GGUF 模型和 `mmproj` 文件不属于 OCR-CLI 源代码许可的范围。用户和分发者必须保留上游模型元数据，并遵守所使用具体模型版本的条款。除非已针对该发布版本审查了模型文件的来源、许可和再分发状态，否则不得随 OCR-CLI 发布版本一同再分发模型文件。
+
+OvisOCR3 清单将 [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) 标识为其基础模型谱系。再分发前，请核对确切模型版本对应的模型卡和条款。
 
 ## llama.cpp 与 libmtmd
 

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "page_number": 22,
+  "categories": [
+    "formula",
+    "visual",
+    "mixed"
+  ],
+  "blocks": [
+    {
+      "type": "markdown",
+      "content": "②.4 圆周角\n\n于是，我们得到如下定理：\n\n圆周角的度数等于它所对弧上的圆心角度数的一半，同弧或等弧所对的圆周角相等.\n\n因为圆心角的度数与它所对的弧的度数相等，所以我们也可以说，圆周角的度数等于它所对弧的度数的一半.\n\n例1 如图2-27，$\\odot O$的弦AB、DC的延长线相交于点E，$\\angle AOD=150^{\\circ}$，$\\widehat{BC}$为$70^{\\circ}$。求$\\angle ABD$、$\\angle AED$的度数。\n\n解：在$\\odot O$中，\n\n<img src=\"images/page-0022-figure-001.png\" />\n\n$$ \\because\\angle AOD=150^{\\circ}, $$\n\n图2-27\n\n$\\therefore \\angle ABD = 75^{\\circ}$（圆周角的度数等于它\n\n所对弧上的圆心角度数的一半).\n\n$\\because \\widehat{BC}$为 $70^{\\circ}$,\n\n$\\therefore \\angle BDC = 35^{\\circ}$（圆周角的度数等于它所对弧的度数的一半）.\n\n又∵ $\\angle ABD = \\angle AED + \\angle BDC$，\n\n$$ \\therefore\\angle AED=\\angle ABD-\\angle BDC=75^{\\circ}-35^{\\circ}=40^{\\circ}. $$\n\n<img src=\"images/page-0022-figure-002.png\" />\n\n1. 下列各图中的角是否是圆周角？为什么？\n\n<img src=\"images/page-0022-figure-003.png\" />\n\n①\n\n<img src=\"images/page-0022-figure-004.png\" />\n\n②\n\n<img src=\"images/page-0022-figure-005.png\" />\n\n③\n\n（第1题）\n\n<img src=\"images/page-0022-figure-006.png\" />\n\n④\n\n55",
+      "bbox": {
+        "left": 0.0,
+        "top": 0.0,
+        "right": 1.0,
+        "bottom": 1.0
+      },
+      "source_order": 0
+    }
+  ],
+  "termination": "eos",
+  "warnings": [
+    "DRAFT bootstrap from a real OvisOCR3 scan (2026-11-14): block-level truth, bboxes, and category boundaries require full human review before approval."
+  ],
+  "review_status": "draft",
+  "bootstrap": {
+    "source": "ovisocr3-scan-draft",
+    "generated_at": "2026-11-14T00:00:00+08:00",
+    "model_revision": "7be644a312005c3a55e2c826aee985a5c93d06b2",
+    "needs_human": [
+      "all blocks"
+    ]
+  }
+}

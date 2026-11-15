@@ -1,10 +1,12 @@
 //! Named-asset cache layout (plan §5.2/§8.5): maps manifest roles/scope to
 //! the existing Ovis cache layout byte-for-byte.
 //!
-//! Layout (frozen): `<cache_root>/ocrx/models/ovisocr2/<revision>/<profile>/model.gguf`
-//! for profile-scope roles and `<cache_root>/ocrx/models/ovisocr2/<revision>/mmproj.gguf`
+//! Layout (frozen, parameterized by `manifest.model` — verified for dual
+//! models in O3-T08): `<cache_root>/ocrx/models/<model>/<revision>/<profile>/model.gguf`
+//! for profile-scope roles and `<cache_root>/ocrx/models/<model>/<revision>/mmproj.gguf`
 //! for revision-scope roles — the shared projector keeps its revision-layer
-//! path so existing verified installs are never re-downloaded.
+//! path so existing verified installs are never re-downloaded. The ovisocr2
+//! subtree therefore stays byte-identical to the legacy layout.
 
 use std::path::{Path, PathBuf};
 
@@ -175,6 +177,66 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn ovisocr3_paths_follow_the_same_frozen_layout() {
+        let manifest = crate::builtin::ovisocr3::ovisocr3_manifest("quality").unwrap();
+        let root = Path::new("/cache");
+        let model = asset_cache_path(root, &manifest, &AssetRole::new("model").unwrap()).unwrap();
+        let mmproj = asset_cache_path(root, &manifest, &AssetRole::new("mmproj").unwrap()).unwrap();
+        assert_eq!(
+            model,
+            PathBuf::from(
+                "/cache/ocrx/models/ovisocr3/7be644a312005c3a55e2c826aee985a5c93d06b2/quality/model.gguf"
+            )
+        );
+        assert_eq!(
+            mmproj,
+            PathBuf::from(
+                "/cache/ocrx/models/ovisocr3/7be644a312005c3a55e2c826aee985a5c93d06b2/mmproj.gguf"
+            )
+        );
+    }
+
+    #[test]
+    fn dual_models_coexist_without_path_collision() {
+        // C5: the model segment separates the subtrees — even an identical
+        // revision string cannot make the two models share a path.
+        let ovisocr2 = ovisocr2_manifest("compact").unwrap();
+        let mut ovisocr3 = crate::builtin::ovisocr3::ovisocr3_manifest("quality").unwrap();
+        ovisocr3.source_revision = ovisocr2.source_revision.clone();
+        let root = Path::new("/cache");
+        let model = AssetRole::new("model").unwrap();
+        let mmproj = AssetRole::new("mmproj").unwrap();
+        assert_ne!(
+            asset_cache_path(root, &ovisocr2, &model).unwrap(),
+            asset_cache_path(root, &ovisocr3, &model).unwrap()
+        );
+        assert_ne!(
+            asset_cache_path(root, &ovisocr2, &mmproj).unwrap(),
+            asset_cache_path(root, &ovisocr3, &mmproj).unwrap()
+        );
+        // Real revisions differ too.
+        let real3 = crate::builtin::ovisocr3::ovisocr3_manifest("quality").unwrap();
+        assert_ne!(
+            asset_cache_path(root, &ovisocr2, &model).unwrap(),
+            asset_cache_path(root, &real3, &model).unwrap()
+        );
+    }
+
+    #[test]
+    fn mmproj_stays_revision_scoped_within_its_own_model_subtree() {
+        // The shared-projector role semantics never blur across models:
+        // each manifest's mmproj resolves under ITS model+revision layer.
+        let ovisocr2 = ovisocr2_manifest("compact").unwrap();
+        let ovisocr3 = crate::builtin::ovisocr3::ovisocr3_manifest("quality").unwrap();
+        let mmproj = AssetRole::new("mmproj").unwrap();
+        let path2 = asset_cache_path(Path::new("/cache"), &ovisocr2, &mmproj).unwrap();
+        let path3 = asset_cache_path(Path::new("/cache"), &ovisocr3, &mmproj).unwrap();
+        assert!(path2.starts_with("/cache/ocrx/models/ovisocr2"));
+        assert!(path3.starts_with("/cache/ocrx/models/ovisocr3"));
+        assert!(path2.ends_with("mmproj.gguf") && path3.ends_with("mmproj.gguf"));
     }
 
     #[test]

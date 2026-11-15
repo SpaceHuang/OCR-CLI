@@ -11,6 +11,7 @@ members = [
     "src/ocrx-models",
     "src/ocrx-output",
     "src/ocrx-ovisocr2",
+    "src/ocrx-ovisocr3",
     "src/ocrx-scan",
     "src/ocrx-eval",
     "src/ocrx-skill",

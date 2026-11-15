@@ -41,7 +41,8 @@ pub use management::{
 };
 pub use service::{InferenceService, InferenceSession, PrepareRequest, PreparedInference};
 pub use task::{
-    DECODE_GENERATION, DecodeEcho, FinishReason, GenerationParams, ImageInput, RetrySampling,
+    DECODE_GENERATION, DecodeEcho, FinishReason, GenerationParams, ImageInput, PLATFORM_RUNTIME_ID,
+    PLATFORM_SYS_VERSION, PLATFORM_UPSTREAM_REVISION, PLATFORM_WRAPPER_VERSION, RetrySampling,
     SUPPORTED_IMAGE_TOKEN_GRIDS, TaskRequest, TaskResponse, TokenUsage, WINDOW_DEPTH,
     WINDOW_DEPTH_HIGH_VRAM, window_depth_for_vram,
 };

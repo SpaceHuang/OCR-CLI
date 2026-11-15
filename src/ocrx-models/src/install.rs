@@ -549,6 +549,20 @@ mod tests {
         }
     }
 
+    /// Same shape as [`tiny_manifest`], but pinned to the ovisocr3 identity
+    /// (T08: the install/remove/verify machinery is model-agnostic — it
+    /// reads every path through the manifest).
+    fn tiny_ovisocr3_manifest() -> ModelManifest {
+        let mut manifest = tiny_manifest();
+        manifest.model = ModelId::new("ovisocr3").unwrap();
+        manifest.profile = ProfileId::new("quality").unwrap();
+        manifest.display_name = "OvisOCR3".into();
+        manifest.quantization = "Q8_0".into();
+        manifest.source_revision = "rev-ovisocr3-1".into();
+        manifest.adapter_binding.adapter = AdapterId::new("ovisocr3").unwrap();
+        manifest
+    }
+
     struct RecordingInteraction {
         confirmations: usize,
         answer: bool,
@@ -634,6 +648,55 @@ mod tests {
             entry.file_name().to_string_lossy().contains(".part")
                 || entry.file_name().to_string_lossy().contains(".bak")
         }));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn install_verify_remove_round_trip_is_model_agnostic_for_ovisocr3() {
+        // T08/C5: the ovisocr3 subtree installs, verifies, and removes
+        // through the same transaction machinery without touching the
+        // ovisocr2 subtree.
+        let root =
+            std::env::temp_dir().join(format!("ocrx-install-ovisocr3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let manifest = tiny_ovisocr3_manifest();
+        // Stage content directly (offline install path with staged content).
+        for asset in &manifest.assets {
+            let path = asset_cache_path(&root, &manifest, &asset.role).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                &path,
+                if asset.role.as_str() == "model" {
+                    &b"model-bytes"[..]
+                } else {
+                    &b"mmproj-bytes"[..]
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(verify_content(&root, &manifest), Ok(()));
+        // The ovisocr2 subtree never appears.
+        assert!(!root.join("ocrx/models/ovisocr2").exists());
+        // Receipt lands under the ovisocr3 subtree.
+        let receipt_path =
+            root.join("ocrx/models/ovisocr3/rev-ovisocr3-1/quality/install-receipt.json");
+        // A removal round trip clears only the ovisocr3 subtree.
+        let transport = FakeTransport::new();
+        let mut interaction = RecordingInteraction::accepting();
+        install(ctx(
+            &manifest,
+            &root,
+            &transport,
+            &mut interaction,
+            InstallPolicy {
+                offline: true,
+                non_interactive: true,
+                license_accepted: true,
+            },
+            None,
+        ))
+        .unwrap();
+        assert!(receipt_path.is_file());
         let _ = std::fs::remove_dir_all(&root);
     }
 

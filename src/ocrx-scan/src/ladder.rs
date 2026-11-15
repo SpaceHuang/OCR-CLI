@@ -46,6 +46,12 @@ pub fn detect_column_bands(width: u32, height: u32, rgb8: &[u8]) -> Option<Vec<(
         .collect();
     let band_lo = columns * 8 / 100;
     let band_hi = columns * 92 / 100;
+    // Degenerate analysis geometry (e.g. a 1-pixel-wide page): no valley
+    // structure can exist — fall back to a single full-width band instead
+    // of indexing an empty slice.
+    if columns < 2 || band_hi <= band_lo {
+        return None;
+    }
     let median = {
         let mut band = smoothed[band_lo..band_hi].to_vec();
         band.sort_by(f32::total_cmp);

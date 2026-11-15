@@ -113,6 +113,9 @@ pub struct WindowConfig<'a> {
     /// BLK-3: the user's output-token budget — rides EVERY request (single,
     /// window, retry, column split), not just the checkpoint identity.
     pub max_output_tokens: u32,
+    /// O3-T15: the selected model's frozen pack prompt, riding every
+    /// request construction site.
+    pub prompt: &'static str,
 }
 
 /// Runs the windowed OCR pipeline over the prepared session (T063).
@@ -332,7 +335,8 @@ pub fn run_pages_with_session(
             Result<PageArtifactResult, RecognizeError>,
         > = std::collections::BTreeMap::new();
         if !images.is_empty() {
-            let mut recognizer = SessionRecognizer::new(session, root, config.max_output_tokens);
+            let mut recognizer =
+                SessionRecognizer::new(session, root, config.max_output_tokens, config.prompt);
             let results = recognizer.recognize_window(&images, cancellation, &mut |slot, event| {
                 heartbeat(u32::try_from(slot).unwrap_or(u32::MAX), event);
             });
@@ -577,7 +581,8 @@ fn serial_attempt_outcome(
                 };
             }
         };
-        let mut recognizer = SessionRecognizer::new(session, root, config.max_output_tokens);
+        let mut recognizer =
+            SessionRecognizer::new(session, root, config.max_output_tokens, config.prompt);
         // Rung 3 (column split) is gated by the CLI switch; a closed gate
         // exhausts the ladder for the page.
         // `step`/`recognized` are the ladder attempt pair.

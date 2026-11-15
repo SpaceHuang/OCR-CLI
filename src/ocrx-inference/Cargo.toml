@@ -14,6 +14,7 @@ ocrx-inference-api = { path = "../ocrx-inference-api" }
 ocrx-models = { path = "../ocrx-models" }
 ocrx-runtime = { path = "../ocrx-runtime" }
 ocrx-ovisocr2 = { path = "../ocrx-ovisocr2" }
+ocrx-ovisocr3 = { path = "../ocrx-ovisocr3" }
 serde.workspace = true
 serde_json.workspace = true
 vulkano = { version = "=0.35.2", optional = true }

@@ -262,8 +262,18 @@ impl ScanEvaluationEntry<'_> {
                 .documents
                 .first()
                 .and_then(|document| document.identity.clone()),
-            prompt_id: ocrx_scan::ocr::prompt::PROMPT_ID.to_owned(),
-            prompt_version: ocrx_scan::ocr::prompt::PROMPT_VERSION.to_owned(),
+            // O3-T15: the prompt identity comes from the scanned model's
+            // frozen pack (D-9 dual-model evaluation).
+            prompt_id: ocrx_scan::ocr::prompt::pack_for(
+                &ocrx_inference_api::ModelId::new(&self.options.model).expect("validated model id"),
+            )
+            .id
+            .to_owned(),
+            prompt_version: ocrx_scan::ocr::prompt::pack_for(
+                &ocrx_inference_api::ModelId::new(&self.options.model).expect("validated model id"),
+            )
+            .version
+            .to_owned(),
             dpi: self.options.dpi,
         };
         Ok((

@@ -13,14 +13,14 @@ OCR-CLI 是一款本地 Rust 命令行工具，用于通过 OvisOCR2 从 PDF 文
 
 当前 v0.1 版本有意将范围控制在较小范围内：
 
-- 仅支持一种 OCR 模型：[OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2)。
+- 通过 `--model` 选择两种受支持的 OCR 模型：[OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2)（默认）与 [OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3)。
 - 通过 PDFium 进行本地 PDF 输入和页面渲染。
 - 通过 llama.cpp/libmtmd 以及独立的 `mmproj` GGUF 文件进行多模态推理。
 - OvisOCR2 配置档：`compact`、`balanced`、`quality` 和 `reference`。
 - CLI 提供 Markdown、JSON、进度、断点续扫和诊断等工作流。
 - 提供 macOS arm64 的发布/Skill 打包路径。
 
-其他 OCR 模型不属于 v0.1 公开约定的一部分。本项目尤其不声称支持 HunyuanOCR 或其他模型系列。
+其他 OCR 模型不属于 v0.1 公开约定的一部分。本项目尤其不声称支持 HunyuanOCR 或其他模型系列。默认模型保持 OvisOCR2 不变；选用 OvisOCR3 必须显式指定（`--model ovisocr3`）。
 
 ## 当前实现状态
 
@@ -65,7 +65,7 @@ cargo run -p ocrx -- help
 cargo run -p ocrx -- doctor
 cargo run -p ocrx -- doctor --report json
 
-# 查看或管理支持的 OvisOCR2 模型。
+# 查看或管理受支持的 OCR 模型。
 cargo run -p ocrx -- model list
 cargo run -p ocrx -- model info ovisocr2
 cargo run -p ocrx -- model recommend

@@ -6,6 +6,7 @@
 use ocrx_inference_api::{InferenceError, ModelId, ModelManifest, ProfileId};
 
 use crate::builtin::ovisocr2::{self, OVISOCR2_PROFILES};
+use crate::builtin::ovisocr3::{self, OVISOCR3_PROFILES};
 
 /// Static registry of the built-in manifests.
 #[derive(Debug, Clone, Default)]
@@ -17,14 +18,29 @@ impl ModelCatalogV2 {
         Self
     }
 
-    /// Lists registered model ids (currently only `ovisocr2`).
+    /// The frozen per-model profile sets in declaration order (ascending
+    /// size; D-7 variable profile sets — each model declares its actual
+    /// available subset).
+    fn profile_names(model: &ModelId) -> Result<&'static [&'static str], InferenceError> {
+        match model.as_str() {
+            "ovisocr2" => Ok(&OVISOCR2_PROFILES),
+            "ovisocr3" => Ok(&OVISOCR3_PROFILES),
+            _ => Err(InferenceError::UnsupportedModel(model.to_string())),
+        }
+    }
+
+    /// Lists registered model ids in declaration order (`ovisocr2`, then
+    /// `ovisocr3`).
     ///
     /// # Panics
     ///
-    /// Never: the built-in id is compile-time fixed and validated by tests.
+    /// Never: the built-in ids are compile-time fixed and validated by tests.
     #[must_use]
     pub fn list(&self) -> Vec<ModelId> {
-        vec![ModelId::new("ovisocr2").expect("built-in model id is valid")]
+        vec![
+            ModelId::new("ovisocr2").expect("built-in model id is valid"),
+            ModelId::new("ovisocr3").expect("built-in model id is valid"),
+        ]
     }
 
     /// Lists the frozen profile ids of a registered model.
@@ -37,8 +53,7 @@ impl ModelCatalogV2 {
     ///
     /// Never: built-in profile ids are compile-time fixed and validated by tests.
     pub fn profiles(&self, model: &ModelId) -> Result<Vec<ProfileId>, InferenceError> {
-        Self::require_registered(model)?;
-        Ok(OVISOCR2_PROFILES
+        Ok(Self::profile_names(model)?
             .iter()
             .map(|profile| ProfileId::new(*profile).expect("built-in profile id is valid"))
             .collect())
@@ -54,8 +69,11 @@ impl ModelCatalogV2 {
         model: &ModelId,
         profile: &ProfileId,
     ) -> Result<ModelManifest, InferenceError> {
-        Self::require_registered(model)?;
-        ovisocr2::ovisocr2_manifest(profile.as_str())
+        match model.as_str() {
+            "ovisocr2" => ovisocr2::ovisocr2_manifest(profile.as_str()),
+            "ovisocr3" => ovisocr3::ovisocr3_manifest(profile.as_str()),
+            _ => Err(InferenceError::UnsupportedModel(model.to_string())),
+        }
     }
 
     /// Resolves `auto` to a concrete profile via the frozen memory
@@ -77,22 +95,15 @@ impl ModelCatalogV2 {
         requested: &str,
         memory_gb: u64,
     ) -> Result<ProfileId, InferenceError> {
-        Self::require_registered(model)?;
+        let profiles = Self::profile_names(model)?;
         if requested == "auto" {
-            crate::recommend::recommend_profile(&OVISOCR2_PROFILES, memory_gb)
+            crate::recommend::recommend_profile(profiles, memory_gb)
         } else {
-            if !OVISOCR2_PROFILES.contains(&requested) {
+            if !profiles.contains(&requested) {
                 return Err(InferenceError::UnsupportedProfile(requested.to_owned()));
             }
             Ok(ProfileId::new(requested).expect("checked profile id is valid"))
         }
-    }
-
-    fn require_registered(model: &ModelId) -> Result<(), InferenceError> {
-        if model.as_str() != "ovisocr2" {
-            return Err(InferenceError::UnsupportedModel(model.to_string()));
-        }
-        Ok(())
     }
 }
 
@@ -101,16 +112,94 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_only_ovisocr2_with_frozen_profiles() {
+    fn catalog_lists_both_models_in_declaration_order_with_frozen_profiles() {
         let catalog = ModelCatalogV2::builtin();
         let models = catalog.list();
-        assert_eq!(models.len(), 1);
+        assert_eq!(models.len(), 2);
         assert_eq!(models[0].as_str(), "ovisocr2");
-        let profiles = catalog.profiles(&models[0]).unwrap();
+        assert_eq!(models[1].as_str(), "ovisocr3");
+        let ovisocr2_profiles = catalog.profiles(&models[0]).unwrap();
         assert_eq!(
-            profiles.iter().map(ProfileId::as_str).collect::<Vec<_>>(),
+            ovisocr2_profiles
+                .iter()
+                .map(ProfileId::as_str)
+                .collect::<Vec<_>>(),
             ["compact", "balanced", "quality", "reference"]
         );
+        // D-7: ovisocr3 declares its actual available subset (spike freeze
+        // table) — a single quality rung, not the four-rung mirror.
+        let ovisocr3_profiles = catalog.profiles(&models[1]).unwrap();
+        assert_eq!(
+            ovisocr3_profiles
+                .iter()
+                .map(ProfileId::as_str)
+                .collect::<Vec<_>>(),
+            ["quality"]
+        );
+    }
+
+    #[test]
+    fn ovisocr3_manifests_resolve_from_the_freeze_table() {
+        let catalog = ModelCatalogV2::builtin();
+        let model = ModelId::new("ovisocr3").unwrap();
+        let manifest = catalog
+            .manifest(&model, &ProfileId::new("quality").unwrap())
+            .unwrap();
+        assert_eq!(manifest.adapter_binding.adapter.as_str(), "ovisocr3");
+        assert_eq!(manifest.quantization, "Q8_0");
+        assert_eq!(manifest.display_name, "OvisOCR3");
+        // The unavailable mirror rungs are structurally rejected.
+        assert!(matches!(
+            catalog.manifest(&model, &ProfileId::new("compact").unwrap()),
+            Err(InferenceError::UnsupportedProfile(_))
+        ));
+        assert!(matches!(
+            catalog.profiles(&ModelId::new("qwen3.8").unwrap()),
+            Err(InferenceError::UnsupportedModel(_))
+        ));
+        assert!(matches!(
+            catalog.manifest(
+                &ModelId::new("qwen3.8").unwrap(),
+                &ProfileId::new("quality").unwrap()
+            ),
+            Err(InferenceError::UnsupportedModel(_))
+        ));
+    }
+
+    #[test]
+    fn auto_resolution_for_a_single_rung_set_is_deterministic() {
+        let catalog = ModelCatalogV2::builtin();
+        let model = ModelId::new("ovisocr3").unwrap();
+        // Below the 6 GiB floor nothing passes (frozen semantics, both models).
+        assert!(matches!(
+            catalog.resolve_profile(&model, "auto", 4),
+            Err(InferenceError::UnsupportedProfile(_))
+        ));
+        // Every non-failing memory tier lands on the only declared rung
+        // (D-7 fallback: declaration-order first available profile).
+        assert_eq!(
+            catalog.resolve_profile(&model, "auto", 8).unwrap().as_str(),
+            "quality"
+        );
+        assert_eq!(
+            catalog
+                .resolve_profile(&model, "auto", 64)
+                .unwrap()
+                .as_str(),
+            "quality"
+        );
+        // The explicit rung passes; foreign profile names are rejected.
+        assert_eq!(
+            catalog
+                .resolve_profile(&model, "quality", 8)
+                .unwrap()
+                .as_str(),
+            "quality"
+        );
+        assert!(matches!(
+            catalog.resolve_profile(&model, "compact", 8),
+            Err(InferenceError::UnsupportedProfile(_))
+        ));
     }
 
     #[test]

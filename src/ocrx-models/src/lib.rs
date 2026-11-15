@@ -139,10 +139,17 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
                     installed,
                 });
             }
-            let first = self.manifest(
-                &model,
-                &ocrx_inference_api::ProfileId::new("compact").expect("built-in profile is valid"),
-            )?;
+            // D-7: display metadata comes from the declaration-order FIRST
+            // available profile (ovisocr2: compact → byte-identical to the
+            // historical display source; ovisocr3: quality). A profile set
+            // without `compact` no longer makes list/info fail.
+            let first_profile = self
+                .catalog
+                .profiles(&model)?
+                .first()
+                .cloned()
+                .expect("declared models always have at least one profile");
+            let first = self.manifest(&model, &first_profile)?;
             summaries.push(ocrx_inference_api::ModelSummary {
                 model,
                 display: ocrx_inference_api::ModelDisplayMeta {
@@ -180,19 +187,24 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
         let (runtime_binding, adapter_binding, license_id) = bindings.ok_or_else(|| {
             ocrx_inference_api::InferenceError::UnsupportedModel(model.to_string())
         })?;
-        let compact = self.manifest(
-            model,
-            &ocrx_inference_api::ProfileId::new("compact").expect("built-in profile is valid"),
-        )?;
+        // D-7: display metadata from the declaration-order first available
+        // profile (not a fixed `compact` — missing-compact sets stay valid).
+        let first_profile = self
+            .catalog
+            .profiles(model)?
+            .first()
+            .cloned()
+            .expect("declared models always have at least one profile");
+        let first = self.manifest(model, &first_profile)?;
         Ok(ocrx_inference_api::ModelDetail {
             summary: ocrx_inference_api::ModelSummary {
                 model: model.clone(),
                 display: ocrx_inference_api::ModelDisplayMeta {
-                    display_name: compact.display_name,
-                    family: compact.family,
-                    quantization: compact.quantization,
+                    display_name: first.display_name,
+                    family: first.family,
+                    quantization: first.quantization,
                 },
-                revision: compact.source_revision,
+                revision: first.source_revision,
                 profiles,
             },
             runtime: ocrx_inference_api::RuntimeIdentity {
@@ -294,5 +306,153 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
         profile: &ocrx_inference_api::ProfileId,
     ) -> Result<ocrx_inference_api::RemoveReport, ocrx_inference_api::InferenceError> {
         remove::remove_profile(&self.catalog, &self.cache_root, model, profile)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ocrx_inference_api::{InferenceError, ModelManager};
+
+    struct AcceptAllVerifier;
+
+    impl ocrx_inference_api::BindingVerifier for AcceptAllVerifier {
+        fn verify_binding(
+            &self,
+            _manifest: &ocrx_inference_api::ModelManifest,
+        ) -> Result<(), InferenceError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn list_and_info_derive_display_from_the_first_available_profile() {
+        // D-7/C15: the display source is the declaration-order first
+        // available profile — ovisocr2 keeps the historical compact display
+        // (byte-identical), ovisocr3 (single quality rung) displays Q8_0
+        // instead of failing on a missing compact manifest.
+        let root =
+            std::env::temp_dir().join(format!("ocrx-manager-display-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("temp cache root");
+        let manager = ModelManagerImpl::new(
+            root.clone(),
+            Box::new(AcceptAllVerifier),
+            Box::new(crate::transport::FakeTransport::new()),
+            None,
+        );
+        let summaries = manager.list().expect("list works for both models");
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].model.as_str(), "ovisocr2");
+        assert_eq!(summaries[0].display.quantization, "Q4_K_M");
+        assert_eq!(summaries[1].model.as_str(), "ovisocr3");
+        assert_eq!(summaries[1].display.quantization, "Q8_0");
+        assert_eq!(summaries[1].display.display_name, "OvisOCR3");
+        assert_eq!(
+            summaries[1]
+                .profiles
+                .iter()
+                .map(|profile| profile.profile.as_str())
+                .collect::<Vec<_>>(),
+            ["quality"]
+        );
+
+        let model = ocrx_inference_api::ModelId::new("ovisocr3").unwrap();
+        let detail = manager.info(&model).expect("info works for ovisocr3");
+        assert_eq!(detail.summary.display.quantization, "Q8_0");
+        assert_eq!(detail.adapter.adapter.as_str(), "ovisocr3");
+        assert_eq!(detail.runtime.wrapper_version, "0.1.161");
+        assert_eq!(detail.license_id, "apache-2.0");
+        // Unknown models still fail loudly.
+        assert!(
+            manager
+                .info(&ocrx_inference_api::ModelId::new("qwen3.8").unwrap())
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn install_plans_cover_both_models_from_their_freeze_tables() {
+        // O3-T14 management face (via the manager, not the CLI): each
+        // model's install plan carries its own URL base, byte sizes, and
+        // cache paths; nothing is hardcoded to one model.
+        let root = std::env::temp_dir().join(format!("ocrx-manager-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("temp cache root");
+        let manager = ModelManagerImpl::new(
+            root.clone(),
+            Box::new(AcceptAllVerifier),
+            Box::new(crate::transport::FakeTransport::new()),
+            None,
+        );
+        let plan2 = manager
+            .install_plan(
+                &ocrx_inference_api::ModelId::new("ovisocr2").unwrap(),
+                &ocrx_inference_api::ProfileId::new("compact").unwrap(),
+            )
+            .unwrap();
+        assert_eq!(plan2.items.len(), 2);
+        assert!(
+            plan2.items.iter().all(|item| item
+                .url
+                .starts_with("https://huggingface.co/Abiray/OvisOCR2-GGUF/resolve/")),
+            "ovisocr2 urls: {:?}",
+            plan2.items
+        );
+        let plan3 = manager
+            .install_plan(
+                &ocrx_inference_api::ModelId::new("ovisocr3").unwrap(),
+                &ocrx_inference_api::ProfileId::new("quality").unwrap(),
+            )
+            .unwrap();
+        assert_eq!(plan3.items.len(), 2);
+        assert_eq!(plan3.license_id, "apache-2.0");
+        let model_item = plan3
+            .items
+            .iter()
+            .find(|item| item.role.as_str() == "model")
+            .unwrap();
+        assert_eq!(model_item.byte_len, 811_843_712);
+        assert!(
+            model_item
+                .url
+                .starts_with("https://huggingface.co/michalland/OvisOCR3-GGUF/resolve/"),
+            "ovisocr3 url: {}",
+            model_item.url
+        );
+        assert!(!model_item.cached, "empty cache: nothing pre-cached");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recommendation_goes_through_the_generalized_fallback_per_model() {
+        // C15: `recommend` (manager face) and catalog auto resolve share the
+        // same generalized rule — the single-rung ovisocr3 set resolves
+        // deterministically at every non-floor memory tier.
+        let root =
+            std::env::temp_dir().join(format!("ocrx-manager-recommend-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("temp cache root");
+        let manager = ModelManagerImpl::new(
+            root.clone(),
+            Box::new(AcceptAllVerifier),
+            Box::new(crate::transport::FakeTransport::new()),
+            None,
+        );
+        let model = ocrx_inference_api::ModelId::new("ovisocr3").unwrap();
+        for memory_gb in [6, 8, 16, 24, 128] {
+            let recommendation = manager
+                .recommend(
+                    &model,
+                    &ocrx_inference_api::ResourceSnapshot {
+                        memory_gb,
+                        metal_available: false,
+                        cuda_available: false,
+                        vulkan_available: false,
+                        cpu_available: true,
+                    },
+                )
+                .expect("recommend works for a non-empty profile set");
+            assert_eq!(recommendation.profile.as_str(), "quality");
+        }
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -321,7 +321,7 @@ mod backend;
 pub use backend::{CapturedTask, FakeRuntimeBackend, ProgrammedResponse};
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-pub use backend::{LlamaBackend, LlamaRuntimeFactory};
+pub use backend::{LlamaBackend, LlamaRuntimeFactory, platform_runtime_identity};
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod llama_mtmd;

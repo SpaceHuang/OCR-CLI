@@ -35,3 +35,5 @@ llama-cpp-sys-2 = { version = "=0.1.161", default-features = false, features = [
 [dev-dependencies]
 ocrx-models = { path = "../ocrx-models" }
 ocrx-pdf = { path = "../ocrx-pdf" }
+serde = { workspace = true }
+serde_json = { workspace = true }

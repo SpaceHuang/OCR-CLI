@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "page_number": 19,
+  "categories": [
+    "formula",
+    "table",
+    "visual",
+    "mixed"
+  ],
+  "blocks": [
+    {
+      "type": "markdown",
+      "content": "一块石头从离海面 45 m 高的绝壁上落下，试估计这块石头经过多少时间落到海面.\n\n<img src=\"images/page-0019-figure-001.png\" />\n\n设石头在下落过程中离海面的高度 h 与下落的时间 t 有如下的关系：\n\n$$ h=-5t^{2}+45. $$\n\n1. 填表：\n\n<table border=1><tr><td>t/s</td><td>0</td><td>0.5</td><td>1</td><td>1.5</td><td>2</td><td>2.5</td><td>...</td></tr><tr><td>h/m</td><td></td><td></td><td></td><td></td><td></td><td></td><td>...</td></tr></table>\n\n2. 石头经过多少时间落到海面？\n\n本章将学习一元二次方程的概念、解法和应用.",
+      "bbox": {
+        "left": 0.0,
+        "top": 0.0,
+        "right": 1.0,
+        "bottom": 1.0
+      },
+      "source_order": 0
+    }
+  ],
+  "termination": "eos",
+  "warnings": [
+    "DRAFT bootstrap from a real OvisOCR3 scan (2026-11-14): block-level truth, bboxes, and category boundaries require full human review before approval."
+  ],
+  "review_status": "draft",
+  "bootstrap": {
+    "source": "ovisocr3-scan-draft",
+    "generated_at": "2026-11-14T00:00:00+08:00",
+    "model_revision": "7be644a312005c3a55e2c826aee985a5c93d06b2",
+    "needs_human": [
+      "all blocks"
+    ]
+  }
+}
