@@ -77,6 +77,11 @@ run-omnidocbench-eval.py ... --name m23-m2rung-balanced-{all,en,zh}
   rung 级网格/光栅组合微调；en TEDS 回吐集中点核查。
 - 产物命名教训：复评轮次必须隔离命名（本轮 round-1 明细被 round-2 覆盖，
   分量均值留存于本记录，逐键明细不可恢复）。
+- **金集门（第二轮修复版二进制 06e8a501）：PASS**——30 冻结正常页，
+  120 个产物文件（page-*.json / page-*.md / document.md）：
+  确定性 PASS（新构建双跑逐字节一致）+ 零差异 PASS（vs 基线 16577de）。
+  比对器首轮误把 result.json（含耗时字段）计入导致假 FAIL，已修正比对
+  范围为 D-15 口径产物。重试路径隔离由门禁证实。
 
 ## 5. 偏差记录
 
