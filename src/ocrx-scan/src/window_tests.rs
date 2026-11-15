@@ -237,6 +237,17 @@ fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
             &ocrx_inference_api::ModelId::new("ovisocr2").expect("built-in id is valid"),
         )
         .prompt,
+        boundary_samples_out: None,
+    }
+}
+
+fn config_with_boundary<'a>(
+    compatibility: &'a ScanCompatibility,
+    out: &std::path::Path,
+) -> WindowConfig<'a> {
+    WindowConfig {
+        boundary_samples_out: Some(out.to_path_buf()),
+        ..config(compatibility)
     }
 }
 
@@ -744,5 +755,108 @@ fn empty_output_recovered_by_a_rung_commits_clean() {
     assert_eq!(summary.degenerated_pages, 0);
     let md = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
     assert_eq!(md, "body 1");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn boundary_samples_record_one_line_per_serial_attempt() {
+    // SP-T01: with the boundary sink configured, every serial attempt
+    // appends exactly one record with the frozen identity schema.
+    let root = temp_root("boundary-serial");
+    let boundary = root.join("boundary.jsonl");
+    let mut session = FakeSession::with_depth(1);
+    for _ in 0..4 {
+        session.push(1, empty_eos());
+    }
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session,
+        &mut renderer,
+        &[1],
+        &root,
+        &config_with_boundary(&compatibility, &boundary),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.degenerated_pages, 1);
+    let lines: Vec<serde_json::Value> = std::fs::read_to_string(&boundary)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 4, "one record per attempt");
+    for (index, record) in lines.iter().enumerate() {
+        assert_eq!(record["source"], "scan");
+        assert_eq!(record["page_number"], 1);
+        assert_eq!(record["page_index"], 0);
+        assert_eq!(record["attempt"], index as u64 + 1);
+        assert_eq!(record["window_id"], 0);
+        assert_eq!(record["slot"], 0);
+        assert_eq!(record["outcome"], "empty");
+        // Same rendered bytes for every attempt (fake render is stable).
+        let hash = record["rgb8_sha256"].as_str().unwrap();
+        assert_eq!(hash, lines[0]["rgb8_sha256"]);
+        assert!(record["prompt_sha256"].as_str().unwrap().len() == 64);
+        assert_eq!(record["max_output_tokens"], 16_384);
+    }
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn boundary_samples_record_the_recovery_outcome() {
+    let root = temp_root("boundary-recovery");
+    let boundary = root.join("boundary.jsonl");
+    let mut session = FakeSession::with_depth(1);
+    session.push(1, empty_eos());
+    session.push(1, eos(1));
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session,
+        &mut renderer,
+        &[1],
+        &root,
+        &config_with_boundary(&compatibility, &boundary),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.degenerated_pages, 0);
+    let lines: Vec<serde_json::Value> = std::fs::read_to_string(&boundary)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["outcome"], "empty");
+    assert_eq!(lines[1]["outcome"], "nonempty");
+    assert_eq!(lines[1]["attempt"], 2);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn boundary_disabled_by_default_writes_nothing() {
+    let root = temp_root("boundary-off");
+    let mut session = FakeSession::with_depth(1);
+    session.push(1, eos(1));
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    run_pages_with_session(
+        &mut session,
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    // No boundary.jsonl in the output root (sink unset -> zero writes).
+    assert!(!root.join("boundary.jsonl").is_file());
     let _ = std::fs::remove_dir_all(root);
 }

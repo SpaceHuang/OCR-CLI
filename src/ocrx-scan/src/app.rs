@@ -884,6 +884,10 @@ impl ScanApplication {
                 column_split_enabled: options.column_split_retry,
                 max_output_tokens: options.max_output_tokens,
                 prompt: pack.prompt,
+                // SP-T01: env-gated boundary instrumentation sink.
+                boundary_samples_out: std::env::var_os("OCRX_BOUNDARY_SAMPLES_OUT")
+                    .filter(|value| !value.is_empty())
+                    .map(std::path::PathBuf::from),
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
             ocr_summary = run_pages_with_session(
