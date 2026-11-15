@@ -1,9 +1,14 @@
 # Scan 路径空输出生成退化 root-cause 立项
 
-**状态：** 已立项，待实施（v1.2，2026-11-15 复审响应修订；v1.0 初评 **BLOCK（2 项）**已闭环，
-v1.1 复审 **BLOCK（1 项残余）**，见 `docs/review/scan-path-empty-generation-root-cause-plan.v1.1-review.md`）
+**状态：** 已立项、评审 **PASS**，待实施（v1.2，2026-11-15 复审通过，无剩余阻断；
+评审链：v1.0 初评 **BLOCK（2 项）** → v1.1 复审 **BLOCK（1 项残余）** → v1.2 **PASS**
+（`docs/review/scan-path-empty-generation-root-cause-plan.v1.1-review.md`），累计 3 项
+BLOCK 全部闭环。评审仅针对计划完整性与实验判别有效性，未运行模型实验。）
 
 **修订记录：**
+- v1.2-PASS（2026-11-15）复审确认：E1 硬门作用域（scan attempt-1 数据集）、attempt≥2
+  记录归属（归档重放/单变量对照数据集）、SP-T02 完成判定一致性——全部闭环，无新增
+  实施阻断。
 - v1.2（2026-11-15）复审响应：
   - **BLOCK（对拍硬门作用域）**：SP-T02 前置校验收窄为"**每条纳入 E1 的 scan
     attempt-1 记录**必须恰好匹配一条同页、同参数、direct attempt=1 的记录"；attempt≥2
