@@ -39,21 +39,34 @@ run-omnidocbench-eval.py ... --name m23-m2rung-balanced-{all,en,zh}
   （正常页零差异——M2 rung 仅存在于重试路径，正常页按构造不变）。
 - 比对器：`C:/t/m23/compare-gold.py`（page-*.json / document.md sha256）。
 
-## 4. 结果（待填）
+## 4. 结果（第一轮全量，2026-11-15 判定）
 
-- [ ] 扫描完成时间 / 页数 / 耗时
-- [ ] Overall(all) = ____（门：≥ 89.5）
-- [ ] 分量：text = ____ / CDM = ____ / TEDS = ____
-- [ ] en/zh 切分
-- [ ] 坏页账本复核：degenerated ____ / truncated ____ / 交集 ____（landing 121，
-  预期 ~89：68 超预算页由 4096² rung 救援后 mosaic 残余 ~31）
-- [ ] 金集门：确定性 PASS/FAIL；零差异 PASS/FAIL
-- [ ] 对账：官方指标文件名清单入 reports/
+- 扫描：1,651/1,651 页（11:57–14:05，~2h5m；vulkan/4090D）；退出码 10 =
+  BLK-7 冻结语义（含退化页的部分成功），非失败。
+- **Overall(all) = 88.06 —— 门（≥ 89.5）FAIL**（landing 87.85，+0.21；投影 89.8±0.3 落空）
+- 分量：text 0.9114 / CDM 0.9442 / TEDS 0.7862；en 84.45 / zh 89.92
+- 坏页账本：degenerated 111 / truncated 7 / 交集 1 → 总坏页 ~117（landing 121，仅 −4）
+- attempts 分布：1→1432、2→80、3→4、4→5（M2 rung 逃逸仅 5）、5→130（耗尽）
+- **根因链（二进制 A/B，diag1–7 记录在案）**：
+  1. spike 只放宽光栅钳制、模型输入保持 2880² 超采样——本实现首轮误把模型
+     输入放到 4096²，已修（raster-only）；
+  2. spike 的 4096² 光栅覆盖整个重试路径（含切栏档）——本实现已修
+     （RETRY_RASTER_BUDGET，attempts ≥ 2 全 budgeted）；
+  3. 两修后 68 页语料逃逸仍仅 2/68（spike 38/68），而输入位形已与 spike
+     二进制 audit 逐字段一致（rendered=2754x3939;model=2408x3444;scaled=true）
+     ——**同输入不同输出 = spike 二进制（40317ebc）含不可从当前源复现的
+     构建态**（Nov 14 主树瞬态编辑混入嫌疑）。D-17 的 GO 证据链失效。
+- 金集门：第一轮已完成 run1（30/30 提交，修复版二进制）；run2/基线轮因
+  批处理退出码误判中断，待修复版终轮一并执行。
+- 结论：**B-M2.3 判定 FAIL，落地收益 +0.21（远低于 D-17 预算的 +2.0）**。
+  rung 本身保留（retry-only、0 更差、净收益为正），≥89.5 门未过按方案
+  §1.2 降级：主目标按已过门杠杆重估，达成性终评按 D-30 第一行出关闭报告
+  （叠加 B0' NO-GO，见 b0-detect-gate-verdict-final）。
 
 ## 5. 偏差记录
 
 - 构建排障：C1041 × 3（PDB 并发/路径长度误诊→实为 MAX_PATH-250），解法
   CARGO_TARGET_DIR 短路径；mspdbsrv 僵尸进程清理无效果佐证路径根因。
-- 全量扫描实测速率 ~7 页/分钟（vulkan 后端，4090D）——显著慢于 README 的
-  20–30 min 估计（该估计来自 CUDA 构建），后续里程碑排期按 vulkan 速率校准
-  或改用 CUDA 构建。
+- 全量扫描实测速率 ~13 页/分钟（vulkan 后端，4090D，含重试页 4096² 渲染）。
+- 退出码陷阱：`document_exit_code` 对含退化/截断页的文档冻结返回 10——
+  批处理链不得把 errorlevel≠0 一律当失败（0/10 均为成功，≥11 才是失败）。
