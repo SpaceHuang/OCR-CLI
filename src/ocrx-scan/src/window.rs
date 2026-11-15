@@ -19,8 +19,8 @@ use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use crate::ocr::artifacts::{RecognizeError, SessionRecognizer};
 use crate::state::{
-    DEGENERATION_RETRY_LADDER, DegenerationRetryStep, JobSummary, PageArtifactResult,
-    PageDiagnostic, RenderAudit, RenderedPage,
+    DegenerationRetryStep, JobSummary, PageArtifactResult, PageDiagnostic, RenderAudit,
+    RenderedPage,
 };
 
 /// Render port for the OCR pipeline (the legacy `PageRenderer` trait,
@@ -119,6 +119,9 @@ pub struct WindowConfig<'a> {
     /// Root-cause plan SP-T01: optional boundary-sample JSONL sink
     /// (`OCRX_BOUNDARY_SAMPLES_OUT` wired by the CLI). `None` = disabled.
     pub boundary_samples_out: Option<std::path::PathBuf>,
+    /// Option-a mitigation: the per-model degeneration ladder (ovisocr3
+    /// runs the sampling rung first; ovisocr2 keeps the frozen order).
+    pub ladder: &'static [DegenerationRetryStep],
 }
 
 /// Runs the windowed OCR pipeline over the prepared session (T063).
@@ -602,7 +605,7 @@ fn serial_attempt_outcome(
             None
         } else {
             let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
-            DEGENERATION_RETRY_LADDER.get(ladder_index)
+            config.ladder.get(ladder_index)
         };
         // T1: the caller-side render wait is the recorder's R input; every
         // attempt (retry perturbations included) gets its own row.
@@ -674,7 +677,7 @@ fn serial_attempt_outcome(
                 });
                 // Q1.5/D-14: pure truncation enters the ladder too.
                 let ladder_worthy = artifact.degenerated || artifact.truncated;
-                if ladder_worthy && attempts <= DEGENERATION_RETRY_LADDER.len() as u32 {
+                if ladder_worthy && attempts <= config.ladder.len() as u32 {
                     continue;
                 }
                 return SerialOutcome::Terminal(Ok((image, artifact, attempts)));

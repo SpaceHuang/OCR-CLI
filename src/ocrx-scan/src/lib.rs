@@ -22,6 +22,8 @@ pub use ocrx_pdf::{
 pub mod report;
 pub mod resume;
 pub mod state;
+
+pub use state::ladder_for_model;
 pub mod window;
 
 #[cfg(test)]

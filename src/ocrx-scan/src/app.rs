@@ -888,6 +888,8 @@ impl ScanApplication {
                 boundary_samples_out: std::env::var_os("OCRX_BOUNDARY_SAMPLES_OUT")
                     .filter(|value| !value.is_empty())
                     .map(std::path::PathBuf::from),
+                // Option-a mitigation: per-model degeneration ladder.
+                ladder: crate::ladder_for_model(&request_model),
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
             ocr_summary = run_pages_with_session(

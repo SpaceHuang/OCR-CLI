@@ -238,6 +238,18 @@ fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
         )
         .prompt,
         boundary_samples_out: None,
+        ladder: crate::ladder_for_model(
+            &ocrx_inference_api::ModelId::new("ovisocr2").expect("built-in id is valid"),
+        ),
+    }
+}
+
+fn config_with_ladder<'a>(compatibility: &'a ScanCompatibility, model: &str) -> WindowConfig<'a> {
+    WindowConfig {
+        ladder: crate::ladder_for_model(
+            &ocrx_inference_api::ModelId::new(model).expect("built-in id is valid"),
+        ),
+        ..config(compatibility)
     }
 }
 
@@ -858,5 +870,92 @@ fn boundary_disabled_by_default_writes_nothing() {
     .unwrap();
     // No boundary.jsonl in the output root (sink unset -> zero writes).
     assert!(!root.join("boundary.jsonl").is_file());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn ovisocr3_ladder_runs_the_sampling_rung_first() {
+    // Option-a mitigation: with the sampling rung leading, the FIRST retry
+    // of an empty page carries the repeat-penalty chain (no grid override)
+    // and the SECOND retry carries the 2048 grid — read straight from the
+    // boundary records (SP-T01), which log each attempt's rung fields.
+    let root = temp_root("ladder-order-ovisocr3");
+    let boundary = root.join("boundary.jsonl");
+    let mut session = FakeSession::with_depth(1);
+    session.push(1, empty_eos());
+    session.push(1, empty_eos());
+    session.push(1, eos(1));
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session,
+        &mut renderer,
+        &[1],
+        &root,
+        &WindowConfig {
+            boundary_samples_out: Some(boundary.clone()),
+            ..config_with_ladder(&compatibility, "ovisocr3")
+        },
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    let records: Vec<serde_json::Value> = std::fs::read_to_string(&boundary)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 3);
+    // Attempt 2 = sampling rung (penalty chain, no grid override).
+    assert_eq!(records[1]["attempt"], 2);
+    assert_eq!(records[1]["retry_sampling"], serde_json::json!([1200, 64]));
+    assert_eq!(records[1]["image_tokens_override"], serde_json::Value::Null);
+    // Attempt 3 = 2048-grid rung.
+    assert_eq!(records[2]["attempt"], 3);
+    assert_eq!(records[2]["image_tokens_override"], 2048);
+    assert_eq!(records[2]["retry_sampling"], serde_json::Value::Null);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn ovisocr2_ladder_keeps_the_frozen_rung_order() {
+    // Same script under the ovisocr2 ladder: the 2048-grid rung is the
+    // FIRST retry and the sampling chain the second — the mirror image of
+    // the ovisocr3 order above.
+    let root = temp_root("ladder-order-ovisocr2");
+    let boundary = root.join("boundary.jsonl");
+    let mut session = FakeSession::with_depth(1);
+    session.push(1, empty_eos());
+    session.push(1, empty_eos());
+    session.push(1, eos(1));
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    run_pages_with_session(
+        &mut session,
+        &mut renderer,
+        &[1],
+        &root,
+        &WindowConfig {
+            boundary_samples_out: Some(boundary.clone()),
+            ..config_with_ladder(&compatibility, "ovisocr2")
+        },
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    let records: Vec<serde_json::Value> = std::fs::read_to_string(&boundary)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 3);
+    // Attempt 2 = 2048-grid rung; attempt 3 = sampling chain.
+    assert_eq!(records[1]["image_tokens_override"], 2048);
+    assert_eq!(records[1]["retry_sampling"], serde_json::Value::Null);
+    assert_eq!(records[2]["retry_sampling"], serde_json::json!([1200, 64]));
+    assert_eq!(records[2]["image_tokens_override"], serde_json::Value::Null);
     let _ = std::fs::remove_dir_all(root);
 }
