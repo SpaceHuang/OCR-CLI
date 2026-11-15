@@ -11,7 +11,7 @@
 | 里程碑二进制 | `C:/t/m23/tgt/release/ocrx.exe`，sha256 `c1cfe36b258923c782883d6a0489f0016930bc75f317ff6ed550e8e40bb45430` |
 | 源 | feat/next-phase-quality @ B4.2 提交后（T-PROJ→B4.1 全链已合入分支） |
 | 构建 | `cargo build --release --locked -p ocrx --features vulkan`，vcvars64 + Ninja（C:/t/m23/build-m23.cmd）；**CARGO_TARGET_DIR=C:/t/m23/tgt（短路径）**——worktree 深路径曾把嵌套 vulkan-shaders-gen try-compile 对象目录推过 MAX_PATH-250（C1041，三轮排障记录见构建日志） |
-| 基线二进制（金集门用） | `C:/t/m23/ocrx-base-16577de.exe`，main@16577de 同配方（tgt-base） |
+| 基线二进制（金集门用） | `C:/t/m23/ocrx-base-16577de.exe`，sha256 `a2c77197fb738012515aa0b0b89aa0385bed8e09f05526f5cc3c814dc0994254`，main@16577de 同配方（tgt-base，7m48s） |
 | 门禁 | fmt + clippy 0 警告 + workspace tests 全绿（构建前） |
 
 ## 2. 命令链（D-30 对照配置）
