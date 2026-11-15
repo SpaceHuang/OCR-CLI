@@ -627,11 +627,27 @@ fn serial_attempt_outcome(
     let mut attempts = start_attempt.saturating_sub(1);
     loop {
         attempts += 1;
+        // B-M2.3 diag (spike protocol): every retry decode rides the 2048
+        // grid (the rung's own override, or the walk-wide grid) — the rescue
+        // needs supersampled rasters × 2048 grids together. Attempt 1 keeps
+        // the plain 1024 decode (normal pages untouched).
+        let walk_step: DegenerationRetryStep;
+        let walk_step: DegenerationRetryStep;
         let step: Option<&DegenerationRetryStep> = if attempts == 1 {
             None
         } else {
             let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
-            config.ladder.get(ladder_index)
+            match config.ladder.get(ladder_index) {
+                Some(rung) if rung.image_tokens.is_some() => Some(rung),
+                Some(rung) => {
+                    walk_step = DegenerationRetryStep {
+                        image_tokens: Some(2048),
+                        ..*rung
+                    };
+                    Some(&walk_step)
+                }
+                None => None,
+            }
         };
         // T1: the caller-side render wait is the recorder's R input; every
         // attempt (retry perturbations included) gets its own row.
@@ -680,9 +696,14 @@ fn serial_attempt_outcome(
         // `step`/`recognized` are the ladder attempt pair.
         #[allow(clippy::similar_names)]
         let recognized_outcome = match step {
-            Some(rung) if rung.column_split && config.column_split_enabled => {
-                recognizer.recognize_column_split(page, &image, cancellation, heartbeat)
-            }
+            Some(rung) if rung.column_split && config.column_split_enabled => recognizer
+                .recognize_column_split(
+                    page,
+                    &image,
+                    step.and_then(|rung| rung.image_tokens),
+                    cancellation,
+                    heartbeat,
+                ),
             Some(rung) if rung.column_split => Err(RecognizeError::Failed(std::io::Error::other(
                 "column split disabled",
             ))),

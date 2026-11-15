@@ -567,10 +567,14 @@ fn m2_rung_renders_budgeted_4096_and_escapes_with_the_2048_grid() {
     // The ladder walked in order: plain → 2048-grid → penalty → M2(2048).
     let captured = session.core.captured.borrow();
     assert_eq!(captured.len(), 4);
-    assert_eq!(captured[1].image_tokens_override, Some(2048));
+    // Walk-wide retry grid (B-M2.3 diag): every RETRY decode rides 2048;
+    // attempt 1 stays plain 1024.
+    assert_eq!(captured[0].image_tokens_override, None);
+    for request in &captured[1..] {
+        assert_eq!(request.image_tokens_override, Some(2048));
+    }
     assert!(captured[1].retry_sampling.is_none());
     assert!(captured[2].retry_sampling.is_some());
-    assert_eq!(captured[3].image_tokens_override, Some(2048));
     assert!(captured[3].retry_sampling.is_none());
     drop(captured);
     assert_eq!(committed_attempts(&root, 1), (4, false));
@@ -633,7 +637,8 @@ fn m2_rung_stays_unused_when_the_penalty_rung_escapes() {
             .iter()
             .filter(|r| r.image_tokens_override == Some(2048))
             .count(),
-        1
+        2,
+        "walk-wide retry grid: retry decodes (2,3) at 2048, attempt 1 plain"
     );
     drop(captured);
     assert_eq!(committed_attempts(&root, 1), (3, false));
