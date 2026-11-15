@@ -91,7 +91,14 @@ fn render_pages() -> Vec<(u32, u32, Vec<u8>)> {
     (0..PAGE_COUNT)
         .map(|index| {
             let (image, _, _) = renderer
-                .render_page_rgb8_with_audit(&source, index, ocrx_pdf::RenderOptions { dpi: DPI })
+                .render_page_rgb8_with_audit(
+                    &source,
+                    index,
+                    ocrx_pdf::RenderOptions {
+                        dpi: DPI,
+                        ..Default::default()
+                    },
+                )
                 .expect("golden page must render");
             (image.width(), image.height(), image.into_raw())
         })

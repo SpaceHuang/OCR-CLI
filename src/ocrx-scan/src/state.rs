@@ -31,6 +31,12 @@ pub struct DegenerationRetryStep {
     /// page is re-decoded per detected column band and the band markdowns
     /// merge in reading order. The heaviest rung: final position only.
     pub column_split: bool,
+    /// B-M2.1 (D-17): render pixel budget override as a (width, height)
+    /// square — the M2 rung re-renders the page at the raised 4096² budget
+    /// (rasterization AND model input) instead of the frozen 2880².
+    /// Retry-path-only: normal pages never see a raised budget. `None`
+    /// keeps the default budget.
+    pub render_budget: Option<(u32, u32)>,
 }
 
 impl DegenerationRetryStep {
@@ -43,20 +49,26 @@ impl DegenerationRetryStep {
             image_tokens: None,
             sampling: None,
             column_split: false,
+            render_budget: None,
         }
     }
 }
 
-/// Degeneration retry ladder (Q1.4a frozen composition; the perturbation
-/// rungs were excluded by measured data: 0 escapes as baseline and as tail
-/// rungs, dropping them cuts worst-case retry cost 40% with zero outcome
-/// change). Rungs in order from attempt 2 on; attempt cap = 1 + len = 4.
+/// Degeneration retry ladder (Q1.4a frozen composition + B-M2.1/D-17 M2
+/// rung; the perturbation rungs were excluded by measured data: 0 escapes
+/// as baseline and as tail rungs, dropping them cuts worst-case retry cost
+/// 40% with zero outcome change; the M2 rung `2048@4096²` was adjudicated
+/// strong-GO on the 68 over-budget page spike: 55.9% flag escape, 37/38
+/// true rescues, 0 regressions). Rungs in order from attempt 2 on: plain
+/// 1024 → 2048@2880² → penalty → 2048@4096² → column split;
+/// attempt cap = 1 + len = 5.
 pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
     DegenerationRetryStep {
         perturbed: None,
         image_tokens: Some(2048),
         sampling: None,
         column_split: false,
+        render_budget: None,
     },
     DegenerationRetryStep {
         perturbed: None,
@@ -66,12 +78,21 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
             penalty_window: 64,
         }),
         column_split: false,
+        render_budget: None,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: Some(2048),
+        sampling: None,
+        column_split: false,
+        render_budget: Some((4096, 4096)),
     },
     DegenerationRetryStep {
         perturbed: None,
         image_tokens: None,
         sampling: None,
         column_split: true,
+        render_budget: None,
     },
 ];
 
@@ -510,12 +531,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn frozen_ladder_has_three_rungs_in_the_q14a_order() {
-        assert_eq!(DEGENERATION_RETRY_LADDER.len(), 3);
-        assert_eq!(ATTEMPTS_MAX, 4);
+    fn frozen_ladder_has_four_rungs_in_the_q14a_m2_order() {
+        assert_eq!(DEGENERATION_RETRY_LADDER.len(), 4);
+        assert_eq!(ATTEMPTS_MAX, 5);
         // Rung 1: 2048 grid.
         assert_eq!(DEGENERATION_RETRY_LADDER[0].image_tokens, Some(2048));
         assert!(DEGENERATION_RETRY_LADDER[0].sampling.is_none());
+        assert_eq!(DEGENERATION_RETRY_LADDER[0].render_budget, None);
         // Rung 2: penalty 1200 milli / window 64.
         assert_eq!(
             DEGENERATION_RETRY_LADDER[1].sampling,
@@ -524,8 +546,19 @@ mod tests {
                 penalty_window: 64,
             })
         );
-        // Rung 3: column split, final position only.
-        assert!(DEGENERATION_RETRY_LADDER[2].column_split);
+        assert_eq!(DEGENERATION_RETRY_LADDER[1].render_budget, None);
+        // Rung 3 (B-M2.1/D-17): 2048@4096² — the render-budget retry rung,
+        // after penalty, before the column split.
+        assert_eq!(DEGENERATION_RETRY_LADDER[2].image_tokens, Some(2048));
+        assert!(DEGENERATION_RETRY_LADDER[2].sampling.is_none());
+        assert_eq!(
+            DEGENERATION_RETRY_LADDER[2].render_budget,
+            Some((4096, 4096))
+        );
+        assert!(!DEGENERATION_RETRY_LADDER[2].column_split);
+        // Rung 4: column split, final position only.
+        assert!(DEGENERATION_RETRY_LADDER[3].column_split);
+        assert_eq!(DEGENERATION_RETRY_LADDER[3].render_budget, None);
         // No perturbation rungs survive in the frozen table.
         assert!(
             DEGENERATION_RETRY_LADDER

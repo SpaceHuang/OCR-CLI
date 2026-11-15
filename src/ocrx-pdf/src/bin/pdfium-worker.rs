@@ -29,8 +29,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => PdfiumRenderer::new(library_dir),
     };
     std::fs::create_dir_all(&output)?;
-    let count =
-        renderer.render_range(&input, RenderOptions { dpi }, start, end, |index, image| {
+    let count = renderer.render_range(
+        &input,
+        RenderOptions {
+            dpi,
+            ..Default::default()
+        },
+        start,
+        end,
+        |index, image| {
             let path = output.join(format!("page-{:04}.png", index + 1));
             let temp = output.join(format!(".page-{:04}.part.png", index + 1));
             let (original_width, original_height) = renderer.page_dimensions(&input, index)?;
@@ -50,7 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // stdout for `--report json` / `--progress jsonl` (review MINOR 4).
             eprintln!("page={} path={}", index + 1, path.display());
             Ok(())
-        })?;
+        },
+    )?;
     validate_worker_segment(&output, start, end)?;
     eprintln!("worker_complete pages={count}");
     Ok(())

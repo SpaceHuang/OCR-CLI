@@ -10,8 +10,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::RenderAudit;
 use crate::compatibility::ScanCompatibility;
+use crate::{DEGENERATION_RETRY_LADDER, RenderAudit};
 
 /// v6 checkpoint status (replaces the v5 `complete` bool + pending suffix).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,9 +110,12 @@ fn decode_field(value: &str) -> Result<String, std::io::Error> {
 pub fn write_v6(path: impl AsRef<Path>, checkpoint: &V6Checkpoint) -> std::io::Result<()> {
     let compatibility = serde_json::to_string(&checkpoint.compatibility)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
-    // Write-range guard: attempts go out as 1..=4 (Q1.4a); wider values are
-    // a read-compat concern only.
-    let attempts = checkpoint.attempts.clamp(1, 4);
+    // Write-range guard: attempts go out as 1..=5 (Q1.4a + B-M2.1/D-17, the
+    // M2 rung 2048@4096² widened the ladder additively); wider values are a
+    // read-compat concern only.
+    let attempts = checkpoint
+        .attempts
+        .clamp(1, 1 + DEGENERATION_RETRY_LADDER.len() as u32);
     let content = format!(
         "ocrx-checkpoint-v6\npage={}\nstatus={}\ncompatibility={}\noutput={}\ntruncated={}\ndegenerated={}\nattempts={}\nraw={}\nwarnings={}\nthink_blocks_stripped={}\naudit={}\n",
         checkpoint.page_number,
@@ -637,26 +640,34 @@ mod tests {
 
     #[test]
     fn v6_write_clamps_attempts_to_the_frozen_range_but_reads_accept_wider() {
+        // B-M2.2 (D-17): the frozen write range widens additively to
+        // 1..=5 with the M2 rung (2048@4096²); old files (attempts ≤ 4)
+        // stay readable untouched, wider hand-written values still read.
+        let attempts_max = 1 + super::DEGENERATION_RETRY_LADDER.len() as u32;
+        assert_eq!(attempts_max, 5);
         let mut wide = checkpoint();
-        wide.attempts = 5;
+        wide.attempts = attempts_max + 1;
         let file = write_and_read_tagged(&wide, "clamps");
         let CheckpointFile::V6(loaded) = file else {
             panic!("expected v6");
         };
-        // The write clamps to 4; the reader accepts a wider hand-written 5.
-        assert_eq!(loaded.attempts, 4);
+        // The write clamps to 5; the reader accepts a wider hand-written 6.
+        assert_eq!(loaded.attempts, attempts_max);
         let root = std::env::temp_dir().join(format!("ocrx-v6-wide-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("wide.checkpoint");
-        let content = std::fs::read_to_string({
+        let written = {
             write_v6(&path, &wide).unwrap();
-            &path
-        })
-        .unwrap()
-        .replace("attempts=4", "attempts=5");
+            std::fs::read_to_string(&path).unwrap()
+        };
+        let clamped = format!("attempts={attempts_max}");
+        let widened = format!("attempts={}", attempts_max + 1);
+        let content = written.replace(&clamped, &widened);
         std::fs::write(&path, content).unwrap();
         match read_any(&path).unwrap() {
-            CheckpointFile::V6(loaded) => assert_eq!(loaded.attempts, 5, "wide read compat"),
+            CheckpointFile::V6(loaded) => {
+                assert_eq!(loaded.attempts, attempts_max + 1, "wide read compat")
+            }
             other => panic!("expected v6, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(root);

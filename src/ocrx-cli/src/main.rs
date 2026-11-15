@@ -1510,7 +1510,10 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
     let mut pdf_access = ocrx_scan::render::pdfium_owner::OwnerPdfAccess::spawn(
         pdfium_dir.clone(),
         first_input,
-        RenderOptions { dpi },
+        RenderOptions {
+            dpi,
+            ..Default::default()
+        },
         options.password.clone(),
         u32::try_from(window_depth * 2).unwrap_or(2),
     );

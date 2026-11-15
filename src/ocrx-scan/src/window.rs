@@ -56,6 +56,25 @@ pub trait PageRenderer {
         let _ = (numerator, denominator);
         self.render(page)
     }
+
+    /// Renders a raised-pixel-budget variant (B-M2.1/D-17, the M2 rung
+    /// `2048@4096²`): the budgets relax the pre-raster and model-input
+    /// clamps for THIS retry attempt only. Default: plain render — the
+    /// retry path is the only consumer (normal pages keep the frozen
+    /// 2880² budget, byte-identical renders).
+    ///
+    /// # Errors
+    ///
+    /// Rendering failure.
+    fn render_budgeted(
+        &mut self,
+        page: u32,
+        pixel_width_budget: u32,
+        pixel_height_budget: u32,
+    ) -> std::io::Result<RenderedPage> {
+        let _ = (pixel_width_budget, pixel_height_budget);
+        self.render(page)
+    }
 }
 
 impl<T: PageRenderer + ?Sized> PageRenderer for Box<T> {
@@ -621,7 +640,14 @@ fn serial_attempt_outcome(
             Some((numerator, denominator)) => {
                 renderer.render_perturbed(page, numerator, denominator)
             }
-            None => renderer.render(page),
+            _ => match step.and_then(|rung| rung.render_budget) {
+                // B-M2.1/D-17: the M2 rung re-renders at the raised budget
+                // (rasterization + model input) for this attempt only.
+                Some((width_budget, height_budget)) => {
+                    renderer.render_budgeted(page, width_budget, height_budget)
+                }
+                None => renderer.render(page),
+            },
         };
         commit_recorder.record_render_wait(
             page,
