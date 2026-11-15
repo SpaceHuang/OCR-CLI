@@ -87,6 +87,39 @@ python pdf_validation.py --config configs/custom.yaml'
 4. **确定性复现检查**：同二进制同参数重扫，退化页集合与 page md 必须与
    前轮逐字节一致（balanced 语料 2026-11-07 已验证 213/213 一致）。
 
+## 复评附注（next-phase 方案 B4.1：D-30 裁决驱动配置矩阵，BLK-3/RBLK-2）
+
+**对照配置恒定**（判正常页零漂移；M2 rung 已并入默认阶梯，无需开关）：
+
+```bash
+ocrx scan pdfs -o scans/<milestone>-default --model ovisocr2 \
+    --model-profile balanced --dpi 300 --non-interactive --progress off --log-level warn
+```
+
+**目标配置按裁决结果从矩阵生成——未 GO 的能力不得出现在目标命令中**。
+版面模型占位 `<id>` = B0' 裁决当选模型的 manifest 资产 id（含资产哈希入
+checkpoint 身份，B4.2）：
+
+| 分支 | 目标配置追加开关 | B4.3 形态 | 判定门 |
+|---|---|---|---|
+| B0' NO-GO | （无——目标配置不存在 = 对照） | 对照复核轮 | 无判定；M4/M5/M6b 记战略关闭 |
+| B2 GO + B3 GO | `--table-reread on --formula-reread on --layout-model <id>` | 双配置 | 目标 ≥ 91 |
+| B2 GO + B3 NO | `--table-reread on --layout-model <id>` | 双配置 | 目标 ≥ 91 |
+| B2 NO + B3 GO | `--formula-reread on --layout-model <id>` | 双配置 | 目标 ≥ 89.5 |
+| B2 NO + B3 NO | （无——对照） | 对照复核轮 | 无判定 |
+| C2 GO（叠加于上） | 再追加 `--region-pipeline on` | 双配置 | C4 目标 ≥ 93.58 |
+| C2 NO-GO | `--region-pipeline` 不出现；C3 不实施 | C4 关闭终评 | 达成性报告 |
+
+**核对单（每轮复评逐项勾选）**：
+1. 分支判定（B0' 门 / B2 五门 / B3 五门 / C2 五闸门）→ 上表取行；
+2. 目标命令生成后与上表逐开关核对（未 GO 开关缺席 = PASS）；
+3. B4.2 身份三项回归绿（on→off / 模型切换 / 混合配置 resume 不混用）；
+4. 对照配置判正常页零漂移；**目标分数只由目标配置判定**；
+5. 凡矩阵定义了目标配置的分支，B4.3 一律双配置落档产物与 checkpoint
+   （C1 的规定基线，RBLK-1）；双 NO（B0' GO）分支 C1 以对照产物为其目标基线；
+6. 语料级增量一律出 `scripts/omnidocbench-paired-projection.py`（T-PROJ，
+   D-31）配对投影，B-M2.3 例外（全集口径直读）。
+
 ## 结果
 
 见 `reports/`（官方评测原始输出）与
