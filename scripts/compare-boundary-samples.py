@@ -198,8 +198,14 @@ def load_samples(path, source, attempts=(1,)):
                 "retry_sampling must be [repeat_penalty_milli, penalty_window] or null"
             )
         for key in HEX64_KEYS:
-            if not re.fullmatch(r"[0-9a-f]{64}", str(record[key])):
-                type_errors.append(f"{key} must be 64 lowercase hex chars")
+            value = record[key]
+            # The raw value must BE a string: str() on a 64-digit JSON
+            # integer would launder it through the hex check (eleventh
+            # review).
+            if not isinstance(value, str) or not re.fullmatch(
+                r"[0-9a-f]{64}", value
+            ):
+                type_errors.append(f"{key} must be a 64-char lowercase hex string")
         # Tenth review: the schema is frozen at v2 — a complete v1-shaped
         # record is still a legacy record (migrate it; no exemption).
         if record.get("schema_version") != 2:

@@ -402,3 +402,14 @@ complete_v1 = sample("scan", 4, sha="s4", schema_version=1)
 complete_v1["base_image_tokens"] = 2048
 code = run([complete_v1], [sample("direct", 4, sha="d4", schema_version=2)])
 check("complete v1 shape -> exit 1 (schema frozen at v2)", code == 1)
+
+# 31) Hashes written as 64-DIGIT JSON INTEGERS -> INVALID (eleventh
+#     review): str() conversion made digit-only integers pass the hex
+#     check; the raw value must BE a string.
+int_hash = sample("scan", 4, sha="s4", schema_version=2)
+int_hash["rgb8_sha256"] = int("1" * 64)
+int_hash["prompt_sha256"] = int("2" * 64)
+int_direct = sample("direct", 4, sha="d4", schema_version=2)
+int_direct["rgb8_sha256"] = int("3" * 64)
+code = run([int_hash], [int_direct])
+check("integer-typed hashes -> exit 1", code == 1)
