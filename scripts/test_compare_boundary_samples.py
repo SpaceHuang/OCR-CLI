@@ -67,8 +67,8 @@ def check(name, condition):
 
 # 1) Identical bytes on all pairs -> IDENTICAL, exit 0.
 code = run(
-    [sample("scan", 4, sha="h4"), sample("scan", 5, sha="h5")],
-    [sample("direct", 4, sha="h4"), sample("direct", 5, sha="h5")],
+    [sample("scan", 4, sha="a" * 64), sample("scan", 5, sha="b" * 64)],
+    [sample("direct", 4, sha="a" * 64), sample("direct", 5, sha="b" * 64)],
 )
 check("identical bytes -> exit 0", code == 0)
 
@@ -76,57 +76,57 @@ check("identical bytes -> exit 0", code == 0)
 #    is carried in the report (checked via captured stdout by re-running
 #    with a known pair and inspecting the module-level behavior below).
 code = run(
-    [sample("scan", 4, sha="scan-bytes"), sample("scan", 5, sha="h5")],
-    [sample("direct", 4, sha="direct-bytes"), sample("direct", 5, sha="h5")],
+    [sample("scan", 4, sha="f" * 64), sample("scan", 5, sha="b" * 64)],
+    [sample("direct", 4, sha="e" * 64), sample("direct", 5, sha="b" * 64)],
 )
 check("byte diff is a valid experiment -> exit 0", code == 0)
 
 # 3) Missing direct record for a scan attempt-1 page -> INVALID, exit 1.
 code = run(
-    [sample("scan", 4, sha="h4"), sample("scan", 5, sha="h5")],
-    [sample("direct", 4, sha="h4")],
+    [sample("scan", 4, sha="a" * 64), sample("scan", 5, sha="b" * 64)],
+    [sample("direct", 4, sha="a" * 64)],
 )
 check("missing direct page -> exit 1", code == 1)
 
 # 4) Duplicate scan attempt-1 record for one page -> INVALID.
 code = run(
-    [sample("scan", 4, sha="h4"), sample("scan", 4, sha="h4b")],
-    [sample("direct", 4, sha="h4")],
+    [sample("scan", 4, sha="a" * 64), sample("scan", 4, sha="e" * 64)],
+    [sample("direct", 4, sha="a" * 64)],
 )
 check("duplicate scan page -> exit 1", code == 1)
 
 # 5) Scan attempt>=2 records NEVER invalidate the pairing (v1.2 gate scope).
 code = run(
     [
-        sample("scan", 4, attempt=1, sha="h4"),
-        sample("scan", 4, attempt=2, sha="retry-bytes", sampling=[1200, 64]),
-        sample("scan", 4, attempt=3, sha="retry-bytes-2"),
+        sample("scan", 4, attempt=1, sha="a" * 64),
+        sample("scan", 4, attempt=2, sha="f" * 64, sampling=[1200, 64]),
+        sample("scan", 4, attempt=3, sha="g" * 64),
     ],
-    [sample("direct", 4, sha="h4")],
+    [sample("direct", 4, sha="a" * 64)],
 )
 check("attempt>=2 records out of pairing scope -> exit 0", code == 0)
 
 # 6) input_sha256 mismatch between sides -> INVALID.
 code = run(
-    [sample("scan", 4, sha="h4", input_sha="doc-a")],
-    [sample("direct", 4, sha="h4", input_sha="doc-b")],
+    [sample("scan", 4, sha="a" * 64, input_sha="doc-a")],
+    [sample("direct", 4, sha="a" * 64, input_sha="doc-b")],
 )
 check("input hash mismatch -> exit 1", code == 1)
 
 # 7) Param mismatch (render geometry differs) -> valid experiment; the
 #    pair carries the mismatch fields.
 code = run(
-    [sample("scan", 4, sha="h4", width=100, height=50)],
-    [sample("direct", 4, sha="h4")],
+    [sample("scan", 4, sha="a" * 64, width=100, height=50)],
+    [sample("direct", 4, sha="a" * 64)],
 )
 check("param mismatch -> exit 0", code == 0)
 
 # 8) EMPTY scan dataset -> INVALID (an experiment that produced no
 #    records must never be reported as IDENTICAL).
-code = run([], [sample("direct", 4, sha="h4")])
+code = run([], [sample("direct", 4, sha="a" * 64)])
 check("empty scan dataset -> exit 1", code == 1)
 
-code = run([sample("scan", 4, sha="h4")], [])
+code = run([sample("scan", 4, sha="a" * 64)], [])
 check("empty direct dataset -> exit 1", code == 1)
 
 # 9) Mixed document identities WITHIN one side -> INVALID even when the
@@ -146,11 +146,11 @@ scan_path = os.path.join(tmp, "scan.jsonl")
 direct_path = os.path.join(tmp, "direct.jsonl")
 verdict_path = os.path.join(tmp, "verdict.json")
 write_jsonl(scan_path, [
-    sample("scan", 4, attempt=1, sha="h4"),
-    sample("scan", 4, attempt=2, sha="retry", sampling=[1200, 64]),
-    sample("scan", 5, attempt=1, sha="h5"),
+    sample("scan", 4, attempt=1, sha="a" * 64),
+    sample("scan", 4, attempt=2, sha="f" * 64, sampling=[1200, 64]),
+    sample("scan", 5, attempt=1, sha="b" * 64),
 ])
-write_jsonl(direct_path, [sample("direct", 4, sha="h4"), sample("direct", 5, sha="h5")])
+write_jsonl(direct_path, [sample("direct", 4, sha="a" * 64), sample("direct", 5, sha="b" * 64)])
 code = cb.main([
     "--scan", scan_path, "--direct", direct_path, "--output", verdict_path,
 ])
@@ -170,14 +170,14 @@ check(
 #     (no E1 comparison happened, so no conclusion may be drawn).
 code = run(
     [sample("scan", 4, attempt=2, sha="retry", sampling=[1200, 64])],
-    [sample("direct", 9, sha="h9")],
+    [sample("direct", 9, sha="a" * 64)],
 )
 check("only-retry dataset (zero pairs) -> exit 1", code == 1)
 
 # 12) BOTH sides missing input_sha256 -> INVALID (identity unverifiable).
 missing_id = []
 for source, page in (("scan", 4), ("direct", 4)):
-    record = sample(source, page, sha="h4")
+    record = sample(source, page, sha="a" * 64)
     del record["input_sha256"]
     missing_id.append(record)
 code = run(missing_id[:1], missing_id[1:])
@@ -215,8 +215,8 @@ def strip_keys(records, *keys):
     return records
 
 code = run(
-    strip_keys([sample("scan", 4, sha="h4")], "rgb8_sha256", "prompt_sha256"),
-    strip_keys([sample("direct", 4, sha="h4")], "rgb8_sha256", "prompt_sha256"),
+    strip_keys([sample("scan", 4, sha="a" * 64)], "rgb8_sha256", "prompt_sha256"),
+    strip_keys([sample("direct", 4, sha="a" * 64)], "rgb8_sha256", "prompt_sha256"),
 )
 check("both sides missing rgb/prompt hashes -> exit 1", code == 1)
 
@@ -228,11 +228,11 @@ direct_path = os.path.join(tmp, "direct.jsonl")
 verdict_path = os.path.join(tmp, "verdict.json")
 write_jsonl(
     scan_path,
-    [sample("scan", 4, sha="s4", base_image_tokens=2048, schema_version=2)],
+    [sample("scan", 4, sha="c" * 64, base_image_tokens=2048, schema_version=2)],
 )
 write_jsonl(
     direct_path,
-    [sample("direct", 4, sha="d4", base_image_tokens=1024, schema_version=2)],
+    [sample("direct", 4, sha="d" * 64, base_image_tokens=1024, schema_version=2)],
 )
 code = cb.main(["--scan", scan_path, "--direct", direct_path, "--output", verdict_path])
 verdict = json.load(open(verdict_path, encoding="utf-8"))
@@ -247,9 +247,9 @@ check(
 # 17) Missing base_image_tokens field (schema violation) -> INVALID.
 code = run(
     strip_keys(
-        [sample("scan", 4, sha="s4", schema_version=2)], "base_image_tokens"
+        [sample("scan", 4, sha="c" * 64, schema_version=2)], "base_image_tokens"
     ),
-    [sample("direct", 4, sha="d4", schema_version=2)],
+    [sample("direct", 4, sha="d" * 64, schema_version=2)],
 )
 check("missing base_image_tokens -> exit 1", code == 1)
 
@@ -257,36 +257,36 @@ check("missing base_image_tokens -> exit 1", code == 1)
 #     closed — legacy records carry no base grid, so they cannot compare
 #     one (migrate the evidence to v2 instead). The records here are the
 #     real legacy shape: no schema_version, no base_image_tokens.
-legacy_scan = sample("scan", 4, sha="s4", schema_version=None)
+legacy_scan = sample("scan", 4, sha="c" * 64, schema_version=None)
 legacy_scan.pop("base_image_tokens")
-legacy_direct = sample("direct", 4, sha="d4", schema_version=None)
+legacy_direct = sample("direct", 4, sha="d" * 64, schema_version=None)
 legacy_direct.pop("base_image_tokens")
 code = run([legacy_scan], [legacy_direct])
 check("pure v1 pairing (no grid) -> exit 1", code == 1)
 
 # 19) v2 + v1 mixed pairing -> INVALID (the v1 side has no grid to compare).
-mixed_v1_direct = sample("direct", 4, sha="d4", schema_version=None)
+mixed_v1_direct = sample("direct", 4, sha="d" * 64, schema_version=None)
 mixed_v1_direct.pop("base_image_tokens")
 code = run(
-    [sample("scan", 4, sha="s4", schema_version=2)],
+    [sample("scan", 4, sha="c" * 64, schema_version=2)],
     [mixed_v1_direct],
 )
 check("v2+v1 mixed pairing -> exit 1", code == 1)
 
 # 20) BOTH sides missing width -> INVALID (None == None fake param match).
 code = run(
-    strip_keys([sample("scan", 4, sha="s4", schema_version=2)], "width"),
-    strip_keys([sample("direct", 4, sha="d4", schema_version=2)], "width"),
+    strip_keys([sample("scan", 4, sha="c" * 64, schema_version=2)], "width"),
+    strip_keys([sample("direct", 4, sha="d" * 64, schema_version=2)], "width"),
 )
 check("both sides missing width -> exit 1", code == 1)
 
 # 21) BOTH sides missing height and max_output_tokens -> INVALID.
 code = run(
     strip_keys(
-        [sample("scan", 4, sha="s4", schema_version=2)], "height", "max_output_tokens"
+        [sample("scan", 4, sha="c" * 64, schema_version=2)], "height", "max_output_tokens"
     ),
     strip_keys(
-        [sample("direct", 4, sha="d4", schema_version=2)], "height", "max_output_tokens"
+        [sample("direct", 4, sha="d" * 64, schema_version=2)], "height", "max_output_tokens"
     ),
 )
 check("both sides missing height/max_output_tokens -> exit 1", code == 1)
@@ -296,12 +296,12 @@ check("both sides missing height/max_output_tokens -> exit 1", code == 1)
 #     "absent rung" spelling, a missing key is not).
 code = run(
     strip_keys(
-        [sample("scan", 4, sha="s4", schema_version=2)],
+        [sample("scan", 4, sha="c" * 64, schema_version=2)],
         "image_tokens_override",
         "retry_sampling",
     ),
     strip_keys(
-        [sample("direct", 4, sha="d4", schema_version=2)],
+        [sample("direct", 4, sha="d" * 64, schema_version=2)],
         "image_tokens_override",
         "retry_sampling",
     ),
@@ -311,15 +311,72 @@ check("both sides delete override/sampling keys -> exit 1", code == 1)
 # 23) BOTH sides deleting identity/geometry/outcome fields -> INVALID.
 for field in ("page_index", "outcome", "rgb8_len"):
     code = run(
-        strip_keys([sample("scan", 4, sha="s4", schema_version=2)], field),
-        strip_keys([sample("direct", 4, sha="d4", schema_version=2)], field),
+        strip_keys([sample("scan", 4, sha="c" * 64, schema_version=2)], field),
+        strip_keys([sample("direct", 4, sha="d" * 64, schema_version=2)], field),
     )
     check(f"both sides delete {field} -> exit 1", code == 1)
 
 # 24) Explicit null on the optional rung fields is LEGITIMATE (the
 #     attempt-1 shape) — a valid experiment, never INVALID.
 code = run(
-    [sample("scan", 4, sha="s4", schema_version=2)],
-    [sample("direct", 4, sha="d4", schema_version=2)],
+    [sample("scan", 4, sha="c" * 64, schema_version=2)],
+    [sample("direct", 4, sha="d" * 64, schema_version=2)],
 )
 check("explicit-null optional fields remain a valid experiment", code == 0)
+
+# 25) STRING-TYPED integer fields -> INVALID (ninth review): page numbers,
+#     dimensions, grid, and output budget must be JSON integers. Both sides
+#     identically stringy — the pairing must reject the type, not pair on
+#     string keys.
+stringy_scan = sample("scan", 4, sha="c" * 64, schema_version=2)
+for key, value in (
+    ("page_number", "4"),
+    ("page_index", "3"),
+    ("attempt", "1"),
+    ("width", "2531"),
+    ("height", "3276"),
+    ("max_output_tokens", "16384"),
+    ("base_image_tokens", "2048"),
+    ("slot", "0"),
+    ("window_id", "0"),
+    ("rgb8_len", "100"),
+    ("schema_version", "2"),
+):
+    stringy_scan[key] = value
+stringy_direct = sample("direct", 4, sha="d" * 64, schema_version=2)
+for key, value in (
+    ("page_number", "4"),
+    ("page_index", "3"),
+    ("attempt", "1"),
+    ("width", "2531"),
+    ("height", "3276"),
+    ("max_output_tokens", "16384"),
+    ("base_image_tokens", "2048"),
+    ("slot", "0"),
+    ("window_id", "0"),
+    ("rgb8_len", "100"),
+    ("schema_version", "2"),
+):
+    stringy_direct[key] = value
+code = run([stringy_scan], [stringy_direct])
+check("string-typed integers on both sides -> exit 1", code == 1)
+
+# 26) Illegal enum values / string "none" spellings -> INVALID (valid
+#     source so the pairing forms and the enum check is what fires).
+bad_scan = sample("scan", 4, sha="c" * 64, schema_version=2)
+bad_scan["outcome"] = "cleared"
+bad_scan["image_tokens_override"] = "none"
+bad_scan["retry_sampling"] = "none"
+bad_direct = sample("direct", 4, sha="d" * 64, schema_version=2)
+bad_direct["outcome"] = "unclear"
+code = run([bad_scan], [bad_direct])
+check("illegal enums and string none -> exit 1", code == 1)
+
+# 27) Malformed hashes (wrong length / non-hex) -> INVALID — the hash
+#     check must fire before any bytes_match comparison.
+short_scan = sample("scan", 4, sha="abc", schema_version=2)
+short_scan["prompt_sha256"] = "xyz"
+short_direct = sample("direct", 4, sha="d" * 64, schema_version=2)
+short_direct["prompt_sha256"] = "d4-not-a-hash"
+code = run([short_scan], [short_direct])
+check("malformed hashes -> exit 1", code == 1)

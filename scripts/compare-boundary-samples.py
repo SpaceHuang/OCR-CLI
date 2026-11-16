@@ -43,6 +43,42 @@ SCHEMA_KEYS = (
 )
 NULLABLE_KEYS = ("image_tokens_override", "retry_sampling")
 
+# Type and value-domain contract (ninth review): integer keys must be JSON
+# integers (bool excluded) within their floors; enum keys have closed
+# value sets; the identity/byte hashes must be exactly 64 characters
+# (truncated hashes cannot be verified against evidence).
+INT_KEYS = (
+    "page_number",
+    "page_index",
+    "attempt",
+    "window_id",
+    "slot",
+    "rgb8_len",
+    "width",
+    "height",
+    "max_output_tokens",
+    "base_image_tokens",
+    "schema_version",
+)
+INT_MINIMUMS = {
+    "page_number": 1,
+    "page_index": 0,
+    "attempt": 1,
+    "window_id": 0,
+    "slot": 0,
+    "rgb8_len": 0,
+    "width": 1,
+    "height": 1,
+    "max_output_tokens": 1,
+    "base_image_tokens": 1,
+    "schema_version": 1,
+}
+ENUM_DOMAINS = {
+    "source": ("scan", "direct"),
+    "outcome": ("empty", "nonempty"),
+}
+HEX64_KEYS = ("input_sha256", "rgb8_sha256", "prompt_sha256")
+
 
 def load_samples(path, source, attempts=(1,)):
     """Loads one JSONL side; returns (by_page, out_of_scope, errors,
@@ -109,6 +145,51 @@ def load_samples(path, source, attempts=(1,)):
         ]
         if empty_values:
             errors.append(f"{path}:{number}: empty {', '.join(empty_values)}")
+            continue
+        # Type and value-domain contract (ninth review): integer fields
+        # must be JSON integers (bool is not an acceptable integer), enums
+        # are closed sets, hashes are 64-char lowercase hex. A record that
+        # violates the contract cannot be paired or compared.
+        type_errors = []
+        int_keys_ok = set()
+        for key in INT_KEYS:
+            value = record[key]
+            # bool is not an acceptable integer (json true/false).
+            if isinstance(value, bool) or not isinstance(value, int):
+                type_errors.append(f"{key} must be an integer")
+                continue
+            if value < INT_MINIMUMS[key]:
+                type_errors.append(f"{key} below {INT_MINIMUMS[key]}")
+                continue
+            int_keys_ok.add(key)
+        if "page_number" in int_keys_ok and "page_index" in int_keys_ok:
+            if record["page_index"] != record["page_number"] - 1:
+                type_errors.append("page_index must be page_number - 1")
+        for key, allowed in ENUM_DOMAINS.items():
+            if record[key] not in allowed:
+                type_errors.append(f"{key} must be one of {allowed}")
+        override = record["image_tokens_override"]
+        if override is not None and (
+            isinstance(override, bool) or not isinstance(override, int) or override < 1
+        ):
+            type_errors.append("image_tokens_override must be a positive integer or null")
+        sampling = record["retry_sampling"]
+        if sampling is not None and not (
+            isinstance(sampling, list)
+            and len(sampling) == 2
+            and all(
+                isinstance(value, int) and not isinstance(value, bool) and value >= 1
+                for value in sampling
+            )
+        ):
+            type_errors.append(
+                "retry_sampling must be [repeat_penalty_milli, penalty_window] or null"
+            )
+        for key in HEX64_KEYS:
+            if len(str(record[key])) != 64:
+                type_errors.append(f"{key} must be a 64-character hash")
+        if type_errors:
+            errors.append(f"{path}:{number}: " + "; ".join(type_errors))
             continue
         if record.get("source") != source:
             errors.append(
