@@ -17,6 +17,33 @@ import json
 import sys
 
 
+# The frozen BoundarySample schema (SP-T01): every key must be present in
+# every record; NULLABLE_KEYS are the only fields where an explicit null
+# is a legitimate value (the optional rung fields, absent on attempt 1).
+SCHEMA_KEYS = (
+    "input_sha256",
+    "run_id",
+    "source",
+    "page_number",
+    "page_index",
+    "attempt",
+    "window_id",
+    "slot",
+    "rgb8_len",
+    "rgb8_sha256",
+    "prompt_sha256",
+    "width",
+    "height",
+    "max_output_tokens",
+    "base_image_tokens",
+    "image_tokens_override",
+    "retry_sampling",
+    "outcome",
+    "schema_version",
+)
+NULLABLE_KEYS = ("image_tokens_override", "retry_sampling")
+
+
 def load_samples(path, source, attempts=(1,)):
     """Loads one JSONL side; returns (by_page, out_of_scope, errors,
     seen_input_hashes, total_records, schema_versions).
@@ -52,23 +79,36 @@ def load_samples(path, source, attempts=(1,)):
             continue
         seen_input_hashes.add(record.get("input_sha256"))
         schema_versions.add(record.get("schema_version"))
-        # Mandatory fields (unconditional — the seventh-review residuals
-        # closed every bypass): without the byte hashes the pair comparison
-        # is meaningless (None == None would fake a match); without the
-        # base grid the effective decode parameters are unverifiable; the
-        # geometry/output budget fake-match the same way. Records predating
-        # a field are migrated to the current schema, never exempted here.
-        mandatory = [
-            "rgb8_sha256",
-            "prompt_sha256",
-            "base_image_tokens",
-            "width",
-            "height",
-            "max_output_tokens",
+        # Full schema contract (eighth review): every schema key must be
+        # PRESENT — a deleted key is a schema violation even when both
+        # sides delete it (None == None would fake a match). Explicit null
+        # is legitimate ONLY on the optional rung fields (no override /
+        # no sampling on attempt 1); every other key must be non-null and,
+        # for the identity/geometry/hash strings, non-empty. Records
+        # predating a field are migrated to the current schema at the
+        # evidence layer, never exempted here.
+        missing_keys = [key for key in SCHEMA_KEYS if key not in record]
+        if missing_keys:
+            errors.append(f"{path}:{number}: missing {', '.join(missing_keys)}")
+            continue
+        invalid_null = [
+            key
+            for key in SCHEMA_KEYS
+            if key not in NULLABLE_KEYS and record[key] is None
         ]
-        missing = [key for key in mandatory if record.get(key) in (None, "")]
-        if missing:
-            errors.append(f"{path}:{number}: missing {', '.join(missing)}")
+        if invalid_null:
+            errors.append(f"{path}:{number}: null in non-nullable {', '.join(invalid_null)}")
+            continue
+        # run_id is audit metadata (the scan-side recorder used to leave it
+        # empty in archived samples) — tolerated; the content/identity
+        # hashes must never be empty.
+        empty_values = [
+            key
+            for key in ("input_sha256", "rgb8_sha256", "prompt_sha256")
+            if record[key] == ""
+        ]
+        if empty_values:
+            errors.append(f"{path}:{number}: empty {', '.join(empty_values)}")
             continue
         if record.get("source") != source:
             errors.append(

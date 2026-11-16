@@ -97,7 +97,11 @@ impl BoundaryRecorder {
 
     /// Appends one boundary sample (best-effort: instrumentation must
     /// never break a scan; a write failure is reported to stderr once).
-    pub fn record(&self, sample: BoundarySample) {
+    /// The recorder stamps its run id, so call sites cannot forget it.
+    pub fn record(&self, mut sample: BoundarySample) {
+        if sample.run_id.is_empty() {
+            sample.run_id.clone_from(&self.run_id);
+        }
         let Some(out) = &self.out else {
             return;
         };

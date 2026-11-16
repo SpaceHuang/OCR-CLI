@@ -290,3 +290,36 @@ code = run(
     ),
 )
 check("both sides missing height/max_output_tokens -> exit 1", code == 1)
+
+# 22) BOTH sides deleting optional-rung fields entirely -> INVALID
+#     (missing key is a schema violation; null is the legitimate
+#     "absent rung" spelling, a missing key is not).
+code = run(
+    strip_keys(
+        [sample("scan", 4, sha="s4", schema_version=2)],
+        "image_tokens_override",
+        "retry_sampling",
+    ),
+    strip_keys(
+        [sample("direct", 4, sha="d4", schema_version=2)],
+        "image_tokens_override",
+        "retry_sampling",
+    ),
+)
+check("both sides delete override/sampling keys -> exit 1", code == 1)
+
+# 23) BOTH sides deleting identity/geometry/outcome fields -> INVALID.
+for field in ("page_index", "outcome", "rgb8_len"):
+    code = run(
+        strip_keys([sample("scan", 4, sha="s4", schema_version=2)], field),
+        strip_keys([sample("direct", 4, sha="d4", schema_version=2)], field),
+    )
+    check(f"both sides delete {field} -> exit 1", code == 1)
+
+# 24) Explicit null on the optional rung fields is LEGITIMATE (the
+#     attempt-1 shape) — a valid experiment, never INVALID.
+code = run(
+    [sample("scan", 4, sha="s4", schema_version=2)],
+    [sample("direct", 4, sha="d4", schema_version=2)],
+)
+check("explicit-null optional fields remain a valid experiment", code == 0)

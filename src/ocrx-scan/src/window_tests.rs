@@ -816,6 +816,12 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
         assert_eq!(record["max_output_tokens"], 16_384);
         assert_eq!(record["base_image_tokens"], 1024);
         assert_eq!(record["schema_version"], 2);
+        // Audit metadata: the recorder's run id reaches every record.
+        assert!(
+            record["run_id"].as_str().unwrap_or_default().len() >= 6,
+            "run_id must be populated: {}",
+            record["run_id"]
+        );
     }
     let _ = std::fs::remove_dir_all(root);
 }
