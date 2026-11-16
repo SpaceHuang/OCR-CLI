@@ -18,7 +18,7 @@ INPUT = "ab3235512ef1f60122c3b060c5cf43c12947839e82875d940e10c36e37963477"
 
 def sample(source, page, attempt=1, sha="a" * 64, prompt="p" * 64, outcome="nonempty",
            width=2531, height=3276, override=None, sampling=None, input_sha=INPUT,
-           base_image_tokens=2048, schema_version=None):
+           base_image_tokens=2048, schema_version=2):
     return {
         "input_sha256": input_sha,
         "run_id": "run-x",
@@ -252,3 +252,41 @@ code = run(
     [sample("direct", 4, sha="d4", schema_version=2)],
 )
 check("missing base_image_tokens -> exit 1", code == 1)
+
+# 18) PURE v1 pairing (no grid fields anywhere) -> INVALID: the bypass is
+#     closed — legacy records carry no base grid, so they cannot compare
+#     one (migrate the evidence to v2 instead). The records here are the
+#     real legacy shape: no schema_version, no base_image_tokens.
+legacy_scan = sample("scan", 4, sha="s4", schema_version=None)
+legacy_scan.pop("base_image_tokens")
+legacy_direct = sample("direct", 4, sha="d4", schema_version=None)
+legacy_direct.pop("base_image_tokens")
+code = run([legacy_scan], [legacy_direct])
+check("pure v1 pairing (no grid) -> exit 1", code == 1)
+
+# 19) v2 + v1 mixed pairing -> INVALID (the v1 side has no grid to compare).
+mixed_v1_direct = sample("direct", 4, sha="d4", schema_version=None)
+mixed_v1_direct.pop("base_image_tokens")
+code = run(
+    [sample("scan", 4, sha="s4", schema_version=2)],
+    [mixed_v1_direct],
+)
+check("v2+v1 mixed pairing -> exit 1", code == 1)
+
+# 20) BOTH sides missing width -> INVALID (None == None fake param match).
+code = run(
+    strip_keys([sample("scan", 4, sha="s4", schema_version=2)], "width"),
+    strip_keys([sample("direct", 4, sha="d4", schema_version=2)], "width"),
+)
+check("both sides missing width -> exit 1", code == 1)
+
+# 21) BOTH sides missing height and max_output_tokens -> INVALID.
+code = run(
+    strip_keys(
+        [sample("scan", 4, sha="s4", schema_version=2)], "height", "max_output_tokens"
+    ),
+    strip_keys(
+        [sample("direct", 4, sha="d4", schema_version=2)], "height", "max_output_tokens"
+    ),
+)
+check("both sides missing height/max_output_tokens -> exit 1", code == 1)

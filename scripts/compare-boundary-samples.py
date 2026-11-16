@@ -26,10 +26,10 @@ def load_samples(path, source, attempts=(1,)):
     are pairing-fatal. Records outside the scope are returned separately
     (they belong to the replay/control datasets).
 
-    Schema handling: records without `schema_version` are schema v1
-    (legacy — `base_image_tokens` not required, not compared); records
-    with schema_version >= 2 must carry `base_image_tokens`, which the
-    pair comparison treats as a parameter.
+    All records must carry the full mandatory field set (byte hashes,
+    base grid, geometry, output budget) — records predating a field are
+    migrated to the current schema at the evidence layer, never exempted
+    here (the seventh-review residuals closed the schema-version bypass).
     """
     by_page = {}
     out_of_scope = []
@@ -51,15 +51,21 @@ def load_samples(path, source, attempts=(1,)):
             errors.append(f"{path}:{number}: invalid JSON: {error}")
             continue
         seen_input_hashes.add(record.get("input_sha256"))
-        schema_version = int(record.get("schema_version") or 1)
-        schema_versions.add(schema_version)
-        # Mandatory fields: without the byte hashes the pair comparison is
-        # meaningless (None == None would fake a match). Schema v2 adds the
-        # effective base grid (round-6 review): required there, treated as
-        # uncompared for legacy v1 records.
-        mandatory = ["rgb8_sha256", "prompt_sha256"]
-        if schema_version >= 2:
-            mandatory.append("base_image_tokens")
+        schema_versions.add(record.get("schema_version"))
+        # Mandatory fields (unconditional — the seventh-review residuals
+        # closed every bypass): without the byte hashes the pair comparison
+        # is meaningless (None == None would fake a match); without the
+        # base grid the effective decode parameters are unverifiable; the
+        # geometry/output budget fake-match the same way. Records predating
+        # a field are migrated to the current schema, never exempted here.
+        mandatory = [
+            "rgb8_sha256",
+            "prompt_sha256",
+            "base_image_tokens",
+            "width",
+            "height",
+            "max_output_tokens",
+        ]
         missing = [key for key in mandatory if record.get(key) in (None, "")]
         if missing:
             errors.append(f"{path}:{number}: missing {', '.join(missing)}")
@@ -146,6 +152,7 @@ def main(argv=None):
         # (legacy v1 archived evidence predates the field — its grid
         # limitation is documented in the root-cause plan).
         param_fields = (
+            "base_image_tokens",
             "width",
             "height",
             "max_output_tokens",
@@ -153,10 +160,6 @@ def main(argv=None):
             "image_tokens_override",
             "retry_sampling",
         )
-        s_v2 = int(s.get("schema_version") or 1) >= 2
-        d_v2 = int(d.get("schema_version") or 1) >= 2
-        if s_v2 and d_v2:
-            param_fields = ("base_image_tokens",) + param_fields
         param_mismatch = {field: [s.get(field), d.get(field)] for field in param_fields if s.get(field) != d.get(field)}
         pairs.append({
             "page_number": page,
