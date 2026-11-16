@@ -14,6 +14,7 @@ Exit codes:
 """
 import argparse
 import json
+import re
 import sys
 
 
@@ -127,6 +128,17 @@ def load_samples(path, source, attempts=(1,)):
         if missing_keys:
             errors.append(f"{path}:{number}: missing {', '.join(missing_keys)}")
             continue
+        if record.get("source") != source:
+            errors.append(
+                f"{path}:{number}: expected source={source}, got {record.get('source')}"
+            )
+            continue
+        # Attempt scope FIRST (v1.2): ladder retries are archived for the
+        # replay/control datasets and never enter — or invalidate — the
+        # attempt-1 pairing field validation.
+        if record.get("attempt") not in attempts:
+            out_of_scope.append(record)
+            continue
         invalid_null = [
             key
             for key in SCHEMA_KEYS
@@ -186,18 +198,14 @@ def load_samples(path, source, attempts=(1,)):
                 "retry_sampling must be [repeat_penalty_milli, penalty_window] or null"
             )
         for key in HEX64_KEYS:
-            if len(str(record[key])) != 64:
-                type_errors.append(f"{key} must be a 64-character hash")
+            if not re.fullmatch(r"[0-9a-f]{64}", str(record[key])):
+                type_errors.append(f"{key} must be 64 lowercase hex chars")
+        # Tenth review: the schema is frozen at v2 — a complete v1-shaped
+        # record is still a legacy record (migrate it; no exemption).
+        if record.get("schema_version") != 2:
+            type_errors.append("schema_version must be 2")
         if type_errors:
             errors.append(f"{path}:{number}: " + "; ".join(type_errors))
-            continue
-        if record.get("source") != source:
-            errors.append(
-                f"{path}:{number}: expected source={source}, got {record.get('source')}"
-            )
-            continue
-        if record.get("attempt") not in attempts:
-            out_of_scope.append(record)
             continue
         page = record.get("page_number")
         if page is None:

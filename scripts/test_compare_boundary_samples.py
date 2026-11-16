@@ -16,7 +16,7 @@ spec.loader.exec_module(cb)
 INPUT = "ab3235512ef1f60122c3b060c5cf43c12947839e82875d940e10c36e37963477"
 
 
-def sample(source, page, attempt=1, sha="a" * 64, prompt="p" * 64, outcome="nonempty",
+def sample(source, page, attempt=1, sha="a" * 64, prompt="b" * 64, outcome="nonempty",
            width=2531, height=3276, override=None, sampling=None, input_sha=INPUT,
            base_image_tokens=2048, schema_version=2):
     return {
@@ -380,3 +380,25 @@ short_direct = sample("direct", 4, sha="d" * 64, schema_version=2)
 short_direct["prompt_sha256"] = "d4-not-a-hash"
 code = run([short_scan], [short_direct])
 check("malformed hashes -> exit 1", code == 1)
+
+# 28) 64-char UPPERCASE hash -> INVALID (ninth/tenth review: lowercase hex
+#     exactly; length alone is not a hash contract).
+code = run(
+    [sample("scan", 4, sha="A" * 64, schema_version=2)],
+    [sample("direct", 4, sha="d" * 64, schema_version=2)],
+)
+check("uppercase 64-char hash -> exit 1", code == 1)
+
+# 29) 64-char NON-HEX hash -> INVALID.
+code = run(
+    [sample("scan", 4, sha="g" * 64, schema_version=2)],
+    [sample("direct", 4, sha="d" * 64, schema_version=2)],
+)
+check("non-hex 64-char hash -> exit 1", code == 1)
+
+# 30) Complete field shape with schema_version=1 -> INVALID: the schema is
+#     frozen at v2 (legacy v1 evidence was migrated; no exemption remains).
+complete_v1 = sample("scan", 4, sha="s4", schema_version=1)
+complete_v1["base_image_tokens"] = 2048
+code = run([complete_v1], [sample("direct", 4, sha="d4", schema_version=2)])
+check("complete v1 shape -> exit 1 (schema frozen at v2)", code == 1)
