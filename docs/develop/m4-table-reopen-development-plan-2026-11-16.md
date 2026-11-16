@@ -38,7 +38,7 @@ B-M2.3 复盘确认：spike 报告的"+2.0"实为 **text 分量点数**（未除
 ### 2.1 目标
 
 1. **主目标**：B2 五门全部通过 → M4 表格版转正 → 按 D-30 既有分支 **"B2 GO + B3 NO"** 冻结目标配置 `--table-reread on --layout-model pp-doclayout-v2`，B4.3 双配置复评判定 **目标 ≥ 91**。
-2. 分量投影（诚实口径，非承诺）：M4 oracle spike 配对均值 ΔTEDS +0.177（1024 臂）；若 worst/坏页带（86 表）兑现 +0.3 门且 good 带回归封顶，Overall 投影区间 **88.45 + 0.3~0.9 ≈ 88.8~89.4**；**≥91 依赖 B4.3 全量连带收益，存在不达可能**——判定只由 B4.3 实测给出。
+2. 分量投影（诚实口径，非承诺；样本数与算术按评审校正统一）：worst 36 + bad-low 97 = **133 表**。仅门④做全集算术：ΔTEDS +0.3 × 133 / 665 / 3 × 100 ≈ **+2.005 Overall**（这是门④下限的含义，即 133 表恰好 +0.3 时的下限值，不是预期值；对应 90.45）。**≥91 需要门④高于下限的逐表增量与其余分带变化叠加，存在不达可能**——判定只由 B4.3 实测给出；投影算术与样本数以 T-PROJ 配对结果为准。
 3. 每个门携带冻结判据，一级入账一级；失败即按既有降级路径回退（M4 回到"机制 GO / 产品未裁决"挂起态，损失有界）。
 
 ### 2.2 非目标
@@ -66,22 +66,37 @@ B-M2.3 复盘确认：spike 报告的"+2.0"实为 **text 分量点数**（未除
 | A. paddle sidecar | Python 子进程常驻，页位图进/区域 JSON 出（stdin/stdout 或文件） | 复用已验证的探测代码路径（坐标交换修正已固化）；零转换风险 | 发行依赖 paddle runtime（~600MB） |
 | B. ONNX 转换 + ORT | paddle2onnx → ORT C++ 推理 | 发行干净（ORT ~20MB） | V2 转换可行性未知（PIR 导出、8 列输出自定义 decode 需 C++ 重写） |
 
-**裁决判据（实测）**：页级推理延迟（候选 A 已有数据 ~2.5s/页 CPU）× 集成成本 × 转换风险。预注册裁决线：路线 B 转换成功且 ORT 推理与 paddle 输出逐框一致（同页 IoU ≥ 0.99）→ 选 B；否则选 A，发行形态（可选依赖 vs 内置）随 R3 结果再定。
+**裁决判据（实测）**：页级推理延迟（候选 A 已有数据 ~2.5s/页 CPU）× 集成成本 × 转换风险。预注册裁决线：路线 B 转换成功且 ORT 推理与 paddle 输出**规范化后完整区域序列一致**（class、index_in_class、bbox、conf 逐项一致；仅比框 IoU 不够——评审 BLK-1）→ 选 B；否则选 A，发行形态（可选依赖 vs 内置）随 R3 结果再定。
 落点：spike 分支（scratch）+ 裁决记录落 `docs/develop/`。
-验收：裁决记录含双路线实测数据与选择依据；区域输出 JSON schema 冻结（`{image_path, regions:[{class:"table", index_in_class, bbox_px, conf}]}`，与 RBAC DetectedRegion 对齐）。
+验收：裁决记录含双路线实测数据与选择依据；**区域规范化契约**随裁决一并冻结（见 R1b）。
+
+**R1b：区域规范化契约冻结（评审 BLK-1 解除条件）**
+- 类映射：模型 class 21（table）→ `RegionClass::Table`；其余类丢弃（本方案范围外）。
+- 置信度过滤：conf ≥ 0.25（与门评估口径一致，冻结值）。
+- **类内阅读序生成规则（冻结）**：过滤后同类区域按 `(y 中心, x 中心)` 字典序升序排列（自上而下的文档阅读序），`index_in_class` = 该序的 0 基序号；去重（IoU ≥ 0.9，取序在前者）在排序后执行，被去重区域不占序号（掩码不重编号）。
+- 验收（B0a 多表页实测）：生成序数 vs GT 阅读序（`order` 字段派生的同类序）逐页比对，**序数一致率与错配率落档**；错配率作为 B2 归因注记（RBAC 序数配对的输入前提）。
+- A/B 路线一致性 = 规范化后完整区域序列逐项比对（class、ordinal、bbox、conf）。
+
+### 3.2b R2.0：布局模型 manifest 与资产解析链（评审 BLK-2 解除条件，先于 R2 各子任务）
+
+- **manifest**（沿用 ovisocr2 manifest 模式）：`assets/manifests/pp-doclayout-v2.json` = `{model_id: "pp-doclayout-v2", revision: <冻结>, assets: [{role: "model", sha256, byte_len, file}], runtime: {target_size: 800, pixel_scale: 255, mean: [0,0,0], std: [1,1,1], conf: 0.25, class_table: 21}, route: <A|B 按 R1>}`；预处理参数**由 manifest 提供**，不允许实现者就地硬编码。
+- **资产解析**：缓存路径解析（models 目录布局）、sha256 校验、缺失/哈希不符 → 降级语义（空区域 + warning 进 checkpoint warnings，扫描不失败）。
+- **运行时配置链**：路线 A = sidecar 启动参数（模型目录、超时、JSON 协议版本）；路线 B = ORT 会话配置。均从 manifest/配置读取。
+- **验收**：目标命令完成一次非 fake 的模型解析 + 检测冒烟（真实页 → 区域输出）；有效配置与资产哈希进 checkpoint/result；缺失/哈希不符走降级语义的单测。
 
 ### 3.3 R2：B1 管线接线（TDD）
 
-主体逻辑已在 `reread.rs`（序数配对 / splice_m4m5 / F1–F5 / 比较保留），缺工程接线：
+核心数据结构（序数配对 / splice_m4m5 / F1–F5 / TableShape 解析）与比较算术已实现；本修订已按评审 BLK-3 修复 `keep_original` 第四项（行×列数）未参与决策的契约偏差（填充率持平后由第四项裁决，三类分支单测覆盖），R2 为纯工程接线：
 
 | 子任务 | 内容 | 落点 | 验收 |
 |---|---|---|---|
 | R2.1 | 区域提供者端口：`RegionProvider` trait（`regions_for_page(page) -> Vec<DetectedRegion>`），paddle sidecar 实现者 + fake 实现；检测失败/超时 → 空区域（降级 = 保留原输出，不失败） | `src/ocrx-scan/src/reread/` | fake 单测（正常/失败/超时三路径） |
 | R2.2 | 裁剪器：从 RenderedPage 按区域 bbox 裁剪（D-21：重读请求 1024 token；裁剪边长随 bbox 比例适配 1024 网格；crop 复用 `ocrx-pdf::crop_bbox` 语义） | `reread/` | 裁剪几何单测（含越界/退化 bbox） |
 | R2.3 | 表格重读变体请求：table-HTML 重读 prompt（新契约 `table-reread-v1`，PROMPT_ID/VERSION 入身份）+ 1024 token + 纯贪心 | `ocr/` prompt + artifacts | 请求形状单测（prompt 键/生成参数/1024 网格） |
-| R2.4 | 触发—对比—拼接编排：正常页 F1–F5 触发（默认 off）→ 裁剪重读 → 比较保留（严格更优才换）→ `splice_m4m5`；坏页（attempts ≥ 2 提交的退化页）恒触发（沿用原 B1 条款） | `reread/` + `window.rs` 后处理位 | 编排单测：触发/不触发/平局留原表/替换/区域缺失全保原 |
-| R2.5 | CLI 开关：`--table-reread on`（默认 off）+ `--layout-model pp-doclayout-v2`；生效值与模型 id+资产哈希进身份（B4.2 字段已就绪） | `ocrx-cli` | 开关解析单测 + 身份字段断言 |
+| R2.4 | 触发—对比—拼接编排：正常页 F1–F5 触发（默认 off）→ 裁剪重读 → 比较保留（严格更优才换）→ `splice_m4m5`；坏页（attempts ≥ 2 提交的退化页）恒触发（沿用原 B1 条款）。比较保留函数的第四项（行×列数）分支已按评审 BLK-3 修复并补三类分支单测（`compare_keep_fourth_element_decides_on_fill_tie`） | `reread/` + `window.rs` 后处理位 | 编排单测：触发/不触发/平局留原表/替换/区域缺失全保原 |
+| R2.5 | CLI 开关：`--table-reread on`（默认 off）+ `--layout-model pp-doclayout-v2`；生效值与模型 id+资产哈希进身份（B4.2 字段已就绪）。**执行身份扩展（评审 BLK-5 解除条件）**：`OcrIdentity`/`ScanOcrSide` 新增 `reread_prompt_version: String`（`table-reread-v1`）与 `reread_rules_generation: u32`（触发/比较/规范化规则的代次，校准一轮 = generation+1），纳入 `scan_side_matches`；resume 回归：prompt 切换 / 校准代次 +1 / 规范化版本切换三者均不复用旧产物；result 执行身份同步 | `ocrx-cli` + `ocrx-output/src/compatibility.rs` | 开关解析单测 + 身份字段断言 + 三项 resume 不复用回归 |
 | R2.6 | 金集防线：开关 off 时管线零调用；on 时正常页替换率统计进 result（`tables_reread_total/replaced_total`） | `window.rs` + result schema | off 路径字节不变单测 + 计数器单测 |
+| R2.7 | **持久化闭环（评审 BLK-4 解除条件）**：单一后处理产物函数——解析原 `PageDocument` → `splice_m4m5` 原位替换 → 同步生成新 `page_json` 与**定点 Markdown 更新**（仅替换目标表的 HTML 片段，非表格文本/公式/图片/空白逐字节不变；不做整页重格式化）→ 同一 `PageArtifactResult` 进 checkpoint/commit | `reread/` + `ocr/artifacts.rs` | 端到端验收四条：① on 但未触发 → 产物逐字节不变；② 替换后 md/json 一致且 diff 恰为目标表；③ 导出器读到新表（export-omnidocbench-predictions.py 输入侧验证）；④ checkpoint 输出哈希对应新 Markdown；非目标内容逐字节不变 |
 
 门禁：fmt + clippy 0 + workspace 测试绿 + 金集 30 页（开关 off）零差异。
 
@@ -99,9 +114,13 @@ B-M2.3 复盘确认：spike 报告的"+2.0"实为 **text 分量点数**（未除
 - 判定：目标配置 Overall ≥ 91（D-30 既有分支值）；对照配置判正常页零漂移；金集门（30 页冻结子集，D-15 口径）照常执行。
 - 产物命名：轮次隔离（B4.3-R2 前缀），防覆盖教训。
 
-### 3.6 R5（并行有界实验，不阻塞）：CDM/TEDS 回吐定位
+### 3.6 R5（并行有界实验；基线冻结规则见下）：CDM/TEDS 回吐定位
 
-round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS 回吐集中点（en TEDS 0.6495→0.6324 为主嫌疑）；产出回吐-页面映射表。若回吐可定位为 rung 交互 bug（而非像素改变的真实分差），修复并入 R4 对照配置；否则如实入档为 M2 的分量连带成本。
+round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS 回吐集中点（en TEDS 0.6495→0.6324 为主嫌疑）；产出回吐-页面映射表。
+
+**基线冻结规则（评审 BLK-6 解除条件，采纳第 1 项）**：
+1. **R5 在 R4 完成前仅允许分析**（diff/映射表/定位结论）；任何行为修复不得进入 R3/R4 的对照或目标配置。
+2. 若 R5 的行为修复必须在 R4 前合入：冻结新默认配置与相关人群/基线，**在该新配置上重跑 R3 全部 B2 门**，通过后才能进入 R4。不得只替换 R4 对照而沿用旧 B2 GO。
 
 ---
 
@@ -124,6 +143,11 @@ round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS �
 | D-36 | 重读 prompt 独立契约 `table-reread-v1`（不复用主 prompt） | 重读输入是表格裁剪图、输出是纯表格 HTML——输入输出形态与整页 markdown 解码完全不同；独立 PROMPT_ID/VERSION 入身份（B4.2 字段） |
 | D-37 | M4 触发双轨：正常页 F1–F5（默认 off）/ 坏页恒触发 | 沿用原 B1 条款；坏页人群的阶梯已耗尽，重读是其唯一补救通道 |
 | D-38 | 投影纪律：全部投影给分量级算术，全量复评前不做 Overall 承诺 | M2 单位错误教训（text 点数误标 Overall 点数，中继门错设 1.05 分）；分量连带（CDM/TEDS 回吐）必须入预案 |
+| D-39 | 类内阅读序冻结为 `(y 中心, x 中心)` 字典序 + IoU≥0.9 去重后掩码（不重编号）；B0a 多表页序数一致率/错配率落档为 B2 归因注记 | RBAC 序数配对的语义键必须可复现生成；检测器原始行序是置信度序（非阅读序），不能直接当序数。备选"检测器自带阅读序字段"不存在（RT-DETR 输出无序号） |
+| D-40 | 布局模型资产走 manifest 冻结（id/revision/sha256/预处理参数/运行时配置），缺失或哈希不符降级为空区域 + warning | `--layout-model` 必须在干净环境可独立执行；仅存身份字段不提供模型文件。备选"机器本地路径直用"违反可复现性 |
+| D-41 | 持久化闭环 = 定点 Markdown 替换（仅目标表 HTML 片段）+ page_json 同步生成，不做整页重格式化 | 整页通用序列化会扰动非表格内容（引入 B2 未覆盖的回归）；定点替换使 diff 恰为目标表，验收可逐字节断言 |
+| D-42 | 重读执行身份新增 `reread_prompt_version` + `reread_rules_generation`（校准代次），纳入 scan_side_matches 与 result | prompt/规则变化后 resume 若不校验将混用旧算法产物（违反 D-29/D-36）；显式字段优于复合版本字段（可审计） |
+| D-43 | R5 基线冻结：R4 前仅分析；行为修复前置合入必须重跑 R3 全部 B2 门 | B2 后改对照基线而不重跑裁决，将无法隔离 M4 边际效果（评审 BLK-6） |
 
 ## 6. 风险
 
@@ -137,5 +161,14 @@ round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS �
 | 全局 2048 网格重试（M2 形态）与表格重读 1024 裁剪交互 | 重读是独立请求（1024 冻结），不与整页解码网格叠加；B2 配对实测兜底 |
 
 ## 7. 修订记录
+
+**v1.1（2026-11-16）**——评审响应（BLOCK×6 全部处置 + 非阻断口径修正）：
+- **BLK-1**：新增 R1b 区域规范化契约（类映射/置信度过滤/`(y,x)` 中心序生成/IoU 掩码去重/B0a 多表页序数一致率落档）；R1 A/B 一致性改为规范化后完整序列逐项比对（D-39）。
+- **BLK-2**：新增 R2.0 布局模型 manifest 与资产解析链（id/revision/sha256/预处理参数/sidecar 启动配置；缺失降级语义；非 fake 冒烟验收）（D-40）。
+- **BLK-3**：`keep_original` 第四项（行×列数）契约偏差**已修复并补三类分支单测**（`compare_keep_fourth_element_decides_on_fill_tie`）；§3.3 引言前提描述同步修正。
+- **BLK-4**：新增 R2.7 持久化闭环子任务（定点 Markdown 替换 + page_json 同步 + 四条端到端验收：未触发字节不变 / diff 恰为目标表 / 导出器可读 / 哈希对应）（D-41）。
+- **BLK-5**：R2.5 扩展执行身份——`reread_prompt_version` + `reread_rules_generation`（校准代次）纳入 `OcrIdentity`/`ScanOcrSide`/`scan_side_matches` 与 result；三项 resume 不复用回归（D-42）。
+- **BLK-6**：R5 基线冻结规则——R4 前仅分析；行为修复前置合入必须重跑 R3 全部 B2 门（D-43）。
+- **非阻断口径修正**：§2.1 样本数 86 → **133 表**（worst 36 + bad-low 97）；门④全集算术修正为 ≈ +2.005 Overall（下限含义），原 +0.3~0.9 区间废止。
 
 **v1.0（2026-11-16）**——初稿：B0' 门拆分依据（五模型实测表）、M2 单位错误教训入投影纪律、R0–R5 任务分解（R2 六子任务 TDD 验收）、D-33–D-38 决策记录、风险表。

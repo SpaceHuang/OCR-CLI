@@ -431,21 +431,19 @@ pub fn keep_original(original: &TableShape, reread: &TableShape) -> bool {
         )
     }
     let (original_rank, reread_rank) = (rank(original), rank(reread));
-    match reread_rank.0.cmp(&original_rank.0) {
-        std::cmp::Ordering::Greater => false,
-        std::cmp::Ordering::Less => true,
-        std::cmp::Ordering::Equal => match reread_rank.1.cmp(&original_rank.1) {
-            std::cmp::Ordering::Greater => false,
-            std::cmp::Ordering::Less => true,
-            std::cmp::Ordering::Equal => {
-                let (a, b) = (original_rank.2, reread_rank.2);
-                if (a - b).abs() < 1e-9 {
-                    return true; // tie on fill
-                }
-                b <= a
-            }
-        },
+    if reread_rank.0 != original_rank.0 {
+        return reread_rank.0 < original_rank.0;
     }
+    if reread_rank.1 != original_rank.1 {
+        return reread_rank.1 < original_rank.1;
+    }
+    if (reread_rank.2 - original_rank.2).abs() >= 1e-9 {
+        return reread_rank.2 < original_rank.2;
+    }
+    // Fill tie (within epsilon): the FOURTH element decides (review BLK-3 —
+    // the previous implementation returned "keep" here, never comparing
+    // rows×cols, contradicting the frozen lexicographic contract).
+    reread_rank.3 <= original_rank.3
 }
 
 fn contains_replacement_glyph(latex: &str) -> bool {
@@ -895,6 +893,46 @@ mod tests {
             rows_x_cols: (1, 1),
         };
         assert!(!keep_original(&unparsable_original, &parsable_reread));
+    }
+
+    #[test]
+    fn compare_keep_fourth_element_decides_on_fill_tie() {
+        // Review BLK-3: the frozen lexicographic contract compares rows×cols
+        // when parses/attrs/fill tie — larger scale replaces, smaller keeps,
+        // equal keeps (tie preserves the original).
+        let base = TableShape {
+            parses: true,
+            structure_attrs: 2,
+            cell_fill_ratio: 0.8,
+            rows_x_cols: (3, 4),
+        };
+        let larger = TableShape {
+            parses: true,
+            structure_attrs: 2,
+            cell_fill_ratio: 0.8,
+            rows_x_cols: (4, 5),
+        };
+        let smaller = TableShape {
+            parses: true,
+            structure_attrs: 2,
+            cell_fill_ratio: 0.8,
+            rows_x_cols: (2, 3),
+        };
+        let equal = TableShape {
+            parses: true,
+            structure_attrs: 2,
+            cell_fill_ratio: 0.8,
+            rows_x_cols: (3, 4),
+        };
+        assert!(
+            !keep_original(&base, &larger),
+            "fill tie + larger scale: replace"
+        );
+        assert!(
+            keep_original(&base, &smaller),
+            "fill tie + smaller scale: keep"
+        );
+        assert!(keep_original(&base, &equal), "full tie: keep original");
     }
 
     #[test]
