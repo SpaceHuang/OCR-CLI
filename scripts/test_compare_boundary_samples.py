@@ -117,3 +117,48 @@ code = run(
     [sample("direct", 4, sha="h4")],
 )
 check("param mismatch -> exit 0", code == 0)
+
+# 8) EMPTY scan dataset -> INVALID (an experiment that produced no
+#    records must never be reported as IDENTICAL).
+code = run([], [sample("direct", 4, sha="h4")])
+check("empty scan dataset -> exit 1", code == 1)
+
+code = run([sample("scan", 4, sha="h4")], [])
+check("empty direct dataset -> exit 1", code == 1)
+
+# 9) Mixed document identities WITHIN one side -> INVALID even when the
+#    two sides share an input hash (the adversarial three-document case).
+mixed_scan = [
+    sample("scan", 1, sha="h1", input_sha="doc-a"),
+    sample("scan", 2, sha="h2", input_sha="doc-a"),
+    sample("scan", 3, sha="h3", input_sha="doc-b"),
+]
+code = run(mixed_scan, [sample("direct", 1, sha="h1", input_sha="doc-a")])
+check("mixed input hashes on scan side -> exit 1", code == 1)
+
+# 10) The verdict report must carry record counts so archived verdicts
+#     stay recomputable against their evidence files (record-count check).
+tmp = tempfile.mkdtemp(prefix="cb-counts-")
+scan_path = os.path.join(tmp, "scan.jsonl")
+direct_path = os.path.join(tmp, "direct.jsonl")
+verdict_path = os.path.join(tmp, "verdict.json")
+write_jsonl(scan_path, [
+    sample("scan", 4, attempt=1, sha="h4"),
+    sample("scan", 4, attempt=2, sha="retry", sampling=[1200, 64]),
+    sample("scan", 5, attempt=1, sha="h5"),
+])
+write_jsonl(direct_path, [sample("direct", 4, sha="h4"), sample("direct", 5, sha="h5")])
+code = cb.main([
+    "--scan", scan_path, "--direct", direct_path, "--output", verdict_path,
+])
+check("counts verdict exit 0", code == 0)
+verdict = json.load(open(verdict_path, encoding="utf-8"))
+pairing = verdict["pairing"]
+check(
+    "verdict counts: total records",
+    pairing["scan_records_total"] == 3 and pairing["direct_records_total"] == 2,
+)
+check(
+    "verdict counts: attempt-1 and retry split",
+    pairing["scan_attempt1_records"] == 2 and pairing["scan_retry_records"] == 1,
+)

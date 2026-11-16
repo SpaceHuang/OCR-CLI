@@ -102,7 +102,11 @@ D-5 修订后的真实全页扫描（300 DPI，30 页复合）仍出现**非确�
 **E1 判别实验结论（2026-11-15，SP-T02 完成——根因定位）**
 
 边界仪器化（SP-T01）+ 双路径 30 页全对拍（对拍前置校验通过：27/27 配对、0 缺失、
-0 重复；证据：`spike-assets/boundary-{scan,direct}.jsonl` + `boundary-e1-verdict.json`）：
+0 重复；证据（评审 BLOCK-3 修复后完整可复算：`boundary-scan.jsonl` 为 E1 原始 51 条记录，
+`boundary-e1-verdict.json` 含记录数校验 [51 总 / 27 attempt-1 / 24 重试]，与本文数字
+一致；`boundary-scan-post-option-a.jsonl` + `boundary-post-option-a-verdict.json` 为
+缓解后独立证据 [39 总 / 27 attempt-1 / 12 重试]；`boundary-direct.jsonl` 为共用直驱侧）
+：
 
 1. **verdict = IDENTICAL**：27 对记录的 `rgb8_sha256`、`prompt_sha256`、全部请求参数
    逐项一致——**scan 与直驱喂给模型的东西没有任何差异**。P1/P2/P3（管线假设族）

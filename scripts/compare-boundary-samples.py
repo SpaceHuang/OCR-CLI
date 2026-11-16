@@ -29,12 +29,14 @@ def load_samples(path, source, attempts=(1,)):
     out_of_scope = []
     errors = []
     seen_input_hashes = set()
+    total_records = 0
     try:
         with open(path, encoding="utf-8") as handle:
             lines = [line for line in handle.read().splitlines() if line.strip()]
     except OSError as error:
         errors.append(f"cannot read {path}: {error}")
-        return by_page, out_of_scope, errors, seen_input_hashes
+        return by_page, out_of_scope, errors, seen_input_hashes, total_records
+    total_records = len(lines)
     for number, line in enumerate(lines, start=1):
         try:
             record = json.loads(line)
@@ -60,7 +62,7 @@ def load_samples(path, source, attempts=(1,)):
             )
             continue
         by_page[page] = record
-    return by_page, out_of_scope, errors, seen_input_hashes
+    return by_page, out_of_scope, errors, seen_input_hashes, total_records
 
 
 def main(argv=None):
@@ -70,11 +72,29 @@ def main(argv=None):
     parser.add_argument("--output", help="verdict JSON path (default stdout)")
     args = parser.parse_args(argv)
 
-    scan, scan_retry, scan_errors, scan_hashes = load_samples(args.scan, "scan", attempts=(1,))
-    direct, direct_extra, direct_errors, direct_hashes = load_samples(args.direct, "direct", attempts=(1,))
+    scan, scan_retry, scan_errors, scan_hashes, scan_total = load_samples(
+        args.scan, "scan", attempts=(1,)
+    )
+    direct, direct_extra, direct_errors, direct_hashes, direct_total = load_samples(
+        args.direct, "direct", attempts=(1,)
+    )
     errors = scan_errors + direct_errors
 
-    # Input identity: both sides must describe the same document.
+    # An experiment that produced no records must never be reported as a
+    # conclusion (plan SP-T02: empty datasets invalidate the experiment).
+    if scan_total == 0 or direct_total == 0:
+        errors.append(
+            f"empty dataset: scan records={scan_total}, direct records={direct_total} — "
+            "no experiment output can be validated"
+        )
+
+    # Input identity: each side must describe EXACTLY ONE document (mixed
+    # identities on one side invalidate even when the two sides share a
+    # hash), and the two sides must agree on it.
+    if len(scan_hashes) > 1:
+        errors.append(f"scan side mixes input_sha256 values: {sorted(scan_hashes)}")
+    if len(direct_hashes) > 1:
+        errors.append(f"direct side mixes input_sha256 values: {sorted(direct_hashes)}")
     if scan_hashes and direct_hashes and not (scan_hashes & direct_hashes):
         errors.append(
             f"input_sha256 mismatch: scan={sorted(scan_hashes)} direct={sorted(direct_hashes)}"
@@ -120,7 +140,12 @@ def main(argv=None):
             "paired_pages": len(pairs),
             "missing_direct": missing_direct,
             "unmatched_direct": unmatched_direct,
+            # Record counts: archived verdicts stay recomputable against
+            # their evidence files (plan review BLOCK-3).
+            "scan_records_total": scan_total,
+            "scan_attempt1_records": len(scan),
             "scan_retry_records": len(scan_retry),
+            "direct_records_total": direct_total,
             "direct_extra_records": len(direct_extra),
         },
         "errors": errors,
