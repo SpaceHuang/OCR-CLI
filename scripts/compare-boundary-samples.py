@@ -107,8 +107,11 @@ def main(argv=None):
             + str(sorted(direct_hashes, key=lambda value: (value is None, str(value))))
         )
     if scan_hashes and direct_hashes and not (scan_hashes & direct_hashes):
+        none_safe = lambda value: (value is None, str(value))
         errors.append(
-            f"input_sha256 mismatch: scan={sorted(scan_hashes)} direct={sorted(direct_hashes)}"
+            f"input_sha256 mismatch: "
+            f"scan={sorted(scan_hashes, key=none_safe)} "
+            f"direct={sorted(direct_hashes, key=none_safe)}"
         )
 
     missing_direct = sorted(set(scan) - set(direct))

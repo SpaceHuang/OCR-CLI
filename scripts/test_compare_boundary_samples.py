@@ -190,3 +190,15 @@ del partial_scan[1]["input_sha256"]
 partial_direct = [sample("direct", 1, sha="h1", input_sha="doc-a")]
 code = run(partial_scan, partial_direct)
 check("partial missing identity -> exit 1 without crash", code == 1)
+
+# 14) PARTIAL missing identity AND no common hash across sides -> still
+#     INVALID exit 1 without crashing (the cross-side mismatch diagnostic
+#     also sorts the hash sets).
+partial_no_common_scan = [
+    sample("scan", 1, sha="h1", input_sha="doc-a"),
+    sample("scan", 2, sha="h2"),  # missing input_sha256
+]
+del partial_no_common_scan[1]["input_sha256"]
+partial_no_common_direct = [sample("direct", 9, sha="h9", input_sha="doc-z")]
+code = run(partial_no_common_scan, partial_no_common_direct)
+check("partial missing + no common hash -> exit 1 without crash", code == 1)
