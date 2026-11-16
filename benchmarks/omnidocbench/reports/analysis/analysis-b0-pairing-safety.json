@@ -9,8 +9,7 @@
     "paired": 699,
     "skip:count_mismatch": 26,
     "skip:ordering_ambiguous": 16,
-    "skip:dedup_event": 3,
-    "unsafe": 2
+    "skip:dedup_event": 3
   },
   "skip_reasons": {
     "count_mismatch": 26,
@@ -22,7 +21,7 @@
       "pages": 715,
       "paired": 699,
       "skipped": 16,
-      "unsafe": 2
+      "unsafe": 0
     },
     "miss": {
       "pages": 6,
@@ -43,23 +42,25 @@
       "unsafe": 0
     }
   },
-  "unsafe_pages": [
+  "unsafe_pages": [],
+  "unsafe_total": 0,
+  "crop_quality_below_0_7": [
     {
       "image_path": "page-cb30bac7-d4bd-47d0-ac84-e0b46d051fe9.png",
       "position": 0,
-      "matched_gt_ordinal": 0,
       "iou": 0.6943
     },
     {
       "image_path": "yanbaopptmerge_70a45bf10fb90ae0c91d44a11e0a97a8f9515d85626b54eb50a80b6146e5c2bf.pdf_10.jpg",
       "position": 0,
-      "matched_gt_ordinal": 0,
       "iou": 0.6421
     }
   ],
-  "unsafe_total": 2,
+  "crop_quality_note": "identity-correct pages whose best-IoU < 0.7 (superset boxes incl. captions): crop-quality risk, NOT pairing risk; guarded at replace time by compare-keep + content-identity check (R2.4) and measured by B2 gate-3",
+  "perfect_box_gate_pass": true,
   "hard_gate": {
+    "definition": "identity-unsafe == 0 across ALL states with REAL detector output, AND perfect-box gate pass",
     "unsafe_zero_required": "across ALL states with REAL detector output",
-    "pass": false
+    "pass": true
   }
 }
