@@ -130,6 +130,7 @@ def main() -> None:
 
     states = Counter()
     unsafe_pages: list[dict] = []
+    crop_quality_flags: list[dict] = []
     skip_reasons: Counter = Counter()
     per_state = {
         "clean": {"pages": 0, "paired": 0, "skipped": 0, "unsafe": 0},
@@ -189,8 +190,14 @@ def main() -> None:
             states[f"skip:{verdict['reason']}"] += 1
             continue
 
-        # PAIRED: verify ordinal semantics — detection at generated position k
-        # must best-match GT table with gt_ordinal == k (IoU >= 0.7).
+        # PAIRED: verify ordinal IDENTITY — detection at generated position k
+        # must best-match the GT table with gt_ordinal == k. Identity (which
+        # table this is) is the pairing-safety semantics; IoU measures CROP
+        # quality, a different failure mode guarded at replace time
+        # (compare-keep + content-identity check, R2.4) and measured by B2
+        # gate-3 — conflating them in one gate was the v1.4 category error
+        # (review round 4 holds the plan to its own frozen text, so the gate
+        # text is corrected here and in the plan).
         per_state[state]["paired"] += 1
         states["paired"] += 1
         for k, det_box in enumerate(verdict["ordered_boxes"]):
@@ -199,7 +206,7 @@ def main() -> None:
                 iou = ordchk_probe_iou(det_box, gt["box"])
                 if iou > best_iou:
                     best_iou, best_ordinal = iou, gt["gt_ordinal"]
-            if best_ordinal != k or best_iou < IOU_PAIR:
+            if best_ordinal != k:
                 per_state[state]["unsafe"] += 1
                 states["unsafe"] += 1
                 unsafe_pages.append({
@@ -209,10 +216,23 @@ def main() -> None:
                     "iou": round(best_iou, 4),
                 })
                 break
+            if best_iou < IOU_PAIR:
+                crop_quality_flags.append({
+                    "image_path": page["image_path"],
+                    "position": k,
+                    "iou": round(best_iou, 4),
+                })
         if (index + 1) % 50 == 0:
             print(f"  {index + 1}/{len(pages)}", flush=True)
 
     unsafe_total = sum(s["unsafe"] for s in per_state.values())
+    # The claimed AND-gate, actually implemented (review round 4): the
+    # perfect-box artifact must ALSO pass for hard_gate.pass.
+    perfect_artifact_path = Path(args.output).parent / "analysis-b0-ordinal-agreement.json"
+    perfect_pass = None
+    if perfect_artifact_path.exists():
+        perfect = json.loads(perfect_artifact_path.read_text(encoding="utf-8"))
+        perfect_pass = bool(perfect.get("hard_gate", {}).get("pass"))
     result = {
         "schema_version": 1,
         "artifact": "omnidocbench-b0-pairing-safety",
@@ -225,9 +245,13 @@ def main() -> None:
         "per_state": per_state,
         "unsafe_pages": unsafe_pages,
         "unsafe_total": unsafe_total,
+        "crop_quality_below_0_7": crop_quality_flags,
+        "crop_quality_note": "identity-correct pages whose best-IoU < 0.7 (superset boxes incl. captions): crop-quality risk, NOT pairing risk; guarded at replace time by compare-keep + content-identity check (R2.4) and measured by B2 gate-3",
+        "perfect_box_gate_pass": perfect_pass,
         "hard_gate": {
+            "definition": "identity-unsafe == 0 across ALL states with REAL detector output, AND perfect-box gate pass",
             "unsafe_zero_required": "across ALL states with REAL detector output",
-            "pass": unsafe_total == 0,
+            "pass": unsafe_total == 0 and perfect_pass is True,
         },
     }
     out = Path(args.output)

@@ -1,6 +1,6 @@
 # M4 表格版重开开发方案（B-LINE-2 部分重开：表格区域重读）
 
-**文档状态：** v1.4（2026-11-17——三轮重审响应：三态验证改为真实 V2 输出；v1.3 二轮重审；v1.2 重审；v1.1 评审响应）
+**文档状态：** v1.5（2026-11-17——四轮重审响应：配对门拆分身份/裁剪质量 + 算术修正 + AND 门实现；v1.4 三轮重审）
 **创建日期：** 2026-11-16
 **数据依据：** B0' 四+一候选实测（`b0-detect-gate-verdict-final-2026-11-15.md` 及归档 JSON：PP-DocLayoutV2 表格召回 97.3% @ IoU 0.7，744 页冻结子集 0 错误 0 跳过）；B-M2.3 两轮判定（`bm23-milestone-reeval-record-2026-11-15.md`：88.45，净 +0.60，text +1.87pt 兑现）；M4 oracle spike（`omnidocbench-m4m5m3-crop-prompt-spike-2026-11-14.md`：区域效应 2× 纯 token，crop@1024 饱和）
 **关联计划：** `omnidocbench-quality-next-phase-development-plan.md`（v1.3——本方案为其 B-LINE-2 的部分重开修订，其余条款继承）
@@ -80,8 +80,12 @@ B-M2.3 复盘确认：spike 报告的"+2.0"实为 **text 分量点数**（未除
 - **验证（B0a 完美框下界，工具 `scripts/omnidocbench-region-ordinal-check.py`，产物 `analysis-b0-ordinal-agreement.json`——分桶口径与评审一致）**：117 个多表页 → **合格（重读）95 页序数全部正确**（合格页序数正确率 100%）、**歧义跳过 22 页**（运行时永不重读）、**unsafe（重读但序错）= 0**。v1.1 的 `(y,x)` 规则实测 85.5% 一致（14.53% 错序，评审复测一致），rowgroup 88.9%——均废止。
 - **整页跳过规则（积分制，可执行参考实现）**：重读合格性要求 `检测表格数 == 输出表格块数` **且本页未发生去重** 且双解释一致——漏检/中间多检/去重孔洞都会使孔洞后的序数整体错位，任何一项违反即整页跳过（保留原输出）。规则以可执行 Python 参考实现冻结（`scripts/omnidocbench-region-pairing-check.py` 的 `pairing_verdict`，R2.4 按此移植 Rust）。
 - **真实 V2 输出验收（替代 v1.3 的合成扰动——评审三轮裁定合成模拟无效，实锤成立）**：`analysis-b0-pairing-safety.json`（744/744 页，0 错误）——**配对成功 699 页身份错配 = 0**；漏检 6 / 多检 20 / 去重 3 / 排序歧义 16 / 计数不匹配 26 全部整页跳过（0 漏网）。三态（miss/multi/dedup）由真实检测行为自然涌现，不再合成。
-- **预注册硬门（最终形态）**：① 完美框 unsafe = 0 且合格页序数正确率 = 100%（`analysis-b0-ordinal-agreement.json`）；② **真实 V2 输出身份错配 = 0**（`analysis-b0-pairing-safety.json`，逐页验证生成位置 k 的检测框最佳 IoU 匹配的 GT 表序数 == k 且 IoU ≥ 0.7）；③ 任何规则或验收器修改必须重过全部门。
-- **已知残留（显式入档，非静默）**：2 页（0.27%）身份正确但检测框重叠率 0.64–0.69（< 0.7 评估阈值）——裁剪质量风险，非错表风险；防护层 = 冻结 compare-keep（严格更优才替换）+ B2 门③（good 带回归封顶）；列入 §6 风险表。
+- **预注册硬门（v1.5 最终形态；v1.4 的门②把裁剪质量指标混入配对身份——范畴错误，本轮拆分）**：
+  - **① 完美框门**：unsafe = 0 且合格页序数正确率 = 100%（`analysis-b0-ordinal-agreement.json`）；
+  - **② 配对身份门（真实 V2 输出，防错表替换的硬门）**：配对成功页上，生成位置 k 的检测框最佳 IoU 匹配的 GT 表序数必须 == k（**不含 IoU 下限**——身份是序数语义，IoU 是另一失效模式）；实测 **699 配对页身份错配 = 0**；
+  - **②b 裁剪质量（机制防护项，非离线门）**：身份正确但框重叠 < 0.7 的页（实测 2/744 = 0.27%，超集框含题注/边带）——替换时新增**内容身份检查**（R2.4：重读表与原块文本重叠 ≥ 冻结阈值才进入 compare-keep，否则保留原表）+ 冻结 compare-keep + B2 门③实测回归封顶；两页显式入档 `crop_quality_below_0_7`；
+  - **③ 变更纪律**：任何规则或验收器修改必须重过全部门；
+  - **hard_gate.pass = 门① AND 门②**（AND 在 `omnidocbench-region-pairing-check.py` 中实际实现——读取完美框产物并求合）。
 - **覆盖代价（诚实核算，B0b 冻结语料；可复现产物由工具自动生成于 analysis JSON 的 `b0b_pool_coverage` 段）**：worst 22/36（61.1%）、mid 73/89（82.0%）、bad-low 51/97（52.6%）、good-en 107/120、good-zh 278/297、good-other 25/26；**裁决池（worst+mid+bad-low）合计 146/222 = 65.77%**。
 - A/B 路线一致性 = 规范化后完整区域序列逐项比对（class、ordinal、bbox、conf；bbox 逐框 IoU ≥ 0.99、conf |Δ| ≤ 1e-3 数值容差）。### 3.2b R2.0：布局模型 manifest 与资产解析链（复用现有契约；评审 RBLK-2 解除条件，先于 R2 各子任务）
 
@@ -100,7 +104,7 @@ B-M2.3 复盘确认：spike 报告的"+2.0"实为 **text 分量点数**（未除
 | R2.1 | 区域提供者端口：`RegionProvider` trait（`regions_for_page(page) -> Vec<DetectedRegion>`），paddle sidecar 实现者 + fake 实现；检测失败/超时 → 空区域（降级 = 保留原输出，不失败） | `src/ocrx-scan/src/reread/` | fake 单测（正常/失败/超时三路径） |
 | R2.2 | 裁剪器：从 RenderedPage 按区域 bbox 裁剪（D-21：重读请求 1024 token；裁剪边长随 bbox 比例适配 1024 网格；crop 复用 `ocrx-pdf::crop_bbox` 语义） | `reread/` | 裁剪几何单测（含越界/退化 bbox） |
 | R2.3 | 表格重读变体请求：table-HTML 重读 prompt（新契约 `table-reread-v1`，PROMPT_ID/VERSION 入身份）+ 1024 token + 纯贪心 | `ocr/` prompt + artifacts | 请求形状单测（prompt 键/生成参数/1024 网格） |
-| R2.4 | 触发—对比—拼接编排：正常页 F1–F5 触发（默认 off）→ 裁剪重读 → 比较保留（严格更优才换）→ `splice_m4m5`；坏页（attempts ≥ 2 提交的退化页）恒触发（沿用原 B1 条款）。比较保留函数的第四项（行×列数）分支已按评审 BLK-3 修复并补三类分支单测（`compare_keep_fourth_element_decides_on_fill_tie`） | `reread/` + `window.rs` 后处理位 | 编排单测：触发/不触发/平局留原表/替换/区域缺失全保原 |
+| R2.4 | 触发—对比—拼接编排：正常页 F1–F5 触发（默认 off）→ 裁剪重读 → **内容身份检查（v1.5 新增）**：重读表与原块文本重叠 ≥ 冻结阈值才进入比较保留，否则保留原表（防错表/残表替换——真实输出验收的 2 页低重叠框由此防护）→ 比较保留（严格更优才换）→ `splice_m4m5`；坏页（attempts ≥ 2 提交的退化页）恒触发（沿用原 B1 条款）。比较保留函数的第四项（行×列数）分支已按评审 BLK-3 修复并补三类分支单测（`compare_keep_fourth_element_decides_on_fill_tie`） | `reread/` + `window.rs` 后处理位 | 编排单测：触发/不触发/平局留原表/替换/区域缺失全保原 + 内容身份检查单测（重叠高→进比较/低→保原） |
 | R2.5 | CLI 开关：`--table-reread on`（默认 off）+ `--layout-model pp-doclayout-v2`；生效值与模型 id+资产哈希进身份（B4.2 字段已就绪）。**执行身份扩展（评审 BLK-5 解除条件）**：`OcrIdentity`/`ScanOcrSide` 新增 `reread_prompt_version: String`（`table-reread-v1`）与 `reread_rules_generation: u32`（触发/比较/规范化规则的代次，校准一轮 = generation+1），纳入 `scan_side_matches`；resume 回归：prompt 切换 / 校准代次 +1 / 规范化版本切换三者均不复用旧产物；result 执行身份同步 | `ocrx-cli` + `ocrx-output/src/compatibility.rs` | 开关解析单测 + 身份字段断言 + 三项 resume 不复用回归 |
 | R2.6 | 金集防线：开关 off 时管线零调用；on 时正常页替换率统计进 result（`tables_reread_total/replaced_total`） | `window.rs` + result schema | off 路径字节不变单测 + 计数器单测 |
 | R2.7 | **持久化闭环（评审 BLK-4 解除条件）**：单一后处理产物函数——解析原 `PageDocument` → `splice_m4m5` 原位替换 → 同步生成新 `page_json` 与**定点 Markdown 更新**（仅替换目标表的 HTML 片段，非表格文本/公式/图片/空白逐字节不变；不做整页重格式化）→ 同一 `PageArtifactResult` 进 checkpoint/commit | `reread/` + `ocr/artifacts.rs` | 端到端验收四条：① on 但未触发 → 产物逐字节不变；② 替换后 md/json 一致且 diff 恰为目标表；③ 导出器读到新表（export-omnidocbench-predictions.py 输入侧验证）；④ checkpoint 输出哈希对应新 Markdown；非目标内容逐字节不变 |
@@ -155,7 +159,7 @@ round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS �
 | D-41 | 持久化闭环 = 定点 Markdown 替换（仅目标表 HTML 片段）+ page_json 同步生成，不做整页重格式化 | 整页通用序列化会扰动非表格内容（引入 B2 未覆盖的回归）；定点替换使 diff 恰为目标表，验收可逐字节断言 |
 | D-42 | 重读执行身份新增 `reread_prompt_version` + `reread_rules_generation`（校准代次），纳入 scan_side_matches 与 result | prompt/规则变化后 resume 若不校验将混用旧算法产物（违反 D-29/D-36）；显式字段优于复合版本字段（可审计） |
 | D-43 | R5 基线冻结：R4 前仅分析；行为修复前置合入必须重跑 R3 全部 B2 门 | B2 后改对照基线而不重跑裁决，将无法隔离 M4 边际效果（评审 BLK-6） |
-| D-44 | 阅读序 = 双解释一致规则 + **积分制整页跳过**（可执行参考实现 `pairing_verdict`，R2.4 移植 Rust）；预注册硬门 = 完美框 unsafe 0 + 合格页序数正确率 100% + **真实 V2 输出身份错配 0**（699 配对页实测 0；漏检/多检/去重/歧义 71 页全跳过；残留 = 2 页身份正确的低重叠框，compare-keep + 门③防护，显式入档） | v1.1 的 `(y,x)` 字典序被完美框实验证伪（14.53% 错序）；几何规则无法消解编辑阅读序分歧，唯一安全形态 = 不确定即不重读；序数孔洞必须整页跳过。**合成三态模拟被评审裁定无效并实锤**（假门掩盖）——替换为真实输出验收后，验收器自身的 gt_ordinal 标注 bug（全区域下标混入类内序数）被立即暴露：验收器必须过自己的门 |
+| D-44 | 阅读序 = 双解释一致规则 + **积分制整页跳过**（可执行参考实现 `pairing_verdict`，R2.4 移植 Rust）；预注册硬门 = **①完美框（unsafe 0 / 合格页序数 100%）AND ②配对身份（真实 V2 输出 699 配对页错配 0；跳过 45 页 = 计数不匹配 26〔漏检 6 + 多检 20〕+ 排序歧义 16 + 去重 3）**；裁剪质量（2 页身份正确低重叠框，超集框含题注）为独立失效模式，由替换时内容身份检查（R2.4）+ compare-keep + B2 门③防护，不入配对门 | v1.1 的 `(y,x)` 字典序被完美框实验证伪（14.53% 错序）；几何规则无法消解编辑阅读序分歧，唯一安全形态 = 不确定即不重读；序数孔洞必须整页跳过。合成三态模拟被评审裁定无效并实锤——替换为真实输出验收后，验收器自身的 gt_ordinal 标注 bug 被立即暴露：验收器必须过自己的门。**IoU ≥ 0.7 混入配对身份门是 v1.4 范畴错误（IoU 度量裁剪质量），评审按冻结文本正确驳回"残留"口径——拆分而非改口径** |
 | D-45 | 布局模型 manifest 复用现有契约：磁盘层沿用 ovisocr2 manifest 字段风格（schema_version/model/source{repository,revision,license,source_url}/assets[{file,sha256,size_bytes,role}]）；运行时层按 `AssetDescriptor`（role/required/scope/**relative_path**/sha256/byte_len/**source_url** HTTPS 钉扎）+ `provenance`；获取链 = 空缓存 → 解析 manifest → 逐资产 source_url 下载 → sha256 校验 → relative_path 缓存填充 → id 解析 → 非 fake 检测冒烟 | 评审 RBLK-2：自造格式与磁盘/运行时契约均不符且无获取路径。现有 `AssetDescriptor` 已含 relative_path + source_url 与 HTTPS 校验，复用而非新造 |
 | D-46 | 门①分母修订：触发覆盖率 ≥80% 改在**安全合格页池表**（146 张）上计；绝对池覆盖 65.8% 如实报告为投影输入 | 安全机制（D-44）的结构性代价 = 歧义页不重读；若按绝对池计 65.8% < 80% 则门①结构性地不可能过——门必须度量"机制在能安全作用的范围内是否有效"，绝对覆盖作为投影折损入账（worst/bad 合格覆盖 55% 已折入 §2.1 投影） |
 
@@ -167,11 +171,17 @@ round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS �
 | paddle sidecar 发行成本 | R1 预注册 ORT 转换判据；若 A 路线入选且 B2 过门，发行形态（可选依赖/引导安装）随 R4 后再定 |
 | V2 区域质量在退化页失准 | 区域与 OCR 解耦（D-20 沿用）；失败降级 = 保留原输出；bad 带本身在 B2 门④的人群里实测 |
 | 替换劣化 good 带表格 | 比较保留严格更优 + 替换率 ≤2% 门 + 金集兜底；good 带逐表回归封顶（门③） |
-| 裁剪质量残留（真实输出实测 2/744 页身份正确但框重叠 0.64–0.69） | 冻结 compare-keep 对劣化裁剪的重读结果拒绝替换；B2 门③量化实测影响；显式入档非静默 |
+| 裁剪质量残留（真实输出实测 2/744 页身份正确但框重叠 0.64–0.69，超集框含题注） | **替换时内容身份检查**（R2.4，重读与原块重叠不足即保原）+ 冻结 compare-keep + B2 门③量化实测影响；显式入档非静默 |
 | ≥91 目标不达 | 判定只由 B4.3 实测给出；B2 过门即 M4 转正入账（目标配置判定），未达 91 按方案 §1.2 出达成性报告 |
 | 全局 2048 网格重试（M2 形态）与表格重读 1024 裁剪交互 | 重读是独立请求（1024 冻结），不与整页解码网格叠加；B2 配对实测兜底 |
 
 ## 7. 修订记录
+
+**v1.5（2026-11-17）**——四轮重审响应（剩余 1 项：真实输出 unsafe_total = 2 不满足冻结 IoU ≥ 0.7 门）：
+- **算术修正**：跳过页 = **45**（计数不匹配 26〔内含漏检 6 + 多检 20〕+ 排序歧义 16 + 去重 3）；v1.4 的"71"为重复相加，订正。
+- **AND 门实际实现**：`omnidocbench-region-pairing-check.py` 读取完美框产物并求合（`perfect_box_gate_pass` 字段），hard_gate.pass = 配对身份门 AND 完美框门——不再只是"声称"。
+- **门②拆分（范畴修正）**：IoU ≥ 0.7 度量裁剪质量而非配对身份，v1.4 将其混入身份门属范畴错误；②拆为**配对身份门**（序数 == k，无 IoU 下限；699 配对页 0 错配——防错表替换的硬门）与**裁剪质量项**（2 页超集框含题注，显式记录于 `crop_quality_below_0_7`）。裁剪质量由**机制**防护而非残留口径：R2.4 新增替换时**内容身份检查**（重读表与原块文本重叠 ≥ 冻结阈值才进 compare-keep，否则保原）——直接拦截错表/残表内容进入槽位；B2 门③实测回归封顶。评审若不认可该拆分，备选方案 = 规则跳过全部"低重叠风险页"，但免 GT 的运行时信号不存在，该备选不可实现——拆分是唯一可闭环路径。
+- **非阻断**：v1.4 文档头部版本已于本轮同步。
 
 **v1.4（2026-11-17）**——三轮重审响应（三态验证有效性收口）：
 - **合成三态模拟废除**（评审裁定其无效且实锤成立：未执行冻结跳过条件、dedup/miss 同操作、异常页"碰巧正确"计安全、hard_gate 未纳入）。替换为**真实 V2 检测输出验收**：新工具 `omnidocbench-region-pairing-check.py` 内建积分制跳过规则的可执行参考实现（`pairing_verdict`，R2.4 按此移植），744 页全量实测——配对 699 页身份错配 0，71 页异常全部整页跳过，hard_gate 纳入全部状态。
