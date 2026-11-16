@@ -97,9 +97,15 @@ def main(argv=None):
     if None in direct_hashes or "" in direct_hashes:
         errors.append("direct side has records without input_sha256")
     if len(scan_hashes) > 1:
-        errors.append(f"scan side mixes input_sha256 values: {sorted(scan_hashes)}")
+        errors.append(
+            f"scan side mixes input_sha256 values: "
+            + str(sorted(scan_hashes, key=lambda value: (value is None, str(value))))
+        )
     if len(direct_hashes) > 1:
-        errors.append(f"direct side mixes input_sha256 values: {sorted(direct_hashes)}")
+        errors.append(
+            f"direct side mixes input_sha256 values: "
+            + str(sorted(direct_hashes, key=lambda value: (value is None, str(value))))
+        )
     if scan_hashes and direct_hashes and not (scan_hashes & direct_hashes):
         errors.append(
             f"input_sha256 mismatch: scan={sorted(scan_hashes)} direct={sorted(direct_hashes)}"

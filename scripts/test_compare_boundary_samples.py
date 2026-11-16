@@ -179,3 +179,14 @@ for source, page in (("scan", 4), ("direct", 4)):
     missing_id.append(record)
 code = run(missing_id[:1], missing_id[1:])
 check("both sides missing input_sha256 -> exit 1", code == 1)
+
+# 13) PARTIAL missing identity on one side (some records hashed, some
+#     missing/null) -> INVALID exit 1 without crashing on sorted(None).
+partial_scan = [
+    sample("scan", 1, sha="h1", input_sha="doc-a"),
+    sample("scan", 2, sha="h2"),  # missing input_sha256
+]
+del partial_scan[1]["input_sha256"]
+partial_direct = [sample("direct", 1, sha="h1", input_sha="doc-a")]
+code = run(partial_scan, partial_direct)
+check("partial missing identity -> exit 1 without crash", code == 1)
