@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""R1b pairing-safety acceptance against REAL PP-DocLayoutV2 output
+(m4-table-reopen plan, review round 3).
+
+The integral skip rule is implemented here as EXECUTABLE reference code
+(the shape that ports to Rust in R2.4):
+
+  verdict(det_table_boxes, output_n):
+    1. dedup  : same-class boxes IoU >= 0.9, first wins. Any dedup event
+                -> SKIP (dedup holes shift every later ordinal).
+    2. count  : len(deduped) != output_n -> SKIP (miss / multi-detection).
+    3. order  : dual-hypothesis (row/column interpretations both clean and
+                identical, consecutive-pair y-overlap veto) -> else SKIP.
+    4. pair   : ordinals 0..N-1 in generated order.
+
+Safety metric: on PAIRED pages, detection box at generated position k must
+best-match (IoU >= 0.7) the GT table with gt_ordinal == k — otherwise the
+page is UNSAFE (would replace the wrong table). hard_gate.pass requires
+unsafe == 0 across ALL states (clean / miss / multi / dedup) WITH REAL V2
+OUTPUT — synthetic perturbation is gone; the three states emerge naturally
+from the detector's own behavior.
+
+  python scripts/omnidocbench-region-pairing-check.py \
+      --model-dir C:/t/m23/b0-ppdoclayout-v2 \
+      --region-truth benchmarks/omnidocbench/region-truth/region-truth.json \
+      --images 'D:\\...\\dataset\\images' \
+      --output benchmarks/omnidocbench/reports/analysis/analysis-b0-pairing-safety.json
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import sys
+from collections import Counter
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+_HERE = Path(__file__).parent
+_spec = importlib.util.spec_from_file_location(
+    "b0probe", _HERE / "omnidocbench-b0-detect-probe-paddle.py"
+)
+pp = importlib.util.module_from_spec(_spec)
+sys.modules["b0probe"] = pp
+_spec.loader.exec_module(pp)
+
+_SPEC2 = importlib.util.spec_from_file_location(
+    "ordchk", _HERE / "omnidocbench-region-ordinal-check.py"
+)
+ordchk = importlib.util.module_from_spec(_SPEC2)
+sys.modules["ordchk"] = ordchk
+_SPEC2.loader.exec_module(ordchk)
+
+IOU_PAIR = 0.7
+
+
+def dedup_boxes(boxes: list[tuple]) -> tuple[list[tuple], bool]:
+    """IoU >= 0.9 same-class dedup, first wins (mask, no renumber)."""
+    kept: list[tuple] = []
+    deduped = False
+    for box in boxes:
+        duplicate = any(ordchk_probe_iou(box, k) >= 0.9 for k in kept)
+        if duplicate:
+            deduped = True
+            continue
+        kept.append(box)
+    return kept, deduped
+
+
+def ordchk_probe_iou(a: tuple, b: tuple) -> float:
+    ix0, iy0 = max(a[0], b[0]), max(a[1], b[1])
+    ix1, iy1 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
+    aa = (a[2] - a[0]) * (a[3] - a[1])
+    bb = (b[2] - b[0]) * (b[3] - b[1])
+    union = aa + bb - inter
+    return inter / union if union > 0 else 0.0
+
+
+def dual_hypothesis(boxes: list[tuple]) -> tuple[list[tuple], bool]:
+    """The R1b ordering rule on plain boxes (row/column interpretations both
+    clean and identical + consecutive-pair veto); returns (ordered, ambiguous)."""
+    items = [{"gt_ordinal": i, "box": b} for i, b in enumerate(boxes)]
+    row_clean, row_order = ordchk._bands_order(items, axis=1, frac=0.3)
+    col_clean, col_order = ordchk._bands_order(items, axis=0, frac=0.3)
+    if not (row_clean and col_clean):
+        return [it["box"] for it in row_order], True
+    if [it["gt_ordinal"] for it in row_order] != [it["gt_ordinal"] for it in col_order]:
+        return [it["box"] for it in row_order], True
+    if ordchk._consecutive_y_overlaps(row_order, 0.30):
+        return [it["box"] for it in row_order], True
+    return [it["box"] for it in row_order], False
+
+
+def pairing_verdict(det_table_boxes: list[tuple], output_n: int) -> dict:
+    """EXECUTABLE reference of the frozen integral skip rule."""
+    deduped, dedup_happened = dedup_boxes(det_table_boxes)
+    if dedup_happened:
+        return {"verdict": "skip", "reason": "dedup_event"}
+    if len(deduped) != output_n:
+        return {
+            "verdict": "skip",
+            "reason": "count_mismatch",
+            "detection_n": len(deduped),
+            "output_n": output_n,
+        }
+    ordered, ambiguous = dual_hypothesis(deduped)
+    if ambiguous:
+        return {"verdict": "skip", "reason": "ordering_ambiguous"}
+    return {"verdict": "pair", "ordinals": list(range(len(ordered))), "ordered_boxes": ordered}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model-dir", required=True)
+    parser.add_argument("--region-truth", required=True)
+    parser.add_argument("--images", required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--limit", type=int, default=0)
+    args = parser.parse_args()
+
+    truth = pp.probe.load_json(Path(args.region_truth))
+    pages = truth["pages"]
+    if args.limit:
+        pages = pages[: args.limit]
+    detector = pp.PaddleDetector(args.model_dir, 255.0, 800, False, 5, 21)
+    images_dir = Path(args.images)
+
+    states = Counter()
+    unsafe_pages: list[dict] = []
+    skip_reasons: Counter = Counter()
+    per_state = {
+        "clean": {"pages": 0, "paired": 0, "skipped": 0, "unsafe": 0},
+        "miss": {"pages": 0, "paired": 0, "skipped": 0, "unsafe": 0},
+        "multi": {"pages": 0, "paired": 0, "skipped": 0, "unsafe": 0},
+        "dedup": {"pages": 0, "paired": 0, "skipped": 0, "unsafe": 0},
+    }
+    errored = 0
+    for index, page in enumerate(pages):
+        image_path = images_dir / page["image_path"]
+        raw = np.fromfile(str(image_path), dtype=np.uint8)
+        image = cv2.imdecode(raw, cv2.IMREAD_COLOR) if raw.size else None
+        if image is None:
+            errored += 1
+            continue
+        try:
+            dets = detector.detect(image)
+        except Exception as error:  # noqa: BLE001
+            print(f"SKIP inference failure {page['image_path']}: {error}", file=sys.stderr)
+            errored += 1
+            continue
+
+        # gt_ordinal MUST be the per-class ordinal (k-th table on the page),
+        # NOT the index within all regions — equation regions before the
+        # table shift the label otherwise (harness bug caught by round-3
+        # self-check: single-table pages were labeled with their region
+        # index, flagging correct pairings as unsafe).
+        gt_tables = []
+        gt_ordinal = 0
+        for r in page["regions"]:
+            if r["class"] == "table":
+                gt_tables.append({
+                    "gt_ordinal": gt_ordinal,
+                    "box": pp.probe.poly_bbox(r["poly"]),
+                })
+                gt_ordinal += 1
+        output_n = len(gt_tables)
+        det_boxes = [d["bbox"] for d in dets if d["class"] == "table"]
+
+        verdict = pairing_verdict(det_boxes, output_n)
+
+        # classify the page's natural state
+        deduped, dedup_happened = dedup_boxes(det_boxes)
+        if dedup_happened:
+            state = "dedup"
+        elif len(deduped) < output_n:
+            state = "miss"
+        elif len(deduped) > output_n:
+            state = "multi"
+        else:
+            state = "clean"
+
+        per_state[state]["pages"] += 1
+        if verdict["verdict"] == "skip":
+            per_state[state]["skipped"] += 1
+            skip_reasons[verdict["reason"]] += 1
+            states[f"skip:{verdict['reason']}"] += 1
+            continue
+
+        # PAIRED: verify ordinal semantics — detection at generated position k
+        # must best-match GT table with gt_ordinal == k (IoU >= 0.7).
+        per_state[state]["paired"] += 1
+        states["paired"] += 1
+        for k, det_box in enumerate(verdict["ordered_boxes"]):
+            best_iou, best_ordinal = 0.0, -1
+            for gt in gt_tables:
+                iou = ordchk_probe_iou(det_box, gt["box"])
+                if iou > best_iou:
+                    best_iou, best_ordinal = iou, gt["gt_ordinal"]
+            if best_ordinal != k or best_iou < IOU_PAIR:
+                per_state[state]["unsafe"] += 1
+                states["unsafe"] += 1
+                unsafe_pages.append({
+                    "image_path": page["image_path"],
+                    "position": k,
+                    "matched_gt_ordinal": best_ordinal,
+                    "iou": round(best_iou, 4),
+                })
+                break
+        if (index + 1) % 50 == 0:
+            print(f"  {index + 1}/{len(pages)}", flush=True)
+
+    unsafe_total = sum(s["unsafe"] for s in per_state.values())
+    result = {
+        "schema_version": 1,
+        "artifact": "omnidocbench-b0-pairing-safety",
+        "model": "PP-DocLayoutV2 (paddle.inference, 800, real output)",
+        "rule": "integral skip: dedup-event -> skip; count mismatch -> skip; dual-hypothesis ambiguous -> skip; else pair ordinals 0..N-1",
+        "pages_evaluated": len(pages),
+        "pages_errored": errored,
+        "verdicts": dict(states),
+        "skip_reasons": dict(skip_reasons),
+        "per_state": per_state,
+        "unsafe_pages": unsafe_pages,
+        "unsafe_total": unsafe_total,
+        "hard_gate": {
+            "unsafe_zero_required": "across ALL states with REAL detector output",
+            "pass": unsafe_total == 0,
+        },
+    }
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({k: v for k, v in result.items() if k != "unsafe_pages"}, ensure_ascii=False, indent=2))
+    print(f"pairing-safety gate: {'PASS' if result['hard_gate']['pass'] else 'FAIL'} -> {out}")
+
+
+if __name__ == "__main__":
+    main()

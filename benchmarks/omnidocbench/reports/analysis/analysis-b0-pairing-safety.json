@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "artifact": "omnidocbench-b0-pairing-safety",
+  "model": "PP-DocLayoutV2 (paddle.inference, 800, real output)",
+  "rule": "integral skip: dedup-event -> skip; count mismatch -> skip; dual-hypothesis ambiguous -> skip; else pair ordinals 0..N-1",
+  "pages_evaluated": 744,
+  "pages_errored": 0,
+  "verdicts": {
+    "paired": 699,
+    "skip:count_mismatch": 26,
+    "skip:ordering_ambiguous": 16,
+    "skip:dedup_event": 3,
+    "unsafe": 2
+  },
+  "skip_reasons": {
+    "count_mismatch": 26,
+    "ordering_ambiguous": 16,
+    "dedup_event": 3
+  },
+  "per_state": {
+    "clean": {
+      "pages": 715,
+      "paired": 699,
+      "skipped": 16,
+      "unsafe": 2
+    },
+    "miss": {
+      "pages": 6,
+      "paired": 0,
+      "skipped": 6,
+      "unsafe": 0
+    },
+    "multi": {
+      "pages": 20,
+      "paired": 0,
+      "skipped": 20,
+      "unsafe": 0
+    },
+    "dedup": {
+      "pages": 3,
+      "paired": 0,
+      "skipped": 3,
+      "unsafe": 0
+    }
+  },
+  "unsafe_pages": [
+    {
+      "image_path": "page-cb30bac7-d4bd-47d0-ac84-e0b46d051fe9.png",
+      "position": 0,
+      "matched_gt_ordinal": 0,
+      "iou": 0.6943
+    },
+    {
+      "image_path": "yanbaopptmerge_70a45bf10fb90ae0c91d44a11e0a97a8f9515d85626b54eb50a80b6146e5c2bf.pdf_10.jpg",
+      "position": 0,
+      "matched_gt_ordinal": 0,
+      "iou": 0.6421
+    }
+  ],
+  "unsafe_total": 2,
+  "hard_gate": {
+    "unsafe_zero_required": "across ALL states with REAL detector output",
+    "pass": false
+  }
+}

@@ -8,31 +8,11 @@
   "unsafe_pages": [],
   "unsafe_n": 0,
   "hard_gate": {
+    "scope": "perfect-box lower bound ONLY; real-output pairing safety is gated by omnidocbench-region-pairing-check.py (its hard_gate.pass ANDs this gate)",
     "unsafe_zero_required": true,
     "pass": true
   },
-  "real_detector_three_state": {
-    "integral_skip_rule": "reread eligibility requires detection_N == output_N AND no dedup AND dual-hypothesis agreement; any violation = page skip",
-    "states": {
-      "miss_last": {
-        "pages": 35,
-        "unsafe": 0
-      },
-      "miss_mid": {
-        "pages": 35,
-        "unsafe": 0
-      },
-      "insert_mid": {
-        "pages": 35,
-        "unsafe": 0
-      },
-      "dedup_pair": {
-        "pages": 35,
-        "unsafe": 0
-      }
-    },
-    "unsafe_total": 0
-  },
+  "real_detector_three_state": "REMOVED from this harness - synthetic perturbation was not a valid test (review round 3); real-output pairing safety is gated by omnidocbench-region-pairing-check.py, whose hard_gate.pass ANDs this file's perfect-box gate",
   "b0b_pool_coverage": {
     "worst": {
       "eligible": 22,

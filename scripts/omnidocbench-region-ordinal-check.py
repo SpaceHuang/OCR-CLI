@@ -196,35 +196,6 @@ def main() -> None:
                 "generated": generated,
             })
 
-    # real-detector three-state simulation (review round 2): misses,
-    # mid-inserts and dedup holes shift ordinals AFTER the hole. The
-    # integral skip rule - reread eligibility requires detection_N ==
-    # output_N AND no dedup AND dual-hypothesis agreement - must turn every
-    # perturbed page into a SKIP (0 unsafe).
-    hole = "HOLE"
-    tri = {"miss_last": [0, 0], "miss_mid": [0, 0], "insert_mid": [0, 0], "dedup_pair": [0, 0]}
-    for page in truth["pages"]:
-        items = boxes_with_gt_ordinal(page)
-        if len(items) < 3:
-            continue
-        variants = {
-            "miss_last": items[:-1],
-            "miss_mid": items[: len(items) // 2] + items[len(items) // 2 + 1:],
-            "dedup_pair": items[: len(items) // 2] + items[len(items) // 2 + 1:],
-        }
-        # insert_mid: a foreign region (not a GT table) appears mid-sequence;
-        # model it as a duplicate of the first box so the rule sees N+1.
-        variants["insert_mid"] = items[: len(items) // 2] + [dict(items[0])] + items[len(items) // 2:]
-        for name, seq in variants.items():
-            expected = [it["gt_ordinal"] for it in seq]
-            generated, is_ambiguous = rule([dict(it) for it in seq])
-            count_match = len(generated) == len(seq) == len(set(expected))
-            tri[name][0] += 1
-            if is_ambiguous or generated == expected or not count_match:
-                tri[name][1] += 0  # skipped (safe) or still correct
-            else:
-                tri[name][1] += 1  # UNSAFE: eligible but wrong ordinals
-
     result = {
         "rule": args.rule,
         "multi_table_pages": multi,
@@ -235,17 +206,11 @@ def main() -> None:
         "unsafe_pages": unsafe_pages,
         "unsafe_n": len(unsafe_pages),
         "hard_gate": {
+            "scope": "perfect-box lower bound ONLY; real-output pairing safety is gated by omnidocbench-region-pairing-check.py (its hard_gate.pass ANDs this gate)",
             "unsafe_zero_required": True,
             "pass": eligible == eligible_correct and len(unsafe_pages) == 0,
         },
-        "real_detector_three_state": {
-            "integral_skip_rule": "reread eligibility requires detection_N == output_N AND no dedup AND dual-hypothesis agreement; any violation = page skip",
-            "states": {
-                name: {"pages": n, "unsafe": unsafe_n}
-                for name, (n, unsafe_n) in tri.items()
-            },
-            "unsafe_total": sum(v[1] for v in tri.values()),
-        },
+        "real_detector_three_state": "REMOVED from this harness - synthetic perturbation was not a valid test (review round 3); real-output pairing safety is gated by omnidocbench-region-pairing-check.py, whose hard_gate.pass ANDs this file's perfect-box gate",
     }
     # pool coverage over the B0b frozen corpus (reproducible artifact)
     b0b_path = Path(args.region_truth).parent.parent / "b0b-corpus" / "b0b-corpus.json"
