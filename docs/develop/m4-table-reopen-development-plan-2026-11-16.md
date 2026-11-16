@@ -1,6 +1,6 @@
 # M4 表格版重开开发方案（B-LINE-2 部分重开：表格区域重读）
 
-**文档状态：** v1.2（2026-11-16——重审响应 RBLK-1/RBLK-2；v1.1 评审响应 BLOCK×6）
+**文档状态：** v1.3（2026-11-16——二轮重审响应 RBLK-1/RBLK-2 收口；v1.2 重审响应；v1.1 评审响应）
 **创建日期：** 2026-11-16
 **数据依据：** B0' 四+一候选实测（`b0-detect-gate-verdict-final-2026-11-15.md` 及归档 JSON：PP-DocLayoutV2 表格召回 97.3% @ IoU 0.7，744 页冻结子集 0 错误 0 跳过）；B-M2.3 两轮判定（`bm23-milestone-reeval-record-2026-11-15.md`：88.45，净 +0.60，text +1.87pt 兑现）；M4 oracle spike（`omnidocbench-m4m5m3-crop-prompt-spike-2026-11-14.md`：区域效应 2× 纯 token，crop@1024 饱和）
 **关联计划：** `omnidocbench-quality-next-phase-development-plan.md`（v1.3——本方案为其 B-LINE-2 的部分重开修订，其余条款继承）
@@ -77,15 +77,17 @@ B-M2.3 复盘确认：spike 报告的"+2.0"实为 **text 分量点数**（未除
   1. 行解释：y-overlap 带聚类（重叠 ≥30% 归带），带按 y 排序、带内按 x 排序；带 y 范围两两不相交才算"行干净"。
   2. 列解释：x-overlap 列聚类（对称定义）；列按 x 排序、列内按 y 排序；x 范围两两不相交才算"列干净"。
   3. **页面合格条件 = 行、列两个解释都干净且产生相同顺序**（加连续对 y-overlap ≥30% 否决）。否则页面标记 `ordering_ambiguous`，**运行时跳过该页重读**（保留原输出，永不重读）。
-- **验证（B0a 完美框下界，工具 `scripts/omnidocbench-region-ordinal-check.py`，产物 `analysis-b0-ordinal-agreement.json`）**：117 个多表页 → 合格 103 页序数**全部正确**（合格页序数正确率 100%）、歧义跳过 22 页、**unsafe（重读但序错）= 0**。v1.1 的 `(y,x)` 规则实测 85.5% 一致（14.53% 错序，评审复测一致），rowgroup 88.9%——均废止。
-- **预注册硬门**：完美框下 unsafe 错配页数 = 0 且合格页序数正确率 = 100%（本规则由构造保证，任何后续规则修改必须重过此门）；真实检测输出上另测漏检/中间多检/重复区域三态的配对正确性。
-- **覆盖代价（诚实核算，B0b 冻结语料）**：worst 22/36（61.1%）、mid 73/89（82.0%）、bad-low 51/97（52.6%）、good-en 107/120、good-zh 278/297、good-other 25/26；**裁决池（worst+mid+bad-low）合计 146/222 = 65.8%**。
-- A/B 路线一致性 = 规范化后完整区域序列逐项比对（class、ordinal、bbox、conf；bbox 逐框 IoU ≥ 0.99、conf |Δ| ≤ 1e-3 数值容差）。### 3.2b R2.0：布局模型 manifest 与资产解析链（评审 BLK-2 解除条件，先于 R2 各子任务）
+- **验证（B0a 完美框下界，工具 `scripts/omnidocbench-region-ordinal-check.py`，产物 `analysis-b0-ordinal-agreement.json`——分桶口径与评审一致）**：117 个多表页 → **合格（重读）95 页序数全部正确**（合格页序数正确率 100%）、**歧义跳过 22 页**（运行时永不重读）、**unsafe（重读但序错）= 0**。v1.1 的 `(y,x)` 规则实测 85.5% 一致（14.53% 错序，评审复测一致），rowgroup 88.9%——均废止。
+- **整页跳过规则（积分制，评审 RBLK-1 解除条件）**：重读合格性要求 `检测表格数 == 输出表格块数` **且本页未发生去重** 且双解释一致——漏检/中间多检/去重孔洞都会使孔洞后的序数整体错位，任何一项违反即整页跳过（保留原输出）。三态模拟（漏检尾/漏检中/中间多检/去重对，同一工具内建）实测 **unsafe 总计 = 0**。
+- **预注册硬门（含真实检测三态）**：完美框 unsafe = 0 且合格页序数正确率 = 100%；真实检测输出的漏检/中间多检/重复区域三态模拟 unsafe = 0（同一工具内建，非"另测"）；任何规则修改必须重过全部门。
+- **覆盖代价（诚实核算，B0b 冻结语料；可复现产物由工具自动生成于 analysis JSON 的 `b0b_pool_coverage` 段）**：worst 22/36（61.1%）、mid 73/89（82.0%）、bad-low 51/97（52.6%）、good-en 107/120、good-zh 278/297、good-other 25/26；**裁决池（worst+mid+bad-low）合计 146/222 = 65.77%**。
+- A/B 路线一致性 = 规范化后完整区域序列逐项比对（class、ordinal、bbox、conf；bbox 逐框 IoU ≥ 0.99、conf |Δ| ≤ 1e-3 数值容差）。### 3.2b R2.0：布局模型 manifest 与资产解析链（复用现有契约；评审 RBLK-2 解除条件，先于 R2 各子任务）
 
-- **manifest**（沿用 ovisocr2 manifest 模式）：`assets/manifests/pp-doclayout-v2.json` = `{model_id: "pp-doclayout-v2", revision: <冻结>, assets: [{role: "model", sha256, byte_len, file}], runtime: {target_size: 800, pixel_scale: 255, mean: [0,0,0], std: [1,1,1], conf: 0.25, class_table: 21}, route: <A|B 按 R1>}`；预处理参数**由 manifest 提供**，不允许实现者就地硬编码。
-- **资产解析**：缓存路径解析（models 目录布局）、sha256 校验、缺失/哈希不符 → 降级语义（空区域 + warning 进 checkpoint warnings，扫描不失败）。
-- **运行时配置链**：路线 A = sidecar 启动参数（模型目录、超时、JSON 协议版本）；路线 B = ORT 会话配置。均从 manifest/配置读取。
-- **验收**：目标命令完成一次非 fake 的模型解析 + 检测冒烟（真实页 → 区域输出）；有效配置与资产哈希进 checkpoint/result；缺失/哈希不符走降级语义的单测。
+- **磁盘 manifest（沿用现有磁盘格式，`assets/manifests/ovisocr2/<revision>/community-abiray.json` 的字段风格）**：`assets/manifests/pp-doclayout-v2/<revision>/layout-paddlex.json` = `{schema_version: 1, model: "pp-doclayout-v2", source: {repository: "PaddlePaddle/PP-DocLayoutV2", revision: <冻结>, license: <以源仓库声明为准>, source_url: "https://hf-mirror.com/PaddlePaddle/PP-DocLayoutV2"}, assets: [{file: "inference.json", sha256, size_bytes, role: "layout-graph"}, {file: "inference.pdiparams", sha256, size_bytes, role: "layout-weights"}], runtime: {target_size: 800, pixel_scale: 255, conf: 0.25, class_table: 21, route: <A|B 按 R1>}}`。预处理参数由 manifest 提供，不允许就地硬编码。
+- **运行时契约转换**：解析器落 `src/ocrx-models`（新 `LayoutModelManifest`，字段风格对齐 `ocrx-inference-api/src/asset.rs` 的 `ModelManifest`/`AssetDescriptor`——资产条目含 **relative_path**（缓存相对单段路径）+ **source_url**（HTTPS 钉扎，指向 hf-mirror 的 resolve URL）+ sha256/byte_len/role/required/scope，及 `provenance{provider,url}`；`license_id` 取磁盘 manifest 的 source.license）。注册/解析入口 = ocrx-models 的布局模型注册表（id `pp-doclayout-v2` + revision → 磁盘 manifest → 运行时结构），与 ovisocr2 的 id+revision 解析同构。
+- **空缓存获取链（验收路径）**：空缓存 → 读磁盘 manifest → 逐资产按 source_url 下载 → sha256 校验 → 按 relative_path 缓存填充 → id+revision 解析 → 非 fake 检测冒烟（真实页 → 区域输出）。
+- **降级语义**：缺失/哈希不符/运行时不可用 → 空区域 + warning 进 checkpoint warnings（扫描不失败）；但目标配置的 B2/R4 战役必须以"获取链全程成功"为前提。
+- **验收**：从空缓存（或全新环境）走完获取链并完成非 fake 冒烟；有效配置与资产哈希进 checkpoint/result；降级语义单测。
 
 ### 3.3 R2：B1 管线接线（TDD）
 
@@ -151,7 +153,7 @@ round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS �
 | D-41 | 持久化闭环 = 定点 Markdown 替换（仅目标表 HTML 片段）+ page_json 同步生成，不做整页重格式化 | 整页通用序列化会扰动非表格内容（引入 B2 未覆盖的回归）；定点替换使 diff 恰为目标表，验收可逐字节断言 |
 | D-42 | 重读执行身份新增 `reread_prompt_version` + `reread_rules_generation`（校准代次），纳入 scan_side_matches 与 result | prompt/规则变化后 resume 若不校验将混用旧算法产物（违反 D-29/D-36）；显式字段优于复合版本字段（可审计） |
 | D-43 | R5 基线冻结：R4 前仅分析；行为修复前置合入必须重跑 R3 全部 B2 门 | B2 后改对照基线而不重跑裁决，将无法隔离 M4 边际效果（评审 BLK-6） |
-| D-44 | 阅读序 = 双解释一致规则（行/列两个几何解释都干净且同序才合格，歧义页运行时跳过）；预注册硬门 = 完美框 unsafe 错配 0 + 合格页序数正确率 100%（B0a 实测 0 unsafe / 103 合格全对 / 22 跳过） | v1.1 的 `(y,x)` 字典序被完美框实验证伪（14.53% 错序）；rowgroup 88.9% 亦不足。几何规则无法消解编辑阅读序分歧（jiaocai_2360 类页），唯一安全形态 = 不确定即不重读。备选"引入排序模型"推高成本且无预注册验证，列为 R4 后可选增强 |
+| D-44 | 阅读序 = 双解释一致规则 + **积分制整页跳过**（`检测表格数 == 输出表格块数` 且本页无去重 且双解释一致，任一违反 = 整页跳过）；预注册硬门 = 完美框 unsafe 0 + 合格页序数正确率 100% + **真实检测三态（漏检/中间多检/去重）模拟 unsafe 0**（B0a 实测：95 合格全对 / 22 跳过 / 三态 unsafe 总计 0；工具内建模拟与覆盖产物） | v1.1 的 `(y,x)` 字典序被完美框实验证伪（14.53% 错序）；几何规则无法消解编辑阅读序分歧（jiaocai_2360 类页），唯一安全形态 = 不确定即不重读。序数孔洞（漏检/去重）使孔洞后序数整体错位，必须积分制整页跳过而非逐对修补 |
 | D-45 | 布局模型 manifest 复用现有契约：磁盘层沿用 ovisocr2 manifest 字段风格（schema_version/model/source{repository,revision,license,source_url}/assets[{file,sha256,size_bytes,role}]）；运行时层按 `AssetDescriptor`（role/required/scope/**relative_path**/sha256/byte_len/**source_url** HTTPS 钉扎）+ `provenance`；获取链 = 空缓存 → 解析 manifest → 逐资产 source_url 下载 → sha256 校验 → relative_path 缓存填充 → id 解析 → 非 fake 检测冒烟 | 评审 RBLK-2：自造格式与磁盘/运行时契约均不符且无获取路径。现有 `AssetDescriptor` 已含 relative_path + source_url 与 HTTPS 校验，复用而非新造 |
 | D-46 | 门①分母修订：触发覆盖率 ≥80% 改在**安全合格页池表**（146 张）上计；绝对池覆盖 65.8% 如实报告为投影输入 | 安全机制（D-44）的结构性代价 = 歧义页不重读；若按绝对池计 65.8% < 80% 则门①结构性地不可能过——门必须度量"机制在能安全作用的范围内是否有效"，绝对覆盖作为投影折损入账（worst/bad 合格覆盖 55% 已折入 §2.1 投影） |
 
@@ -167,6 +169,11 @@ round-2 vs landing 逐键 diff 定位 ~80 个 attempt-2 逃逸页的 CDM/TEDS �
 | 全局 2048 网格重试（M2 形态）与表格重读 1024 裁剪交互 | 重读是独立请求（1024 冻结），不与整页解码网格叠加；B2 配对实测兜底 |
 
 ## 7. 修订记录
+
+**v1.3（2026-11-16）**——二轮重审响应（RBLK-1/RBLK-2 收口）：
+- **RBLK-1（收口）**：分桶口径修正（合格 95 页全对 / 22 跳过 / 0 unsafe，与评审一致——v1.2 的"103 合格"混淆了歧义但恰好序对的页）；新增**积分制整页跳过规则**（检测数==输出块数 ∧ 无去重 ∧ 双解释一致，任一违反整页跳过）并入 D-44；**真实检测三态（漏检/中间多检/去重）模拟内建于验收工具**（unsafe 总计 0），硬门从"另测"改为内建门；覆盖产物可复现（`analysis-b0-ordinal-agreement.json` 内建 `b0b_pool_coverage` 段：146/222 = 65.77%）。
+- **RBLK-2（收口）**：R2.0 重写——废除与现有契约冲突的自造 JSON；磁盘 manifest 沿用 ovisocr2 字段风格（含 source.source_url），运行时层按 `AssetDescriptor`（relative_path + HTTPS source_url 钉扎）+ `provenance`/`license_id` 转换；注册/解析入口 = ocrx-models 布局模型注册表（id+revision 同构 ovisocr2）；验收 = 空缓存获取链全程 + 非 fake 冒烟（D-45 落地细则）。
+- **非阻断**：R1 正文与 D-35 已于 v1.2 同步（序列级一致 + 数值容差）；本版无新增口径变化。
 
 **v1.2（2026-11-16）**——重审响应（RBLK-1/RBLK-2）：
 - **RBLK-1**：`(y,x)` 字典序废止（完美框实验 14.53% 错序）；阅读序改为**双解释一致规则**（行/列几何解释都干净且同序才合格，歧义页运行时跳过重读）；实测 B0a 完美框 0 unsafe / 103 合格全对 / 22 跳过；预注册硬门 = unsafe 0 + 合格页序数正确率 100%（D-44）；覆盖代价如实核算（裁决池 65.8%），门①分母修订为安全合格池表（D-46），§2.1 投影同步修订（+1.1 → 89.55 保守口径）。

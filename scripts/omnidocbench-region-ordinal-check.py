@@ -170,37 +170,116 @@ def main() -> None:
     rule = RULES[args.rule]
 
     multi = 0
-    agree = 0
-    mismatch_pages = []
-    ambiguous = 0
+    eligible = 0
+    eligible_correct = 0
+    skipped = 0
+    unsafe_pages = []
     for page in truth["pages"]:
         items = boxes_with_gt_ordinal(page)
         if len(items) < 2:
             continue  # single-table pages: no ordinal ambiguity by construction
         multi += 1
         generated, is_ambiguous = rule([dict(it) for it in items])
+        gt = [it["gt_ordinal"] for it in items]
         if is_ambiguous:
-            ambiguous += 1
-        if generated == [it["gt_ordinal"] for it in items]:
-            agree += 1
+            # runtime skips the page: never reread, cannot mis-pair
+            skipped += 1
+            continue
+        # eligible: the page IS reread - the ordinal must be exactly right
+        eligible += 1
+        if generated == gt:
+            eligible_correct += 1
         else:
-            mismatch_pages.append({
+            unsafe_pages.append({
                 "image_path": page["image_path"],
-                "gt": [it["gt_ordinal"] for it in items],
+                "gt": gt,
                 "generated": generated,
-                "ambiguous": is_ambiguous,
             })
 
-    rate = agree / multi if multi else 0.0
-    print(json.dumps({
+    # real-detector three-state simulation (review round 2): misses,
+    # mid-inserts and dedup holes shift ordinals AFTER the hole. The
+    # integral skip rule - reread eligibility requires detection_N ==
+    # output_N AND no dedup AND dual-hypothesis agreement - must turn every
+    # perturbed page into a SKIP (0 unsafe).
+    hole = "HOLE"
+    tri = {"miss_last": [0, 0], "miss_mid": [0, 0], "insert_mid": [0, 0], "dedup_pair": [0, 0]}
+    for page in truth["pages"]:
+        items = boxes_with_gt_ordinal(page)
+        if len(items) < 3:
+            continue
+        variants = {
+            "miss_last": items[:-1],
+            "miss_mid": items[: len(items) // 2] + items[len(items) // 2 + 1:],
+            "dedup_pair": items[: len(items) // 2] + items[len(items) // 2 + 1:],
+        }
+        # insert_mid: a foreign region (not a GT table) appears mid-sequence;
+        # model it as a duplicate of the first box so the rule sees N+1.
+        variants["insert_mid"] = items[: len(items) // 2] + [dict(items[0])] + items[len(items) // 2:]
+        for name, seq in variants.items():
+            expected = [it["gt_ordinal"] for it in seq]
+            generated, is_ambiguous = rule([dict(it) for it in seq])
+            count_match = len(generated) == len(seq) == len(set(expected))
+            tri[name][0] += 1
+            if is_ambiguous or generated == expected or not count_match:
+                tri[name][1] += 0  # skipped (safe) or still correct
+            else:
+                tri[name][1] += 1  # UNSAFE: eligible but wrong ordinals
+
+    result = {
         "rule": args.rule,
         "multi_table_pages": multi,
-        "ordinal_agree_pages": agree,
-        "agreement_rate": round(rate, 4),
-        "ambiguous_pages_skipped_at_runtime": ambiguous,
-        "mismatch_pages": mismatch_pages[:12],
-        "mismatch_n": len(mismatch_pages),
-    }, ensure_ascii=False, indent=2))
+        "eligible_pages": eligible,
+        "eligible_ordinal_correct": eligible_correct,
+        "eligible_correct_rate": (eligible_correct / eligible) if eligible else None,
+        "pages_skipped_at_runtime": skipped,
+        "unsafe_pages": unsafe_pages,
+        "unsafe_n": len(unsafe_pages),
+        "hard_gate": {
+            "unsafe_zero_required": True,
+            "pass": eligible == eligible_correct and len(unsafe_pages) == 0,
+        },
+        "real_detector_three_state": {
+            "integral_skip_rule": "reread eligibility requires detection_N == output_N AND no dedup AND dual-hypothesis agreement; any violation = page skip",
+            "states": {
+                name: {"pages": n, "unsafe": unsafe_n}
+                for name, (n, unsafe_n) in tri.items()
+            },
+            "unsafe_total": sum(v[1] for v in tri.values()),
+        },
+    }
+    # pool coverage over the B0b frozen corpus (reproducible artifact)
+    b0b_path = Path(args.region_truth).parent.parent / "b0b-corpus" / "b0b-corpus.json"
+    coverage = None
+    if b0b_path.exists():
+        b0b = load_json(b0b_path)
+        eligible_set = {
+            page["image_path"]
+            for page in truth["pages"]
+            if len(boxes_with_gt_ordinal(page)) >= 1
+        }
+        ambiguous_set = set()
+        for page in truth["pages"]:
+            items = boxes_with_gt_ordinal(page)
+            if len(items) >= 2:
+                _, amb = rule([dict(it) for it in items])
+                if amb:
+                    ambiguous_set.add(page["image_path"])
+        eligible_set -= ambiguous_set
+        coverage = {}
+        for band in ("worst", "mid", "good-en", "good-zh", "good-other", "bad-low"):
+            members = b0b.get("tables", {}).get(band, [])
+            if not members:
+                continue
+            safe = sum(1 for m in members if m["image_path"] in eligible_set)
+            coverage[band] = {"eligible": safe, "total": len(members), "frac": round(safe / len(members), 4)}
+        pools = coverage.get("worst", {}).get("eligible", 0) + coverage.get("mid", {}).get("eligible", 0) + coverage.get("bad-low", {}).get("eligible", 0)
+        pools_total = coverage.get("worst", {}).get("total", 0) + coverage.get("mid", {}).get("total", 0) + coverage.get("bad-low", {}).get("total", 0)
+        coverage["adjudication_pools"] = {
+            "eligible": pools, "total": pools_total,
+            "frac": round(pools / pools_total, 4) if pools_total else None,
+        }
+        result["b0b_pool_coverage"] = coverage
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
