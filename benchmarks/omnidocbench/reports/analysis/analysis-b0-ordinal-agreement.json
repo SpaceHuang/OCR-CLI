@@ -1,0 +1,348 @@
+{
+  "rule": "adaptive",
+  "multi_table_pages": 117,
+  "ordinal_agree_pages": 103,
+  "agreement_rate": 0.8803,
+  "ambiguous_pages_skipped_at_runtime": 22,
+  "mismatch_pages": [
+    {
+      "image_path": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+      "gt": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "generated": [
+        0,
+        2,
+        1,
+        3,
+        4,
+        5
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+      "gt": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "generated": [
+        0,
+        2,
+        1,
+        3
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "eastmoney_66eea274d39b939da0f10253d279e119d87646f10fd21b3942eaf6c5d93b8134.pdf_0.jpg",
+      "gt": [
+        0,
+        1
+      ],
+      "generated": [
+        {
+          "gt_ordinal": 1,
+          "box": [
+            1050.9519042968748,
+            693.0293376214228,
+            1561.864013671875,
+            846.2846069335935
+          ]
+        },
+        {
+          "gt_ordinal": 0,
+          "box": [
+            90.76986694335938,
+            1554.2471923828125,
+            1002.1346435546875,
+            1866.1748046875
+          ]
+        }
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+      "gt": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "generated": [
+        0,
+        2,
+        1,
+        3
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+      "gt": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "generated": [
+        0,
+        2,
+        1,
+        3,
+        4
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "eastmoney_c1c12db90c6ecfae16a8eafa49caecfbc0e5f5654140320fe127f7c09bde96c9.pdf_1.jpg",
+      "gt": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "generated": [
+        0,
+        2,
+        1,
+        3
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "jiaocaineedrop_jiaocai_needrop_en_2360.jpg",
+      "gt": [
+        0,
+        1,
+        2
+      ],
+      "generated": [
+        {
+          "gt_ordinal": 0,
+          "box": [
+            96.96990966796875,
+            149.61260986328125,
+            593.6539306640625,
+            220.38502502441406
+          ]
+        },
+        {
+          "gt_ordinal": 2,
+          "box": [
+            764.1103157038508,
+            471.114990234375,
+            1129.0916389460383,
+            539.9291992187499
+          ]
+        },
+        {
+          "gt_ordinal": 1,
+          "box": [
+            354.9177711821526,
+            724.1998382607126,
+            570.1760103349227,
+            806.4066271645298
+          ]
+        }
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "jiaocaineedrop_jiaocai_needrop_en_383.jpg",
+      "gt": [
+        0,
+        1,
+        2
+      ],
+      "generated": [
+        {
+          "gt_ordinal": 1,
+          "box": [
+            722.0123920074324,
+            1028.1144278802917,
+            1309.0831826227,
+            1139.3921519655069
+          ]
+        },
+        {
+          "gt_ordinal": 0,
+          "box": [
+            81.99102743018591,
+            1484.6475437421761,
+            665.4454165869962,
+            1709.4288374501264
+          ]
+        },
+        {
+          "gt_ordinal": 2,
+          "box": [
+            721.6512444822046,
+            1288.963802254556,
+            1306.5782451519444,
+            1615.4286343325252
+          ]
+        }
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "jiaocaineedrop_jiaocai_needrop_en_574.jpg",
+      "gt": [
+        0,
+        1,
+        2
+      ],
+      "generated": [
+        {
+          "gt_ordinal": 0,
+          "box": [
+            149.8537139892578,
+            352.71270751953125,
+            651.0210571289062,
+            564.221435546875
+          ]
+        },
+        {
+          "gt_ordinal": 2,
+          "box": [
+            715.1307373046875,
+            617.8568115234375,
+            1165.6751708984375,
+            702.0929565429688
+          ]
+        },
+        {
+          "gt_ordinal": 1,
+          "box": [
+            176.7732391357422,
+            1203.48193359375,
+            651.7442626953125,
+            1291.153564453125
+          ]
+        }
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "magazine_TheEconomist.2024.02.24_page_076.png",
+      "gt": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "generated": [
+        0,
+        1,
+        2,
+        4,
+        3
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+      "gt": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "generated": [
+        1,
+        2,
+        3,
+        4,
+        7,
+        12,
+        5,
+        9,
+        8,
+        0,
+        10,
+        6,
+        11
+      ],
+      "ambiguous": true
+    },
+    {
+      "image_path": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png",
+      "gt": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "generated": [
+        {
+          "gt_ordinal": 1,
+          "box": [
+            52.1842179700932,
+            813.478718009791,
+            310.0751794627502,
+            935.1854615323546
+          ]
+        },
+        {
+          "gt_ordinal": 0,
+          "box": [
+            52.58920473912414,
+            154.63617598545488,
+            345.126768193221,
+            700.051641285028
+          ]
+        },
+        {
+          "gt_ordinal": 2,
+          "box": [
+            354.29325647743593,
+            156.87728230778748,
+            640.4072692338226,
+            934.8170255921675
+          ]
+        },
+        {
+          "gt_ordinal": 3,
+          "box": [
+            53.33333333333321,
+            1017.3333333333336,
+            628.4092300580539,
+            1596.7904690258063
+          ]
+        },
+        {
+          "gt_ordinal": 4,
+          "box": [
+            1257.3333333333333,
+            1222.5539950751865,
+            1522.6103308709264,
+            1287.2623579398926
+          ]
+        }
+      ],
+      "ambiguous": true
+    }
+  ],
+  "mismatch_n": 14
+}
