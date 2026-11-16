@@ -19,6 +19,7 @@ pub mod render;
 pub use ocrx_pdf::{
     DocumentType, PdfErrorKind, RenderOptions, classify_pdf_error, plan_page_checked,
 };
+pub mod region_provider;
 pub mod report;
 pub mod reread;
 pub mod resume;
