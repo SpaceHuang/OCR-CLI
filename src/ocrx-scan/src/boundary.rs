@@ -15,6 +15,9 @@ use serde::Serialize;
 /// (`page_number`, `attempt = 1`) with a hard pairing precondition.
 #[derive(Debug, Clone, Serialize)]
 pub struct BoundarySample {
+    /// JSONL schema version (v2 adds `base_image_tokens`; v1 records lack
+    /// it and the joiner treats the base grid as uncompared for them).
+    pub schema_version: u32,
     /// The scanned document's identity (compatibility input hash).
     pub input_sha256: String,
     /// Per-process invocation id (scan run / probe run).
@@ -37,6 +40,10 @@ pub struct BoundarySample {
     pub width: u32,
     pub height: u32,
     pub max_output_tokens: u32,
+    /// The EFFECTIVE base image-token grid for this attempt (the mtmd
+    /// context budget: the per-model resolved scan default, before any
+    /// ladder override — root-cause plan review round 6).
+    pub base_image_tokens: u32,
     pub image_tokens_override: Option<u32>,
     pub retry_sampling: Option<(u32, u32)>,
     /// Whether the generation produced usable text.

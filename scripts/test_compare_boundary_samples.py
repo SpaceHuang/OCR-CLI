@@ -17,10 +17,12 @@ INPUT = "ab3235512ef1f60122c3b060c5cf43c12947839e82875d940e10c36e37963477"
 
 
 def sample(source, page, attempt=1, sha="a" * 64, prompt="p" * 64, outcome="nonempty",
-           width=2531, height=3276, override=None, sampling=None, input_sha=INPUT):
+           width=2531, height=3276, override=None, sampling=None, input_sha=INPUT,
+           base_image_tokens=2048, schema_version=None):
     return {
         "input_sha256": input_sha,
         "run_id": "run-x",
+        "schema_version": schema_version,
         "source": source,
         "page_number": page,
         "page_index": page - 1,
@@ -33,6 +35,7 @@ def sample(source, page, attempt=1, sha="a" * 64, prompt="p" * 64, outcome="none
         "width": width,
         "height": height,
         "max_output_tokens": 16384,
+        "base_image_tokens": base_image_tokens,
         "image_tokens_override": override,
         "retry_sampling": sampling,
         "outcome": outcome,
@@ -202,3 +205,50 @@ del partial_no_common_scan[1]["input_sha256"]
 partial_no_common_direct = [sample("direct", 9, sha="h9", input_sha="doc-z")]
 code = run(partial_no_common_scan, partial_no_common_direct)
 check("partial missing + no common hash -> exit 1 without crash", code == 1)
+
+# 15) Missing rgb8 hash on BOTH sides -> INVALID (None == None must not
+#     count as a byte match — sixth-review adversarial case).
+def strip_keys(records, *keys):
+    for record in records:
+        for key in keys:
+            record.pop(key, None)
+    return records
+
+code = run(
+    strip_keys([sample("scan", 4, sha="h4")], "rgb8_sha256", "prompt_sha256"),
+    strip_keys([sample("direct", 4, sha="h4")], "rgb8_sha256", "prompt_sha256"),
+)
+check("both sides missing rgb/prompt hashes -> exit 1", code == 1)
+
+# 16) Base-grid mismatch -> param_mismatch -> DIFF (recorded AND compared:
+#     different effective grids must not silently pass as IDENTICAL).
+tmp = tempfile.mkdtemp(prefix="cb-grid-")
+scan_path = os.path.join(tmp, "scan.jsonl")
+direct_path = os.path.join(tmp, "direct.jsonl")
+verdict_path = os.path.join(tmp, "verdict.json")
+write_jsonl(
+    scan_path,
+    [sample("scan", 4, sha="s4", base_image_tokens=2048, schema_version=2)],
+)
+write_jsonl(
+    direct_path,
+    [sample("direct", 4, sha="d4", base_image_tokens=1024, schema_version=2)],
+)
+code = cb.main(["--scan", scan_path, "--direct", direct_path, "--output", verdict_path])
+verdict = json.load(open(verdict_path, encoding="utf-8"))
+pair = verdict["pairs"][0]
+check("base-grid mismatch -> exit 0 (valid experiment)", code == 0)
+check("base-grid mismatch -> verdict DIFF", verdict["verdict"] == "DIFF")
+check(
+    "base-grid mismatch reported in param_mismatch",
+    "base_image_tokens" in pair["param_mismatch"],
+)
+
+# 17) Missing base_image_tokens field (schema violation) -> INVALID.
+code = run(
+    strip_keys(
+        [sample("scan", 4, sha="s4", schema_version=2)], "base_image_tokens"
+    ),
+    [sample("direct", 4, sha="d4", schema_version=2)],
+)
+check("missing base_image_tokens -> exit 1", code == 1)

@@ -241,6 +241,7 @@ fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
         ladder: crate::ladder_for_model(
             &ocrx_inference_api::ModelId::new("ovisocr2").expect("built-in id is valid"),
         ),
+        base_image_tokens: 1024,
     }
 }
 
@@ -813,6 +814,8 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
         assert_eq!(hash, lines[0]["rgb8_sha256"]);
         assert!(record["prompt_sha256"].as_str().unwrap().len() == 64);
         assert_eq!(record["max_output_tokens"], 16_384);
+        assert_eq!(record["base_image_tokens"], 1024);
+        assert_eq!(record["schema_version"], 2);
     }
     let _ = std::fs::remove_dir_all(root);
 }

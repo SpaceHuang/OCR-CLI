@@ -122,6 +122,10 @@ pub struct WindowConfig<'a> {
     /// Option-a mitigation: the per-model degeneration ladder (ovisocr3
     /// runs the sampling rung first; ovisocr2 keeps the frozen order).
     pub ladder: &'static [DegenerationRetryStep],
+    /// SP-T01 round-6: the effective base image-token grid (the mtmd
+    /// context budget the runtime was loaded with) — recorded in boundary
+    /// samples so grid differences can never pass as IDENTICAL.
+    pub base_image_tokens: u32,
 }
 
 /// Runs the windowed OCR pipeline over the prepared session (T063).
@@ -362,6 +366,7 @@ pub fn run_pages_with_session(
             for (slot, (page, image)) in images.iter().enumerate() {
                 if let Ok(artifact) = &batch_results[page] {
                     boundary.record(crate::boundary::BoundarySample {
+                        schema_version: 2,
                         input_sha256: config.compatibility.input_sha256.clone(),
                         run_id: String::new(),
                         source: "scan",
@@ -376,6 +381,7 @@ pub fn run_pages_with_session(
                         width: image.width,
                         height: image.height,
                         max_output_tokens: config.max_output_tokens,
+                        base_image_tokens: config.base_image_tokens,
                         image_tokens_override: None,
                         retry_sampling: None,
                         outcome: if artifact.markdown.trim().is_empty() {
@@ -651,6 +657,7 @@ fn serial_attempt_outcome(
                 // SP-T01: one boundary sample per attempt (identity schema,
                 // plan v1.2 — the bytes actually fed to the runtime).
                 boundary.record(crate::boundary::BoundarySample {
+                    schema_version: 2,
                     input_sha256: config.compatibility.input_sha256.clone(),
                     run_id: String::new(),
                     source: "scan",
@@ -665,6 +672,7 @@ fn serial_attempt_outcome(
                     width: image.width,
                     height: image.height,
                     max_output_tokens: config.max_output_tokens,
+                    base_image_tokens: config.base_image_tokens,
                     image_tokens_override: step.and_then(|rung| rung.image_tokens),
                     retry_sampling: step
                         .and_then(|rung| rung.sampling)

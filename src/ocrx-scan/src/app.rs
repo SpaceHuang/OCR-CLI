@@ -890,6 +890,9 @@ impl ScanApplication {
                     .map(std::path::PathBuf::from),
                 // Option-a mitigation: per-model degeneration ladder.
                 ladder: crate::ladder_for_model(&request_model),
+                // SP-T01 round-6: the effective base grid (resolved
+                // per-model default), recorded in boundary samples.
+                base_image_tokens: options.max_image_tokens,
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
             ocr_summary = run_pages_with_session(

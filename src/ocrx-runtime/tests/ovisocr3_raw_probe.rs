@@ -28,6 +28,7 @@ const PROMPT: &str = "\nExtract all readable content from the image in natural h
 /// runtime test crate must not depend on the scan crate).
 #[derive(Debug, Clone, Serialize)]
 struct BoundarySample {
+    schema_version: u32,
     input_sha256: String,
     run_id: String,
     source: &'static str,
@@ -42,6 +43,7 @@ struct BoundarySample {
     width: u32,
     height: u32,
     max_output_tokens: u32,
+    base_image_tokens: u32,
     image_tokens_override: Option<u32>,
     retry_sampling: Option<(u32, u32)>,
     outcome: &'static str,
@@ -60,10 +62,12 @@ fn boundary_sample(
     height: u32,
     rgb8: &[u8],
     max_output_tokens: u32,
+    base_image_tokens: u32,
     image_tokens_override: Option<u32>,
     outcome_empty: bool,
 ) -> BoundarySample {
     BoundarySample {
+        schema_version: 2,
         input_sha256: input_sha256.to_owned(),
         run_id: run_id.to_owned(),
         source: "direct",
@@ -78,6 +82,7 @@ fn boundary_sample(
         width,
         height,
         max_output_tokens,
+        base_image_tokens,
         image_tokens_override,
         retry_sampling: None,
         outcome: if outcome_empty { "empty" } else { "nonempty" },
@@ -103,6 +108,7 @@ fn boundary_sample_records_both_page_fields_with_explicit_conversion() {
         3276,
         &[1, 2, 3],
         16_384,
+        2048,
         Some(2048),
         false,
     );
@@ -115,6 +121,8 @@ fn boundary_sample_records_both_page_fields_with_explicit_conversion() {
     assert!(json.contains("\"page_number\":4"));
     assert!(json.contains("\"page_index\":3"));
     assert!(json.contains("\"outcome\":\"nonempty\""));
+    assert!(json.contains("\"base_image_tokens\":2048"));
+    assert!(json.contains("\"schema_version\":2"));
     // Empty outcome spelling.
     let sample = boundary_sample(
         "input-hash",
@@ -125,6 +133,7 @@ fn boundary_sample_records_both_page_fields_with_explicit_conversion() {
         1,
         &[1, 2, 3],
         16_384,
+        2048,
         None,
         true,
     );
@@ -234,6 +243,7 @@ fn raw_output_probe_for_empty_pages() {
             height,
             &rgb8,
             16_384,
+            grid,
             None,
             response.raw_output.trim().is_empty(),
         );

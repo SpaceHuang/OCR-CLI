@@ -18,24 +18,31 @@ import sys
 
 
 def load_samples(path, source, attempts=(1,)):
-    """Loads one JSONL side; returns (by_page, errors).
+    """Loads one JSONL side; returns (by_page, out_of_scope, errors,
+    seen_input_hashes, total_records, schema_versions).
 
     by_page maps page_number -> record for records whose attempt is in
     `attempts` (the pairing scope). Duplicate page keys within the scope
     are pairing-fatal. Records outside the scope are returned separately
     (they belong to the replay/control datasets).
+
+    Schema handling: records without `schema_version` are schema v1
+    (legacy — `base_image_tokens` not required, not compared); records
+    with schema_version >= 2 must carry `base_image_tokens`, which the
+    pair comparison treats as a parameter.
     """
     by_page = {}
     out_of_scope = []
     errors = []
     seen_input_hashes = set()
+    schema_versions = set()
     total_records = 0
     try:
         with open(path, encoding="utf-8") as handle:
             lines = [line for line in handle.read().splitlines() if line.strip()]
     except OSError as error:
         errors.append(f"cannot read {path}: {error}")
-        return by_page, out_of_scope, errors, seen_input_hashes, total_records
+        return by_page, out_of_scope, errors, seen_input_hashes, total_records, set()
     total_records = len(lines)
     for number, line in enumerate(lines, start=1):
         try:
@@ -44,6 +51,19 @@ def load_samples(path, source, attempts=(1,)):
             errors.append(f"{path}:{number}: invalid JSON: {error}")
             continue
         seen_input_hashes.add(record.get("input_sha256"))
+        schema_version = int(record.get("schema_version") or 1)
+        schema_versions.add(schema_version)
+        # Mandatory fields: without the byte hashes the pair comparison is
+        # meaningless (None == None would fake a match). Schema v2 adds the
+        # effective base grid (round-6 review): required there, treated as
+        # uncompared for legacy v1 records.
+        mandatory = ["rgb8_sha256", "prompt_sha256"]
+        if schema_version >= 2:
+            mandatory.append("base_image_tokens")
+        missing = [key for key in mandatory if record.get(key) in (None, "")]
+        if missing:
+            errors.append(f"{path}:{number}: missing {', '.join(missing)}")
+            continue
         if record.get("source") != source:
             errors.append(
                 f"{path}:{number}: expected source={source}, got {record.get('source')}"
@@ -62,7 +82,7 @@ def load_samples(path, source, attempts=(1,)):
             )
             continue
         by_page[page] = record
-    return by_page, out_of_scope, errors, seen_input_hashes, total_records
+    return by_page, out_of_scope, errors, seen_input_hashes, total_records, schema_versions
 
 
 def main(argv=None):
@@ -72,10 +92,10 @@ def main(argv=None):
     parser.add_argument("--output", help="verdict JSON path (default stdout)")
     args = parser.parse_args(argv)
 
-    scan, scan_retry, scan_errors, scan_hashes, scan_total = load_samples(
+    scan, scan_retry, scan_errors, scan_hashes, scan_total, scan_schemas = load_samples(
         args.scan, "scan", attempts=(1,)
     )
-    direct, direct_extra, direct_errors, direct_hashes, direct_total = load_samples(
+    direct, direct_extra, direct_errors, direct_hashes, direct_total, direct_schemas = load_samples(
         args.direct, "direct", attempts=(1,)
     )
     errors = scan_errors + direct_errors
@@ -122,6 +142,9 @@ def main(argv=None):
     pairs = []
     for page in sorted(set(scan) & set(direct)):
         s, d = scan[page], direct[page]
+        # The base grid is compared only when both records are schema v2
+        # (legacy v1 archived evidence predates the field — its grid
+        # limitation is documented in the root-cause plan).
         param_fields = (
             "width",
             "height",
@@ -130,6 +153,10 @@ def main(argv=None):
             "image_tokens_override",
             "retry_sampling",
         )
+        s_v2 = int(s.get("schema_version") or 1) >= 2
+        d_v2 = int(d.get("schema_version") or 1) >= 2
+        if s_v2 and d_v2:
+            param_fields = ("base_image_tokens",) + param_fields
         param_mismatch = {field: [s.get(field), d.get(field)] for field in param_fields if s.get(field) != d.get(field)}
         pairs.append({
             "page_number": page,
