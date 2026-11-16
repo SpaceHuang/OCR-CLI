@@ -90,7 +90,12 @@ def main(argv=None):
 
     # Input identity: each side must describe EXACTLY ONE document (mixed
     # identities on one side invalidate even when the two sides share a
-    # hash), and the two sides must agree on it.
+    # hash), and the two sides must agree on it. A record without an
+    # input_sha256 makes the document identity unverifiable — fatal.
+    if None in scan_hashes or "" in scan_hashes:
+        errors.append("scan side has records without input_sha256")
+    if None in direct_hashes or "" in direct_hashes:
+        errors.append("direct side has records without input_sha256")
     if len(scan_hashes) > 1:
         errors.append(f"scan side mixes input_sha256 values: {sorted(scan_hashes)}")
     if len(direct_hashes) > 1:
@@ -130,6 +135,13 @@ def main(argv=None):
             "param_mismatch": param_mismatch,
         })
 
+    # No pairs = no comparison happened: an empty pairing can never back
+    # a conclusion, whatever the record counts say.
+    if not pairs and not errors:
+        errors.append(
+            "no attempt-1 pairs formed — the E1 comparison requires at least "
+            "one same-page scan attempt-1 / direct record pair"
+        )
     verdict = "INVALID" if errors else (
         "DIFF" if any(not pair["bytes_match"] or pair["param_mismatch"] for pair in pairs)
         else "IDENTICAL"

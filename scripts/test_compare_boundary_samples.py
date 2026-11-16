@@ -162,3 +162,20 @@ check(
     "verdict counts: attempt-1 and retry split",
     pairing["scan_attempt1_records"] == 2 and pairing["scan_retry_records"] == 1,
 )
+
+# 11) A dataset with ONLY retry records forms zero pairs -> INVALID
+#     (no E1 comparison happened, so no conclusion may be drawn).
+code = run(
+    [sample("scan", 4, attempt=2, sha="retry", sampling=[1200, 64])],
+    [sample("direct", 9, sha="h9")],
+)
+check("only-retry dataset (zero pairs) -> exit 1", code == 1)
+
+# 12) BOTH sides missing input_sha256 -> INVALID (identity unverifiable).
+missing_id = []
+for source, page in (("scan", 4), ("direct", 4)):
+    record = sample(source, page, sha="h4")
+    del record["input_sha256"]
+    missing_id.append(record)
+code = run(missing_id[:1], missing_id[1:])
+check("both sides missing input_sha256 -> exit 1", code == 1)
