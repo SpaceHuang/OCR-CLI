@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "model": "pp-doclayout-v2",
+  "source": {
+    "repository": "PaddlePaddle/PP-DocLayoutV2",
+    "revision": "b73668227b14316a38f8b345d6b474e4f1f0b84d",
+    "license": "apache-2.0",
+    "source_url": "https://hf-mirror.com/PaddlePaddle/PP-DocLayoutV2"
+  },
+  "assets": [
+    {
+      "file": "inference.json",
+      "sha256": "91457e49ff891231d3f10bf17f393cc7545b588cc3453869ce4c179cea194e9b",
+      "size_bytes": 1592566,
+      "role": "layout-graph"
+    },
+    {
+      "file": "inference.pdiparams",
+      "sha256": "45404a84c9fdf91d7bbc94bd47ac4c03649bda84167de04c62bff4726657869a",
+      "size_bytes": 212170944,
+      "role": "layout-weights"
+    }
+  ],
+  "runtime": {
+    "target_size": 800,
+    "pixel_scale": 255,
+    "conf": 0.25,
+    "class_table": 21,
+    "route": "A"
+  }
+}
