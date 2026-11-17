@@ -457,6 +457,11 @@ impl ScanApplication {
             formula_reread: false,
             layout_model_id: String::new(),
             layout_model_assets_sha256: String::new(),
+            // R2.5/BLK-5: reread execution identity — empty/0 while the
+            // pipeline is off (R2.6 wires the CLI switches to the frozen
+            // constants).
+            reread_prompt_version: String::new(),
+            reread_rules_generation: 0,
         };
         let statik: Option<StaticInferenceIdentity> = if shared_prepared.is_none() {
             service

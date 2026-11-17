@@ -29,6 +29,11 @@ pub struct ScanOcrConfig {
     pub formula_reread: bool,
     pub layout_model_id: String,
     pub layout_model_assets_sha256: String,
+    /// R2.5/BLK-5: reread execution identity (prompt version + rules
+    /// generation). Defaults = empty/0 (the off pipeline); the reread-on
+    /// caller sets them from the frozen constants.
+    pub reread_prompt_version: String,
+    pub reread_rules_generation: u32,
 }
 
 impl Default for ScanOcrConfig {
@@ -52,6 +57,8 @@ impl Default for ScanOcrConfig {
             formula_reread: false,
             layout_model_id: String::new(),
             layout_model_assets_sha256: String::new(),
+            reread_prompt_version: String::new(),
+            reread_rules_generation: 0,
         }
     }
 }
@@ -98,6 +105,8 @@ pub fn ocr_compatibility(
             formula_reread: config.formula_reread,
             layout_model_id: config.layout_model_id.clone(),
             layout_model_assets_sha256: config.layout_model_assets_sha256.clone(),
+            reread_prompt_version: config.reread_prompt_version.clone(),
+            reread_rules_generation: config.reread_rules_generation,
         },
     )
 }
@@ -125,6 +134,28 @@ mod tests {
         assert_eq!(ocr.prompt_schema_version, 1);
         assert_eq!(ocr.dpi, 300);
         assert_eq!(ocr.page_parser_version, "ovis-page-v1");
+    }
+
+    #[test]
+    fn reread_execution_identity_rides_the_config_into_the_checkpoint() {
+        // R2.5/BLK-5: the on configuration carries the frozen prompt version
+        // and the current rules generation into the stored identity; the
+        // default (off) config stays empty/0.
+        let mut config = ScanOcrConfig {
+            reread_prompt_version: crate::ocr::prompt::TABLE_REREAD_PROMPT_VERSION.to_owned(),
+            reread_rules_generation: crate::reread::REREAD_RULES_GENERATION,
+            ..ScanOcrConfig::default()
+        };
+        config.table_reread = true;
+        let compatibility = ocr_compatibility("hash", pdf(), &identity(), &config);
+        let ocr = compatibility.ocr.as_ref().unwrap();
+        assert_eq!(ocr.reread_prompt_version, "table-reread-v1");
+        assert_eq!(ocr.reread_rules_generation, 1);
+        assert!(ocr.table_reread);
+        let off = ocr_compatibility("hash", pdf(), &identity(), &ScanOcrConfig::default());
+        let off_ocr = off.ocr.as_ref().unwrap();
+        assert_eq!(off_ocr.reread_prompt_version, "");
+        assert_eq!(off_ocr.reread_rules_generation, 0);
     }
 
     #[test]

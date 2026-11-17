@@ -73,6 +73,15 @@ pub struct OcrIdentity {
     pub layout_model_id: String,
     #[serde(default)]
     pub layout_model_assets_sha256: String,
+    /// R2.5/BLK-5: the reread prompt identity (empty = no reread prompt).
+    /// A prompt switch must reprocess — the reread output rides this bytes.
+    #[serde(default)]
+    pub reread_prompt_version: String,
+    /// R2.5/BLK-5: generation of the reread trigger/compare/normalization
+    /// rules (one calibration round = +1; a normalization-version switch is
+    /// a generation bump by contract). 0 = no reread rules.
+    #[serde(default)]
+    pub reread_rules_generation: u32,
 }
 
 /// Versioned structured scan compatibility (`schema_version = 1`).
@@ -162,6 +171,9 @@ pub struct ScanOcrSide {
     pub formula_reread: bool,
     pub layout_model_id: String,
     pub layout_model_assets_sha256: String,
+    /// R2.5/BLK-5 — see [`OcrIdentity`] (defaults = off/empty pipeline).
+    pub reread_prompt_version: String,
+    pub reread_rules_generation: u32,
 }
 
 fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
@@ -179,6 +191,8 @@ fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
         && ocr.formula_reread == side.formula_reread
         && ocr.layout_model_id == side.layout_model_id
         && ocr.layout_model_assets_sha256 == side.layout_model_assets_sha256
+        && ocr.reread_prompt_version == side.reread_prompt_version
+        && ocr.reread_rules_generation == side.reread_rules_generation
 }
 
 /// Phase 1 — static pre-comparison (RBLK-2/RBLK-4, prepare-free fast path).
@@ -242,6 +256,8 @@ pub fn ocr_final_compare(stored: &ScanCompatibility, identity: &InferenceIdentit
             formula_reread: ocr.formula_reread,
             layout_model_id: ocr.layout_model_id.clone(),
             layout_model_assets_sha256: ocr.layout_model_assets_sha256.clone(),
+            reread_prompt_version: ocr.reread_prompt_version.clone(),
+            reread_rules_generation: ocr.reread_rules_generation,
         },
     ) && ocr.inference.backend == identity.backend
         && ocr.inference.batch_depth == identity.batch_depth
@@ -319,6 +335,8 @@ mod tests {
             formula_reread: false,
             layout_model_id: String::new(),
             layout_model_assets_sha256: String::new(),
+            reread_prompt_version: String::new(),
+            reread_rules_generation: 0,
         }
     }
 
@@ -350,6 +368,8 @@ mod tests {
                 formula_reread: false,
                 layout_model_id: String::new(),
                 layout_model_assets_sha256: String::new(),
+                reread_prompt_version: String::new(),
+                reread_rules_generation: 0,
             },
         )
     }
@@ -559,6 +579,78 @@ mod tests {
         assert!(!ocr_pre_compare(&fresh, &statik, &matching_side));
     }
 
+    /// R2.5 fixture: stored identity + matching side with the reread
+    /// pipeline on at the frozen prompt/generation (`table-reread-v1`, 1).
+    fn reread_on(current: &InferenceIdentity) -> (ScanCompatibility, ScanOcrSide) {
+        let mut compat = stored(current);
+        let ocr = compat.ocr.as_mut().unwrap();
+        ocr.table_reread = true;
+        ocr.reread_prompt_version = "table-reread-v1".to_owned();
+        ocr.reread_rules_generation = 1;
+        let mut matching = side();
+        matching.table_reread = true;
+        matching.reread_prompt_version = "table-reread-v1".to_owned();
+        matching.reread_rules_generation = 1;
+        (compat, matching)
+    }
+
+    #[test]
+    fn reread_prompt_switch_never_reuses() {
+        // R2.5/BLK-5 regression 1: a reread prompt change (v1 -> v2) is a
+        // bytes-visible output change — the stored page must reprocess in
+        // BOTH directions.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let statik = StaticInferenceIdentity::from_execution(&current);
+        let (compat, matching) = reread_on(&current);
+        assert!(
+            ocr_pre_compare(&compat, &statik, &matching.clone()),
+            "baseline on"
+        );
+        let mut switched = matching.clone();
+        switched.reread_prompt_version = "table-reread-v2".to_owned();
+        assert!(!ocr_pre_compare(&compat, &statik, &switched));
+        // Reverse direction: stored v2 page, run downgrades to v1.
+        let mut stored_v2 = compat;
+        stored_v2.ocr.as_mut().unwrap().reread_prompt_version = "table-reread-v2".to_owned();
+        assert!(!ocr_pre_compare(&stored_v2, &statik, &matching));
+    }
+
+    #[test]
+    fn reread_rules_generation_bump_never_reuses() {
+        // R2.5/BLK-5 regression 2: one calibration round = generation +1
+        // (D-29/D-47 thresholds live in the rules); old artifacts carry the
+        // old rules' verdicts and must reprocess.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let statik = StaticInferenceIdentity::from_execution(&current);
+        let (compat, matching) = reread_on(&current);
+        let mut recalibrated = matching.clone();
+        recalibrated.reread_rules_generation = 2;
+        assert!(!ocr_pre_compare(&compat, &statik, &recalibrated));
+        // Reverse: stored under generation 2, run is still on 1.
+        let mut stored_new = compat;
+        stored_new.ocr.as_mut().unwrap().reread_rules_generation = 2;
+        assert!(!ocr_pre_compare(&stored_new, &statik, &matching));
+    }
+
+    #[test]
+    fn normalization_version_switch_rides_the_rules_generation() {
+        // R2.5/BLK-5 regression 3 (contract test): the D-47 normalization
+        // has no dedicated identity field BY DESIGN — a normalization
+        // version switch manifests as `reread_rules_generation` +1 (frozen
+        // rule: any trigger/compare/normalization change bumps it). Same
+        // generation = same normalization = reuse stays possible; a switch
+        // with the bump honored never reuses.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let statik = StaticInferenceIdentity::from_execution(&current);
+        let (compat, matching) = reread_on(&current);
+        // Sanity: identical generation (v1 == v1) reuses.
+        assert!(ocr_pre_compare(&compat, &statik, &matching));
+        // Normalization v1 -> v2 run with the contract honored.
+        let mut v2_run = matching.clone();
+        v2_run.reread_rules_generation += 1;
+        assert!(!ocr_pre_compare(&compat, &statik, &v2_run));
+    }
+
     #[test]
     fn old_identities_without_reread_fields_deserialize_with_defaults() {
         // Additive compat (pixel_width_budget precedent): a compatibility
@@ -573,6 +665,8 @@ mod tests {
             "formula_reread",
             "layout_model_id",
             "layout_model_assets_sha256",
+            "reread_prompt_version",
+            "reread_rules_generation",
         ] {
             ocr.remove(field).unwrap();
         }
@@ -583,6 +677,8 @@ mod tests {
         assert!(!ocr.formula_reread);
         assert_eq!(ocr.layout_model_id, "");
         assert_eq!(ocr.layout_model_assets_sha256, "");
+        assert_eq!(ocr.reread_prompt_version, "");
+        assert_eq!(ocr.reread_rules_generation, 0);
         let statik = StaticInferenceIdentity::from_execution(&current);
         assert!(ocr_pre_compare(&parsed, &statik, &side()));
     }

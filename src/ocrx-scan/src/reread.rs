@@ -338,6 +338,14 @@ pub fn directional_coverage(a_text: &str, b_text: &str) -> Option<(f64, f64)> {
 pub const IDENTITY_T1_COVERAGE_OF_ORIGINAL: f64 = 0.40;
 pub const IDENTITY_T2_COVERAGE_OF_REREAD: f64 = 0.25;
 
+/// R2.5/BLK-5: generation of the frozen reread rules (F1-F5 triggers +
+/// compare-keep + D-47 normalization/identity). Calibration contract: one
+/// calibration round = +1, and any normalization-version switch is a
+/// generation bump — `reread_rules_generation` carries it into the
+/// checkpoint so artifacts never reuse across rule changes.
+/// 1 = the calibrated set adjudicated by the B0'/D-47 work.
+pub const REREAD_RULES_GENERATION: u32 = 1;
+
 /// Content-identity verdict (D-47): Some(replace_ok) when both coverages
 /// clear the floor and thresholds; None = inconclusive (keep original).
 /// `replace_ok` means the reread may PROCEED to compare-keep - never a

@@ -595,6 +595,8 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             formula_reread: ocr.formula_reread,
             layout_model_id: ocr.layout_model_id.clone(),
             layout_model_assets_sha256: ocr.layout_model_assets_sha256.clone(),
+            reread_prompt_version: ocr.reread_prompt_version.clone(),
+            reread_rules_generation: ocr.reread_rules_generation,
         },
         None => ScanOcrSide {
             prompt_id: String::new(),
@@ -611,6 +613,8 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             formula_reread: false,
             layout_model_id: String::new(),
             layout_model_assets_sha256: String::new(),
+            reread_prompt_version: String::new(),
+            reread_rules_generation: 0,
         },
     }
 }

@@ -3139,6 +3139,8 @@ mod tests {
                 formula_reread: false,
                 layout_model_id: String::new(),
                 layout_model_assets_sha256: String::new(),
+                reread_prompt_version: String::new(),
+                reread_rules_generation: 0,
             },
         );
         // Artifacts must be intact for reuse: the md the checkpoint hashes.
