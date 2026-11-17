@@ -420,10 +420,9 @@ fn bands_order(boxes: &[(f64, f64, f64, f64)], axis: usize) -> (bool, Vec<usize>
             hi <= lo + 1e-6
         });
     bands.sort_by_key(|band| {
-        (band
-            .iter()
+        band.iter()
             .map(|j| axis_lo(boxes[*j], axis) * 1000.0)
-            .fold(f64::INFINITY, f64::min) as i64)
+            .fold(f64::INFINITY, f64::min) as i64
     });
     let mut ordinals = Vec::new();
     for band in bands {
@@ -1259,7 +1258,7 @@ mod tests {
     fn normalized_bigrams_strips_tags_and_is_cjk_friendly() {
         let g = normalized_bigrams("<table><tr><td>面积</td></tr></table>");
         assert!(
-            g.contains("面积") || g.len() >= 1,
+            g.contains("面积") || !g.is_empty(),
             "CJK text produces bigrams"
         );
         let g2 = normalized_bigrams("<td>abc</td><td>abc</td>");
