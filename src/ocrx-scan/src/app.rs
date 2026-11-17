@@ -472,7 +472,7 @@ impl ScanApplication {
                 .map(|r| r.layout_assets_sha256.clone())
                 .unwrap_or_default(),
             reread_prompt_version: if options.reread.is_some() {
-                crate::ocr::prompt::TABLE_REREAD_PROMPT_VERSION.to_owned()
+                crate::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION.to_owned()
             } else {
                 String::new()
             },

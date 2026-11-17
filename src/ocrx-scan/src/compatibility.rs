@@ -86,7 +86,7 @@ impl ScanOcrConfig {
                 self.layout_model_id.clone_from(&reread.layout_model_id);
                 self.layout_model_assets_sha256
                     .clone_from(&reread.layout_assets_sha256);
-                crate::ocr::prompt::TABLE_REREAD_PROMPT_VERSION
+                crate::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION
                     .clone_into(&mut self.reread_prompt_version);
                 self.reread_rules_generation = crate::reread::REREAD_RULES_GENERATION;
             }
@@ -179,7 +179,8 @@ mod tests {
         // and the current rules generation into the stored identity; the
         // default (off) config stays empty/0.
         let mut config = ScanOcrConfig {
-            reread_prompt_version: crate::ocr::prompt::TABLE_REREAD_PROMPT_VERSION.to_owned(),
+            reread_prompt_version: crate::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION
+                .to_owned(),
             reread_rules_generation: crate::reread::REREAD_RULES_GENERATION,
             ..ScanOcrConfig::default()
         };

@@ -199,10 +199,12 @@ impl crate::reread::TableRereadDecoder for SessionTableDecoder<'_> {
             crop.rgb8.clone(),
         )
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
-        let request = TaskRequest::new(super::prompt::TABLE_REREAD_V1, vec![image], generation)
-            .map_err(|error| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
-            })?;
+        let request = TaskRequest::new(
+            super::prompt::reread::TABLE_REREAD_V1,
+            vec![image],
+            generation,
+        )
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
         // Frozen R2.3 decode grid for the region reread = the plain
         // attempt-1 grid (1024); no override needed (2048 is the only
         // platform override, reserved for the degeneration ladder).

@@ -287,6 +287,15 @@ fn temp_root(tag: &str) -> PathBuf {
     root
 }
 
+fn committed_attempts(root: &Path, page: u32) -> (u32, bool) {
+    let file = ocrx_output::read_any(root.join(format!("page-{page:04}.checkpoint")))
+        .expect("v6 checkpoint committed");
+    let ocrx_output::CheckpointFile::V6(checkpoint) = file else {
+        panic!("expected a v6 checkpoint");
+    };
+    (checkpoint.attempts, checkpoint.degenerated)
+}
+
 fn eos(page: u32) -> Program {
     Program {
         text: format!("body {page}"),
@@ -355,9 +364,11 @@ fn reread_gate_off_never_constructs_the_pipeline() {
     assert_eq!(summary.replaced_total, 0);
     let captured = session.core.captured.borrow();
     assert!(
-        captured
-            .iter()
-            .all(|r| r.prompt == crate::ocr::prompt::OCR_MARKDOWN_V1),
+        captured.iter().all(|r| r.prompt
+            == crate::ocr::prompt::pack_for(
+                &ocrx_inference_api::ModelId::new("ovisocr2").unwrap()
+            )
+            .prompt),
         "off path must never issue a reread request"
     );
     let _ = std::fs::remove_dir_all(root);
@@ -404,7 +415,7 @@ fn reread_gate_on_replaces_and_counts_through_the_production_decoder() {
     let captured = session.core.captured.borrow();
     let reread_request = captured
         .iter()
-        .find(|r| r.prompt == crate::ocr::prompt::TABLE_REREAD_V1)
+        .find(|r| r.prompt == crate::ocr::prompt::reread::TABLE_REREAD_V1)
         .expect("a reread request exists");
     assert!(
         reread_request
@@ -457,9 +468,11 @@ fn reread_gate_skip_leaves_artifacts_untouched() {
     assert_eq!(summary.replaced_total, 0);
     let captured = session.core.captured.borrow();
     assert!(
-        captured
-            .iter()
-            .all(|r| r.prompt == crate::ocr::prompt::OCR_MARKDOWN_V1),
+        captured.iter().all(|r| r.prompt
+            == crate::ocr::prompt::pack_for(
+                &ocrx_inference_api::ModelId::new("ovisocr2").unwrap()
+            )
+            .prompt),
         "skipped pages never issue reread requests"
     );
     drop(captured);
@@ -517,7 +530,7 @@ fn r2_7_armed_but_not_triggered_is_byte_identical() {
             .captured
             .borrow()
             .iter()
-            .filter(|r| r.prompt == crate::ocr::prompt::TABLE_REREAD_V1)
+            .filter(|r| r.prompt == crate::ocr::prompt::reread::TABLE_REREAD_V1)
             .count();
         let _ = std::fs::remove_dir_all(&root);
         (md, json, summary.tables_reread_total, reread_requests)
@@ -882,14 +895,6 @@ fn degenerated_pages_retry_through_the_frozen_ladder() {
 }
 
 /// Reads the committed v6 checkpoint's attempts value for `page`.
-fn committed_attempts(root: &Path, page: u32) -> (u32, bool) {
-    let file = ocrx_output::read_any(root.join(format!("page-{page:04}.checkpoint")))
-        .expect("v6 checkpoint committed");
-    let ocrx_output::CheckpointFile::V6(checkpoint) = file else {
-        panic!("expected a v6 checkpoint");
-    };
-    (checkpoint.attempts, checkpoint.degenerated)
-}
 
 #[test]
 fn m2_rung_renders_budgeted_4096_and_escapes_with_the_2048_grid() {
@@ -1259,6 +1264,7 @@ fn empty_eos_output_enters_the_ladder_and_lands_degenerated() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert!(
@@ -1316,6 +1322,7 @@ fn empty_output_recovered_by_a_rung_commits_clean() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(session.core.single_calls.get(), 2);
@@ -1347,6 +1354,7 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.degenerated_pages, 1);
@@ -1399,6 +1407,7 @@ fn boundary_samples_record_the_recovery_outcome() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.degenerated_pages, 0);
@@ -1430,6 +1439,7 @@ fn boundary_disabled_by_default_writes_nothing() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     // No boundary.jsonl in the output root (sink unset -> zero writes).
@@ -1463,6 +1473,7 @@ fn ovisocr3_ladder_runs_the_sampling_rung_first() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -1509,6 +1520,7 @@ fn ovisocr2_ladder_keeps_the_frozen_rung_order() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     let records: Vec<serde_json::Value> = std::fs::read_to_string(&boundary)

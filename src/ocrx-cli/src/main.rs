@@ -722,7 +722,7 @@ fn reread_result_identity(
                 "\"enabled\":true,\"layout_model\":\"{}\",\"layout_assets_sha256\":\"{}\",\"prompt_version\":\"{}\",\"rules_generation\":{}",
                 reread.layout_model_id,
                 reread.layout_assets_sha256,
-                ocrx_scan::ocr::prompt::TABLE_REREAD_PROMPT_VERSION,
+                ocrx_scan::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION,
                 ocrx_scan::reread::REREAD_RULES_GENERATION,
             ),
         ),
@@ -4615,6 +4615,7 @@ model=ovisocr3
         };
         let fields = ScanResultFields {
             model_identity: Some(&identity),
+            reread_json: super::reread_result_identity(None, 0, 0),
             status: "success",
             input: Path::new("in.pdf"),
             markdown_path: None,
@@ -4664,6 +4665,7 @@ model=ovisocr3
         let identity = test_support_identity();
         let fields = ScanResultFields {
             model_identity: Some(&identity),
+            reread_json: super::reread_result_identity(None, 0, 0),
             status: "success",
             input: Path::new("in.pdf"),
             markdown_path: None,
