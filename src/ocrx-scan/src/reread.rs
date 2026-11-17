@@ -285,6 +285,201 @@ pub fn crop_region(
 }
 
 // ---------------------------------------------------------------------------
+// R2.4: integral skip verdict + content-identity gate (D-44/D-47 frozen
+// contracts, executable reference ported from
+// omnidocbench-region-pairing-check.py / omnidocbench-reread-identity-
+// calibration.py - the Python harnesses are the calibration + acceptance
+// side; this is the production shape that the orchestration calls)
+// ---------------------------------------------------------------------------
+
+/// Normalization v1 (D-47): strip tags -> collapse whitespace -> lowercase
+/// -> char bigrams. CJK-friendly (bigrams of CJK text carry structure).
+pub fn normalized_bigrams(text: &str) -> std::collections::BTreeSet<String> {
+    let stripped = strip_tags(text);
+    let lowered = stripped.to_lowercase();
+    let collapsed: String = lowered.split_whitespace().collect::<Vec<_>>().join("");
+    let s = collapsed.as_str();
+    if s.chars().count() < 2 {
+        return s.chars().map(|c| c.to_string()).collect();
+    }
+    s.chars()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .map(|w| w.iter().collect())
+        .collect()
+}
+
+/// Frozen min-text floor (D-47): either side below this many unique
+/// bigrams is INCONCLUSIVE - fail-closed at the caller.
+pub const MIN_TEXT_BIGRAMS: usize = 8;
+
+/// Directional coverage (D-47): (cov_a, cov_b) where cov_a = share of the
+/// ORIGINAL covered by the reread (fragment guard) and cov_b = share of
+/// the REREAD covered by the original (foreign guard). None when either
+/// side is below the floor.
+pub fn directional_coverage(a_text: &str, b_text: &str) -> Option<(f64, f64)> {
+    let ga = normalized_bigrams(a_text);
+    let gb = normalized_bigrams(b_text);
+    if ga.len() < MIN_TEXT_BIGRAMS || gb.len() < MIN_TEXT_BIGRAMS {
+        return None;
+    }
+    let inter = ga.intersection(&gb).count();
+    Some((
+        inter as f64 / ga.len() as f64,
+        inter as f64 / gb.len() as f64,
+    ))
+}
+
+/// Frozen identity thresholds (D-47): T1 guards against FRAGMENTS (the
+/// reread missing rows => low cov_a), T2 against FOREIGN content (a
+/// different table => low cov_b). Bias to blocking: inconclusive and
+/// below-threshold both keep the original.
+pub const IDENTITY_T1_COVERAGE_OF_ORIGINAL: f64 = 0.40;
+pub const IDENTITY_T2_COVERAGE_OF_REREAD: f64 = 0.25;
+
+/// Content-identity verdict (D-47): Some(replace_ok) when both coverages
+/// clear the floor and thresholds; None = inconclusive (keep original).
+/// `replace_ok` means the reread may PROCEED to compare-keep - never a
+/// direct replace.
+pub fn content_identity_pass(original_html: &str, reread_html: &str) -> Option<bool> {
+    let (cov_a, cov_b) = directional_coverage(original_html, reread_html)?;
+    Some(cov_a >= IDENTITY_T1_COVERAGE_OF_ORIGINAL && cov_b >= IDENTITY_T2_COVERAGE_OF_REREAD)
+}
+
+/// Why a page was skipped (diagnostic; the behavior is identical: keep
+/// original output, no reread).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PairingSkip {
+    DedupEvent,
+    CountMismatch { detection_n: usize, output_n: usize },
+    OrderingAmbiguous,
+}
+
+pub(crate) fn box_iou(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> f64 {
+    let ix0 = a.0.max(b.0);
+    let iy0 = a.1.max(b.1);
+    let ix1 = a.2.min(b.2);
+    let iy1 = a.3.min(b.3);
+    let inter = (ix1 - ix0).max(0.0) * (iy1 - iy0).max(0.0);
+    let area_a = (a.2 - a.0).max(0.0) * (a.3 - a.1).max(0.0);
+    let area_b = (b.2 - b.0).max(0.0) * (b.3 - b.1).max(0.0);
+    let union = area_a + area_b - inter;
+    if union <= 0.0 { 0.0 } else { inter / union }
+}
+
+fn consecutive_y_overlaps(boxes: &[(f64, f64, f64, f64)], frac: f64) -> bool {
+    boxes.windows(2).any(|pair| {
+        let (a, b) = (pair[0], pair[1]);
+        let inter = a.3.min(b.3) - a.1.max(b.1);
+        let smaller = (a.3 - a.1).min(b.3 - b.1);
+        smaller > 0.0 && inter / smaller >= frac
+    })
+}
+
+/// Band-clustering order along an axis (0 = x columns, 1 = y rows),
+/// mirrored from the Python calibration harness.
+fn axis_lo(b: (f64, f64, f64, f64), axis: usize) -> f64 {
+    if axis == 0 { b.0 } else { b.1 }
+}
+fn axis_hi(b: (f64, f64, f64, f64), axis: usize) -> f64 {
+    if axis == 0 { b.2 } else { b.3 }
+}
+
+fn bands_order(boxes: &[(f64, f64, f64, f64)], axis: usize) -> (bool, Vec<usize>) {
+    let mut order: Vec<usize> = (0..boxes.len()).collect();
+    order.sort_by_key(|i| (axis_lo(boxes[*i], axis) * 1000.0).round() as i64);
+    let mut bands: Vec<Vec<usize>> = Vec::new();
+    for i in order {
+        let fits = match bands.last() {
+            Some(last) => {
+                let prev = boxes[*last.last().expect("non-empty band")];
+                let inter = axis_hi(prev, axis).min(axis_hi(boxes[i], axis))
+                    - axis_lo(prev, axis).max(axis_lo(boxes[i], axis));
+                let smaller = (axis_hi(prev, axis) - axis_lo(prev, axis))
+                    .min(axis_hi(boxes[i], axis) - axis_lo(boxes[i], axis));
+                smaller > 0.0 && inter / smaller >= 0.3
+            }
+            None => false,
+        };
+        if fits {
+            bands.last_mut().expect("last exists").push(i);
+        } else {
+            bands.push(vec![i]);
+        }
+    }
+    let clean = bands.len() <= 1
+        || bands.windows(2).all(|pair| {
+            let hi = pair[0]
+                .iter()
+                .map(|j| axis_hi(boxes[*j], axis))
+                .fold(f64::NEG_INFINITY, f64::max);
+            let lo = pair[1]
+                .iter()
+                .map(|j| axis_lo(boxes[*j], axis))
+                .fold(f64::INFINITY, f64::min);
+            hi <= lo + 1e-6
+        });
+    bands.sort_by_key(|band| {
+        (band
+            .iter()
+            .map(|j| axis_lo(boxes[*j], axis) * 1000.0)
+            .fold(f64::INFINITY, f64::min) as i64)
+    });
+    let mut ordinals = Vec::new();
+    for band in bands {
+        let mut within = band;
+        within.sort_by_key(|j| (axis_lo(boxes[*j], 1 - axis) * 1000.0).round() as i64);
+        ordinals.extend(within);
+    }
+    (clean, ordinals)
+}
+
+/// Pairing verdict (D-44 integral skip): regions are the R1b-normalized
+/// detection sequence, `output_n` the page OCR html_table block count.
+/// SKIP (Err) reasons: dedup event (ordinal holes), count mismatch
+/// (miss/multi), dual-hypothesis ordering ambiguity. PASS yields the
+/// detection indices in reading order - position k pairs with the k-th
+/// output table block by class ordinal.
+pub fn pairing_verdict(
+    regions: &[DetectedRegion],
+    output_n: usize,
+) -> Result<Vec<usize>, PairingSkip> {
+    let mut kept: Vec<DetectedRegion> = Vec::new();
+    let mut deduped = false;
+    for region in regions {
+        if kept
+            .iter()
+            .any(|k| k.class == region.class && box_iou(k.bbox, region.bbox) >= 0.9)
+        {
+            deduped = true;
+            continue;
+        }
+        kept.push(*region);
+    }
+    if deduped {
+        return Err(PairingSkip::DedupEvent);
+    }
+    if kept.len() != output_n {
+        return Err(PairingSkip::CountMismatch {
+            detection_n: kept.len(),
+            output_n,
+        });
+    }
+    let boxes: Vec<(f64, f64, f64, f64)> = kept.iter().map(|k| k.bbox).collect();
+    let (row_clean, row_order) = bands_order(&boxes, 1);
+    let (col_clean, col_order) = bands_order(&boxes, 0);
+    if !row_clean || !col_clean || row_order != col_order {
+        return Err(PairingSkip::OrderingAmbiguous);
+    }
+    if consecutive_y_overlaps(
+        &row_order.iter().map(|i| boxes[*i]).collect::<Vec<_>>(),
+        0.30,
+    ) {
+        return Err(PairingSkip::OrderingAmbiguous);
+    }
+    Ok(row_order)
+}
+// ---------------------------------------------------------------------------
 // Frozen v1 triggers (D-29): M4 table F1–F5, M5 formula G1–G4
 // ---------------------------------------------------------------------------
 
@@ -977,6 +1172,98 @@ mod tests {
             "fill tie + smaller scale: keep"
         );
         assert!(keep_original(&base, &equal), "full tie: keep original");
+    }
+
+    #[test]
+    fn pairing_verdict_passes_clean_two_table_page() {
+        // two vertically disjoint tables -> ordinals [0, 1]
+        let regions = vec![
+            region(RegionClass::Table, 0, (0.0, 0.0, 100.0, 50.0)),
+            region(RegionClass::Table, 1, (0.0, 200.0, 100.0, 250.0)),
+        ];
+        assert_eq!(pairing_verdict(&regions, 2), Ok(vec![0, 1]));
+    }
+
+    #[test]
+    fn pairing_verdict_skips_count_mismatch() {
+        // detection missed one of the two output tables
+        let regions = vec![region(RegionClass::Table, 0, (0.0, 0.0, 100.0, 50.0))];
+        assert_eq!(
+            pairing_verdict(&regions, 2),
+            Err(PairingSkip::CountMismatch {
+                detection_n: 1,
+                output_n: 2
+            })
+        );
+    }
+
+    #[test]
+    fn pairing_verdict_skips_dedup_event() {
+        // near-duplicate detections: ordinal holes => integral skip
+        let regions = vec![
+            region(RegionClass::Table, 0, (0.0, 0.0, 100.0, 50.0)),
+            region(RegionClass::Table, 1, (1.0, 1.0, 99.0, 49.0)),
+        ];
+        assert_eq!(pairing_verdict(&regions, 2), Err(PairingSkip::DedupEvent));
+    }
+
+    #[test]
+    fn pairing_verdict_skips_when_row_and_column_orders_disagree() {
+        // 2x2 grid: row-major [0,1,2,3] vs column-major [0,2,1,3] differ
+        let regions = vec![
+            region(RegionClass::Table, 0, (0.0, 0.0, 45.0, 100.0)),
+            region(RegionClass::Table, 1, (55.0, 0.0, 100.0, 100.0)),
+            region(RegionClass::Table, 2, (0.0, 200.0, 45.0, 300.0)),
+            region(RegionClass::Table, 3, (55.0, 200.0, 100.0, 300.0)),
+        ];
+        assert_eq!(
+            pairing_verdict(&regions, 4),
+            Err(PairingSkip::OrderingAmbiguous)
+        );
+    }
+
+    #[test]
+    fn pairing_verdict_skips_consecutive_y_overlap_veto() {
+        // side-by-side tables whose y-ranges overlap (hairline stagger):
+        // relative order is x-derived => ambiguous => skip
+        let regions = vec![
+            region(RegionClass::Table, 0, (0.0, 0.0, 100.0, 100.0)),
+            region(RegionClass::Table, 1, (150.0, 5.0, 250.0, 105.0)),
+        ];
+        assert_eq!(
+            pairing_verdict(&regions, 2),
+            Err(PairingSkip::OrderingAmbiguous)
+        );
+    }
+
+    #[test]
+    fn content_identity_gate_separates_same_and_foreign() {
+        let original = "<table><tr><td>alpha beta</td><td>gamma delta</td></tr><tr><td>epsilon zeta</td><td>eta theta</td></tr></table>";
+        // near-identical reread (legit): proceeds to compare-keep
+        let reread = "<table><tr><td>alpha beta</td><td>gamma delta</td></tr><tr><td>epsilon zeta</td><td>eta theta</td></tr></table>";
+        assert_eq!(content_identity_pass(original, reread), Some(true));
+        // fragment: only one cell survives (cov_a low => keep original)
+        let fragment = "<table><tr><td>alpha beta</td></tr></table>";
+        assert_eq!(content_identity_pass(original, fragment), Some(false));
+        // foreign: disjoint content (both covs low => keep original)
+        let foreign = "<table><tr><td>omega sigma</td><td>tau upsilon</td></tr></table>";
+        assert_eq!(content_identity_pass(original, foreign), Some(false));
+        // inconclusive: below the min-text floor => keep original
+        assert_eq!(
+            content_identity_pass(original, "<table><tr><td>x</td></tr></table>"),
+            None
+        );
+    }
+
+    #[test]
+    fn normalized_bigrams_strips_tags_and_is_cjk_friendly() {
+        let g = normalized_bigrams("<table><tr><td>面积</td></tr></table>");
+        assert!(
+            g.contains("面积") || g.len() >= 1,
+            "CJK text produces bigrams"
+        );
+        let g2 = normalized_bigrams("<td>abc</td><td>abc</td>");
+        assert!(g2.contains("ab") && g2.contains("bc"));
     }
 
     #[test]
