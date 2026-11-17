@@ -303,6 +303,171 @@ fn empty_eos() -> Program {
     }
 }
 
+const TRIGGERED_TABLE: &str = "<table><tr><td>alpha beta</td><td></td></tr><tr><td>gamma delta</td><td></td></tr><tr><td>epsilon zeta</td><td></td></tr></table>";
+const REREAD_TABLE: &str = "<table><tr><th>alpha beta</th><th>gamma delta</th></tr><tr><td>epsilon zeta</td><td>eta theta</td><td>iota kappa</td></tr></table>";
+
+/// R2.6 test provider: one table region exactly covering the 1x1 page.
+struct GateRegionProvider {
+    regions: Vec<usize>,
+}
+impl crate::region_provider::RegionProvider for GateRegionProvider {
+    fn regions_for_page(&mut self, _page: u32) -> Vec<crate::reread::DetectedRegion> {
+        self.regions
+            .iter()
+            .map(|i| crate::reread::DetectedRegion {
+                class: crate::reread::RegionClass::Table,
+                index_in_class: *i,
+                bbox: (0.0, 0.0, 1.0, 1.0),
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn reread_gate_off_never_constructs_the_pipeline() {
+    // Off path (provider None): zero reread requests — every captured
+    // request is the plain OCR prompt, counters stay 0.
+    let root = temp_root("gate-off");
+    let session = FakeSession::with_depth(1);
+    session.push(
+        1,
+        Program {
+            text: TRIGGERED_TABLE.to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+        None,
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.tables_reread_total, 0);
+    assert_eq!(summary.replaced_total, 0);
+    let captured = session.core.captured.borrow();
+    assert!(
+        captured
+            .iter()
+            .all(|r| r.prompt == crate::ocr::prompt::OCR_MARKDOWN_V1),
+        "off path must never issue a reread request"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn reread_gate_on_replaces_and_counts_through_the_production_decoder() {
+    let root = temp_root("gate-on");
+    let session = FakeSession::with_depth(1);
+    // Program 1 = the page OCR; program 2 = the reread decode response.
+    session.push(
+        1,
+        Program {
+            text: TRIGGERED_TABLE.to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    session.push(
+        1,
+        Program {
+            text: REREAD_TABLE.to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let mut provider = GateRegionProvider { regions: vec![0] };
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+        Some(&mut provider),
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.tables_reread_total, 1, "one table reread");
+    assert_eq!(summary.replaced_total, 1, "and replaced");
+    // The production decoder rode the SAME session with the FROZEN prompt.
+    let captured = session.core.captured.borrow();
+    let reread_request = captured
+        .iter()
+        .find(|r| r.prompt == crate::ocr::prompt::TABLE_REREAD_V1)
+        .expect("a reread request exists");
+    assert!(
+        reread_request
+            .images
+            .first()
+            .is_some_and(|image| image.id == "page-1-table-reread"),
+        "the decode targets the cropped region"
+    );
+    drop(captured);
+    // page_json AND markdown carry the reread table.
+    let page_json = std::fs::read_to_string(root.join("page-0001.json")).unwrap();
+    assert!(page_json.contains("<th>alpha beta</th>"), "{page_json}");
+    let markdown = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
+    assert!(markdown.contains("<th>alpha beta</th>"), "{markdown}");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn reread_gate_skip_leaves_artifacts_untouched() {
+    // Count mismatch (2 regions vs 1 table) => integral skip: zero reread
+    // decodes, byte-identical page, counters 0.
+    let root = temp_root("gate-skip");
+    let session = FakeSession::with_depth(1);
+    session.push(
+        1,
+        Program {
+            text: TRIGGERED_TABLE.to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let mut provider = GateRegionProvider {
+        regions: vec![0, 1],
+    };
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+        Some(&mut provider),
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.tables_reread_total, 0);
+    assert_eq!(summary.replaced_total, 0);
+    let captured = session.core.captured.borrow();
+    assert!(
+        captured
+            .iter()
+            .all(|r| r.prompt == crate::ocr::prompt::OCR_MARKDOWN_V1),
+        "skipped pages never issue reread requests"
+    );
+    drop(captured);
+    let markdown = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
+    assert_eq!(markdown, TRIGGERED_TABLE);
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn window_fills_use_the_identity_batch_depth_without_backfill() {
     let root = temp_root("depth");
@@ -321,6 +486,7 @@ fn window_fills_use_the_identity_batch_depth_without_backfill() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     // Depth 2 over [1,2,3] → one full window + one single-page window.
@@ -367,6 +533,7 @@ fn keep_pages_true_keeps_full_page_pngs_non_empty_and_decodable() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2);
@@ -406,6 +573,7 @@ fn max_output_tokens_rides_every_request_blk3() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -436,6 +604,7 @@ fn render_failures_record_diagnostics_and_continue() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -467,6 +636,7 @@ fn cancelled_windows_commit_nothing_mechanism_a() {
         &CommitRecorder::disabled(),
         &cancellation,
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     // Zero commits: no checkpoint, no artifacts.
@@ -512,6 +682,7 @@ fn degenerated_pages_retry_through_the_frozen_ladder() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2);
@@ -570,6 +741,7 @@ fn m2_rung_renders_budgeted_4096_and_escapes_with_the_2048_grid() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -635,6 +807,7 @@ fn m2_rung_stays_unused_when_the_penalty_rung_escapes() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -688,6 +861,7 @@ fn exhausted_five_attempt_ladder_commits_the_m2_terminal_attempt_marked() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -717,6 +891,7 @@ fn window_batch_failure_falls_back_to_depth_one() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2, "depth-1 rerun recovers both");
@@ -747,6 +922,8 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
         warnings: Vec::new(),
         think_blocks_stripped: 0,
         raw_output: String::new(),
+        reread_tables: 0,
+        reread_replaced: 0,
     };
     let terminal = vec![
         TerminalPage::Committed {
@@ -767,6 +944,8 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
     let mut truncated = 0_u32;
     let mut degenerated = 0_u32;
     let mut think_blocks_stripped = 0_u64;
+    let mut reread_tables = 0_u64;
+    let mut reread_replaced = 0_u64;
     let mut warnings = std::collections::BTreeSet::new();
     let mut diagnostics = Vec::new();
     let result = commit_terminal(
@@ -780,6 +959,8 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
         &mut truncated,
         &mut degenerated,
         &mut think_blocks_stripped,
+        &mut reread_tables,
+        &mut reread_replaced,
         &mut warnings,
         &mut diagnostics,
     );
@@ -853,6 +1034,7 @@ fn resume_reuses_candidate_pages_even_with_pending_decode() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
+        None,
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2);

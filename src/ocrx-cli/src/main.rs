@@ -1894,6 +1894,8 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             image_count: document.images_count,
             elapsed_ms: document.elapsed_ms,
             reread_json: reread_result.clone(),
+            tables_reread_total: document.summary.tables_reread_total,
+            replaced_total: document.summary.replaced_total,
         });
         if let Err(error) = ocrx_output::atomic_write(
             document.output_dir.join("result.json"),
@@ -2178,6 +2180,9 @@ struct ScanResultFields<'a> {
     elapsed_ms: u128,
     /// R2.5/BLK-5: precomputed reread identity object (result sync).
     reread_json: String,
+    /// R2.6: reread counters (pages object).
+    tables_reread_total: u64,
+    replaced_total: u64,
 }
 
 fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
@@ -2254,7 +2259,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         .join(",");
     let pdf_routing = fields.pdf_routing.join(",");
     format!(
-        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"reread\":{},\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
+        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"reread\":{},\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"reread\":{{\"tables_reread_total\":{},\"replaced_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
         fields.status,
         json_escape_path(fields.input),
         markdown,
@@ -2271,6 +2276,8 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         fields.truncated_pages,
         fields.degenerated_pages,
         fields.think_blocks_stripped_total,
+        fields.tables_reread_total,
+        fields.replaced_total,
         fields.routing_counts.native_text,
         fields.routing_counts.ocr,
         fields.routing_counts.empty,
@@ -4205,6 +4212,8 @@ model=ovisocr3
             image_count: 3,
             elapsed_ms: 42,
             reread_json: String::new(),
+            tables_reread_total: 0,
+            replaced_total: 0,
         });
 
         assert!(json.contains("\"status\":\"partial\""));
@@ -4251,6 +4260,8 @@ model=ovisocr3
             image_count: 0,
             elapsed_ms: 1,
             reread_json: String::new(),
+            tables_reread_total: 0,
+            replaced_total: 0,
         });
         assert!(json.contains("\"routing_metadata\":[{\"page\":3"));
         assert!(json.contains("native_validation_failed"));
@@ -4306,6 +4317,8 @@ model=ovisocr3
             image_count: 0,
             elapsed_ms: 1,
             reread_json: String::new(),
+            tables_reread_total: 0,
+            replaced_total: 0,
         });
 
         assert!(json.contains("\"warnings\":[\"truncated\",\"render_scaled\"]"));
@@ -4867,6 +4880,8 @@ model=ovisocr3
                 truncated_pages: 0,
                 degenerated_pages: 0,
                 think_blocks_stripped: 0,
+                tables_reread_total: 0,
+                replaced_total: 0,
                 warnings: Vec::new(),
                 diagnostics: Vec::new(),
                 cancelled: false,

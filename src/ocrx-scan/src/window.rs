@@ -164,6 +164,7 @@ pub fn run_pages_with_session(
     commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     cancellation: &CancellationToken,
     heartbeat: &mut dyn FnMut(u32, GenerationProgress),
+    mut table_reread: Option<&mut dyn crate::region_provider::RegionProvider>,
 ) -> std::io::Result<JobSummary> {
     let root = output_root;
     std::fs::create_dir_all(root)?;
@@ -177,6 +178,8 @@ pub fn run_pages_with_session(
     let mut completed = 0_u32;
     let mut failed = 0_u32;
     let mut truncated = 0_u32;
+    let mut reread_tables = 0_u64;
+    let mut reread_replaced = 0_u64;
     let mut degenerated = 0_u32;
     let mut think_blocks_stripped = 0_u64;
     let mut warnings = std::collections::BTreeSet::new();
@@ -280,6 +283,8 @@ pub fn run_pages_with_session(
                 &mut truncated,
                 &mut degenerated,
                 &mut think_blocks_stripped,
+                &mut reread_tables,
+                &mut reread_replaced,
                 &mut warnings,
                 &mut diagnostics,
             )?;
@@ -312,12 +317,22 @@ pub fn run_pages_with_session(
                         TerminalPage::RenderFailed { page, cancelled }
                     }
                     SerialOutcome::Terminal(outcome) => match outcome {
-                        Ok((image, artifact, attempts)) => TerminalPage::Committed {
-                            page,
-                            image,
-                            artifact,
-                            attempts,
-                        },
+                        Ok((image, mut artifact, attempts)) => {
+                            apply_reread_gate(
+                                page,
+                                &image,
+                                &mut artifact,
+                                &mut table_reread,
+                                session,
+                                config.max_output_tokens,
+                            )?;
+                            TerminalPage::Committed {
+                                page,
+                                image,
+                                artifact,
+                                attempts,
+                            }
+                        }
                         Err((audit, error)) => TerminalPage::RecognizeFailed { page, audit, error },
                     },
                 },
@@ -338,6 +353,8 @@ pub fn run_pages_with_session(
                 &mut truncated,
                 &mut degenerated,
                 &mut think_blocks_stripped,
+                &mut reread_tables,
+                &mut reread_replaced,
                 &mut warnings,
                 &mut diagnostics,
             )?;
@@ -463,7 +480,15 @@ pub fn run_pages_with_session(
                                         }
                                     }
                                     SerialOutcome::Terminal(outcome) => match outcome {
-                                        Ok((image, artifact, attempts)) => {
+                                        Ok((image, mut artifact, attempts)) => {
+                                            apply_reread_gate(
+                                                pending,
+                                                &image,
+                                                &mut artifact,
+                                                &mut table_reread,
+                                                session,
+                                                config.max_output_tokens,
+                                            )?;
                                             TerminalPage::Committed {
                                                 page: pending,
                                                 image,
@@ -510,12 +535,22 @@ pub fn run_pages_with_session(
                         terminal.push(TerminalPage::RenderFailed { page, cancelled });
                     }
                     SerialOutcome::Terminal(outcome) => match outcome {
-                        Ok((image, retried, attempts)) => terminal.push(TerminalPage::Committed {
-                            page,
-                            image,
-                            artifact: retried,
-                            attempts,
-                        }),
+                        Ok((image, mut retried, attempts)) => {
+                            apply_reread_gate(
+                                page,
+                                &image,
+                                &mut retried,
+                                &mut table_reread,
+                                session,
+                                config.max_output_tokens,
+                            )?;
+                            terminal.push(TerminalPage::Committed {
+                                page,
+                                image,
+                                artifact: retried,
+                                attempts,
+                            });
+                        }
                         Err((audit, msg)) => terminal.push(TerminalPage::RecognizeFailed {
                             page,
                             audit,
@@ -525,6 +560,15 @@ pub fn run_pages_with_session(
                 }
             } else if let Some((_, image)) = images.iter().find(|(entry, _)| *entry == page) {
                 let image = image.clone();
+                let mut artifact = artifact;
+                apply_reread_gate(
+                    page,
+                    &image,
+                    &mut artifact,
+                    &mut table_reread,
+                    session,
+                    config.max_output_tokens,
+                )?;
                 terminal.push(TerminalPage::Committed {
                     page,
                     image,
@@ -551,6 +595,8 @@ pub fn run_pages_with_session(
             &mut truncated,
             &mut degenerated,
             &mut think_blocks_stripped,
+            &mut reread_tables,
+            &mut reread_replaced,
             &mut warnings,
             &mut diagnostics,
         )?;
@@ -570,10 +616,38 @@ pub fn run_pages_with_session(
         truncated_pages: truncated,
         degenerated_pages: degenerated,
         think_blocks_stripped,
+        tables_reread_total: reread_tables,
+        replaced_total: reread_replaced,
         warnings: warnings.into_iter().collect(),
         diagnostics,
         cancelled: cancellation.is_cancelled(),
     })
+}
+
+/// R2.6 golden gate: the ONLY arming point of the reread pipeline.
+/// `provider` = `None` on the off path — the orchestration is never
+/// constructed, so no reread request can exist (byte-identical off path by
+/// construction). The decode rides the same session through the frozen
+/// production decoder (TABLE_REREAD_V1 prompt, 1024 grid).
+fn apply_reread_gate(
+    page: u32,
+    image: &RenderedPage,
+    artifact: &mut PageArtifactResult,
+    table_reread: &mut Option<&mut dyn crate::region_provider::RegionProvider>,
+    session: &mut dyn InferenceSession,
+    max_output_tokens: u32,
+) -> std::io::Result<()> {
+    let Some(provider) = table_reread.as_deref_mut() else {
+        return Ok(());
+    };
+    let mut scoped = crate::reread::PageScopedProvider::new(provider, page);
+    let mut decoder = crate::ocr::artifacts::SessionTableDecoder::new(
+        session,
+        max_output_tokens,
+        &format!("page-{page}-table-reread"),
+    );
+    crate::reread::apply_table_reread(image, artifact, &mut scoped, &mut decoder)?;
+    Ok(())
 }
 
 /// The resume-side snapshot for the window-loop final compare (scan-side
@@ -765,6 +839,8 @@ pub(crate) fn commit_terminal(
     truncated: &mut u32,
     degenerated: &mut u32,
     think_blocks_stripped: &mut u64,
+    reread_tables: &mut u64,
+    reread_replaced: &mut u64,
     warnings: &mut std::collections::BTreeSet<String>,
     diagnostics: &mut Vec<PageDiagnostic>,
 ) -> std::io::Result<()> {
@@ -793,6 +869,8 @@ pub(crate) fn commit_terminal(
                     *degenerated += 1;
                 }
                 *think_blocks_stripped += u64::from(artifact.think_blocks_stripped);
+                *reread_tables += artifact.reread_tables as u64;
+                *reread_replaced += artifact.reread_replaced as u64;
                 warnings.extend(artifact_warnings.iter().cloned());
                 write_render_audit(root, page, image.audit)?;
                 // Raw-output sidecar: preserved whenever the page

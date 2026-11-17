@@ -321,6 +321,10 @@ pub struct JobSummary {
     pub degenerated_pages: u32,
     /// Think removals summed over all committed/skipped pages (Q3.1).
     pub think_blocks_stripped: u64,
+    /// R2.6: reread counters summed over committed pages (result.json
+    /// `tables_reread_total` / `replaced_total`).
+    pub tables_reread_total: u64,
+    pub replaced_total: u64,
     pub warnings: Vec<String>,
     pub diagnostics: Vec<PageDiagnostic>,
     pub cancelled: bool,
@@ -336,6 +340,8 @@ pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
         selected_pages: native.selected_pages.max(ocr.selected_pages),
         completed_pages: native.completed_pages + ocr.completed_pages,
         failed_pages: native.failed_pages + ocr.failed_pages,
+        tables_reread_total: native.tables_reread_total + ocr.tables_reread_total,
+        replaced_total: native.replaced_total + ocr.replaced_total,
         truncated_pages: native.truncated_pages + ocr.truncated_pages,
         degenerated_pages: native.degenerated_pages + ocr.degenerated_pages,
         think_blocks_stripped: native.think_blocks_stripped + ocr.think_blocks_stripped,
@@ -504,6 +510,10 @@ pub struct PageArtifactResult {
     pub think_blocks_stripped: u32,
     /// Pre-crop normalized raw output for the `page-NNNN.raw` sidecar.
     pub raw_output: String,
+    /// R2.6 golden-gate counters: tables decoded by the reread pipeline and
+    /// tables actually replaced on this page (0 when the pipeline is off).
+    pub reread_tables: usize,
+    pub reread_replaced: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -708,6 +718,8 @@ mod tests {
             truncated_pages: 0,
             degenerated_pages: 0,
             think_blocks_stripped: 3,
+            tables_reread_total: 0,
+            replaced_total: 0,
             warnings: vec!["a".to_owned()],
             diagnostics: vec![],
             cancelled: false,
@@ -719,6 +731,8 @@ mod tests {
             truncated_pages: 1,
             degenerated_pages: 1,
             think_blocks_stripped: 5,
+            tables_reread_total: 0,
+            replaced_total: 0,
             warnings: vec!["b".to_owned()],
             diagnostics: vec![],
             cancelled: true,

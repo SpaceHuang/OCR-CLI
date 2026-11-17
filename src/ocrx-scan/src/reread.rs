@@ -519,12 +519,13 @@ pub struct RereadStats {
 /// unchanged.
 pub fn orchestrate_table_reread(
     blocks: &[PageBlock],
+    page_number: u32,
     page: &crate::state::RenderedPage,
     provider: &mut dyn RegionProvider,
     decoder: &mut dyn TableRereadDecoder,
 ) -> std::io::Result<(Vec<PageBlock>, RereadStats)> {
     let mut stats = RereadStats::default();
-    let regions = provider.regions_for_page(0);
+    let regions = provider.regions_for_page(page_number);
     let output_n = blocks
         .iter()
         .filter(|b| block_class(b) == Some(RegionClass::Table))
@@ -586,6 +587,142 @@ pub fn orchestrate_table_reread(
     let spliced = splice_m4m5(blocks, &table_regions, &replacements, RegionClass::Table)
         .map_err(std::io::Error::other)?;
     Ok((spliced, stats))
+}
+
+// ---------------------------------------------------------------------------
+// R2.6 golden gate: the single post-processing artifact function. The
+// window loop calls this ONLY when the pipeline is armed; the off path
+// never constructs it (zero call by construction). R2.7's acceptance
+// criteria (untouched bytes / diff exactly the target table / exporter
+// readable / checkpoint hash) ride this fn.
+// ---------------------------------------------------------------------------
+
+/// Region provider scoped to one page: the window loop owns the document
+/// provider; the orchestration expects the CURRENT page's regions.
+pub(crate) struct PageScopedProvider<'a> {
+    inner: &'a mut dyn RegionProvider,
+    page: u32,
+}
+
+impl<'a> PageScopedProvider<'a> {
+    pub(crate) fn new(inner: &'a mut dyn RegionProvider, page: u32) -> Self {
+        Self { inner, page }
+    }
+}
+
+impl RegionProvider for PageScopedProvider<'_> {
+    fn regions_for_page(&mut self, page: u32) -> Vec<DetectedRegion> {
+        debug_assert_eq!(page, self.page, "provider must be scoped to one page");
+        self.inner.regions_for_page(self.page)
+    }
+}
+
+/// The (table ordinal, reread html) pairs where the orchestration actually
+/// replaced a block — the markdown sync inputs.
+fn extract_replacements(old: &[PageBlock], new: &[PageBlock]) -> Vec<(usize, String)> {
+    let mut replacements = Vec::new();
+    let mut ordinal = 0usize;
+    for (old_block, new_block) in old.iter().zip(new.iter()) {
+        if let (PageBlock::HtmlTable { html: old_html }, PageBlock::HtmlTable { html: new_html }) =
+            (old_block, new_block)
+        {
+            if old_html != new_html {
+                replacements.push((ordinal, new_html.clone()));
+            }
+            ordinal += 1;
+        }
+    }
+    replacements
+}
+
+/// Targeted markdown update (R2.7/D-41): replaces ONLY the `ordinal`-th
+/// `<table>...</table>` fragment (nesting-aware scan; the frozen v1 model
+/// contract emits no nested tables). `None` when the fragment does not
+/// exist or is unterminated — the caller keeps the markdown and warns.
+fn replace_table_fragment(markdown: &str, ordinal: usize, html: &str) -> Option<String> {
+    let mut depth = 0usize;
+    let mut fragment_start = None;
+    let mut seen_tables = 0usize;
+    let bytes = markdown.as_bytes();
+    let mut fragment_end = None;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"<table") {
+            if depth == 0 {
+                if seen_tables == ordinal {
+                    fragment_start = Some(i);
+                }
+                seen_tables += 1;
+            }
+            depth += 1;
+            i += 6;
+            continue;
+        }
+        if bytes[i..].starts_with(b"</table>") {
+            depth = depth.saturating_sub(1);
+            if depth == 0 && fragment_start.is_some() {
+                fragment_end = Some(i + b"</table>".len());
+                break;
+            }
+            i += 8;
+            continue;
+        }
+        i += 1;
+    }
+    let start = fragment_start?;
+    let end = fragment_end?;
+    let mut updated = String::with_capacity(markdown.len() + html.len());
+    updated.push_str(&markdown[..start]);
+    updated.push_str(html);
+    updated.push_str(&markdown[end..]);
+    Some(updated)
+}
+
+/// R2.6/R2.7: the ONE post-processing artifact fn — parse the artifact's
+/// page_json, run the per-page orchestration, splice the document, sync
+/// page_json, and apply the targeted markdown update. Only the target
+/// table fragments change; everything else is byte-identical by
+/// construction. Counters land on the artifact (result-schema inputs).
+///
+/// # Errors
+///
+/// page_json parse/serialize failures (a corrupted artifact is a page
+/// error, never a silent skip).
+pub fn apply_table_reread(
+    rendered: &crate::state::RenderedPage,
+    artifact: &mut crate::state::PageArtifactResult,
+    provider: &mut dyn RegionProvider,
+    decoder: &mut dyn TableRereadDecoder,
+) -> std::io::Result<RereadStats> {
+    let mut document =
+        ocrx_core::PageDocument::from_json(&artifact.page_json).map_err(|error| {
+            std::io::Error::other(format!("reread: page_json parse failed: {error:?}"))
+        })?;
+    let original_blocks = document.blocks.clone();
+    let page_number = document.page_number;
+    let (spliced, stats) =
+        orchestrate_table_reread(&original_blocks, page_number, rendered, provider, decoder)?;
+    artifact.reread_tables = stats.decoded;
+    artifact.reread_replaced = stats.replaced;
+    if stats.pairing_skipped {
+        return Ok(stats);
+    }
+    if stats.replaced == 0 {
+        return Ok(stats);
+    }
+    document.blocks = spliced;
+    artifact.page_json = document.to_json().map_err(|error| {
+        std::io::Error::other(format!("reread: page_json write failed: {error:?}"))
+    })?;
+    for (ordinal, html) in extract_replacements(&original_blocks, &document.blocks) {
+        match replace_table_fragment(&artifact.markdown, ordinal, &html) {
+            Some(updated) => artifact.markdown = updated,
+            None => artifact
+                .warnings
+                .push("reread_markdown_fragment_missing".to_owned()),
+        }
+    }
+    Ok(stats)
 }
 
 // ---------------------------------------------------------------------------
@@ -1423,7 +1560,7 @@ mod tests {
             response: "<table><tr><th>alpha beta</th><th>gamma delta</th></tr><tr><td>epsilon zeta</td><td>eta theta</td><td>iota kappa</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
         assert_eq!(stats.triggered, 1);
         assert_eq!(stats.decoded, 1);
         assert_eq!(stats.identity_blocked, 0);
@@ -1447,7 +1584,7 @@ mod tests {
             response: "<table></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
         assert_eq!(stats.triggered, 0);
         assert_eq!(stats.decoded, 0);
         assert_eq!(spliced, blocks, "healthy table: original preserved");
@@ -1472,7 +1609,7 @@ mod tests {
             response: "<table><tr><td>z</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
         assert!(stats.pairing_skipped);
         assert_eq!(stats.decoded, 0, "pairing skip: decode never runs");
         assert_eq!(spliced, blocks);
@@ -1487,7 +1624,7 @@ mod tests {
             response: "<table><tr><td>omega sigma</td><td>tau upsilon</td><td>phi chi</td><td>psi omega</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
         assert_eq!(stats.triggered, 1);
         assert_eq!(stats.identity_blocked, 1);
         assert_eq!(stats.replaced, 0);
@@ -1506,7 +1643,7 @@ mod tests {
             response: "<table><tr><td>alpha beta</td><td></td></tr><tr><td>gamma delta</td><td></td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
         assert_eq!(stats.triggered, 1);
         assert_eq!(stats.decoded, 1);
         assert_eq!(
@@ -1534,7 +1671,7 @@ mod tests {
             response: "<table><tr><th>alpha beta</th><th>gamma delta</th></tr><tr><td>epsilon zeta</td><td>eta theta</td><td>iota kappa</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
         assert_eq!(stats.replaced, 1);
         assert!(
             matches!(&spliced[1], PageBlock::HtmlTable { html } if html.contains("<th>alpha beta</th>")),
@@ -1552,7 +1689,7 @@ mod tests {
             response: String::new(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
         assert!(
             stats.pairing_skipped,
             "count mismatch (0 regions vs 1 block)"

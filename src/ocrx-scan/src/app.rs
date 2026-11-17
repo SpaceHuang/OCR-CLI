@@ -332,6 +332,8 @@ impl ScanApplication {
                     truncated_pages: 0,
                     degenerated_pages: 0,
                     think_blocks_stripped: 0,
+                    tables_reread_total: 0,
+                    replaced_total: 0,
                     warnings: Vec::new(),
                     diagnostics: Vec::new(),
                     cancelled: false,
@@ -883,6 +885,8 @@ impl ScanApplication {
             truncated_pages: 0,
             degenerated_pages: 0,
             think_blocks_stripped: 0,
+            tables_reread_total: 0,
+            replaced_total: 0,
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -924,6 +928,18 @@ impl ScanApplication {
                 base_image_tokens: options.max_image_tokens,
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
+            // R2.6: the golden gate arms ONLY under --table-reread on; the
+            // provider reads the sidecar regions JSON and degrades to empty
+            // (skip) on any read problem.
+            let mut reread_provider = options
+                .reread
+                .as_ref()
+                .map(|reread| {
+                    crate::region_provider::FileRegionProvider::open(&reread.regions_path)
+                })
+                .map(|provider| {
+                    Box::new(provider) as Box<dyn crate::region_provider::RegionProvider>
+                });
             ocr_summary = run_pages_with_session(
                 executing,
                 renderer,
@@ -935,6 +951,9 @@ impl ScanApplication {
                 &mut |page: u32, event| {
                     slot_events.push((page, event.generated_tokens, event.elapsed_seconds));
                 },
+                reread_provider.as_mut().map(|provider| {
+                    &mut **provider as &mut dyn crate::region_provider::RegionProvider
+                }),
             )?;
             for (page, tokens, elapsed) in slot_events {
                 emit(ScanEvent::PageProgress {
@@ -1039,6 +1058,8 @@ impl ScanApplication {
             truncated_pages: reuse_truncated,
             degenerated_pages: 0,
             think_blocks_stripped: reuse_think,
+            tables_reread_total: 0,
+            replaced_total: 0,
             warnings: {
                 let mut warnings: Vec<String> = reuse_warnings.into_iter().collect();
                 warnings.sort();
@@ -1052,6 +1073,8 @@ impl ScanApplication {
         summary.truncated_pages += ocr_summary.truncated_pages;
         summary.degenerated_pages += ocr_summary.degenerated_pages;
         summary.think_blocks_stripped += ocr_summary.think_blocks_stripped;
+        summary.tables_reread_total += ocr_summary.tables_reread_total;
+        summary.replaced_total += ocr_summary.replaced_total;
         summary.warnings.extend(ocr_summary.warnings.clone());
         summary.diagnostics.clone_from(&ocr_summary.diagnostics);
         summary.cancelled |= ocr_summary.cancelled;
