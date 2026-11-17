@@ -534,7 +534,7 @@ pub fn orchestrate_table_reread(
     let mut replacements: std::collections::BTreeMap<usize, PageBlock> =
         std::collections::BTreeMap::new();
     let mut table_block_position = 0usize;
-    for block in blocks.iter() {
+    for block in blocks {
         if block_class(block) != Some(RegionClass::Table) {
             continue;
         }
