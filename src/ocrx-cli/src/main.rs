@@ -710,17 +710,30 @@ fn reread_options(
 
 /// R2.5/BLK-5 result identity sync: result.json reflects the effective
 /// reread execution identity (frozen prompt version + rules generation).
-fn reread_result_identity(reread: Option<&ocrx_scan::compatibility::RereadOptions>) -> String {
-    match reread {
-        Some(reread) => format!(
-            "{{\"enabled\":true,\"layout_model\":\"{}\",\"layout_assets_sha256\":\"{}\",\"prompt_version\":\"{}\",\"rules_generation\":{}}}",
-            reread.layout_model_id,
-            reread.layout_assets_sha256,
-            ocrx_scan::ocr::prompt::TABLE_REREAD_PROMPT_VERSION,
-            ocrx_scan::reread::REREAD_RULES_GENERATION,
+fn reread_result_identity(
+    reread: Option<&ocrx_scan::compatibility::RereadOptions>,
+    tables_reread_total: u64,
+    replaced_total: u64,
+) -> String {
+    let (_enabled, model_part) = match reread {
+        Some(reread) => (
+            true,
+            format!(
+                "\"enabled\":true,\"layout_model\":\"{}\",\"layout_assets_sha256\":\"{}\",\"prompt_version\":\"{}\",\"rules_generation\":{}",
+                reread.layout_model_id,
+                reread.layout_assets_sha256,
+                ocrx_scan::ocr::prompt::TABLE_REREAD_PROMPT_VERSION,
+                ocrx_scan::reread::REREAD_RULES_GENERATION,
+            ),
         ),
-        None => "{\"enabled\":false,\"prompt_version\":\"\",\"rules_generation\":0}".to_owned(),
-    }
+        None => (
+            false,
+            "\"enabled\":false,\"prompt_version\":\"\",\"rules_generation\":0".to_owned(),
+        ),
+    };
+    format!(
+        "{{{model_part},\"tables_reread_total\":{tables_reread_total},\"replaced_total\":{replaced_total}}}"
+    )
 }
 
 fn number_value(args: &[&str], index: usize, option: &str) -> Result<u32, String> {
@@ -1566,7 +1579,6 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             std::process::exit(2);
         }
     };
-    let reread_result = reread_result_identity(reread.as_ref());
     let resolved_inputs = if multi {
         match resolve_scan_inputs(&options.inputs) {
             Ok(inputs) => inputs,
@@ -1894,9 +1906,11 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             image_dir: &document.output_dir.join("images"),
             image_count: document.images_count,
             elapsed_ms: document.elapsed_ms,
-            reread_json: reread_result.clone(),
-            tables_reread_total: document.summary.tables_reread_total,
-            replaced_total: document.summary.replaced_total,
+            reread_json: reread_result_identity(
+                reread.as_ref(),
+                document.summary.tables_reread_total,
+                document.summary.replaced_total,
+            ),
         });
         if let Err(error) = ocrx_output::atomic_write(
             document.output_dir.join("result.json"),
@@ -2179,11 +2193,10 @@ struct ScanResultFields<'a> {
     image_dir: &'a Path,
     image_count: usize,
     elapsed_ms: u128,
-    /// R2.5/BLK-5: precomputed reread identity object (result sync).
+    /// R2.5/R2.6: precomputed reread object (identity + counters — ONE
+    /// key; a second `reread` would shadow the identity in last-wins
+    /// parsers).
     reread_json: String,
-    /// R2.6: reread counters (pages object).
-    tables_reread_total: u64,
-    replaced_total: u64,
 }
 
 fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
@@ -2260,7 +2273,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         .join(",");
     let pdf_routing = fields.pdf_routing.join(",");
     format!(
-        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"reread\":{},\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"reread\":{{\"tables_reread_total\":{},\"replaced_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
+        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"reread\":{},\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
         fields.status,
         json_escape_path(fields.input),
         markdown,
@@ -2277,8 +2290,6 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         fields.truncated_pages,
         fields.degenerated_pages,
         fields.think_blocks_stripped_total,
-        fields.tables_reread_total,
-        fields.replaced_total,
         fields.routing_counts.native_text,
         fields.routing_counts.ocr,
         fields.routing_counts.empty,
@@ -2771,19 +2782,27 @@ mod tests {
         // R2.5/BLK-5: the result identity reflects the effective reread
         // execution identity; the asset hash follows the frozen canonical
         // rule and is deterministic across resolutions.
-        let off = super::reread_result_identity(None);
+        let off = super::reread_result_identity(None, 0, 0);
         assert!(off.contains("\"enabled\":false"), "{off}");
         assert!(off.contains("\"prompt_version\":\"\""));
         assert!(off.contains("\"rules_generation\":0"));
-        let on = super::reread_result_identity(Some(&ocrx_scan::compatibility::RereadOptions {
-            layout_model_id: "pp-doclayout-v2".to_owned(),
-            layout_assets_sha256: "hash".to_owned(),
-            regions_path: PathBuf::from("r.json"),
-        }));
+        assert!(off.contains("\"tables_reread_total\":0"));
+        assert!(off.contains("\"replaced_total\":0"));
+        let on = super::reread_result_identity(
+            Some(&ocrx_scan::compatibility::RereadOptions {
+                layout_model_id: "pp-doclayout-v2".to_owned(),
+                layout_assets_sha256: "hash".to_owned(),
+                regions_path: PathBuf::from("r.json"),
+            }),
+            3,
+            1,
+        );
         assert!(on.contains("\"enabled\":true"), "{on}");
         assert!(on.contains("\"layout_model\":\"pp-doclayout-v2\""));
         assert!(on.contains("\"prompt_version\":\"table-reread-v1\""));
         assert!(on.contains("\"rules_generation\":1"));
+        assert!(on.contains("\"tables_reread_total\":3"));
+        assert!(on.contains("\"replaced_total\":1"));
         let dir = std::env::temp_dir().join(format!("ocrx-cli-reread-hash-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let regions = dir.join("regions.json");
@@ -4213,8 +4232,6 @@ model=ovisocr3
             image_count: 3,
             elapsed_ms: 42,
             reread_json: String::new(),
-            tables_reread_total: 0,
-            replaced_total: 0,
         });
 
         assert!(json.contains("\"status\":\"partial\""));
@@ -4261,8 +4278,6 @@ model=ovisocr3
             image_count: 0,
             elapsed_ms: 1,
             reread_json: String::new(),
-            tables_reread_total: 0,
-            replaced_total: 0,
         });
         assert!(json.contains("\"routing_metadata\":[{\"page\":3"));
         assert!(json.contains("native_validation_failed"));
@@ -4318,8 +4333,6 @@ model=ovisocr3
             image_count: 0,
             elapsed_ms: 1,
             reread_json: String::new(),
-            tables_reread_total: 0,
-            replaced_total: 0,
         });
 
         assert!(json.contains("\"warnings\":[\"truncated\",\"render_scaled\"]"));
