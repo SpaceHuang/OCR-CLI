@@ -51,10 +51,18 @@ def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def normalize_key(corpus_key: str) -> str:
-    """`<stem>.<ext>_[<ordinal>]` -> `<stem>_[<ordinal>]`."""
+def normalize_key(corpus_key: str, by_stem: dict[str, str] | None = None) -> str:
+    """Corpus key -> the OFFICIAL eval key: `<stem>.<gt-ext>_[<ordinal>]`.
+
+    The official per-table keys carry the ORIGINAL GT image extension
+    (.jpg for most pages) while the corpus keys spell .png; the mapping
+    provides the original image_path per stem. Without a mapping the key
+    falls back to the extension-less stem form.
+    """
     head, sep, ordinal = corpus_key.rpartition("_[")
     stem = Path(head).stem if sep else Path(corpus_key).stem
+    if by_stem and stem in by_stem:
+        return f"{by_stem[stem]}_[{ordinal}"
     return f"{stem}_[{ordinal}" if sep else stem
 
 
@@ -83,7 +91,13 @@ def doc_dir(scans_dir: Path, stem: str) -> Path | None:
 
 
 def doc_reread_counters(scans_dir: Path, stem: str) -> dict:
-    """Per-document reread counters from result.json (doc = one page)."""
+    """Per-document reread counters from result.json (doc = one page).
+
+    Two schema generations exist: the campaign files carry the R2.6
+    duplicate-key emission (identity object + a second counters object —
+    last-wins parsing surfaces the counters under `reread`), and the fixed
+    schema carries ONE merged object. Both are read here.
+    """
     doc = doc_dir(scans_dir, stem)
     result_path = doc / "result.json" if doc else None
     if result_path is None or not result_path.is_file():
@@ -91,10 +105,12 @@ def doc_reread_counters(scans_dir: Path, stem: str) -> dict:
     result = load_json(result_path)
     reread = result.get("reread", {})
     pages = result.get("pages", {})
+    tables = reread.get("tables_reread_total", pages.get("tables_reread_total", 0))
+    replaced = reread.get("replaced_total", pages.get("replaced_total", 0))
     return {
         "found": True,
-        "tables_reread": int(pages.get("tables_reread_total", 0) or 0),
-        "replaced": int(pages.get("replaced_total", 0) or 0),
+        "tables_reread": int(tables or 0),
+        "replaced": int(replaced or 0),
         "enabled": bool(reread.get("enabled")),
         "prompt_version": reread.get("prompt_version", ""),
         "rules_generation": reread.get("rules_generation", 0),
@@ -138,6 +154,7 @@ def adjudicate(
     control_scans: Path,
     target_scans: Path,
     baseline_scans: Path,
+    by_stem: dict[str, str] | None = None,
 ) -> dict:
     safe_pages = paired_pages(pairing)
     members_by_band = corpus["tables"]
@@ -192,7 +209,7 @@ def adjudicate(
         pairs = []
         for band in bands:
             for member in members_by_band[band]:
-                key = normalize_key(member["key"])
+                key = normalize_key(member["key"], by_stem)
                 control_value = control_teds.get(key, {}).get("TEDS")
                 target_value = target_teds.get(key, {}).get("TEDS")
                 if control_value is None or target_value is None:
@@ -282,11 +299,21 @@ def main(argv=None) -> int:
     parser.add_argument("--baseline-scans", type=Path, required=True)
     parser.add_argument("--control-teds", type=Path, required=True)
     parser.add_argument("--target-teds", type=Path, required=True)
+    parser.add_argument("--mapping", type=Path, default=None,
+                        help="pdfs mapping.json: rewrites corpus keys (.png) "
+                             "to the official GT-extension key space")
     parser.add_argument("--projection-recorded", action="store_true",
                         help="set when the T-PROJ artifact has been produced")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
 
+    by_stem = None
+    if args.mapping:
+        mapping = load_json(args.mapping)
+        by_stem = {
+            Path(p["image_path"]).stem: p["image_path"]
+            for p in mapping.get("pages", [])
+        }
     verdict = adjudicate(
         load_json(args.corpus),
         load_json(args.pairing),
@@ -295,6 +322,7 @@ def main(argv=None) -> int:
         args.control_scans,
         args.target_scans,
         args.baseline_scans,
+        by_stem,
     )
     if args.projection_recorded:
         verdict["gates"]["projection_drift"]["projection"]["recorded"] = True
