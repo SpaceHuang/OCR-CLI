@@ -54,3 +54,22 @@
 - result.json `reread` 键在 R2.6 首版被 emitting 两次（身份对象 + 计数器对象），last-wins 解析下身份被遮蔽——已修为单一合并对象（本轮战役文件按旧形态解析，计数器读取兼容两种形态）。
 - 门① 分母：计划冻结值 146 来自 R1b 活检测验收；战役实际 sidecar 配对口径为 99（生产 provider 的真实安全集）——裁定器按实测计，两口径均入档。
 - T-PROJ 的键空间漂移防护按冻结契约执行：baseline/candidate 明细预连接到 official 键空间（连接数 1781/2352 CDM、1557/1557 text、665/665 TEDS），official 以同工具链刷新复现（逐位一致）。
+
+
+## 2026-11-18：评审 NO-GO（7 阻断）处置 + R3 v2 重跑
+
+评审报告：`docs/review/next-phase-quality-code-review-2026-11-18.md`（基线 `main@6878855`，即 rebase 后）。七项全部修复并提交：
+
+| 阻断 | 修复 |
+|---|---|
+| BLK-1 runtime 测试编译失败 | 两处 `RenderOptions { dpi }` 补 `..Default::default()` |
+| BLK-2 阅读序被丢弃 | `pairing_verdict` 的阅读序现在贯穿 crop 与 splice（编排按 verdict 重排区域）；回归：检测序≠阅读序 + 逐块内容/裁剪顺序断言 |
+| BLK-3 游标仅替换时递增 | 序数游标对每个表块无条件递增；回归：健康首表/身份拦截/compare 拒绝三形态 + 评审最小复现 |
+| BLK-4 坏页恒触发未实现 | `attempts` 贯穿门与编排，`always_trigger = attempts >= 2` 仅绕过 F1–F5（配对/身份/比较保留）；回归：单元（恒触发不替换）+ 串行坏页端到端 |
+| BLK-5 预算绕过 rung | 预算改由**当前 rung 的 `render_budget`** 决定——ovisocr2 四 rung 全带 (4096,4096)（walk-wide 裁定不变），ovisocr3 全 None 保持 plain；回归：ovisocr3 重试零 budgeted 调用 |
+| BLK-6 门①/②多表页重复计数 | 扫描落盘逐表明细（`page-NNNN.reread.json`）；门①按 ordinal 精确归因，门②按唯一文档聚合；回归：部分触发/单替换多表页 |
+| BLK-7 零漂移门缺失仍 PASS | fail-closed：`checked == 2×stems && missing == 0`；回归：缺文件/缺整文档/全矩阵 |
+
+**R3 v2 重跑**（修复后二进制，control2/target2 各 458 页）：门① **62.6%**（精确归因，此前 58.6% 为页级高估）< 80% FAIL；门② **2.46%**（唯一文档聚合，此前 3.17% 为重复计数）> 2% FAIL；门③ PASS（443 表 −0.0035/回归 2）；门④ −0.0027 ≪ +0.3 FAIL；门⑤投影已落档（−0.031，text 375 页零漂移再次精确成立）但零漂移腿 **fail-closed FAIL**——2 个空输出页漂移，根因 = main PR #13/#14（空输出进阶梯，rebase 继承，证据：landing attempts=1 空产物 vs control2 attempts=5/2），非 M4 变更（评审修复在 off 路径静态惰性）。
+
+**裁定不变：NO-GO → M4 挂起，R4 不执行。** 产物：`analysis-b2-adjudication-v2.json` / `analysis-b2-tproj-v2.json`（含归因段）。
