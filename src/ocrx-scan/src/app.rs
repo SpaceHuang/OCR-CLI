@@ -884,6 +884,15 @@ impl ScanApplication {
                 column_split_enabled: options.column_split_retry,
                 max_output_tokens: options.max_output_tokens,
                 prompt: pack.prompt,
+                // SP-T01: env-gated boundary instrumentation sink.
+                boundary_samples_out: std::env::var_os("OCRX_BOUNDARY_SAMPLES_OUT")
+                    .filter(|value| !value.is_empty())
+                    .map(std::path::PathBuf::from),
+                // Option-a mitigation: per-model degeneration ladder.
+                ladder: crate::ladder_for_model(&request_model),
+                // SP-T01 round-6: the effective base grid (resolved
+                // per-model default), recorded in boundary samples.
+                base_image_tokens: options.max_image_tokens,
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
             ocr_summary = run_pages_with_session(

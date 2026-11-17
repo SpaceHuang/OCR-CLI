@@ -7,6 +7,7 @@ pub use app::{
     DocumentFailure, DocumentOptions, DocumentOutcome, PdfDocumentAccess, ScanApplication,
     ScanEvent, ScanOutcome,
 };
+pub mod boundary;
 pub mod compatibility;
 pub mod ladder;
 pub mod native;
@@ -21,6 +22,8 @@ pub use ocrx_pdf::{
 pub mod report;
 pub mod resume;
 pub mod state;
+
+pub use state::ladder_for_model;
 pub mod window;
 
 #[cfg(test)]

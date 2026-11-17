@@ -19,8 +19,8 @@ use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use crate::ocr::artifacts::{RecognizeError, SessionRecognizer};
 use crate::state::{
-    DEGENERATION_RETRY_LADDER, DegenerationRetryStep, JobSummary, PageArtifactResult,
-    PageDiagnostic, RenderAudit, RenderedPage,
+    DegenerationRetryStep, JobSummary, PageArtifactResult, PageDiagnostic, RenderAudit,
+    RenderedPage,
 };
 
 /// Render port for the OCR pipeline (the legacy `PageRenderer` trait,
@@ -116,6 +116,16 @@ pub struct WindowConfig<'a> {
     /// O3-T15: the selected model's frozen pack prompt, riding every
     /// request construction site.
     pub prompt: &'static str,
+    /// Root-cause plan SP-T01: optional boundary-sample JSONL sink
+    /// (`OCRX_BOUNDARY_SAMPLES_OUT` wired by the CLI). `None` = disabled.
+    pub boundary_samples_out: Option<std::path::PathBuf>,
+    /// Option-a mitigation: the per-model degeneration ladder (ovisocr3
+    /// runs the sampling rung first; ovisocr2 keeps the frozen order).
+    pub ladder: &'static [DegenerationRetryStep],
+    /// SP-T01 round-6: the effective base image-token grid (the mtmd
+    /// context budget the runtime was loaded with) — recorded in boundary
+    /// samples so grid differences can never pass as IDENTICAL.
+    pub base_image_tokens: u32,
 }
 
 /// Runs the windowed OCR pipeline over the prepared session (T063).
@@ -137,6 +147,11 @@ pub fn run_pages_with_session(
 ) -> std::io::Result<JobSummary> {
     let root = output_root;
     std::fs::create_dir_all(root)?;
+    // SP-T01: boundary instrumentation (disabled unless the sink is set).
+    let boundary = crate::boundary::BoundaryRecorder::new(
+        config.boundary_samples_out.clone(),
+        &config.compatibility.input_sha256,
+    );
     // The window depth is the ACTUAL identity value (never a device guess).
     let window_depth = session.identity().batch_depth.max(1);
     let mut completed = 0_u32;
@@ -228,6 +243,8 @@ pub fn run_pages_with_session(
             }
             None => true,
         });
+        // SP-T01: every non-empty window claims a sequential boundary id.
+        let window_id = boundary.next_window();
         if window.is_empty() {
             if terminal.is_empty() {
                 break;
@@ -264,6 +281,8 @@ pub fn run_pages_with_session(
                     root,
                     config,
                     commit_recorder,
+                    &boundary,
+                    window_id,
                     page,
                     1,
                     cancellation,
@@ -343,6 +362,36 @@ pub fn run_pages_with_session(
             for ((page, _), result) in images.iter().zip(results) {
                 batch_results.insert(*page, result);
             }
+            // SP-T01: one boundary sample per batched attempt-1 member.
+            for (slot, (page, image)) in images.iter().enumerate() {
+                if let Ok(artifact) = &batch_results[page] {
+                    boundary.record(crate::boundary::BoundarySample {
+                        schema_version: 2,
+                        input_sha256: config.compatibility.input_sha256.clone(),
+                        run_id: String::new(),
+                        source: "scan",
+                        page_number: *page,
+                        page_index: page.saturating_sub(1),
+                        attempt: 1,
+                        window_id,
+                        slot: u32::try_from(slot).unwrap_or(u32::MAX),
+                        rgb8_len: image.rgb8.len(),
+                        rgb8_sha256: ocrx_core::sha256(&image.rgb8),
+                        prompt_sha256: ocrx_core::sha256(config.prompt.as_bytes()),
+                        width: image.width,
+                        height: image.height,
+                        max_output_tokens: config.max_output_tokens,
+                        base_image_tokens: config.base_image_tokens,
+                        image_tokens_override: None,
+                        retry_sampling: None,
+                        outcome: if artifact.markdown.trim().is_empty() {
+                            "empty"
+                        } else {
+                            "nonempty"
+                        },
+                    });
+                }
+            }
         }
 
         // Resolve the window. Batch-level failures rerun the whole window
@@ -380,6 +429,8 @@ pub fn run_pages_with_session(
                                     root,
                                     config,
                                     commit_recorder,
+                                    &boundary,
+                                    window_id,
                                     pending,
                                     1,
                                     cancellation,
@@ -428,6 +479,8 @@ pub fn run_pages_with_session(
                     root,
                     config,
                     commit_recorder,
+                    &boundary,
+                    window_id,
                     page,
                     2,
                     cancellation,
@@ -544,6 +597,8 @@ fn serial_attempt_outcome(
     root: &Path,
     config: &WindowConfig<'_>,
     commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
+    boundary: &crate::boundary::BoundaryRecorder,
+    window_id: u32,
     page: u32,
     start_attempt: u32,
     cancellation: &CancellationToken,
@@ -556,7 +611,7 @@ fn serial_attempt_outcome(
             None
         } else {
             let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
-            DEGENERATION_RETRY_LADDER.get(ladder_index)
+            config.ladder.get(ladder_index)
         };
         // T1: the caller-side render wait is the recorder's R input; every
         // attempt (retry perturbations included) gets its own row.
@@ -599,9 +654,38 @@ fn serial_attempt_outcome(
         };
         match recognized_outcome {
             Ok(artifact) => {
+                // SP-T01: one boundary sample per attempt (identity schema,
+                // plan v1.2 — the bytes actually fed to the runtime).
+                boundary.record(crate::boundary::BoundarySample {
+                    schema_version: 2,
+                    input_sha256: config.compatibility.input_sha256.clone(),
+                    run_id: String::new(),
+                    source: "scan",
+                    page_number: page,
+                    page_index: page.saturating_sub(1),
+                    attempt: attempts,
+                    window_id,
+                    slot: 0,
+                    rgb8_len: image.rgb8.len(),
+                    rgb8_sha256: ocrx_core::sha256(&image.rgb8),
+                    prompt_sha256: ocrx_core::sha256(config.prompt.as_bytes()),
+                    width: image.width,
+                    height: image.height,
+                    max_output_tokens: config.max_output_tokens,
+                    base_image_tokens: config.base_image_tokens,
+                    image_tokens_override: step.and_then(|rung| rung.image_tokens),
+                    retry_sampling: step
+                        .and_then(|rung| rung.sampling)
+                        .map(|sampling| (sampling.repeat_penalty_milli, sampling.penalty_window)),
+                    outcome: if artifact.markdown.trim().is_empty() {
+                        "empty"
+                    } else {
+                        "nonempty"
+                    },
+                });
                 // Q1.5/D-14: pure truncation enters the ladder too.
                 let ladder_worthy = artifact.degenerated || artifact.truncated;
-                if ladder_worthy && attempts <= DEGENERATION_RETRY_LADDER.len() as u32 {
+                if ladder_worthy && attempts <= config.ladder.len() as u32 {
                     continue;
                 }
                 return SerialOutcome::Terminal(Ok((image, artifact, attempts)));

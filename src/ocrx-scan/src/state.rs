@@ -7,7 +7,7 @@
 //! T088. `RetrySampling` comes from the inference API — the scan never
 //! references runtime types.
 
-use ocrx_inference_api::RetrySampling;
+use ocrx_inference_api::{ModelId, RetrySampling};
 use ocrx_primitives::CancellationToken;
 use std::io;
 
@@ -78,10 +78,85 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
 /// Frozen attempts range written to checkpoints: 1 + ladder length (Q1.4a).
 pub const ATTEMPTS_MAX: u32 = 1 + DEGENERATION_RETRY_LADDER.len() as u32;
 
+/// The OvisOCR3 ladder order (plan option-a mitigation, 2026-11-15): the
+/// sampling rung leads because OvisOCR3's known failure mode —
+/// deterministic blank greedy output on dense pages — is recovered by the
+/// repeat-penalty chain, while the 2048-grid rung is a no-op there (the
+/// per-model base budget is already 2048; E1 evidence: re-render bytes are
+/// identical and only the sampling change recovers).
+pub const OVISOCR3_DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: None,
+        sampling: Some(RetrySampling {
+            repeat_penalty_milli: 1_200,
+            penalty_window: 64,
+        }),
+        column_split: false,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: Some(2048),
+        sampling: None,
+        column_split: false,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: None,
+        sampling: None,
+        column_split: true,
+    },
+];
+
+/// The degeneration ladder for one model (option-a mitigation): OvisOCR3
+/// runs the sampling-first order; every other model (and an unregistered
+/// id) runs the frozen OvisOCR2 ladder unchanged.
+#[must_use]
+pub fn ladder_for_model(model: &ModelId) -> &'static [DegenerationRetryStep] {
+    match model.as_str() {
+        "ovisocr3" => OVISOCR3_DEGENERATION_RETRY_LADDER,
+        _ => DEGENERATION_RETRY_LADDER,
+    }
+}
+
 #[cfg(test)]
 mod ovisocr3_ladder_tests {
     use super::*;
     use ocrx_inference_api::{GenerationParams, ImageInput, SUPPORTED_IMAGE_TOKEN_GRIDS};
+
+    #[test]
+    fn ladder_order_is_per_model_with_frozen_ovisocr2_fallback() {
+        // Option-a mitigation: ovisocr3 moves the sampling rung FIRST —
+        // its known failure mode (deterministic blank greedy output on
+        // dense pages) is recovered by the sampling chain, and the 2048
+        // grid rung is a no-op there (the base budget is already 2048).
+        // OvisOCR2 keeps the frozen order byte-identically; unknown models
+        // fall back to the frozen ladder (safe default).
+        let ovisocr2 = crate::ladder_for_model(&ModelId::new("ovisocr2").unwrap());
+        assert_eq!(ovisocr2[0].image_tokens, Some(2048));
+        assert!(ovisocr2[0].sampling.is_none());
+        assert_eq!(
+            ovisocr2[1].sampling,
+            Some(RetrySampling {
+                repeat_penalty_milli: 1_200,
+                penalty_window: 64,
+            })
+        );
+        assert!(ovisocr2[2].column_split);
+        let ovisocr3 = crate::ladder_for_model(&ModelId::new("ovisocr3").unwrap());
+        assert_eq!(
+            ovisocr3[0].sampling,
+            Some(RetrySampling {
+                repeat_penalty_milli: 1_200,
+                penalty_window: 64,
+            })
+        );
+        assert_eq!(ovisocr3[1].image_tokens, Some(2048));
+        assert!(ovisocr3[2].column_split);
+        assert_eq!(ovisocr3.len(), ovisocr2.len());
+        let unknown = crate::ladder_for_model(&ModelId::new("qwen3.8").unwrap());
+        assert_eq!(unknown.as_ptr(), ovisocr2.as_ptr());
+    }
 
     #[test]
     fn the_frozen_ladder_composition_is_model_agnostic() {
