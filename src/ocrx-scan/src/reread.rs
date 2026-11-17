@@ -564,9 +564,6 @@ pub fn orchestrate_table_reread(
             stats.compare_rejected += 1;
             continue;
         }
-        // keyed by REGION ORDINAL (= table-block position under the pairing
-        // one-to-one contract), NOT by block index - splice_m4m5 looks
-        // replacements up by region ordinal (RBAC class-ordinal key).
         // keyed by the TABLE-BLOCK ordinal (position among table blocks =
         // region ordinal under the pairing one-to-one contract) - NOT the
         // all-block enumerate index, which shifts when non-table blocks
