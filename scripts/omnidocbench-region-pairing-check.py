@@ -46,10 +46,17 @@ pp = importlib.util.module_from_spec(_spec)
 sys.modules["b0probe"] = pp
 _spec.loader.exec_module(pp)
 
+_SPEC3 = importlib.util.spec_from_file_location(
+    "sidecar",
+    Path(__file__).with_name("omnidocbench-reread-regions-sidecar.py"),
+)
+sidecar = importlib.util.module_from_spec(_SPEC3)
+
 _SPEC2 = importlib.util.spec_from_file_location(
     "ordchk", _HERE / "omnidocbench-region-ordinal-check.py"
 )
 ordchk = importlib.util.module_from_spec(_SPEC2)
+_SPEC3.loader.exec_module(sidecar)
 sys.modules["ordchk"] = ordchk
 _SPEC2.loader.exec_module(ordchk)
 
@@ -94,6 +101,19 @@ def dual_hypothesis(boxes: list[tuple]) -> tuple[list[tuple], bool]:
     return [it["box"] for it in row_order], False
 
 
+def sidecar_scan_render_size(pdfs_dir: Path, stem: str) -> tuple[int, int]:
+    """The scan bitmap dims the sidecar rendered at (300 dpi, 2880^2 fit).
+
+    Deterministic per PDF (pymupdf page rect -> the same round+fit rule),
+    so rescaling needs no rerun of detection.
+    """
+    import pymupdf
+
+    with pymupdf.open(str(pdfs_dir / f"{stem}.pdf")) as document:
+        page = document[0]
+        return sidecar.scan_render_size(page.rect.width, page.rect.height, 300)
+
+
 def pairing_verdict(det_table_boxes: list[tuple], output_n: int) -> dict:
     """EXECUTABLE reference of the frozen integral skip rule."""
     deduped, dedup_happened = dedup_boxes(det_table_boxes)
@@ -114,9 +134,17 @@ def pairing_verdict(det_table_boxes: list[tuple], output_n: int) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model-dir", required=True)
+    parser.add_argument("--model-dir", default=None,
+                        help="paddle model dir (required without --regions-dir)")
     parser.add_argument("--region-truth", required=True)
     parser.add_argument("--images", required=True)
+    parser.add_argument("--regions-dir", default=None,
+                        help="R3 mode: read the sidecar regions files "
+                             "(<stem>.regions.json, scan render pixel space) "
+                             "instead of running detection live")
+    parser.add_argument("--pdfs-dir", default=None,
+                        help="R3 mode: the corpus PDF dir (for render-space "
+                             "rescaling into the GT pixel space)")
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
@@ -125,8 +153,18 @@ def main() -> None:
     pages = truth["pages"]
     if args.limit:
         pages = pages[: args.limit]
-    detector = pp.PaddleDetector(args.model_dir, 255.0, 800, False, 5, 21)
-    images_dir = Path(args.images)
+    if args.regions_dir:
+        if not args.pdfs_dir:
+            parser.error("--pdfs-dir is required with --regions-dir")
+        detector = None
+        images_dir = Path(args.images)
+        regions_dir = Path(args.regions_dir)
+        pdfs_dir = Path(args.pdfs_dir)
+    else:
+        if not args.model_dir:
+            parser.error("--model-dir is required without --regions-dir")
+        detector = pp.PaddleDetector(args.model_dir, 255.0, 800, False, 5, 21)
+        images_dir = Path(args.images)
 
     states = Counter()
     unsafe_pages: list[dict] = []
@@ -139,19 +177,63 @@ def main() -> None:
         "dedup": {"pages": 0, "paired": 0, "skipped": 0, "unsafe": 0},
     }
     errored = 0
+    per_page: list[dict] = []
     for index, page in enumerate(pages):
-        image_path = images_dir / page["image_path"]
-        raw = np.fromfile(str(image_path), dtype=np.uint8)
-        image = cv2.imdecode(raw, cv2.IMREAD_COLOR) if raw.size else None
-        if image is None:
-            errored += 1
-            continue
-        try:
-            dets = detector.detect(image)
-        except Exception as error:  # noqa: BLE001
-            print(f"SKIP inference failure {page['image_path']}: {error}", file=sys.stderr)
-            errored += 1
-            continue
+        if args.regions_dir:
+            stem = Path(page["image_path"]).stem
+            regions_path = regions_dir / f"{stem}.regions.json"
+            if not regions_path.is_file():
+                errored += 1
+                per_page.append({"image_path": page["image_path"],
+                                 "verdict": "no_regions_file"})
+                continue
+            payload = json.loads(regions_path.read_text(encoding="utf-8"))
+            # The sidecar boxes live in the SCAN render pixel space; the GT
+            # polys in the dataset-image space. Both spaces are uniform
+            # scales of the page (aspect preserved), so the verdict rules
+            # are space-invariant — but the identity IoU needs the SAME
+            # space: rescale the det boxes into the GT space.
+            gt_image_path = images_dir / page["image_path"]
+            raw = np.fromfile(str(gt_image_path), dtype=np.uint8)
+            gt_image = cv2.imdecode(raw, cv2.IMREAD_COLOR) if raw.size else None
+            if gt_image is None:
+                errored += 1
+                per_page.append({"image_path": page["image_path"],
+                                 "verdict": "unreadable_image"})
+                continue
+            gt_h, gt_w = gt_image.shape[:2]
+            scan_w, scan_h = sidecar_scan_render_size(
+                pdfs_dir, Path(page["image_path"]).stem
+            )
+            sx, sy = gt_w / scan_w, gt_h / scan_h
+            dets = [
+                {"class": "table",
+                 "bbox": (
+                     region["bbox_px"][0] * sx,
+                     region["bbox_px"][1] * sy,
+                     region["bbox_px"][2] * sx,
+                     region["bbox_px"][3] * sy,
+                 )}
+                for region in payload.get("pages", [{}])[0].get("regions", [])
+                if region.get("class") == "table"
+            ]
+        else:
+            image_path = images_dir / page["image_path"]
+            raw = np.fromfile(str(image_path), dtype=np.uint8)
+            image = cv2.imdecode(raw, cv2.IMREAD_COLOR) if raw.size else None
+            if image is None:
+                errored += 1
+                per_page.append({"image_path": page["image_path"],
+                                 "verdict": "unreadable_image"})
+                continue
+            try:
+                dets = detector.detect(image)
+            except Exception as error:  # noqa: BLE001
+                print(f"SKIP inference failure {page['image_path']}: {error}", file=sys.stderr)
+                errored += 1
+                per_page.append({"image_path": page["image_path"],
+                                 "verdict": "inference_failure"})
+                continue
 
         # gt_ordinal MUST be the per-class ordinal (k-th table on the page),
         # NOT the index within all regions — equation regions before the
@@ -171,6 +253,11 @@ def main() -> None:
         det_boxes = [d["bbox"] for d in dets if d["class"] == "table"]
 
         verdict = pairing_verdict(det_boxes, output_n)
+        per_page.append({
+            "image_path": page["image_path"],
+            "verdict": verdict["verdict"],
+            **({"reason": verdict.get("reason")} if verdict["verdict"] == "skip" else {}),
+        })
 
         # classify the page's natural state
         deduped, dedup_happened = dedup_boxes(det_boxes)
@@ -240,6 +327,8 @@ def main() -> None:
         "rule": "integral skip: dedup-event -> skip; count mismatch -> skip; dual-hypothesis ambiguous -> skip; else pair ordinals 0..N-1",
         "pages_evaluated": len(pages),
         "pages_errored": errored,
+        "regions_dir_mode": bool(args.regions_dir),
+        "per_page": per_page,
         "verdicts": dict(states),
         "skip_reasons": dict(skip_reasons),
         "per_state": per_state,
