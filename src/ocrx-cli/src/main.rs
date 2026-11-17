@@ -668,8 +668,9 @@ fn validate_reread(options: &ScanOptions) -> Result<(), String> {
         if regions.is_empty() {
             return Err("--table-reread on requires --layout-regions <regions.json>".to_owned());
         }
-        if !Path::new(regions).is_file() {
-            return Err(format!("--layout-regions file not found: {regions}"));
+        let regions_path = Path::new(regions);
+        if !regions_path.is_file() && !regions_path.is_dir() {
+            return Err(format!("--layout-regions path not found: {regions}"));
         }
     } else if options.layout_model.is_some() || options.layout_regions.is_some() {
         return Err("--layout-model/--layout-regions require --table-reread on".to_owned());

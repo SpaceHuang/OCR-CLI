@@ -931,11 +931,18 @@ impl ScanApplication {
             // R2.6: the golden gate arms ONLY under --table-reread on; the
             // provider reads the sidecar regions JSON and degrades to empty
             // (skip) on any read problem.
+            let input_stem = input
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_default();
             let mut reread_provider = options
                 .reread
                 .as_ref()
                 .map(|reread| {
-                    crate::region_provider::FileRegionProvider::open(&reread.regions_path)
+                    crate::region_provider::FileRegionProvider::for_document(
+                        &reread.regions_path,
+                        &input_stem,
+                    )
                 })
                 .map(|provider| {
                     Box::new(provider) as Box<dyn crate::region_provider::RegionProvider>

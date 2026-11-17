@@ -72,6 +72,21 @@ impl FileRegionProvider {
         }
     }
 
+    /// R3 orchestrated form: `root` is a REGIONS DIRECTORY — the document's
+    /// file is `<root>/<input stem>.regions.json` (the sidecar writes one
+    /// file per PDF). A FILE path keeps the single-document form. Both
+    /// degrade to empty on any read problem.
+    #[must_use]
+    pub fn for_document(root: impl AsRef<std::path::Path>, input_stem: &str) -> Self {
+        let root = root.as_ref();
+        let path = if root.is_dir() {
+            root.join(format!("{input_stem}.regions.json"))
+        } else {
+            root.to_path_buf()
+        };
+        Self::open(path)
+    }
+
     fn parse(
         path: &std::path::Path,
     ) -> std::io::Result<std::collections::BTreeMap<u32, Vec<DetectedRegion>>> {
@@ -152,6 +167,28 @@ mod tests {
         assert!(provider.regions_for_page(2).is_empty());
         // unknown page -> empty (degradation)
         assert!(provider.regions_for_page(99).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn for_document_resolves_the_stem_under_a_regions_root() {
+        let dir = std::env::temp_dir().join(format!("ocrx-regprov-root-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        write_file(
+            &dir,
+            "my-doc.regions.json",
+            r#"{"schema_version":1,"model_id":"pp-doclayout-v2","revision":"r1","pages":[
+                {"page":1,"regions":[{"class":"table","index_in_class":0,"bbox_px":[1,2,3,4],"conf":0.9}]}]}"#,
+        );
+        let mut provider = FileRegionProvider::for_document(&dir, "my-doc");
+        assert_eq!(provider.regions_for_page(1).len(), 1);
+        // Unknown stem / missing file degrade to empty.
+        let mut missing = FileRegionProvider::for_document(&dir, "other-doc");
+        assert!(missing.regions_for_page(1).is_empty());
+        // FILE form still works (single-document invocation).
+        let file = dir.join("my-doc.regions.json");
+        let mut direct = FileRegionProvider::for_document(&file, "ignored");
+        assert_eq!(direct.regions_for_page(1).len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
