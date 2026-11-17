@@ -12,6 +12,7 @@
 
 mod ovisocr2;
 mod ovisocr3;
+pub mod reread;
 
 use ocrx_inference_api::ModelId;
 

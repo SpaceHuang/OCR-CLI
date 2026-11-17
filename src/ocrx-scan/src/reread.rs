@@ -241,6 +241,50 @@ fn extend_kept(assembled: &mut Vec<PageBlock>, blocks: &[PageBlock], class: Regi
 }
 
 // ---------------------------------------------------------------------------
+// R2.2: table-region cropper (D-21: reread decodes at the 1024 grid; the
+// crop bitmap itself stays at the raster's native resolution — the mtmd
+// grid does the resample)
+// ---------------------------------------------------------------------------
+
+/// Crops one pixel-space region from a rendered page. Coordinates clamp to
+/// the bitmap; a degenerate (empty) crop is an error. The crop keeps the
+/// source audit and generation so the commit path sees the true provenance.
+pub fn crop_region(
+    page: &crate::state::RenderedPage,
+    bbox: (f64, f64, f64, f64),
+) -> std::io::Result<crate::state::RenderedPage> {
+    let width = page.width;
+    let height = page.height;
+    // degenerate check BEFORE clamping: an empty/inverted region is a
+    // caller contract violation, silently widening it would mask bugs.
+    if bbox.2.round() <= bbox.0.round() || bbox.3.round() <= bbox.1.round() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "degenerate crop region",
+        ));
+    }
+    let x0 = bbox.0.round().max(0.0).min(f64::from(width - 1)) as u32;
+    let x1 = (bbox.2.round() as u32).clamp(x0 + 1, width);
+    let y0 = bbox.1.round().max(0.0).min(f64::from(height - 1)) as u32;
+    let y1 = (bbox.3.round() as u32).clamp(y0 + 1, height);
+    let cw = usize::try_from(x1 - x0).map_err(|_| std::io::Error::other("crop width"))?;
+    let ch = usize::try_from(y1 - y0).map_err(|_| std::io::Error::other("crop height"))?;
+    let stride = usize::try_from(width).map_err(|_| std::io::Error::other("stride"))? * 3;
+    let row_len = cw * 3;
+    let mut rgb8 = Vec::with_capacity(ch * row_len);
+    for row in y0..y1 {
+        let base = usize::try_from(row).map_err(|_| std::io::Error::other("row"))? * stride
+            + usize::try_from(x0).map_err(|_| std::io::Error::other("x0"))? * 3;
+        rgb8.extend_from_slice(&page.rgb8[base..base + row_len]);
+    }
+    crate::state::RenderedPage::new(x1 - x0, y1 - y0, rgb8).map(|mut cropped| {
+        cropped.audit = page.audit;
+        cropped.generation = page.generation;
+        cropped
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Frozen v1 triggers (D-29): M4 table F1–F5, M5 formula G1–G4
 // ---------------------------------------------------------------------------
 
@@ -933,6 +977,38 @@ mod tests {
             "fill tie + smaller scale: keep"
         );
         assert!(keep_original(&base, &equal), "full tie: keep original");
+    }
+
+    #[test]
+    fn crop_region_exacts_geometry_and_content() {
+        // 4x3 page, unique byte per pixel: rows differ, columns differ.
+        let mut rgb8 = Vec::new();
+        for y in 0..3_u32 {
+            for x in 0..4_u32 {
+                rgb8.push(u8::try_from(y * 10 + x).unwrap());
+                rgb8.push(0);
+                rgb8.push(0);
+            }
+        }
+        let page = crate::state::RenderedPage::new(4, 3, rgb8).unwrap();
+        let crop = crop_region(&page, (1.0, 1.0, 3.0, 3.0)).unwrap();
+        assert_eq!((crop.width, crop.height), (2, 2));
+        assert_eq!(crop.rgb8, vec![11, 0, 0, 12, 0, 0, 21, 0, 0, 22, 0, 0]);
+        assert_eq!(crop.generation, page.generation);
+        assert_eq!(crop.audit, page.audit);
+    }
+
+    #[test]
+    fn crop_region_clamps_and_rejects_degenerate() {
+        let page = crate::state::RenderedPage::new(4, 3, vec![7; 4 * 3 * 3]).unwrap();
+        // clamped full page
+        let crop = crop_region(&page, (-5.0, -5.0, 99.0, 99.0)).unwrap();
+        assert_eq!((crop.width, crop.height), (4, 3));
+        // degenerate: x0 == x1 after clamp
+        assert!(crop_region(&page, (2.0, 0.0, 2.0, 3.0)).is_err());
+        // fully outside on the low side clamps to a 1px column (not degenerate)
+        let crop = crop_region(&page, (-9.0, 0.0, -3.0, 3.0));
+        assert!(crop.is_ok() && crop.unwrap().width == 1);
     }
 
     #[test]
