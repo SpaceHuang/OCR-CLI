@@ -468,6 +468,190 @@ fn reread_gate_skip_leaves_artifacts_untouched() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+const HEALTHY_TABLE_PAGE: &str =
+    "<table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>";
+
+/// R2.7 acceptance ①: armed but never triggered -> committed artifacts are
+/// BYTE-IDENTICAL to the off run (and zero decode calls happened).
+#[test]
+fn r2_7_armed_but_not_triggered_is_byte_identical() {
+    let run = |tag: &str, armed: bool| {
+        let root = temp_root(tag);
+        let session = FakeSession::with_depth(1);
+        session.push(
+            1,
+            Program {
+                text: HEALTHY_TABLE_PAGE.to_owned(),
+                finish: FinishReason::Eos,
+            },
+        );
+        if armed {
+            session.push(
+                1,
+                Program {
+                    text: REREAD_TABLE.to_owned(),
+                    finish: FinishReason::Eos,
+                },
+            );
+        }
+        let mut renderer = FakeRenderer::new();
+        let compatibility = compatibility();
+        let mut provider = GateRegionProvider { regions: vec![0] };
+        let summary = run_pages_with_session(
+            &mut session.clone(),
+            &mut renderer,
+            &[1],
+            &root,
+            &config(&compatibility),
+            &CommitRecorder::disabled(),
+            &CancellationToken::new(),
+            &mut |_, _| {},
+            if armed { Some(&mut provider) } else { None },
+        )
+        .unwrap();
+        assert_eq!(summary.completed_pages, 1);
+        let md = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
+        let json = std::fs::read_to_string(root.join("page-0001.json")).unwrap();
+        let reread_requests = session
+            .core
+            .captured
+            .borrow()
+            .iter()
+            .filter(|r| r.prompt == crate::ocr::prompt::TABLE_REREAD_V1)
+            .count();
+        let _ = std::fs::remove_dir_all(&root);
+        (md, json, summary.tables_reread_total, reread_requests)
+    };
+    let (off_md, off_json, _, _) = run("r27-off-baseline", false);
+    let (on_md, on_json, reread_total, reread_requests) = run("r27-on-healthy", true);
+    assert_eq!(on_md, off_md, "markdown byte-identical");
+    assert_eq!(on_json, off_json, "page_json byte-identical");
+    assert_eq!(reread_total, 0);
+    assert_eq!(reread_requests, 0, "trigger never fired -> zero decodes");
+}
+
+/// R2.7 acceptance ②: after a replacement the committed md/json agree and
+/// the diff is EXACTLY the target table (everything else byte-identical).
+#[test]
+fn r2_7_replacement_diff_is_exactly_the_target_table() {
+    let run = |tag: &str, armed: bool| {
+        let root = temp_root(tag);
+        let session = FakeSession::with_depth(1);
+        session.push(
+            1,
+            Program {
+                text: TRIGGERED_TABLE.to_owned(),
+                finish: FinishReason::Eos,
+            },
+        );
+        if armed {
+            session.push(
+                1,
+                Program {
+                    text: REREAD_TABLE.to_owned(),
+                    finish: FinishReason::Eos,
+                },
+            );
+        }
+        let mut renderer = FakeRenderer::new();
+        let compatibility = compatibility();
+        let mut provider = GateRegionProvider { regions: vec![0] };
+        let _summary = run_pages_with_session(
+            &mut session.clone(),
+            &mut renderer,
+            &[1],
+            &root,
+            &config(&compatibility),
+            &CommitRecorder::disabled(),
+            &CancellationToken::new(),
+            &mut |_, _| {},
+            if armed { Some(&mut provider) } else { None },
+        )
+        .unwrap();
+        let md = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
+        let json = std::fs::read_to_string(root.join("page-0001.json")).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        (md, json)
+    };
+    let (off_md, off_json) = run("r27-diff-off", false);
+    let (on_md, on_json) = run("r27-diff-on", true);
+    // md: exactly the table fragment changed.
+    assert_eq!(
+        on_md,
+        off_md.replace(TRIGGERED_TABLE, REREAD_TABLE),
+        "markdown diff = the target table only"
+    );
+    // json: parse both and compare structure-wise.
+    let off_doc = ocrx_core::PageDocument::from_json(&off_json).unwrap();
+    let on_doc = ocrx_core::PageDocument::from_json(&on_json).unwrap();
+    assert_eq!(off_doc.schema_version, on_doc.schema_version);
+    assert_eq!(off_doc.page_number, on_doc.page_number);
+    assert_eq!(off_doc.termination, on_doc.termination);
+    assert_eq!(off_doc.warnings, on_doc.warnings);
+    assert_eq!(off_doc.blocks.len(), on_doc.blocks.len());
+    for (off_block, on_block) in off_doc.blocks.iter().zip(on_doc.blocks.iter()) {
+        match (off_block, on_block) {
+            (
+                ocrx_core::PageBlock::HtmlTable { html: off_html },
+                ocrx_core::PageBlock::HtmlTable { html: on_html },
+            ) => {
+                assert_eq!(off_html, TRIGGERED_TABLE);
+                assert_eq!(on_html, REREAD_TABLE);
+            }
+            _ => assert_eq!(off_block, on_block, "non-table blocks byte-identical"),
+        }
+    }
+}
+
+/// R2.7 acceptance ④: the checkpoint output hash corresponds to the NEW
+/// markdown (the gate runs before commit, so the hash rides the spliced
+/// bytes).
+#[test]
+fn r2_7_checkpoint_hash_matches_the_replaced_markdown() {
+    let root = temp_root("r27-hash");
+    let session = FakeSession::with_depth(1);
+    session.push(
+        1,
+        Program {
+            text: TRIGGERED_TABLE.to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    session.push(
+        1,
+        Program {
+            text: REREAD_TABLE.to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let mut provider = GateRegionProvider { regions: vec![0] };
+    run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+        Some(&mut provider),
+    )
+    .unwrap();
+    let markdown = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
+    assert!(markdown.contains("<th>alpha beta</th>"));
+    let checkpoint = ocrx_output::read_any(&root.join("page-0001.checkpoint")).unwrap();
+    let expected = ocrx_output::artifact_sha256(&root.join("page-0001.md"), &root).unwrap();
+    let v6 = match checkpoint {
+        ocrx_output::CheckpointFile::V6(v6) => v6,
+        #[allow(unreachable_patterns)]
+        _ => panic!("expected a v6 checkpoint"),
+    };
+    assert_eq!(v6.output_sha256, expected, "hash rides the splice");
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn window_fills_use_the_identity_batch_depth_without_backfill() {
     let root = temp_root("depth");
