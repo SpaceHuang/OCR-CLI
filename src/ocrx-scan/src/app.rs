@@ -91,6 +91,9 @@ pub struct DocumentOptions {
     /// default face; "ovisocr3" rides the CLI gate open in the same task).
     pub model: String,
     pub install: InstallPolicy,
+    /// R2.5: the table-reread configuration (Some = `--table-reread on`
+    /// with the layout model resolved through the R2.0 manifest chain).
+    pub reread: Option<crate::compatibility::RereadOptions>,
 }
 
 impl Default for DocumentOptions {
@@ -110,6 +113,7 @@ impl Default for DocumentOptions {
             requested_device: "auto".to_owned(),
             model: "ovisocr2".to_owned(),
             install: InstallPolicy::offline(),
+            reread: None,
         }
     }
 }
@@ -451,17 +455,30 @@ impl ScanApplication {
             pixel_width_budget: 2880,
             pixel_height_budget: 2880,
             page_parser_version: "ovis-page-v1".to_owned(),
-            // B4.2/D-25: the CLI does not expose reread/layout switches yet
-            // (B-LINE-2 wiring); the effective values default off/empty.
-            table_reread: false,
+            // R2.5/BLK-5: the side mirrors the effective reread config —
+            // the same mapping the stored identity uses (with_reread).
+            table_reread: options.reread.is_some(),
             formula_reread: false,
-            layout_model_id: String::new(),
-            layout_model_assets_sha256: String::new(),
-            // R2.5/BLK-5: reread execution identity — empty/0 while the
-            // pipeline is off (R2.6 wires the CLI switches to the frozen
-            // constants).
-            reread_prompt_version: String::new(),
-            reread_rules_generation: 0,
+            layout_model_id: options
+                .reread
+                .as_ref()
+                .map(|r| r.layout_model_id.clone())
+                .unwrap_or_default(),
+            layout_model_assets_sha256: options
+                .reread
+                .as_ref()
+                .map(|r| r.layout_assets_sha256.clone())
+                .unwrap_or_default(),
+            reread_prompt_version: if options.reread.is_some() {
+                crate::ocr::prompt::TABLE_REREAD_PROMPT_VERSION.to_owned()
+            } else {
+                String::new()
+            },
+            reread_rules_generation: if options.reread.is_some() {
+                crate::reread::REREAD_RULES_GENERATION
+            } else {
+                0
+            },
         };
         let statik: Option<StaticInferenceIdentity> = if shared_prepared.is_none() {
             service
@@ -886,7 +903,8 @@ impl ScanApplication {
                     prompt_version: pack.version.to_owned(),
                     prompt_schema_version: pack.schema_version,
                     ..crate::compatibility::ScanOcrConfig::default()
-                },
+                }
+                .with_reread(options.reread.as_ref()),
             );
             let config = WindowConfig {
                 compatibility: &compatibility,

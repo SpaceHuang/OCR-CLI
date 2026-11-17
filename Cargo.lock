@@ -736,6 +736,7 @@ dependencies = [
  "ocrx-inference-api",
  "ocrx-models",
  "ocrx-output",
+ "ocrx-primitives",
  "ocrx-scan",
  "ocrx-skill",
  "serde_json",

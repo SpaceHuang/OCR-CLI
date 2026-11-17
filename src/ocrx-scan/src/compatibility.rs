@@ -63,6 +63,43 @@ impl Default for ScanOcrConfig {
     }
 }
 
+/// R2.5: the per-document reread configuration entering the identity (the
+/// CLI resolves the layout model through the R2.0 manifest chain and pins
+/// the asset hash; the scan consumes the resolved triple verbatim).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RereadOptions {
+    pub layout_model_id: String,
+    pub layout_assets_sha256: String,
+    /// Sidecar regions JSON for this document (R1 route A file form).
+    pub regions_path: std::path::PathBuf,
+}
+
+impl ScanOcrConfig {
+    /// Fills the reread identity fields from the effective options — the
+    /// single source for BOTH the stored checkpoint identity and the
+    /// resume pre-compare side (they must never drift).
+    #[must_use]
+    pub fn with_reread(mut self, reread: Option<&RereadOptions>) -> Self {
+        match reread {
+            Some(reread) => {
+                self.table_reread = true;
+                self.layout_model_id.clone_from(&reread.layout_model_id);
+                self.layout_model_assets_sha256
+                    .clone_from(&reread.layout_assets_sha256);
+                crate::ocr::prompt::TABLE_REREAD_PROMPT_VERSION
+                    .clone_into(&mut self.reread_prompt_version);
+                self.reread_rules_generation = crate::reread::REREAD_RULES_GENERATION;
+            }
+            None => {
+                // Defaults already are the off pipeline (empty/0); assert
+                // the invariant instead of trusting the constructor.
+                debug_assert!(!self.table_reread && self.reread_rules_generation == 0);
+            }
+        }
+        self
+    }
+}
+
 /// Builds the native/empty compatibility (dpi and every OCR-only field are
 /// absent by construction — the frozen native matching scope).
 #[must_use]
@@ -156,6 +193,41 @@ mod tests {
         let off_ocr = off.ocr.as_ref().unwrap();
         assert_eq!(off_ocr.reread_prompt_version, "");
         assert_eq!(off_ocr.reread_rules_generation, 0);
+    }
+
+    #[test]
+    fn with_reread_sets_the_frozen_identity_and_off_stays_off() {
+        // R2.5: the reread-on configuration carries the frozen prompt
+        // version + generation + layout identity; the off configuration
+        // (None) keeps the empty pipeline even if the caller mutated
+        // unrelated fields.
+        let on = ScanOcrConfig::default().with_reread(Some(&RereadOptions {
+            layout_model_id: "pp-doclayout-v2".to_owned(),
+            layout_assets_sha256: "hash-lm".to_owned(),
+            regions_path: std::path::PathBuf::from("regions.json"),
+        }));
+        assert!(on.table_reread);
+        assert_eq!(on.layout_model_id, "pp-doclayout-v2");
+        assert_eq!(on.layout_model_assets_sha256, "hash-lm");
+        assert_eq!(on.reread_prompt_version, "table-reread-v1");
+        assert_eq!(on.reread_rules_generation, 1);
+        let off = ScanOcrConfig::default().with_reread(None);
+        assert!(!off.table_reread);
+        assert_eq!(off.reread_prompt_version, "");
+        assert_eq!(off.reread_rules_generation, 0);
+        // The stored identity and the pre-compare side derive from the same
+        // mapping, so a stored on-identity matches its own run's side.
+        let identity = serde_json::from_str::<InferenceIdentity>(
+            r#"{"model":{"model":"ovisocr2","profile":"compact","source_revision":"rev","assets":[]},"runtime":{"runtime":"llama.cpp","wrapper_version":"0.1.161","sys_version":"0.1.161","upstream_revision":"d81235049384534c167caea52b85a694f6103d14"},"adapter":{"adapter":"ovisocr2","version":"0.1.0"},"backend":"cpu","decode_generation":2,"batch_depth":8,"display":{"display_name":"OvisOCR2","family":"Ovis","quantization":"Q4_K_M"}}"#,
+        )
+        .unwrap();
+        let stored = ocr_compatibility("hash", pdf(), &identity, &on);
+        let stored_ocr = stored.ocr.as_ref().unwrap();
+        assert_eq!(stored_ocr.reread_prompt_version, on.reread_prompt_version);
+        assert_eq!(
+            stored_ocr.reread_rules_generation,
+            on.reread_rules_generation
+        );
     }
 
     #[test]
