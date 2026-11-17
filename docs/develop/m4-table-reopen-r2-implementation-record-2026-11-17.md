@@ -31,8 +31,26 @@
 - `--layout-regions` 目录形态：编排模式每文档解析 `<root>/<stem>.regions.json`（R1 route A 文件形态的多文档推广）。
 - sidecar 渲染空间 = scan 渲染空间（round(pt·dpi/72) + 2880² fit，与 `clamped_bitmap_size`/`fit_pixel_budget` 逐条对齐；PyMuPDF 几何等价）。
 
-## 未决
+## R3 战役结果（2026-11-17 判定）：**B2 五门 NO-GO**
 
-- R3 双扫描（control 458 页 / target 458 页）后台执行中；完成后自动链：导出 → docker 官方评测 ×2 → T-PROJ 投影 → 五门裁定（`analysis-b2-adjudication.json`）。
-- B2 GO → R4（B4.3 双配置全量复评，目标 ≥91 分支）；B2 NO-GO → M4 回挂起态（D-29 允许一轮校准，校准需重跑 R3 全部门）。
-- R5（CDM/TEDS 回吐定位）按 D-43 仅分析，可与 R3 扫描并行推进。
+双扫描完成（control/target 各 458 页，target exit 10 = BLK-7 部分成功语义）；导出 → docker 官方评测 ×2（r3-control / r3-target，665 表全配对）→ official 明细以同一工具链重评 landing 刷新（r3-official-refresh，逐位复现 88.4484）→ T-PROJ 投影 → 五门裁定（`reports/analysis/analysis-b2-adjudication.json`）：
+
+| 门 | 冻结口径 | 实测 | 判定 |
+|---|---|---|---|
+| ① 池表触发覆盖率 | ≥ 80%（安全合格页池表） | **58.6%**（99 池表/触发 58；sidecar 配对口径） | FAIL |
+| ② 正常页替换率 | ≤ 2%（568 样本） | **3.17%**（18 表） | FAIL |
+| ③ good 带回归防护 | 均值 Δ ≥ −0.02 且回归 ≤ max(3, 2%) | 443 表配对，均值 **−0.0035**，回归 **2** | **PASS**（安全网成立：good 表基本无损） |
+| ④ worst/bad 增益 | 均值 Δ ≥ +0.3（安全合格子集配对） | 52 表配对，均值 **−0.0027** | FAIL（替换发生处亦无改善） |
+| ⑤ 投影+零漂移 | T-PROJ 落档 + 对照零漂移 | Overall 88.4484 → 88.4178（TEDS 腿 −0.0009）；text 375 页配对 Δ **恰为 0** | **PASS** |
+
+**处置（D-30 矩阵）**：B2 NO-GO → **M4 回挂起态**；R4（B4.3 双配置全量复评）分支条件（B2 GO）不成立，**不执行**。损失有界性如设计所证：失败模式 = 不替换，good 带零实质回归（门③），off 路径零漂移（门⑤ text Δ=0）。D-29 允许一轮校准（规则代次 +1）且必须重跑全部门；门④证据（替换发生处 Δ≈0）表明仅调规则的期望收益低——重开需要新的机制假设（如更重读网格/专用表格解码），按计划属新决策。
+
+## R5 回吐定位（已完成，仅分析）
+
+`analysis-giveback-round2.json`：landing 88.45 精确复现；TEDS 亏损 91.8% 集中于 worst/mid/bad-low 池带（bad-low 52.5% + worst 20.9% + mid 18.4%），good 带 8.2%；CDM 亏损 134.0（93 样本 <0.5）、text 112.5。
+
+## 实施期间冻结口径修正（记录在案）
+
+- result.json `reread` 键在 R2.6 首版被 emitting 两次（身份对象 + 计数器对象），last-wins 解析下身份被遮蔽——已修为单一合并对象（本轮战役文件按旧形态解析，计数器读取兼容两种形态）。
+- 门① 分母：计划冻结值 146 来自 R1b 活检测验收；战役实际 sidecar 配对口径为 99（生产 provider 的真实安全集）——裁定器按实测计，两口径均入档。
+- T-PROJ 的键空间漂移防护按冻结契约执行：baseline/candidate 明细预连接到 official 键空间（连接数 1781/2352 CDM、1557/1557 text、665/665 TEDS），official 以同工具链刷新复现（逐位一致）。
