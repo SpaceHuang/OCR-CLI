@@ -665,6 +665,121 @@ fn r2_7_checkpoint_hash_matches_the_replaced_markdown() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+// --- review 2026-11-18 BLK-4/5 window-level regressions ---------------------
+
+#[test]
+fn blk5_ovisocr3_retries_keep_the_plain_render_never_budgeted() {
+    // BLK-5: the render budget comes from the CURRENT rung's config —
+    // ovisocr3's rungs carry render_budget None, so every retry render is
+    // the plain one main froze (never a 4096² supersample).
+    let root = temp_root("blk5-ovisocr3-plain");
+    let session = FakeSession::with_depth(1);
+    for _ in 0..4 {
+        session.push(
+            1,
+            Program {
+                text: "循环片段".repeat(9),
+                finish: FinishReason::RepetitionLoop,
+            },
+        );
+    }
+    session.push(
+        1,
+        Program {
+            text: "ovisocr3 rescue".into(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config_with_ladder(&compatibility, "ovisocr3"),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+        None,
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    // The ovisocr3 ladder walked its 3 rungs (attempts 2..=4) — every one
+    // a PLAIN render.
+    assert!(
+        renderer.budgets.borrow().is_empty(),
+        "ovisocr3 retries must never call render_budgeted"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn blk4_bad_page_reread_always_triggers_but_identity_still_guards() {
+    // BLK-4 end-to-end: a retry-committed page (attempts >= 2) whose table
+    // is HEALTHY (no F-gate) still triggers the reread — and the identity
+    // gate still blocks a foreign reread (恒触发不替换).
+    let root = temp_root("blk4-bad-page-trigger");
+    let session = FakeSession::with_depth(1);
+    // Attempt 1 degenerates; attempt 2 rescues — the page commits with
+    // attempts = 2 (the bad-page path).
+    session.push(
+        1,
+        Program {
+            text: "循环片段".repeat(9),
+            finish: FinishReason::RepetitionLoop,
+        },
+    );
+    session.push(
+        1,
+        Program {
+            // HEALTHY table: no F1-F5 trigger on the normal path.
+            text: "<table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>"
+                .to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    // The reread decode returns FOREIGN content (identity blocks it).
+    session.push(
+        1,
+        Program {
+            text: "<table><tr><td>foreign one</td><td>foreign two</td></tr></table>".to_owned(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let mut provider = GateRegionProvider { regions: vec![0] };
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+        Some(&mut provider),
+    )
+    .unwrap();
+    assert_eq!(summary.tables_reread_total, 1, "bad page always triggers");
+    assert_eq!(summary.replaced_total, 0, "identity guard still holds");
+    let captured = session.core.captured.borrow();
+    assert!(
+        captured
+            .iter()
+            .any(|r| r.prompt == crate::ocr::prompt::reread::TABLE_REREAD_V1),
+        "the reread decode happened despite the healthy table"
+    );
+    drop(captured);
+    let markdown = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
+    assert!(
+        !markdown.contains("foreign"),
+        "the identity guard kept the original table"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn window_fills_use_the_identity_batch_depth_without_backfill() {
     let root = temp_root("depth");
@@ -1113,6 +1228,7 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
         raw_output: String::new(),
         reread_tables: 0,
         reread_replaced: 0,
+        reread_detail_json: String::new(),
     };
     let terminal = vec![
         TerminalPage::Committed {

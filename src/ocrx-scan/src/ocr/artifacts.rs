@@ -157,6 +157,7 @@ fn assemble(
         raw_output: response.raw_text.clone(),
         reread_tables: 0,
         reread_replaced: 0,
+        reread_detail_json: String::new(),
     })
 }
 
@@ -483,6 +484,7 @@ impl<'s> SessionRecognizer<'s> {
             raw_output: merged_raw,
             reread_tables: 0,
             reread_replaced: 0,
+            reread_detail_json: String::new(),
         })
     }
 

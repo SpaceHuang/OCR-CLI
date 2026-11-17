@@ -499,7 +499,7 @@ pub trait TableRereadDecoder {
 }
 
 /// Per-page reread outcome counters (result-schema inputs, R2.6).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RereadStats {
     pub pairing_skipped: bool,
     pub triggered: usize,
@@ -507,6 +507,20 @@ pub struct RereadStats {
     pub identity_blocked: usize,
     pub compare_rejected: usize,
     pub replaced: usize,
+    /// BLK-6 (review 2026-11-18): per-table outcomes in reading order —
+    /// page-level counters cannot attribute multi-table pages (the B2
+    /// adjudicator consumes the persisted form).
+    pub detail: Vec<RereadTableOutcome>,
+}
+
+/// One table's reread outcome (reading-order ordinal; persisted as the
+/// per-page reread detail artifact for exact B2 gate attribution).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RereadTableOutcome {
+    pub table_ordinal: usize,
+    pub triggered: bool,
+    pub decoded: bool,
+    pub replaced: bool,
 }
 
 /// Per-page orchestration (normal pages; the caller gates on the
@@ -523,6 +537,7 @@ pub fn orchestrate_table_reread(
     page: &crate::state::RenderedPage,
     provider: &mut dyn RegionProvider,
     decoder: &mut dyn TableRereadDecoder,
+    always_trigger: bool,
 ) -> std::io::Result<(Vec<PageBlock>, RereadStats)> {
     let mut stats = RereadStats::default();
     let regions = provider.regions_for_page(page_number);
@@ -530,18 +545,24 @@ pub fn orchestrate_table_reread(
         .iter()
         .filter(|b| block_class(b) == Some(RegionClass::Table))
         .count();
-    if pairing_verdict(&regions, output_n).is_err() {
-        stats.pairing_skipped = true;
-        return Ok((blocks.to_vec(), stats));
-    }
-    let table_regions: Vec<DetectedRegion> = regions
-        .iter()
-        .copied()
-        .filter(|r| r.class == RegionClass::Table)
-        .collect();
+    // BLK-2 (review 2026-11-18): the verdict's READING ORDER must drive
+    // crop AND splice — cropping the raw detection sequence pairs the k-th
+    // output block with whichever region the detector emitted first, which
+    // on multi-table pages re-reads a DIFFERENT table than the block.
+    let table_regions: Vec<DetectedRegion> = match pairing_verdict(&regions, output_n) {
+        Ok(order) => order.into_iter().map(|index| regions[index]).collect(),
+        Err(_) => {
+            stats.pairing_skipped = true;
+            return Ok((blocks.to_vec(), stats));
+        }
+    };
     let page_area = f64::from(page.width) * f64::from(page.height);
     let mut replacements: std::collections::BTreeMap<usize, PageBlock> =
         std::collections::BTreeMap::new();
+    // BLK-3: the ordinal cursor advances for EVERY table block
+    // unconditionally — a skipped/identity-blocked/compare-rejected table
+    // still consumed its region slot; a stale cursor mis-pairs every
+    // following table.
     let mut table_block_position = 0usize;
     for block in blocks {
         if block_class(block) != Some(RegionClass::Table) {
@@ -552,38 +573,53 @@ pub fn orchestrate_table_reread(
             _ => unreachable!("block_class filtered"),
         };
         let region = &table_regions[table_block_position];
+        let ordinal = table_block_position;
+        table_block_position += 1;
+        let mut outcome = RereadTableOutcome {
+            table_ordinal: ordinal,
+            triggered: false,
+            decoded: false,
+            replaced: false,
+        };
         let area_ratio = region.area() / page_area.max(1.0);
-        if !table_reread_candidate(html, area_ratio) {
-            continue;
-        }
-        stats.triggered += 1;
-        let crop = crop_region(page, region.bbox)?;
-        let reread_html = decoder.reread_table(&crop)?;
-        stats.decoded += 1;
-        match content_identity_pass(html, &reread_html) {
-            Some(true) => {}
-            _ => {
-                stats.identity_blocked += 1;
+        // BLK-4 (plan D-18 frozen): a BAD page (retry-committed,
+        // attempts >= 2) always triggers the reread — the F1-F5
+        // heuristics only gate the attempt-1 path. Identity and
+        // compare-keep still guard every replacement.
+        if always_trigger || table_reread_candidate(html, area_ratio) {
+            outcome.triggered = true;
+            stats.triggered += 1;
+            let crop = crop_region(page, region.bbox)?;
+            let reread_html = decoder.reread_table(&crop)?;
+            outcome.decoded = true;
+            stats.decoded += 1;
+            match content_identity_pass(html, &reread_html) {
+                Some(true) => {}
+                _ => {
+                    stats.identity_blocked += 1;
+                    stats.detail.push(outcome);
+                    continue;
+                }
+            }
+            let original_shape = parse_table_shape(html);
+            let reread_shape = parse_table_shape(&reread_html);
+            if keep_original(&original_shape, &reread_shape) {
+                stats.compare_rejected += 1;
+                stats.detail.push(outcome);
                 continue;
             }
+            // keyed by the TABLE-BLOCK ordinal (position among table blocks
+            // = region ordinal under the pairing one-to-one contract) - NOT
+            // the all-block enumerate index, which shifts when non-table
+            // blocks precede the first table.
+            replacements.insert(ordinal, PageBlock::HtmlTable { html: reread_html });
+            outcome.replaced = true;
+            stats.replaced += 1;
         }
-        let original_shape = parse_table_shape(html);
-        let reread_shape = parse_table_shape(&reread_html);
-        if keep_original(&original_shape, &reread_shape) {
-            stats.compare_rejected += 1;
-            continue;
-        }
-        // keyed by the TABLE-BLOCK ordinal (position among table blocks =
-        // region ordinal under the pairing one-to-one contract) - NOT the
-        // all-block enumerate index, which shifts when non-table blocks
-        // precede the first table.
-        replacements.insert(
-            table_block_position,
-            PageBlock::HtmlTable { html: reread_html },
-        );
-        table_block_position += 1;
-        stats.replaced += 1;
+        stats.detail.push(outcome);
     }
+    // splice with the ORDERED regions: replacement keys are reading-order
+    // ordinals, so the pairing must walk the same order.
     let spliced = splice_m4m5(blocks, &table_regions, &replacements, RegionClass::Table)
         .map_err(std::io::Error::other)?;
     Ok((spliced, stats))
@@ -693,6 +729,7 @@ pub fn apply_table_reread(
     artifact: &mut crate::state::PageArtifactResult,
     provider: &mut dyn RegionProvider,
     decoder: &mut dyn TableRereadDecoder,
+    always_trigger: bool,
 ) -> std::io::Result<RereadStats> {
     let mut document =
         ocrx_core::PageDocument::from_json(&artifact.page_json).map_err(|error| {
@@ -700,8 +737,14 @@ pub fn apply_table_reread(
         })?;
     let original_blocks = document.blocks.clone();
     let page_number = document.page_number;
-    let (spliced, stats) =
-        orchestrate_table_reread(&original_blocks, page_number, rendered, provider, decoder)?;
+    let (spliced, stats) = orchestrate_table_reread(
+        &original_blocks,
+        page_number,
+        rendered,
+        provider,
+        decoder,
+        always_trigger,
+    )?;
     artifact.reread_tables = stats.decoded;
     artifact.reread_replaced = stats.replaced;
     if stats.pairing_skipped {
@@ -1551,6 +1594,254 @@ mod tests {
         }
     }
 
+    // --- review 2026-11-18 BLK-2/3/4 regressions -----------------------------
+
+    /// Provider returning regions in an explicit (possibly non-reading)
+    /// order — the sidecar emits DETECTOR order.
+    struct OrderedProvider {
+        regions: Vec<DetectedRegion>,
+    }
+    impl RegionProvider for OrderedProvider {
+        fn regions_for_page(&mut self, _page: u32) -> Vec<DetectedRegion> {
+            self.regions.clone()
+        }
+    }
+
+    /// Decoder recording each crop's (width, height) and returning the
+    /// scripted responses in order.
+    struct ScriptedDecoder {
+        responses: Vec<String>,
+        crops: std::cell::RefCell<Vec<(u32, u32)>>,
+    }
+    impl TableRereadDecoder for ScriptedDecoder {
+        fn reread_table(&mut self, crop: &crate::state::RenderedPage) -> std::io::Result<String> {
+            self.crops.borrow_mut().push((crop.width, crop.height));
+            let index = self.crops.borrow().len() - 1;
+            Ok(self.responses[index].clone())
+        }
+    }
+
+    fn top_region() -> DetectedRegion {
+        region(RegionClass::Table, 0, (0.0, 0.0, 400.0, 40.0))
+    }
+    fn bottom_region() -> DetectedRegion {
+        region(RegionClass::Table, 1, (0.0, 40.0, 400.0, 100.0))
+    }
+    fn two_table_page() -> crate::state::RenderedPage {
+        crate::state::RenderedPage::new(400, 100, vec![200; 400 * 100 * 3]).unwrap()
+    }
+    fn top_triggered_block() -> PageBlock {
+        // F2 fires; text distinct from the bottom table (identity gate).
+        PageBlock::HtmlTable {
+            html: "<table><tr><td>top alpha</td><td></td></tr><tr><td>top beta</td><td></td></tr><tr><td>top gamma</td><td></td></tr></table>".to_owned(),
+        }
+    }
+    fn bottom_triggered_block() -> PageBlock {
+        PageBlock::HtmlTable {
+            html: "<table><tr><td>bot alpha</td><td></td></tr><tr><td>bot beta</td><td></td></tr><tr><td>bot gamma</td><td></td></tr></table>".to_owned(),
+        }
+    }
+    fn better_shape(content_a: &str, content_b: &str) -> String {
+        format!(
+            "<table><tr><th>{content_a}</th><th>{content_b}</th></tr><tr><td>r1</td><td>r2</td></tr></table>"
+        )
+    }
+
+    #[test]
+    fn blk2_reading_order_drives_crop_and_splice_not_detector_order() {
+        // Detection order = [bottom, top]; blocks in reading order = [top,
+        // bottom]. The pairing verdict must reorder: block 0 pairs the TOP
+        // region (crop 400x40) and block 1 the BOTTOM region (400x60), and
+        // the replacement keys follow the same order.
+        let blocks = vec![top_triggered_block(), bottom_triggered_block()];
+        let page = two_table_page();
+        let mut provider = OrderedProvider {
+            regions: vec![bottom_region(), top_region()],
+        };
+        let mut decoder = ScriptedDecoder {
+            responses: vec![
+                better_shape("top alpha", "top beta"),
+                better_shape("bot alpha", "bot beta"),
+            ],
+            crops: std::cell::RefCell::new(Vec::new()),
+        };
+        let (spliced, stats) =
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
+        assert_eq!(stats.replaced, 2);
+        // Crops in READING order: top region first (height 40).
+        let crops = decoder.crops.borrow();
+        assert_eq!(crops.len(), 2);
+        assert_eq!(crops[0], (400, 40), "first crop = the TOP region");
+        assert_eq!(crops[1], (400, 60), "second crop = the BOTTOM region");
+        // Each block got ITS OWN reread content (never the other's).
+        assert!(
+            matches!(&spliced[0], PageBlock::HtmlTable { html } if html.contains("top alpha") && html.contains("<th>")),
+            "block 0 keeps its own reread"
+        );
+        assert!(
+            matches!(&spliced[1], PageBlock::HtmlTable { html } if html.contains("bot alpha") && html.contains("<th>")),
+            "block 1 keeps its own reread"
+        );
+        // Per-table detail: ordinals follow reading order.
+        assert_eq!(
+            stats.detail,
+            vec![
+                RereadTableOutcome {
+                    table_ordinal: 0,
+                    triggered: true,
+                    decoded: true,
+                    replaced: true
+                },
+                RereadTableOutcome {
+                    table_ordinal: 1,
+                    triggered: true,
+                    decoded: true,
+                    replaced: true
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn blk3_healthy_first_never_consumes_the_second_tables_reread() {
+        // The reviewer's minimal repro: table 0 healthy (no trigger), table
+        // 1 triggered. The cursor must still advance for table 0 — with the
+        // stale-cursor bug table 1 read table 0's region AND table 0's
+        // block was replaced with table 1's reread.
+        let blocks = vec![healthy_block(), bottom_triggered_block()];
+        let page = two_table_page();
+        let mut provider = OrderedProvider {
+            regions: vec![top_region(), bottom_region()],
+        };
+        let mut decoder = ScriptedDecoder {
+            responses: vec![better_shape("bot alpha", "bot beta")],
+            crops: std::cell::RefCell::new(Vec::new()),
+        };
+        let (spliced, stats) =
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
+        assert_eq!(stats.replaced, 1);
+        assert!(!stats.detail[0].triggered);
+        assert!(stats.detail[1].replaced);
+        // The HEALTHY table stays byte-identical; the TRIGGERED table got
+        // the reread.
+        assert_eq!(spliced[0], blocks[0], "healthy table untouched");
+        assert!(
+            matches!(&spliced[1], PageBlock::HtmlTable { html } if html.contains("bot alpha") && html.contains("<th>")),
+            "triggered table replaced"
+        );
+        // The single crop is the BOTTOM region (400x60), not the top.
+        assert_eq!(decoder.crops.borrow().as_slice(), &[(400, 60)]);
+    }
+
+    #[test]
+    fn blk3_identity_blocked_first_still_advances_the_cursor() {
+        let blocks = vec![top_triggered_block(), bottom_triggered_block()];
+        let page = two_table_page();
+        let mut provider = OrderedProvider {
+            regions: vec![top_region(), bottom_region()],
+        };
+        // First response = FOREIGN content (identity gate blocks it).
+        let mut decoder = ScriptedDecoder {
+            responses: vec![
+                better_shape("foreign one", "foreign two"),
+                better_shape("bot alpha", "bot beta"),
+            ],
+            crops: std::cell::RefCell::new(Vec::new()),
+        };
+        let (spliced, stats) =
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
+        assert_eq!(stats.identity_blocked, 1);
+        assert_eq!(stats.replaced, 1);
+        assert_eq!(spliced[0], blocks[0], "identity-blocked table untouched");
+        assert!(
+            matches!(&spliced[1], PageBlock::HtmlTable { html } if html.contains("bot alpha")),
+            "second table still replaced"
+        );
+        // Both crops happened, in reading order.
+        assert_eq!(decoder.crops.borrow().as_slice(), &[(400, 40), (400, 60)]);
+    }
+
+    #[test]
+    fn blk3_compare_rejected_first_still_advances_the_cursor() {
+        let blocks = vec![top_triggered_block(), bottom_triggered_block()];
+        let page = two_table_page();
+        let mut provider = OrderedProvider {
+            regions: vec![top_region(), bottom_region()],
+        };
+        // First response = same-or-worse shape (compare-keep rejects).
+        let mut decoder = ScriptedDecoder {
+            responses: vec![
+                "<table><tr><td>top alpha</td><td></td></tr><tr><td>top beta</td><td></td></tr><tr><td>top gamma</td><td></td></tr></table>".to_owned(),
+                better_shape("bot alpha", "bot beta"),
+            ],
+            crops: std::cell::RefCell::new(Vec::new()),
+        };
+        let (spliced, stats) =
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
+        assert_eq!(stats.compare_rejected, 1);
+        assert_eq!(stats.replaced, 1);
+        assert_eq!(spliced[0], blocks[0], "compare-rejected table untouched");
+        assert!(
+            matches!(&spliced[1], PageBlock::HtmlTable { html } if html.contains("bot alpha")),
+            "second table still replaced"
+        );
+    }
+
+    #[test]
+    fn blk4_always_trigger_bypasses_f_gates_but_keeps_identity_and_compare() {
+        // Bad-page contract (attempts >= 2): the HEALTHY table triggers too
+        // — yet a compare-keep rejection still keeps the original (恒触发
+        // 不替换 is a legal outcome).
+        let blocks = vec![healthy_block(), bottom_triggered_block()];
+        let page = two_table_page();
+        let mut provider = OrderedProvider {
+            regions: vec![top_region(), bottom_region()],
+        };
+        let mut decoder = ScriptedDecoder {
+            responses: vec![
+                // Same shape as the original healthy table → compare keeps.
+                "<table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>"
+                    .to_owned(),
+                better_shape("bot alpha", "bot beta"),
+            ],
+            crops: std::cell::RefCell::new(Vec::new()),
+        };
+        let (spliced, stats) =
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, true).unwrap();
+        assert_eq!(stats.triggered, 2, "healthy table also triggers");
+        assert_eq!(stats.decoded, 2);
+        // The healthy table's reread is IDENTITY-blocked (its normalized
+        // text has < 8 unique bigrams → inconclusive → keep); the guard
+        // chain stays fully armed on the bad-page path.
+        assert_eq!(stats.identity_blocked, 1);
+        assert_eq!(stats.compare_rejected, 0);
+        assert_eq!(stats.replaced, 1);
+        assert_eq!(spliced[0], blocks[0]);
+        assert!(matches!(&spliced[1], PageBlock::HtmlTable { html } if html.contains("bot alpha")));
+    }
+
+    #[test]
+    fn blk4_without_always_trigger_the_f_gates_still_gate() {
+        let blocks = vec![healthy_block(), bottom_triggered_block()];
+        let page = two_table_page();
+        let mut provider = OrderedProvider {
+            regions: vec![top_region(), bottom_region()],
+        };
+        let mut decoder = ScriptedDecoder {
+            responses: vec![better_shape("bot alpha", "bot beta")],
+            crops: std::cell::RefCell::new(Vec::new()),
+        };
+        let (_, stats) =
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
+        assert_eq!(stats.triggered, 1, "healthy table does not trigger");
+        assert_eq!(stats.decoded, 1);
+    }
+
     #[test]
     fn orchestration_replaces_triggered_table_passing_all_gates() {
         let blocks = vec![md("prose"), triggered_block(), md("tail")];
@@ -1560,7 +1851,8 @@ mod tests {
             response: "<table><tr><th>alpha beta</th><th>gamma delta</th></tr><tr><td>epsilon zeta</td><td>eta theta</td><td>iota kappa</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
         assert_eq!(stats.triggered, 1);
         assert_eq!(stats.decoded, 1);
         assert_eq!(stats.identity_blocked, 0);
@@ -1584,7 +1876,8 @@ mod tests {
             response: "<table></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
         assert_eq!(stats.triggered, 0);
         assert_eq!(stats.decoded, 0);
         assert_eq!(spliced, blocks, "healthy table: original preserved");
@@ -1609,7 +1902,8 @@ mod tests {
             response: "<table><tr><td>z</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
         assert!(stats.pairing_skipped);
         assert_eq!(stats.decoded, 0, "pairing skip: decode never runs");
         assert_eq!(spliced, blocks);
@@ -1624,7 +1918,8 @@ mod tests {
             response: "<table><tr><td>omega sigma</td><td>tau upsilon</td><td>phi chi</td><td>psi omega</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
         assert_eq!(stats.triggered, 1);
         assert_eq!(stats.identity_blocked, 1);
         assert_eq!(stats.replaced, 0);
@@ -1643,7 +1938,8 @@ mod tests {
             response: "<table><tr><td>alpha beta</td><td></td></tr><tr><td>gamma delta</td><td></td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
         assert_eq!(stats.triggered, 1);
         assert_eq!(stats.decoded, 1);
         assert_eq!(
@@ -1671,7 +1967,8 @@ mod tests {
             response: "<table><tr><th>alpha beta</th><th>gamma delta</th></tr><tr><td>epsilon zeta</td><td>eta theta</td><td>iota kappa</td></tr></table>".to_owned(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
         assert_eq!(stats.replaced, 1);
         assert!(
             matches!(&spliced[1], PageBlock::HtmlTable { html } if html.contains("<th>alpha beta</th>")),
@@ -1689,7 +1986,8 @@ mod tests {
             response: String::new(),
         };
         let (spliced, stats) =
-            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_table_reread(&blocks, 0, &page, &mut provider, &mut decoder, false)
+                .unwrap();
         assert!(
             stats.pairing_skipped,
             "count mismatch (0 regions vs 1 block)"

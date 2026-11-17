@@ -70,6 +70,32 @@ def member_stem(member: dict) -> str:
     return Path(member["image_path"]).stem
 
 
+def doc_reread_detail(scans_dir: Path, stem: str) -> list[dict]:
+    """The page's per-table reread outcomes (page-NNNN.reread.json, the
+    BLK-6 detail artifact). Missing file = the pipeline never reread the
+    page (off/skip) — an empty list, not an error."""
+    doc = doc_dir(scans_dir, stem)
+    path = doc / "page-0001.reread.json" if doc else None
+    if path is None or not path.is_file():
+        return []
+    raw = load_json(path)
+    return [
+        {
+            "table_ordinal": int(entry["table_ordinal"]),
+            "triggered": bool(entry["triggered"]),
+            "decoded": bool(entry["decoded"]),
+            "replaced": bool(entry["replaced"]),
+        }
+        for entry in raw
+    ]
+
+
+def member_ordinal(member: dict) -> int:
+    """The GT table ordinal from the member key `<image>_[<n>]`."""
+    ordinal = member["key"].rpartition("_[")[2]
+    return int(ordinal.rstrip("]"))
+
+
 def paired_pages(pairing: dict) -> set[str]:
     return {
         Path(entry["image_path"]).stem
@@ -142,8 +168,18 @@ def zero_drift(control_scans: Path, baseline_scans: Path, stems: list[str]) -> d
             checked += 1
             if file_sha256(control_file) != file_sha256(baseline_file):
                 drifted.append(f"{stem}/{name}")
-    return {"checked": checked, "missing": missing, "drifted": drifted,
-            "pass": checked > 0 and not drifted}
+    # BLK-7 (review 2026-11-18): fail-closed — a missing product or a
+    # shortfall against the expected 2-files-per-stem matrix is a FAIL,
+    # not a silent pass. Zero-drift means EVERY artifact compared and ALL
+    # identical.
+    expected = 2 * len(stems)
+    return {
+        "checked": checked,
+        "missing": missing,
+        "drifted": drifted,
+        "expected": expected,
+        "pass": checked == expected and missing == 0 and not drifted,
+    }
 
 
 def adjudicate(
@@ -165,10 +201,16 @@ def adjudicate(
         for member in members_by_band[band]
         if member_stem(member) in safe_pages
     ]
+    # BLK-6: per-TABLE attribution — a pool table counts as triggered only
+    # when ITS OWN ordinal shows a triggered/decoded outcome in the page's
+    # reread detail (a page-level boolean over-counts multi-table pages).
     triggered = [
         member
         for member in pool_members
-        if doc_reread_counters(target_scans, member_stem(member))["tables_reread"] > 0
+        if any(
+            entry["decoded"] and entry["table_ordinal"] == member_ordinal(member)
+            for entry in doc_reread_detail(target_scans, member_stem(member))
+        )
     ]
     absolute_pool = [
         member
@@ -192,9 +234,11 @@ def adjudicate(
         for member in members_by_band[band]
         if not member.get("page_bad")
     ]
+    # BLK-6: replacements aggregate per UNIQUE document (a page with N
+    # normal tables contributed its doc counters N times before).
+    normal_stems = sorted({member_stem(member) for member in normal_members})
     replaced = sum(
-        doc_reread_counters(target_scans, member_stem(member))["replaced"]
-        for member in normal_members
+        doc_reread_counters(target_scans, stem)["replaced"] for stem in normal_stems
     )
     replacement = {
         "gate": 2,

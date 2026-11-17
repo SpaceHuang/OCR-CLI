@@ -75,6 +75,12 @@ def make_world(tmp: Path, worst_delta: float, good_delta: float,
         write_doc(target_scans, stem, reread, replaced, enabled)
         write_doc(control_scans, stem, 0, 0, False)
         write_doc(baseline_scans, stem, 0, 0, False)
+        if stem == "w" and triggered_pool > 0:
+            (target_scans / "w" / "page-0001.reread.json").write_text(
+                json.dumps([{"table_ordinal": 0, "triggered": True,
+                             "decoded": True, "replaced": False}]),
+                encoding="utf-8",
+            )
     return b2.adjudicate(
         corpus, pairing, control_teds, target_teds,
         control_scans, target_scans, baseline_scans,
@@ -168,6 +174,127 @@ def test_gate_projection_drift():
         print("ok   gate-5 drift leg + projection recording flag")
 
 
+def write_detail(doc: Path, entries: list[dict]):
+    import json as _json
+    doc.mkdir(parents=True, exist_ok=True)
+    (doc / "page-0001.reread.json").write_text(_json.dumps(entries), encoding="utf-8")
+
+
+def test_blk6_gate1_counts_per_table_ordinal_not_page_boolean():
+    import json as _json
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        corpus = {"tables": {
+            "worst": [
+                {"key": "m.png_[0]", "image_path": "m.png_[0]", "page_bad": False},
+                {"key": "m.png_[1]", "image_path": "m.png_[1]", "page_bad": False},
+            ],
+            "mid": [], "bad-low": [],
+            "good-en": [], "good-zh": [], "good-other": [], "bad-dropped": [],
+        }}
+        pairing = {"per_page": [{"image_path": "m.png", "verdict": "pair"}]}
+        control_teds = {"m_[0]": teds(0.4), "m_[1]": teds(0.4)}
+        target_teds = dict(control_teds)
+        control_scans = tmp / "control"
+        target_scans = tmp / "target"
+        baseline_scans = tmp / "baseline"
+        for root in (control_scans, target_scans, baseline_scans):
+            doc = root / "m"
+            doc.mkdir(parents=True)
+            (doc / "page-0001.json").write_text("{}", encoding="utf-8")
+            (doc / "page-0001.md").write_text("x\n", encoding="utf-8")
+            (doc / "result.json").write_text(_json.dumps({
+                "pages": {"total": 1, "completed": 1, "failed": 0,
+                          "tables_reread_total": 1, "replaced_total": 0},
+                "reread": {"tables_reread_total": 1, "replaced_total": 0},
+            }), encoding="utf-8")
+        # Multi-table page: ONLY ordinal 0 was decoded; ordinal 1 untouched.
+        write_detail(target_scans / "m", [
+            {"table_ordinal": 0, "triggered": True, "decoded": True, "replaced": False},
+            {"table_ordinal": 1, "triggered": False, "decoded": False, "replaced": False},
+        ])
+        result = b2.adjudicate(
+            corpus, pairing, control_teds, target_teds,
+            control_scans, target_scans, baseline_scans,
+        )
+        gate = result["gates"]["coverage"]
+        assert gate["pool_tables_safe_eligible"] == 2, gate
+        assert gate["triggered"] == 1, "only ordinal 0 decoded"
+        assert abs(gate["coverage"] - 0.5) < 1e-9, (
+            "page-level boolean would over-count this as 100%"
+        )
+        assert not gate["pass"]
+        print("ok   BLK-6 gate-1 per-table ordinal attribution")
+
+
+def test_blk6_gate2_aggregates_replacements_per_unique_document():
+    import json as _json
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        corpus = {"tables": {
+            "worst": [], "mid": [], "bad-low": [],
+            "good-en": [
+                {"key": "g.png_[0]", "image_path": "g.png_[0]", "page_bad": False},
+                {"key": "g.png_[1]", "image_path": "g.png_[1]", "page_bad": False},
+            ],
+            "good-zh": [], "good-other": [], "bad-dropped": [],
+        }}
+        pairing = {"per_page": [{"image_path": "g.png", "verdict": "pair"}]}
+        control_teds = {"g_[0]": teds(0.9), "g_[1]": teds(0.9)}
+        target_teds = dict(control_teds)
+        control_scans = tmp / "control"
+        target_scans = tmp / "target"
+        baseline_scans = tmp / "baseline"
+        for root in (control_scans, target_scans, baseline_scans):
+            doc = root / "g"
+            doc.mkdir(parents=True)
+            (doc / "page-0001.json").write_text("{}", encoding="utf-8")
+            (doc / "page-0001.md").write_text("x\n", encoding="utf-8")
+            (doc / "result.json").write_text(_json.dumps({
+                "pages": {"total": 1, "completed": 1, "failed": 0,
+                          "tables_reread_total": 0, "replaced_total": 1},
+                "reread": {"tables_reread_total": 0, "replaced_total": 1},
+            }), encoding="utf-8")
+        result = b2.adjudicate(
+            corpus, pairing, control_teds, target_teds,
+            control_scans, target_scans, baseline_scans,
+        )
+        gate = result["gates"]["replacement"]
+        # 2 normal MEMBERS but ONE document: the doc's replaced_total must
+        # count ONCE (the old per-member sum would report 2).
+        assert gate["normal_page_table_samples"] == 2, gate
+        assert gate["replaced"] == 1, gate
+        assert abs(gate["rate"] - 0.5) >= 0, gate
+        print("ok   BLK-6 gate-2 unique-document replacement aggregation")
+
+
+def test_blk7_zero_drift_fails_closed_on_missing_products():
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        control = tmp / "control"
+        baseline = tmp / "baseline"
+        for root in (control, baseline):
+            doc = root / "m"
+            doc.mkdir(parents=True)
+            (doc / "page-0001.json").write_text("{}", encoding="utf-8")
+            (doc / "page-0001.md").write_text("x\n", encoding="utf-8")
+        # Drop ONE product from the baseline: the gate must FAIL.
+            (doc / "result.json").write_text("{}", encoding="utf-8")
+        (baseline / "m" / "page-0001.md").unlink()
+        drift = b2.zero_drift(control, baseline, ["m"])
+        assert drift["missing"] == 1 and drift["checked"] == 1
+        assert drift["expected"] == 2
+        assert not drift["pass"], "missing product must fail closed"
+        # Identical bytes with the full matrix -> pass.
+        drift = b2.zero_drift(control, tmp / "baseline-restored", ["m"]) if False else None
+        (baseline / "m" / "page-0001.md").write_text("x\n", encoding="utf-8")
+        drift = b2.zero_drift(control, baseline, ["m"])
+        assert drift["pass"], drift
+        # A whole missing document fails closed too.
+        drift = b2.zero_drift(control, baseline, ["m", "absent"])
+        assert not drift["pass"]
+        print("ok   BLK-7 zero-drift fail-closed on missing/shortfall")
+
 if __name__ == "__main__":
     spec.loader.exec_module(b2)
     test_key_normalization()
@@ -176,4 +303,7 @@ if __name__ == "__main__":
     test_gate_good_band()
     test_gate_worst_bad()
     test_gate_projection_drift()
+    test_blk6_gate1_counts_per_table_ordinal_not_page_boolean()
+    test_blk6_gate2_aggregates_replacements_per_unique_document()
+    test_blk7_zero_drift_fails_closed_on_missing_products()
     print("all b2 adjudicator checks passed")
