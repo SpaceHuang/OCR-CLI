@@ -8,11 +8,11 @@
 | 任务 | 提交 | 内容 |
 |---|---|---|
 | R2.5 身份字段 | 9311af9 | `reread_prompt_version`/`reread_rules_generation` 进 `OcrIdentity`/`ScanOcrSide`/`scan_side_matches`；三条 resume 不复用回归（prompt 切换/校准代次+1/规范化版本切换=代次+1 契约测试）；serde 默认向后兼容 |
-| R2.0 manifest 链 | 0f4a5b7 | 磁盘 manifest（真实冻结值：revision `b7366822…`、graph `91457e49…`/1592566B、weights `45404a84…`/212170944B、apache-2.0、runtime{800,255,0.25,21,route A}——当日从 hf-mirror 实取并逐字节验证）；运行时 `LayoutModelManifest`（复用 AssetDescriptor 契约）+ 注册表 + 获取链（钉扎 URL 下载→sha256+尺寸验证→原子提交；算改缓存=硬错误）；`sha256_file` 短长度测试补强（顺带发现测试竞态，实现本身无缺陷） |
+| R2.0 manifest 链 | cd4800e | 磁盘 manifest（真实冻结值：revision `b7366822…`、graph `91457e49…`/1592566B、weights `45404a84…`/212170944B、apache-2.0、runtime{800,255,0.25,21,route A}——当日从 hf-mirror 实取并逐字节验证）；运行时 `LayoutModelManifest`（复用 AssetDescriptor 契约）+ 注册表 + 获取链（钉扎 URL 下载→sha256+尺寸验证→原子提交；算改缓存=硬错误）；`sha256_file` 短长度测试补强（顺带发现测试竞态，实现本身无缺陷） |
 | R2.5b CLI 开关 | 2552fc1 | `--table-reread on|off` + `--layout-model`（冻结 v1 仅 pp-doclayout-v2）+ `--layout-regions`（文件或目录）；完整性校验前置；生效值经 manifest 链解析，资产哈希=冻结规则 sha256(manifest 序 role:sha256 行)；`ScanOcrConfig::with_reread` 单一映射（存储身份与预比较侧同源）；result.json `reread` 对象同步；顺手补回有文档无解析的 `--column-split-retry` |
 | R2.6 金集防线 | 9d34f00 | `run_pages_with_session` 挂 `Option<&mut dyn RegionProvider>`；`apply_reread_gate` 唯一武装点（四个 Committed 站点）；off=构造前返回（零调用）；`apply_table_reread` 单一后处理产物函数（page_json 解析→编排→splice→page_json 同步→定点 markdown 替换，嵌套感知 k-th `<table>` 片段，缺失降级 warning）；生产解码器 `SessionTableDecoder`（同会话 + 冻结 TABLE_REREAD_V1 + 默认 1024 网格）；计数器链 `PageArtifactResult`→`JobSummary`→result.json pages |
 | R2.7 持久化闭环验收 | 940da9d | ①武装未触发=产物逐字节不变（含零解码调用）；②替换 diff 恰为目标表（md 片段交换 + json 块级比对）；③导出器输入侧实测（reread 表被导出）；④checkpoint 哈希=新 markdown 的 artifact_sha256 |
-| R3 准备 | e58893c 等 | regions sidecar（458/458 页，冻结预处理逐字节对齐 B0' 探针，含 mkldnn 禁用修复）；pairing-check regions-dir 模式+逐页判定+跨空间重缩放；B2 五门裁定器+合成夹具单测；provider 目录形态（编排模式按 stem 解析） |
+| R3 准备 | 0f64e94 / f294109 / c457074 | regions sidecar（458/458 页，冻结预处理逐字节对齐 B0' 探针，含 mkldnn 禁用修复）；pairing-check regions-dir 模式+逐页判定+跨空间重缩放；B2 五门裁定器+合成夹具单测；provider 目录形态（编排模式按 stem 解析） |
 
 ## R3 战役配对状态（regions 模式逐页判定）
 
