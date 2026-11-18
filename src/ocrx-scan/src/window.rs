@@ -56,6 +56,26 @@ pub trait PageRenderer {
         let _ = (numerator, denominator);
         self.render(page)
     }
+
+    /// Renders a raised-pixel-budget variant (B-M2.1/D-17, the M2 rung
+    /// `2048@4096²`): the budgets relax the PRE-RASTER clamp for THIS
+    /// retry attempt only; the model input keeps the frozen 2880² fit
+    /// (spike-faithful supersampling shape, see render_direct_budgeted).
+    /// Default: plain render — the retry path is the only consumer
+    /// (normal pages keep the frozen 2880² budget, byte-identical renders).
+    ///
+    /// # Errors
+    ///
+    /// Rendering failure.
+    fn render_budgeted(
+        &mut self,
+        page: u32,
+        pixel_width_budget: u32,
+        pixel_height_budget: u32,
+    ) -> std::io::Result<RenderedPage> {
+        let _ = (pixel_width_budget, pixel_height_budget);
+        self.render(page)
+    }
 }
 
 impl<T: PageRenderer + ?Sized> PageRenderer for Box<T> {
@@ -607,6 +627,10 @@ fn serial_attempt_outcome(
     let mut attempts = start_attempt.saturating_sub(1);
     loop {
         attempts += 1;
+        // The per-model ladder carries every rung's grid override
+        // explicitly — ovisocr2's walk-wide 2048 contract (B-M2.3) lives in
+        // the ladder table itself; ovisocr3's sampling-first rungs keep
+        // image_tokens None. Attempt 1 stays the plain 1024 decode.
         let step: Option<&DegenerationRetryStep> = if attempts == 1 {
             None
         } else {
@@ -621,7 +645,20 @@ fn serial_attempt_outcome(
             Some((numerator, denominator)) => {
                 renderer.render_perturbed(page, numerator, denominator)
             }
-            None => renderer.render(page),
+            _ => {
+                // BLK-5 (review 2026-11-18): the budget comes from the
+                // CURRENT rung's effective config — never the attempt
+                // count. OvisOCR2's ladder carries the adjudicated
+                // walk-wide (4096, 4096) on every retry rung (B-M2.3
+                // supersampling); OvisOCR3's rungs carry None and keep the
+                // plain render main froze for them.
+                match step.and_then(|rung| rung.render_budget) {
+                    Some((width_budget, height_budget)) => {
+                        renderer.render_budgeted(page, width_budget, height_budget)
+                    }
+                    None => renderer.render(page),
+                }
+            }
         };
         commit_recorder.record_render_wait(
             page,
@@ -643,9 +680,14 @@ fn serial_attempt_outcome(
         // `step`/`recognized` are the ladder attempt pair.
         #[allow(clippy::similar_names)]
         let recognized_outcome = match step {
-            Some(rung) if rung.column_split && config.column_split_enabled => {
-                recognizer.recognize_column_split(page, &image, cancellation, heartbeat)
-            }
+            Some(rung) if rung.column_split && config.column_split_enabled => recognizer
+                .recognize_column_split(
+                    page,
+                    &image,
+                    step.and_then(|rung| rung.image_tokens),
+                    cancellation,
+                    heartbeat,
+                ),
             Some(rung) if rung.column_split => Err(RecognizeError::Failed(std::io::Error::other(
                 "column split disabled",
             ))),

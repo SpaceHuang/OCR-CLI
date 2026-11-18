@@ -31,6 +31,7 @@ const PREFETCH_DEPTH_FLOOR: u32 = 2;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Raw render result handed back by the executor before model-input scaling.
+#[derive(Clone)]
 struct RenderInput {
     image: RgbImage,
     original_width: u32,
@@ -54,6 +55,16 @@ trait PdfiumExecutor: Send + 'static {
     /// perturbation ratio (when any) is applied by [`compose_rendered_page`]
     /// on the owner thread (identical bytes to the serial resample path).
     fn render_raw(&mut self, page: u32) -> Result<RenderInput, String>;
+    /// B-M2.1 (D-17): renders one page with a raised pixel budget as a
+    /// (width, height) square (the M2 retry rung `2048@4096²`). Same
+    /// contract as [`PdfiumExecutor::render_raw`] with the budget override
+    /// riding the request; normal renders never call it.
+    fn render_raw_budgeted(
+        &mut self,
+        page: u32,
+        width_budget: u32,
+        height_budget: u32,
+    ) -> Result<RenderInput, String>;
     /// Extracts the native text layer of one page (1-based index).
     fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String>;
     /// Switches the active input document (X1 cross-document protocol,
@@ -82,6 +93,15 @@ impl PdfiumExecutor for Box<dyn PdfiumExecutor> {
         (**self).render_raw(page)
     }
 
+    fn render_raw_budgeted(
+        &mut self,
+        page: u32,
+        width_budget: u32,
+        height_budget: u32,
+    ) -> Result<RenderInput, String> {
+        (**self).render_raw_budgeted(page, width_budget, height_budget)
+    }
+
     fn extract_native(&mut self, page_index: usize) -> Result<ocrx_pdf::NativePage, String> {
         (**self).extract_native(page_index)
     }
@@ -108,6 +128,14 @@ enum PdfRequest {
         page: u32,
         numerator: u32,
         denominator: u32,
+    },
+    /// B-M2.1 (D-17): the M2 retry rung — re-render one page with the
+    /// raised pixel budget, outside the prefetch window like perturbed
+    /// renders.
+    RenderBudgeted {
+        page: u32,
+        width_budget: u32,
+        height_budget: u32,
     },
     /// X1 (BLK-2 §3-2): switch the active document. Sent only at window
     /// scheduling boundaries between documents; the owner clears the
@@ -202,21 +230,45 @@ impl<E: PdfiumExecutor> OwnerState<E> {
         denominator: u32,
     ) -> Result<RenderedPage, String> {
         let input = self.executor.render_raw(page)?;
-        compose_rendered_page(input, numerator, denominator).map_err(|e| e.to_string())
+        compose_rendered_page(input, numerator, denominator, DEFAULT_MODEL_PIXEL_BUDGET)
+            .map_err(|e| e.to_string())
+    }
+
+    /// B-M2.1 (D-17): the M2 rung's on-demand render — the raised budget
+    /// applies to the RASTERIZATION clamp only (the spike-faithful shape,
+    /// B-M2.3 diag 2026-11-15: the spike binary rasterized 2754×3939 at the
+    /// 4096² cap and Triangle-downsampled into the FROZEN 2880² model input
+    /// — supersampling rescues agate-size text; feeding the raw 4096²-fitted
+    /// bitmap to the model LOOPS). Never through the prefetch window.
+    fn render_direct_budgeted(
+        &mut self,
+        page: u32,
+        width_budget: u32,
+        height_budget: u32,
+    ) -> Result<RenderedPage, String> {
+        let input = self
+            .executor
+            .render_raw_budgeted(page, width_budget, height_budget)?;
+        compose_rendered_page(input, 1, 1, DEFAULT_MODEL_PIXEL_BUDGET).map_err(|e| e.to_string())
     }
 }
+
+/// The frozen model-input pixel budget (§2.3: 2880 × 2880) — the default
+/// of [`compose_rendered_page`]; the M2 retry rung overrides it per request.
+const DEFAULT_MODEL_PIXEL_BUDGET: u64 = 2880 * 2880;
 
 /// Turns a raw render into the model input, exactly like the serial
 /// `PdfScanRenderer::render_with_scale`: optional perturbation resample,
 /// pixel-budget fit, faithful audit. Runs on the owner thread so the overlap
 /// window covers "render + scale" (plan §6.2) and the bytes stay identical to
-/// the serial path.
+/// the serial path. `pixel_budget` is the model-input clamp (2880² default;
+/// the M2 rung passes the raised square, B-M2.1/D-17).
 fn compose_rendered_page(
     input: RenderInput,
     scale_numerator: u32,
     scale_denominator: u32,
+    pixel_budget: u64,
 ) -> std::io::Result<RenderedPage> {
-    const PIXEL_BUDGET: u64 = 2880 * 2880;
     let rendered_width = input.image.width();
     let rendered_height = input.image.height();
     let image = if scale_numerator == scale_denominator {
@@ -241,7 +293,7 @@ fn compose_rendered_page(
         )
     };
     let (model_width, model_height, scaled) =
-        fit_pixel_budget(image.width(), image.height(), PIXEL_BUDGET);
+        fit_pixel_budget(image.width(), image.height(), pixel_budget);
     let scaled_input_width = image.width();
     let rgb = if scaled {
         image::imageops::resize(
@@ -367,6 +419,21 @@ impl PdfiumOwnerHandle {
                             // resamples the raw render like the serial path.
                             let started = std::time::Instant::now();
                             let rendered = state.render_direct(page, numerator, denominator);
+                            let owner_us =
+                                u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+                            PdfResponse::Render(rendered.map(|page| (page, owner_us)))
+                        }
+                        PdfRequest::RenderBudgeted {
+                            page,
+                            width_budget,
+                            height_budget,
+                        } => {
+                            // B-M2.1/D-17: the M2 rung render — on demand like
+                            // the perturbed path, never through the prefetch
+                            // window; the raised budget rides the raw render.
+                            let started = std::time::Instant::now();
+                            let rendered =
+                                state.render_direct_budgeted(page, width_budget, height_budget);
                             let owner_us =
                                 u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
                             PdfResponse::Render(rendered.map(|page| (page, owner_us)))
@@ -702,6 +769,34 @@ impl PdfiumExecutor for RealPdfiumExecutor {
             original_height,
         })
     }
+
+    fn render_raw_budgeted(
+        &mut self,
+        page: u32,
+        width_budget: u32,
+        height_budget: u32,
+    ) -> Result<RenderInput, String> {
+        // B-M2.1/D-17: the M2 rung — the raised budget rides the render
+        // options; the audit/original geometry stay faithful to the page.
+        let page_index = usize::try_from(
+            page.checked_sub(1)
+                .ok_or_else(|| "page number must be positive".to_owned())?,
+        )
+        .map_err(|_| "page index out of range".to_owned())?;
+        let budgeted_options = RenderOptions {
+            render_pixel_budget: Some((width_budget, height_budget)),
+            ..self.options
+        };
+        let (image, original_width, original_height) = self
+            .renderer
+            .render_page_rgb8_with_audit(&self.input, page_index, budgeted_options)
+            .map_err(|error| error.to_string())?;
+        Ok(RenderInput {
+            image,
+            original_width,
+            original_height,
+        })
+    }
 }
 
 /// `PageRenderer` wrapper used by the scan service: forwards every render to
@@ -764,6 +859,26 @@ impl crate::window::PageRenderer for OwnerPageRenderer {
                 page,
                 numerator,
                 denominator,
+            });
+        let owner_us = self.handle.borrow().take_last_render_us();
+        self.commit_recorder.record_owner_render(page, owner_us);
+        rendered
+    }
+
+    fn render_budgeted(
+        &mut self,
+        page: u32,
+        pixel_width_budget: u32,
+        pixel_height_budget: u32,
+    ) -> std::io::Result<RenderedPage> {
+        crate::render::inject_render_failure(page)?;
+        let rendered = self
+            .handle
+            .borrow_mut()
+            .render_via(PdfRequest::RenderBudgeted {
+                page,
+                width_budget: pixel_width_budget,
+                height_budget: pixel_height_budget,
             });
         let owner_us = self.handle.borrow().take_last_render_us();
         self.commit_recorder.record_owner_render(page, owner_us);
@@ -873,6 +988,22 @@ mod tests {
                 image: fake_image(tagged),
                 original_width: 100,
                 original_height: 200,
+            })
+        }
+
+        fn render_raw_budgeted(
+            &mut self,
+            page: u32,
+            width_budget: u32,
+            height_budget: u32,
+        ) -> Result<RenderInput, String> {
+            // B-M2.1 fake: same marker page, but the budget is observable in
+            // the "original" geometry the audit will carry.
+            let input = self.render_raw(page)?;
+            Ok(RenderInput {
+                original_width: width_budget,
+                original_height: height_budget,
+                ..input
             })
         }
 
@@ -1095,7 +1226,7 @@ mod tests {
             original_width: 100,
             original_height: 25,
         };
-        let page = compose_rendered_page(input, 47, 50).unwrap();
+        let page = compose_rendered_page(input, 47, 50, DEFAULT_MODEL_PIXEL_BUDGET).unwrap();
         // 8*47/50 = 7 (floor), 2*47/50 = 1.
         assert_eq!(page.width, 7);
         assert_eq!(page.height, 1);
@@ -1119,10 +1250,54 @@ mod tests {
             original_width: 30,
             original_height: 30,
         };
-        let page = compose_rendered_page(input, 1, 1).unwrap();
+        let page = compose_rendered_page(input, 1, 1, DEFAULT_MODEL_PIXEL_BUDGET).unwrap();
         assert_eq!(page.width, 3);
         assert_eq!(page.audit.rendered_width, 3);
         assert_eq!(page.rgb8[0], 0);
+    }
+
+    #[test]
+    fn compose_rendered_page_honors_a_raised_model_budget() {
+        // B-M2.1 (D-17): a raw render that the frozen 2880² budget would
+        // downscale stays intact under the raised 4096² budget (the M2 rung
+        // passes the raised square; the audit records scaled=false).
+        let image = RgbImage::from_fn(3500, 3500, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, 3])
+        });
+        let input = RenderInput {
+            image,
+            original_width: 3500,
+            original_height: 3500,
+        };
+        let clamped =
+            compose_rendered_page(input.clone(), 1, 1, DEFAULT_MODEL_PIXEL_BUDGET).unwrap();
+        assert!(clamped.audit.scaled, "frozen budget downscales 3500²");
+        assert!(clamped.width < 3500);
+        let raised = compose_rendered_page(input, 1, 1, 4096 * 4096).unwrap();
+        assert!(!raised.audit.scaled, "raised 4096² budget keeps 3500²");
+        assert_eq!((raised.width, raised.height), (3500, 3500));
+    }
+
+    #[test]
+    fn budgeted_render_rides_the_raised_budget_outside_the_window() {
+        // The M2 rung's channel contract: exactly one executor call (no
+        // prefetch), the budget round-trips, and the compose uses it (the
+        // 4x4 fake stays 4x4 — audit carries the budget as "original").
+        let (executor, calls) = FakeExecutor::new();
+        let (mut handle, _calls) = executor.spawn();
+        let page = handle
+            .render_via(PdfRequest::RenderBudgeted {
+                page: 1,
+                width_budget: 4096,
+                height_budget: 4096,
+            })
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(page.audit.original_width, 4096);
+        assert_eq!(page.audit.original_height, 4096);
+        assert_eq!((page.width, page.height), (4, 4));
+        assert!(!page.audit.scaled);
+        assert!(handle.poisoned().is_none());
     }
 
     // --- X1 cross-document protocol (BLK-2 §3-2/3-3/3-4) --------------------

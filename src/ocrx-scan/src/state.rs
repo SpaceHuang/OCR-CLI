@@ -31,6 +31,13 @@ pub struct DegenerationRetryStep {
     /// page is re-decoded per detected column band and the band markdowns
     /// merge in reading order. The heaviest rung: final position only.
     pub column_split: bool,
+    /// B-M2.1 (D-17): render pixel budget override as a (width, height)
+    /// square — the M2 rung re-rasterizes the page at the raised 4096²
+    /// clamp, then the model input keeps the frozen 2880² fit
+    /// (supersampling; B-M2.3 diag confirmed the raster-only semantics).
+    /// Retry-path-only: normal pages never see a raised budget. `None`
+    /// keeps the default budget.
+    pub render_budget: Option<(u32, u32)>,
 }
 
 impl DegenerationRetryStep {
@@ -43,35 +50,54 @@ impl DegenerationRetryStep {
             image_tokens: None,
             sampling: None,
             column_split: false,
+            render_budget: None,
         }
     }
 }
 
-/// Degeneration retry ladder (Q1.4a frozen composition; the perturbation
-/// rungs were excluded by measured data: 0 escapes as baseline and as tail
-/// rungs, dropping them cuts worst-case retry cost 40% with zero outcome
-/// change). Rungs in order from attempt 2 on; attempt cap = 1 + len = 4.
+/// Degeneration retry ladder (Q1.4a frozen composition + B-M2.1/D-17 M2
+/// rung; the perturbation rungs were excluded by measured data: 0 escapes
+/// as baseline and as tail rungs, dropping them cuts worst-case retry cost
+/// 40% with zero outcome change; the M2 rung `2048@4096²` was adjudicated
+/// strong-GO on the 68 over-budget page spike: 55.9% flag escape, 37/38
+/// true rescues, 0 regressions). Rungs in order from attempt 2 on: plain
+/// 1024 → 2048@2880² → penalty → 2048@4096² → column split;
+/// attempt cap = 1 + len = 5.
 pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
+    // B-M2.3 walk-wide contract (spike-faithful, ovisocr2-scoped): every
+    // retry decode rides the 2048 grid AND the raised raster budget —
+    // carried explicitly per rung so the ovisocr3 sampling-first ladder
+    // (which needs image_tokens/render_budget None) stays untouched.
     DegenerationRetryStep {
         perturbed: None,
         image_tokens: Some(2048),
         sampling: None,
         column_split: false,
+        render_budget: Some((4096, 4096)),
     },
     DegenerationRetryStep {
         perturbed: None,
-        image_tokens: None,
+        image_tokens: Some(2048),
         sampling: Some(RetrySampling {
             repeat_penalty_milli: 1_200,
             penalty_window: 64,
         }),
         column_split: false,
+        render_budget: Some((4096, 4096)),
     },
     DegenerationRetryStep {
         perturbed: None,
-        image_tokens: None,
+        image_tokens: Some(2048),
+        sampling: None,
+        column_split: false,
+        render_budget: Some((4096, 4096)),
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: Some(2048),
         sampling: None,
         column_split: true,
+        render_budget: Some((4096, 4096)),
     },
 ];
 
@@ -93,18 +119,21 @@ pub const OVISOCR3_DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
             penalty_window: 64,
         }),
         column_split: false,
+        render_budget: None,
     },
     DegenerationRetryStep {
         perturbed: None,
         image_tokens: Some(2048),
         sampling: None,
         column_split: false,
+        render_budget: None,
     },
     DegenerationRetryStep {
         perturbed: None,
         image_tokens: None,
         sampling: None,
         column_split: true,
+        render_budget: None,
     },
 ];
 
@@ -142,7 +171,11 @@ mod ovisocr3_ladder_tests {
                 penalty_window: 64,
             })
         );
-        assert!(ovisocr2[2].column_split);
+        // B-M2.1/D-17: the M2 rung 2048@4096² sits after penalty, before
+        // the column split — and the walk-wide contract budgets every rung.
+        assert_eq!(ovisocr2[2].render_budget, Some((4096, 4096)));
+        assert_eq!(ovisocr2[2].image_tokens, Some(2048));
+        assert!(ovisocr2[3].column_split);
         let ovisocr3 = crate::ladder_for_model(&ModelId::new("ovisocr3").unwrap());
         assert_eq!(
             ovisocr3[0].sampling,
@@ -153,7 +186,10 @@ mod ovisocr3_ladder_tests {
         );
         assert_eq!(ovisocr3[1].image_tokens, Some(2048));
         assert!(ovisocr3[2].column_split);
-        assert_eq!(ovisocr3.len(), ovisocr2.len());
+        // The ovisocr3 option-a ladder keeps its own 3-rung composition;
+        // ovisocr2 carries the adjudicated M2 rung (4 rungs).
+        assert_eq!(ovisocr3.len(), 3);
+        assert_eq!(ovisocr2.len(), 4);
         let unknown = crate::ladder_for_model(&ModelId::new("qwen3.8").unwrap());
         assert_eq!(unknown.as_ptr(), ovisocr2.as_ptr());
     }
@@ -163,7 +199,7 @@ mod ovisocr3_ladder_tests {
         // C8/O3-T18 (D-5 zero-change): the 2048 grid rung, the 1200-milli
         // repeat-penalty rung (window 64), and the column-split rung stay
         // exactly as frozen — the same ladder serves both registered models.
-        assert_eq!(DEGENERATION_RETRY_LADDER.len(), 3);
+        assert_eq!(DEGENERATION_RETRY_LADDER.len(), 4);
         assert_eq!(DEGENERATION_RETRY_LADDER[0].image_tokens, Some(2048));
         assert_eq!(DEGENERATION_RETRY_LADDER[0].sampling, None);
         assert_eq!(
@@ -173,8 +209,14 @@ mod ovisocr3_ladder_tests {
                 penalty_window: 64,
             })
         );
-        assert!(DEGENERATION_RETRY_LADDER[2].column_split);
-        assert_eq!(ATTEMPTS_MAX, 4);
+        // [2] is the M2 rung (2048@4096²); the column split closes the
+        // walk at [3].
+        assert_eq!(
+            DEGENERATION_RETRY_LADDER[2].render_budget,
+            Some((4096, 4096))
+        );
+        assert!(DEGENERATION_RETRY_LADDER[3].column_split);
+        assert_eq!(ATTEMPTS_MAX, 5);
         // The grid contract keeps its single frozen rung.
         assert_eq!(SUPPORTED_IMAGE_TOKEN_GRIDS, &[2048]);
     }
@@ -510,13 +552,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn frozen_ladder_has_three_rungs_in_the_q14a_order() {
-        assert_eq!(DEGENERATION_RETRY_LADDER.len(), 3);
-        assert_eq!(ATTEMPTS_MAX, 4);
-        // Rung 1: 2048 grid.
+    fn frozen_ladder_has_four_rungs_in_the_q14a_m2_order() {
+        assert_eq!(DEGENERATION_RETRY_LADDER.len(), 4);
+        assert_eq!(ATTEMPTS_MAX, 5);
+        // Rung 1: 2048 grid — the walk-wide budget (B-M2.3) starts here.
         assert_eq!(DEGENERATION_RETRY_LADDER[0].image_tokens, Some(2048));
         assert!(DEGENERATION_RETRY_LADDER[0].sampling.is_none());
-        // Rung 2: penalty 1200 milli / window 64.
+        assert_eq!(
+            DEGENERATION_RETRY_LADDER[0].render_budget,
+            Some((4096, 4096))
+        );
+        // Rung 2: penalty 1200 milli / window 64 — walk-wide grid + budget
+        // on every retry rung (spike-faithful supersampling).
         assert_eq!(
             DEGENERATION_RETRY_LADDER[1].sampling,
             Some(RetrySampling {
@@ -524,8 +571,27 @@ mod tests {
                 penalty_window: 64,
             })
         );
-        // Rung 3: column split, final position only.
-        assert!(DEGENERATION_RETRY_LADDER[2].column_split);
+        assert_eq!(DEGENERATION_RETRY_LADDER[1].image_tokens, Some(2048));
+        assert_eq!(
+            DEGENERATION_RETRY_LADDER[1].render_budget,
+            Some((4096, 4096))
+        );
+        // Rung 3 (B-M2.1/D-17): 2048@4096² — the render-budget retry rung,
+        // after penalty, before the column split.
+        assert_eq!(DEGENERATION_RETRY_LADDER[2].image_tokens, Some(2048));
+        assert!(DEGENERATION_RETRY_LADDER[2].sampling.is_none());
+        assert_eq!(
+            DEGENERATION_RETRY_LADDER[2].render_budget,
+            Some((4096, 4096))
+        );
+        assert!(!DEGENERATION_RETRY_LADDER[2].column_split);
+        // Rung 4: column split, final position only, walk-wide grid+budget.
+        assert!(DEGENERATION_RETRY_LADDER[3].column_split);
+        assert_eq!(DEGENERATION_RETRY_LADDER[3].image_tokens, Some(2048));
+        assert_eq!(
+            DEGENERATION_RETRY_LADDER[3].render_budget,
+            Some((4096, 4096))
+        );
         // No perturbation rungs survive in the frozen table.
         assert!(
             DEGENERATION_RETRY_LADDER

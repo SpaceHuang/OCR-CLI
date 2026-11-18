@@ -6,7 +6,7 @@
 #![cfg(test)]
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use ocrx_inference_api::{
@@ -184,6 +184,7 @@ impl InferenceSession for FakeSession {
 struct FakeRenderer {
     renders: RefCell<Vec<u32>>,
     fail_pages: RefCell<Vec<u32>>,
+    budgets: RefCell<Vec<(u32, u32, u32)>>,
 }
 
 impl FakeRenderer {
@@ -199,6 +200,21 @@ impl FakeRenderer {
 impl PageRenderer for FakeRenderer {
     fn preflight(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+
+    fn render_budgeted(
+        &mut self,
+        page: u32,
+        pixel_width_budget: u32,
+        pixel_height_budget: u32,
+    ) -> std::io::Result<RenderedPage> {
+        self.renders.borrow_mut().push(page);
+        self.budgets
+            .borrow_mut()
+            .push((page, pixel_width_budget, pixel_height_budget));
+        let mut image = RenderedPage::new(1, 1, vec![200; 3])?;
+        image.generation = u64::from(page);
+        Ok(image)
     }
 
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
@@ -510,6 +526,178 @@ fn degenerated_pages_retry_through_the_frozen_ladder() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// Reads the committed v6 checkpoint's attempts value for `page`.
+fn committed_attempts(root: &Path, page: u32) -> (u32, bool) {
+    let file = ocrx_output::read_any(root.join(format!("page-{page:04}.checkpoint")))
+        .expect("v6 checkpoint committed");
+    let ocrx_output::CheckpointFile::V6(checkpoint) = file else {
+        panic!("expected a v6 checkpoint");
+    };
+    (checkpoint.attempts, checkpoint.degenerated)
+}
+
+#[test]
+fn m2_rung_renders_budgeted_4096_and_escapes_with_the_2048_grid() {
+    // B-M2.1 (D-17): the M2 rung 2048@4096² sits after penalty, before the
+    // column split; its decode rides the 2048 grid. B-M2.3 diag: the
+    // spike's raised raster applies to the WHOLE retry walk (attempts >= 2).
+    let root = temp_root("m2-rung-escape");
+    let session = FakeSession::with_depth(1);
+    for _ in 0..3 {
+        session.push(
+            1,
+            Program {
+                text: "循环片段".repeat(9),
+                finish: FinishReason::RepetitionLoop,
+            },
+        );
+    }
+    session.push(
+        1,
+        Program {
+            text: "m2 rescue".into(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.degenerated_pages, 0, "escaped on the M2 rung");
+    // B-M2.3 diag: the spike's raised raster applies to the WHOLE retry
+    // walk — every retry render (attempts 2..=4) is budgeted.
+    assert_eq!(
+        renderer.budgets.borrow().as_slice(),
+        &[(1, 4096, 4096), (1, 4096, 4096), (1, 4096, 4096)]
+    );
+    // The ladder walked in order: plain → 2048-grid → penalty → M2(2048).
+    let captured = session.core.captured.borrow();
+    assert_eq!(captured.len(), 4);
+    // Walk-wide retry grid (B-M2.3 diag): every RETRY decode rides 2048;
+    // attempt 1 stays plain 1024.
+    assert_eq!(captured[0].image_tokens_override, None);
+    for request in &captured[1..] {
+        assert_eq!(request.image_tokens_override, Some(2048));
+    }
+    assert!(captured[1].retry_sampling.is_none());
+    assert!(captured[2].retry_sampling.is_some());
+    assert!(captured[3].retry_sampling.is_none());
+    drop(captured);
+    assert_eq!(committed_attempts(&root, 1), (4, false));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn m2_rung_stays_unused_when_the_penalty_rung_escapes() {
+    // Escaping at the penalty rung: retry renders stay budgeted, the M2
+    // rung's decode never fires.
+    let root = temp_root("m2-rung-untouched");
+    let session = FakeSession::with_depth(1);
+    session.push(
+        1,
+        Program {
+            text: "循环片段".repeat(9),
+            finish: FinishReason::RepetitionLoop,
+        },
+    );
+    session.push(
+        1,
+        Program {
+            text: "循环片段".repeat(9),
+            finish: FinishReason::RepetitionLoop,
+        },
+    );
+    session.push(
+        1,
+        Program {
+            text: "penalty rescue".into(),
+            finish: FinishReason::Eos,
+        },
+    );
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.degenerated_pages, 0);
+    // Raised raster on the two retry attempts; only ONE 2048-grid decode
+    // (rung 1) — the M2 rung's decode never fires on an attempt-3 escape.
+    assert_eq!(
+        renderer.budgets.borrow().as_slice(),
+        &[(1, 4096, 4096), (1, 4096, 4096)]
+    );
+    let captured = session.core.captured.borrow();
+    assert_eq!(captured.len(), 3);
+    assert!(captured[2].retry_sampling.is_some());
+    assert_eq!(
+        captured
+            .iter()
+            .filter(|r| r.image_tokens_override == Some(2048))
+            .count(),
+        2,
+        "walk-wide retry grid: retry decodes (2,3) at 2048, attempt 1 plain"
+    );
+    drop(captured);
+    assert_eq!(committed_attempts(&root, 1), (3, false));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn exhausted_five_attempt_ladder_commits_the_m2_terminal_attempt_marked() {
+    // 5-attempt exhaustion: plain → 2048@2880² → penalty → 2048@4096² →
+    // column split; the terminal (5th) attempt commits with attempts = 5
+    // and the degenerated marker (D-17 cap 4→5).
+    let root = temp_root("m2-rung-exhaust");
+    let session = FakeSession::with_depth(1);
+    for _ in 0..5 {
+        session.push(
+            1,
+            Program {
+                text: "循环片段".repeat(9),
+                finish: FinishReason::RepetitionLoop,
+            },
+        );
+    }
+    let mut renderer = FakeRenderer::new();
+    let compatibility = compatibility();
+    let summary = run_pages_with_session(
+        &mut session.clone(),
+        &mut renderer,
+        &[1],
+        &root,
+        &config(&compatibility),
+        &CommitRecorder::disabled(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(summary.completed_pages, 1);
+    assert_eq!(summary.degenerated_pages, 1, "exhaustion commits marked");
+    // Every retry render (attempts 2..=5) budgeted.
+    assert_eq!(renderer.budgets.borrow().as_slice(), &[(1, 4096, 4096); 4]);
+    assert_eq!(committed_attempts(&root, 1), (5, true));
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn window_batch_failure_falls_back_to_depth_one() {
     let root = temp_root("fallback");
@@ -687,11 +875,12 @@ fn resume_reuses_candidate_pages_even_with_pending_decode() {
 #[test]
 fn empty_eos_output_enters_the_ladder_and_lands_degenerated() {
     // Review BLOCK fix: an immediate-EOS empty OCR page must retry through
-    // the ladder (4 attempts: plain + 3 rungs) and commit as DEGENERATED —
-    // never as a clean success that --resume would silently reuse.
+    // the ladder (5 attempts: plain + the 4 frozen ovisocr2 rungs incl. the
+    // M2 rung) and commit as DEGENERATED — never as a clean success that
+    // --resume would silently reuse.
     let root = temp_root("empty-ladder");
     let mut session = FakeSession::with_depth(1);
-    for _ in 0..4 {
+    for _ in 0..5 {
         session.push(1, empty_eos());
     }
     let mut renderer = FakeRenderer::new();
@@ -710,8 +899,8 @@ fn empty_eos_output_enters_the_ladder_and_lands_degenerated() {
         root.join("page-0001.checkpoint").is_file() || root.join("page-0001.md").is_file(),
         "committed page must write artifacts"
     );
-    // 4 submits: attempt-1 + the three frozen rungs.
-    assert_eq!(session.core.single_calls.get(), 4);
+    // 5 submits: attempt-1 + the four frozen rungs.
+    assert_eq!(session.core.single_calls.get(), 5);
     assert_eq!(summary.completed_pages, 1);
     assert_eq!(
         summary.degenerated_pages, 1,
@@ -778,7 +967,7 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
     let root = temp_root("boundary-serial");
     let boundary = root.join("boundary.jsonl");
     let mut session = FakeSession::with_depth(1);
-    for _ in 0..4 {
+    for _ in 0..5 {
         session.push(1, empty_eos());
     }
     let mut renderer = FakeRenderer::new();
@@ -800,7 +989,7 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(lines.len(), 4, "one record per attempt");
+    assert_eq!(lines.len(), 5, "one record per attempt");
     for (index, record) in lines.iter().enumerate() {
         assert_eq!(record["source"], "scan");
         assert_eq!(record["page_number"], 1);
@@ -938,6 +1127,7 @@ fn ovisocr2_ladder_keeps_the_frozen_rung_order() {
     let mut session = FakeSession::with_depth(1);
     session.push(1, empty_eos());
     session.push(1, empty_eos());
+    session.push(1, empty_eos());
     session.push(1, eos(1));
     let mut renderer = FakeRenderer::new();
     let compatibility = compatibility();
@@ -960,11 +1150,15 @@ fn ovisocr2_ladder_keeps_the_frozen_rung_order() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(records.len(), 3);
-    // Attempt 2 = 2048-grid rung; attempt 3 = sampling chain.
+    assert_eq!(records.len(), 4);
+    // Attempt 2 = 2048-grid rung; attempt 3 = sampling chain; attempt 4 =
+    // the M2 budget rung — walk-wide (B-M2.3): every retry carries the
+    // 2048 grid override.
     assert_eq!(records[1]["image_tokens_override"], 2048);
     assert_eq!(records[1]["retry_sampling"], serde_json::Value::Null);
     assert_eq!(records[2]["retry_sampling"], serde_json::json!([1200, 64]));
-    assert_eq!(records[2]["image_tokens_override"], serde_json::Value::Null);
+    assert_eq!(records[2]["image_tokens_override"], 2048);
+    assert_eq!(records[3]["retry_sampling"], serde_json::Value::Null);
+    assert_eq!(records[3]["image_tokens_override"], 2048);
     let _ = std::fs::remove_dir_all(root);
 }

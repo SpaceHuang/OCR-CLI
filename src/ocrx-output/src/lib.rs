@@ -389,6 +389,11 @@ pub struct DegenerationRetryStep {
     /// page is re-decoded per detected column band and the band markdowns
     /// merge in reading order. The heaviest rung: final position only.
     pub column_split: bool,
+    /// B-M2.1 (D-17): render pixel budget override as a (width, height)
+    /// square — the M2 rung re-rasterizes the page at the raised 4096²
+    /// clamp (model input keeps the frozen 2880² fit, spike-faithful
+    /// supersampling). Retry-path-only; `None` = default.
+    pub render_budget: Option<(u32, u32)>,
 }
 
 impl DegenerationRetryStep {
@@ -400,6 +405,7 @@ impl DegenerationRetryStep {
             image_tokens: None,
             sampling: None,
             column_split: false,
+            render_budget: None,
         }
     }
 }
@@ -414,14 +420,18 @@ impl DegenerationRetryStep {
 /// escapes both as the baseline ladder (0/213) and as composed-ladder tail
 /// rungs (0/228 decodes) - dropping the tail cuts worst-case retry cost 40%
 /// with zero outcome change (the 114 residual pages escape on none of the
-/// perturbation decodes). Attempt cap = 3. The main-line default remains the
-/// baseline two perturbation rungs until Q1.3 lands this composition.
+/// perturbation decodes). B-M2.1 (D-17): the M2 rung `2048@4096²` joins
+/// after penalty, before the column split (68 over-budget page spike:
+/// 55.9% flag escape, 37/38 true rescues, 0 regressions). Attempt cap
+/// = 1 + len = 5. The scan-application copy lives in `ocrx-scan::state`
+/// (T051); the two tables stay in sync.
 pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
     DegenerationRetryStep {
         perturbed: None,
         image_tokens: Some(2048),
         sampling: None,
         column_split: false,
+        render_budget: None,
     },
     DegenerationRetryStep {
         perturbed: None,
@@ -431,12 +441,21 @@ pub const DEGENERATION_RETRY_LADDER: &[DegenerationRetryStep] = &[
             penalty_window: 64,
         }),
         column_split: false,
+        render_budget: None,
+    },
+    DegenerationRetryStep {
+        perturbed: None,
+        image_tokens: Some(2048),
+        sampling: None,
+        column_split: false,
+        render_budget: Some((4096, 4096)),
     },
     DegenerationRetryStep {
         perturbed: None,
         image_tokens: None,
         sampling: None,
         column_split: true,
+        render_budget: None,
     },
 ];
 
@@ -507,6 +526,21 @@ pub trait PageRenderer {
         denominator: u32,
     ) -> io::Result<RenderedPage> {
         let _ = (numerator, denominator);
+        self.render(page)
+    }
+
+    /// Renders a raised-pixel-budget variant (B-M2.1/D-17, the M2 rung
+    /// `2048@4096²`): `pixel_width_budget`/`pixel_height_budget` relax the
+    /// pre-raster and model-input clamps for THIS attempt only — the
+    /// default keeps the frozen budget (retry-path-only seam; the frozen
+    /// ladder decides when it is used).
+    fn render_budgeted(
+        &mut self,
+        page: u32,
+        pixel_width_budget: u32,
+        pixel_height_budget: u32,
+    ) -> io::Result<RenderedPage> {
+        let _ = (pixel_width_budget, pixel_height_budget);
         self.render(page)
     }
 }
@@ -832,7 +866,23 @@ where
                 Some((numerator, denominator)) => {
                     self.renderer.render_perturbed(page, numerator, denominator)
                 }
-                None => self.renderer.render(page),
+                _ => {
+                    // B-M2.3 diag: raised raster on the whole retry walk
+                    // (mirror of the scan window port; the model input
+                    // keeps the frozen 2880² fit).
+                    let budget = if attempts >= 2 {
+                        Some((4096, 4096))
+                    } else {
+                        None
+                    };
+                    match budget {
+                        Some((width_budget, height_budget)) => {
+                            self.renderer
+                                .render_budgeted(page, width_budget, height_budget)
+                        }
+                        None => self.renderer.render(page),
+                    }
+                }
             };
             self.commit_recorder.record_render_wait(
                 page,
@@ -4004,19 +4054,23 @@ mod tests {
         // exactly one diagnostic for the page.
         let root = test_dir("shared-fallback-truncated-once");
         let _ = fs::remove_dir_all(&root);
-        // Q1.5/D-14: the truncated page walks the full 4-rung ladder before
+        // Q1.5/D-14: the truncated page walks the full ladder before
         // committing truncated — the once-only PAGE count is what this test
         // guards (per-attempt artifacts are not page counts).
-        let script = std::collections::VecDeque::from((1..=4).map(|_| PageArtifactResult {
-            png: Some(vec![1]),
-            think_blocks_stripped: 0,
-            markdown: "page 1 truncated content".to_owned(),
-            page_json: r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}"#.to_owned(),
-            truncated: true,
-            degenerated: false,
-            warnings: vec!["truncated".to_owned()],
-            raw_output: String::new(),
-        }).collect::<Vec<_>>());
+        let script = std::collections::VecDeque::from(
+            (1..=1 + DEGENERATION_RETRY_LADDER.len() as i32)
+                .map(|_| PageArtifactResult {
+                    png: Some(vec![1]),
+                    think_blocks_stripped: 0,
+                    markdown: "page 1 truncated content".to_owned(),
+                    page_json: r#"{"schema_version":1,"page_number":1,"blocks":[],"termination":"max_tokens","warnings":["truncated"]}"#.to_owned(),
+                    truncated: true,
+                    degenerated: false,
+                    warnings: vec!["truncated".to_owned()],
+                    raw_output: String::new(),
+                })
+                .collect::<Vec<_>>(),
+        );
         let recognizer = ScriptedRecognizer {
             script,
             calls: 0,
@@ -4277,7 +4331,10 @@ mod tests {
         let summary = run_scan_with(&root, &[104], renderer, recognizer, false).unwrap();
         assert_eq!(summary.degenerated_pages, 1);
         let checkpoint = super::read_checkpoint(root.join("page-0104.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 4);
+        assert_eq!(
+            checkpoint.attempts,
+            1 + DEGENERATION_RETRY_LADDER.len() as u32
+        );
         assert!(checkpoint.degenerated);
         assert_eq!(checkpoint.raw.as_deref(), Some("page-0104.raw"));
         assert_eq!(
@@ -4312,14 +4369,12 @@ mod tests {
             calls: std::collections::VecDeque::new(),
         };
         let recognizer = ScriptedRecognizer {
-            script: [
-                truncated_only.clone(),
-                truncated_only.clone(),
-                truncated_only.clone(),
-                truncated_only,
-            ]
-            .into_iter()
-            .collect(),
+            script: (1..=1 + DEGENERATION_RETRY_LADDER.len())
+                .map(|_| truncated_only.clone())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .chain([truncated_only])
+                .collect(),
             calls: 0,
             retry_calls: 0,
             on_call: None,
@@ -4329,7 +4384,10 @@ mod tests {
         assert_eq!(summary.truncated_pages, 1);
         assert_eq!(summary.degenerated_pages, 0);
         let checkpoint = super::read_checkpoint(root.join("page-0005.checkpoint")).unwrap();
-        assert_eq!(checkpoint.attempts, 4);
+        assert_eq!(
+            checkpoint.attempts,
+            1 + DEGENERATION_RETRY_LADDER.len() as u32
+        );
         assert_eq!(checkpoint.raw, None);
         assert_eq!(
             checkpoint.resume_action(&degeneration_compatibility(), &root, 5),
@@ -4348,14 +4406,9 @@ mod tests {
             calls: std::collections::VecDeque::new(),
         };
         let recognizer = ScriptedRecognizer {
-            script: [
-                degenerate_artifact(104),
-                degenerate_artifact(104),
-                degenerate_artifact(104),
-                degenerate_artifact(104),
-            ]
-            .into_iter()
-            .collect(),
+            script: (1..=1 + DEGENERATION_RETRY_LADDER.len())
+                .map(|_| degenerate_artifact(104))
+                .collect(),
             calls: 0,
             retry_calls: 0,
             on_call: None,
@@ -4444,6 +4497,17 @@ mod tests {
             self.log.borrow_mut().push((page, numerator, denominator));
             RenderedPage::new(1, 1, vec![4, 5, 6])
         }
+        fn render_budgeted(
+            &mut self,
+            page: u32,
+            pixel_width_budget: u32,
+            pixel_height_budget: u32,
+        ) -> std::io::Result<RenderedPage> {
+            self.log
+                .borrow_mut()
+                .push((page, pixel_width_budget, pixel_height_budget));
+            RenderedPage::new(1, 1, vec![7, 8, 9])
+        }
     }
 
     #[test]
@@ -4459,10 +4523,11 @@ mod tests {
             log: std::rc::Rc::clone(&log),
         };
         // An exhausted script falls back to normal artifacts, so script the
-        // full budget: one degenerate artifact per attempt (4 with the
-        // experiment ladder); the last degenerate artifact commits.
+        // full budget: one degenerate artifact per attempt (5 with the
+        // ladder incl. the M2 render-budget rung); the last degenerate
+        // artifact commits.
         let recognizer = ScriptedRecognizer {
-            script: (1..=4).map(degenerate_artifact).collect(),
+            script: (1..=5).map(degenerate_artifact).collect(),
             calls: 0,
             retry_calls: 0,
             on_call: None,
@@ -4473,12 +4538,9 @@ mod tests {
             .run_with_checkpoints(&[1], &root, &degeneration_compatibility(), false)
             .unwrap();
         assert_eq!(summary.degenerated_pages, 1);
-        // Every non-perturbed rung renders plain (1,1,1) — e.g. the
-        // token-grid and penalty rungs; perturbed rungs walk their ratios.
-        let expected_rungs = DEGENERATION_RETRY_LADDER
-            .iter()
-            .map(|rung| rung.perturbed.unwrap_or((1, 1)))
-            .map(|(numerator, denominator)| (1, numerator, denominator));
+        // B-M2.3 diag: every retry render (attempts 2..=5) walks the raised
+        // raster budget; the frozen table has no perturbation rungs.
+        let expected_rungs = (1..=DEGENERATION_RETRY_LADDER.len()).map(|_| (1, 4096, 4096));
         assert_eq!(
             *log.borrow(),
             vec![(1, 1, 1)]

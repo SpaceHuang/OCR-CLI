@@ -1,0 +1,389 @@
+{
+  "schema_version": 1,
+  "artifact": "omnidocbench-giveback-localization",
+  "note": "D-43 analysis-only; no behavior or baseline change",
+  "gate": 89.5,
+  "components": {
+    "text": {
+      "component_score": 0.9277241301680389,
+      "analysis": {
+        "n": 1557,
+        "mean_score": 0.927724130168039,
+        "deficit_total": 112.53352932836343,
+        "buckets": {
+          "lt_0.5": {
+            "threshold_lt": 0.5,
+            "count": 72,
+            "share_of_population": 0.046242774566473986,
+            "deficit": 61.42232561722942,
+            "share_of_deficit": 0.5458135542697164
+          },
+          "lt_0.85": {
+            "threshold_lt": 0.85,
+            "count": 118,
+            "share_of_population": 0.07578676942838793,
+            "deficit": 30.067868569588224,
+            "share_of_deficit": 0.26719030984847814
+          },
+          "tail": {
+            "threshold_lt": null,
+            "count": 1367,
+            "share_of_population": 0.8779704560051381,
+            "deficit": 21.04333514154579,
+            "share_of_deficit": 0.18699613588180547
+          }
+        },
+        "top20_deficit": [
+          {
+            "key": "PPT_1637904769_page_002.png",
+            "score": 0.0
+          },
+          {
+            "key": "PPT_all655920_page_002.png",
+            "score": 0.0
+          },
+          {
+            "key": "PPT_english-guidelines-for-humanities-students.zp199743_page_011.png",
+            "score": 0.0
+          },
+          {
+            "key": "color_textbook_zhonggaokao_小学_KET听说读写逐项突破_KET听说读写逐项突破之轻松搞定KET写作25分 【10讲 褚连一】_第04讲第四课KET分类词汇训练二_第四课KET分类词汇训练二_page_003.png",
+            "score": 0.0
+          },
+          {
+            "key": "color_textbook_zhonggaokao_小学_KET听说读写逐项突破_KET听说读写逐项突破之轻松搞定KET口语25分【10 褚连一】_第02讲第二课口语部分Part1详解_第二课口语部分Part1详解_page_002.png",
+            "score": 0.0
+          },
+          {
+            "key": "color_textbook_zhonggaokao_小学_KET听说读写逐项突破_KET听说读写逐项突破之轻松搞定KET口语25分【10 褚连一】_第09讲第九课口语部分Part2模拟三_第九课口语部分Part2模拟三_page_001.png",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_enbook-zlib-o.O-17208435.pdf_57.jpg",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11.jpg",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2801%2900019-8.pdf_10.jpg",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-the-eye-o.O-ST-169-R1-072694.pdf_76.jpg",
+            "score": 0.0
+          },
+          {
+            "key": "page-66aa2b38-32c0-4222-839a-50df648218df.png",
+            "score": 0.0
+          },
+          {
+            "key": "page-b342f5e6-cc5a-4920-b1b5-83f96bc476d8.png",
+            "score": 0.0
+          },
+          {
+            "key": "newspaper_0b1bb8d03b4287eb95f67b68c2cf9f92_1.jpg",
+            "score": 0.0007
+          },
+          {
+            "key": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_015.png",
+            "score": 0.0011
+          },
+          {
+            "key": "newspaper_e6ddb0246224fb8bd8788e6cc7839021_1.jpg",
+            "score": 0.0022
+          },
+          {
+            "key": "newspaper_ef5c785d9cc21ccf6b73d143f231b5c5_1.jpg",
+            "score": 0.0031
+          },
+          {
+            "key": "eastmoney_d0313ed730f58180b1f005a3607c2a77dc3672410e8f7ee1de3b814668da9bcb.pdf_5.jpg",
+            "score": 0.0032
+          },
+          {
+            "key": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+            "score": 0.0036
+          },
+          {
+            "key": "jiaocaineedrop_jiaocai_needrop_en_3685.jpg",
+            "score": 0.0075
+          },
+          {
+            "key": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.png",
+            "score": 0.0171
+          }
+        ]
+      }
+    },
+    "cdm": {
+      "component_score": 0.9430480442176871,
+      "analysis": {
+        "n": 2352,
+        "mean_score": 0.9430480442176871,
+        "deficit_total": 133.951,
+        "buckets": {
+          "lt_0.5": {
+            "threshold_lt": 0.5,
+            "count": 93,
+            "share_of_population": 0.039540816326530615,
+            "deficit": 78.695,
+            "share_of_deficit": 0.5874909481825443
+          },
+          "lt_0.85": {
+            "threshold_lt": 0.85,
+            "count": 94,
+            "share_of_population": 0.039965986394557826,
+            "deficit": 25.922,
+            "share_of_deficit": 0.19351852543094117
+          },
+          "tail": {
+            "threshold_lt": null,
+            "count": 2165,
+            "share_of_population": 0.9204931972789115,
+            "deficit": 29.334000000000007,
+            "share_of_deficit": 0.21899052638651453
+          }
+        },
+        "top20_deficit": [
+          {
+            "key": "page-cdd33cf6-76ce-42bb-a99c-342c861afed0.png_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "page-7dfc88d8-6d95-446c-b910-2410e8552f76.png_[1]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[1]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[3]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[4]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[6]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[7]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[8]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[9]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[10]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[11]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[12]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[13]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[14]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[15]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[16]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[17]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[19]",
+            "score": 0.0
+          },
+          {
+            "key": "page-cdb92c2f-f43f-45ef-ace7-91d4664a7834.png_[21]",
+            "score": 0.0
+          }
+        ]
+      }
+    },
+    "teds": {
+      "component_score": 0.7826805077263671,
+      "analysis": {
+        "n": 665,
+        "mean_score": 0.7826805077263671,
+        "deficit_total": 144.51746236196584,
+        "buckets": {
+          "lt_0.5": {
+            "threshold_lt": 0.5,
+            "count": 117,
+            "share_of_population": 0.17593984962406015,
+            "deficit": 106.74202798915314,
+            "share_of_deficit": 0.7386098969950191
+          },
+          "lt_0.85": {
+            "threshold_lt": 0.85,
+            "count": 97,
+            "share_of_population": 0.14586466165413534,
+            "deficit": 27.303082240335012,
+            "share_of_deficit": 0.18892583494131882
+          },
+          "tail": {
+            "threshold_lt": null,
+            "count": 451,
+            "share_of_population": 0.6781954887218045,
+            "deficit": 10.472352132477678,
+            "share_of_deficit": 0.072464268063662
+          }
+        },
+        "top20_deficit": [
+          {
+            "key": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg_[4]",
+            "score": -0.1891
+          },
+          {
+            "key": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[3]",
+            "score": -0.111
+          },
+          {
+            "key": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357.png_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "page-d29fe4d2-832a-4ad6-ac80-dc01cf8b0e16.png_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.png_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "page-c7771a62-5b6b-48f0-b591-6b657d26e125.png_[1]",
+            "score": 0.0
+          },
+          {
+            "key": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46.png_[1]",
+            "score": 0.0
+          },
+          {
+            "key": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11.jpg_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11.jpg_[1]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg_[1]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2801%2900019-8.pdf_10.jpg_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg_[1]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg_[0]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg_[2]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg_[4]",
+            "score": 0.0
+          },
+          {
+            "key": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg_[5]",
+            "score": 0.0
+          }
+        ],
+        "deficit_by_b0b_band": {
+          "good-en": {
+            "count": 120,
+            "deficit": 6.09984875878046,
+            "share_of_deficit": 0.04220838547180179
+          },
+          "mid": {
+            "count": 89,
+            "deficit": 26.520530529960077,
+            "share_of_deficit": 0.18351090654730293
+          },
+          "good-zh": {
+            "count": 297,
+            "deficit": 4.982066527590812,
+            "share_of_deficit": 0.034473803000446224
+          },
+          "good-other": {
+            "count": 26,
+            "deficit": 0.9431714473504083,
+            "share_of_deficit": 0.006526349355540806
+          },
+          "bad-low": {
+            "count": 97,
+            "deficit": 75.80508219977047,
+            "share_of_deficit": 0.5245392560928395
+          },
+          "worst": {
+            "count": 36,
+            "deficit": 30.1667628985136,
+            "share_of_deficit": 0.2087412995320689
+          }
+        }
+      }
+    }
+  },
+  "overall": {
+    "landing": 88.44842273706978,
+    "gate": 89.5,
+    "gap_to_gate": -1.0515772629302234,
+    "per_component_deficit_vs_perfect": {
+      "text": 0.0722758698319611,
+      "cdm": 0.056951955782312935,
+      "teds": 0.2173194922736329
+    }
+  }
+}

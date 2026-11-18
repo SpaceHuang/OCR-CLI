@@ -30,6 +30,11 @@ fn render_config(width: i32, height: i32) -> PdfRenderConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RenderOptions {
     pub dpi: u16,
+    /// B-M2.1 (D-17): per-request render pixel budget override as a
+    /// (width, height) square. `None` = the frozen [`MAX_RENDER_PIXELS`]
+    /// clamp (2880²). Only the degeneration-retry M2 rung raises it
+    /// (retry-path-only; normal scans keep `None`).
+    pub render_pixel_budget: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -989,8 +994,21 @@ fn child_rss_kb(pid: u32) -> u64 {
 
 impl Default for RenderOptions {
     fn default() -> Self {
-        Self { dpi: 300 }
+        Self {
+            dpi: 300,
+            render_pixel_budget: None,
+        }
     }
+}
+
+/// The effective pre-raster pixel budget of one render request: the
+/// request field when raised (B-M2.1/D-17, M2 retry rung), otherwise the
+/// frozen [`MAX_RENDER_PIXELS`].
+fn effective_render_pixel_budget(options: &RenderOptions) -> u64 {
+    options
+        .render_pixel_budget
+        .map(|(width, height)| u64::from(width) * u64::from(height))
+        .unwrap_or(MAX_RENDER_PIXELS)
 }
 
 #[derive(Debug)]
@@ -1084,18 +1102,27 @@ const MAX_RENDER_PIXELS: u64 = 2880 * 2880;
 
 /// Computes the rasterization bitmap size for one page: points → pixels at
 /// the requested DPI, NaN/negative guarded to at least 1 px, then clamped to
-/// [`MAX_RENDER_PIXELS`] by proportional downscale. Every render entry point
-/// must go through this helper so no spelling of a hostile MediaBox can reach
-/// `set_fixed_size` with an unbounded size (review BLK-4: the worker-mode
-/// `render_range` path used to bypass the clamp).
+/// the request's effective pixel budget ([`MAX_RENDER_PIXELS`] unless the
+/// request raised it, B-M2.1) by proportional downscale. Every render entry
+/// point must go through this helper so no spelling of a hostile MediaBox
+/// can reach `set_fixed_size` with an unbounded size (review BLK-4: the
+/// worker-mode `render_range` path used to bypass the clamp).
 fn clamped_bitmap_size(
     page_width: f32,
     page_height: f32,
-    dpi: u16,
+    options: &RenderOptions,
 ) -> Result<(i32, i32), Box<dyn std::error::Error>> {
-    let raw_width = (page_width * f32::from(dpi) / 72.0).round().max(1.0) as u32;
-    let raw_height = (page_height * f32::from(dpi) / 72.0).round().max(1.0) as u32;
-    let (width, height, _) = fit_pixel_budget(raw_width, raw_height, MAX_RENDER_PIXELS);
+    let raw_width = (page_width * f32::from(options.dpi) / 72.0)
+        .round()
+        .max(1.0) as u32;
+    let raw_height = (page_height * f32::from(options.dpi) / 72.0)
+        .round()
+        .max(1.0) as u32;
+    let (width, height, _) = fit_pixel_budget(
+        raw_width,
+        raw_height,
+        effective_render_pixel_budget(options),
+    );
     Ok((i32::try_from(width)?, i32::try_from(height)?))
 }
 
@@ -1123,7 +1150,7 @@ impl PdfiumRenderer {
         let document = pdfium.load_pdf_from_file(input, self.password.as_deref())?;
         let page = document.pages().get(page_number.try_into()?)?;
         let (width, height) =
-            clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
+            clamped_bitmap_size(page.width().value, page.height().value, &options)?;
         Ok(page
             .render_with_config(&render_config(width, height))?
             .as_image()?
@@ -1163,7 +1190,7 @@ impl PdfiumRenderer {
         let original_width = page.width().value.round().max(1.0) as u32;
         let original_height = page.height().value.round().max(1.0) as u32;
         let (width, height) =
-            clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
+            clamped_bitmap_size(page.width().value, page.height().value, &options)?;
         let image = page
             .render_with_config(&render_config(width, height))?
             .as_image()?
@@ -1459,7 +1486,7 @@ impl PdfiumRenderer {
         for index in 0..page_count {
             let page = document.pages().get(index)?;
             let (width, height) =
-                clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
+                clamped_bitmap_size(page.width().value, page.height().value, &options)?;
             let image = {
                 let bitmap = page.render_with_config(&render_config(width, height))?;
                 let image = bitmap.as_image()?.into_rgb8();
@@ -1489,7 +1516,7 @@ impl PdfiumRenderer {
             let document = pdfium.load_pdf_from_file(input, self.password.as_deref())?;
             let page = document.pages().get(index.try_into()?)?;
             let (width, height) =
-                clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
+                clamped_bitmap_size(page.width().value, page.height().value, &options)?;
             let image = {
                 let bitmap = page.render_with_config(&render_config(width, height))?;
                 let image = bitmap.as_image()?.into_rgb8();
@@ -1526,7 +1553,7 @@ impl PdfiumRenderer {
             for index in start..end {
                 let page = document.pages().get(index.try_into()?)?;
                 let (width, height) =
-                    clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
+                    clamped_bitmap_size(page.width().value, page.height().value, &options)?;
                 let image = {
                     let bitmap = page.render_with_config(&render_config(width, height))?;
                     let image = bitmap.as_image()?.into_rgb8();
@@ -1560,7 +1587,7 @@ impl PdfiumRenderer {
         for index in start_page..end_page {
             let page = document.pages().get(index.try_into()?)?;
             let (width, height) =
-                clamped_bitmap_size(page.width().value, page.height().value, options.dpi)?;
+                clamped_bitmap_size(page.width().value, page.height().value, &options)?;
             let bitmap = page.render_with_config(&render_config(width, height))?;
             let image = bitmap.as_image()?.into_rgb8();
             drop(bitmap);
@@ -1769,6 +1796,49 @@ mod tests {
         assert!(scaled && u64::from(width) * u64::from(height) <= 1_000_000);
     }
 
+    #[test]
+    fn render_pixel_budget_request_field_relaxes_only_the_clamp() {
+        // B-M2.1 (D-17/M2): the render pixel budget is a request field
+        // (RenderOptions::render_pixel_budget); the default stays the frozen
+        // 2880² clamp and a raised budget only relaxes the pre-raster clamp
+        // (same proportional downscale math, no cropping).
+        let default_budget = MAX_RENDER_PIXELS;
+        assert_eq!(default_budget, 2880 * 2880);
+        // A page whose raw bitmap is between the two budgets (4096² > raw >
+        // 2880²): default clamps, the raised 4096² budget keeps it intact.
+        let side = 3500_u32;
+        let raw_pixels = u64::from(side) * u64::from(side);
+        assert!(raw_pixels > default_budget);
+        assert!(raw_pixels <= 4096_u64 * 4096);
+        let (default_width, default_height, default_scaled) =
+            fit_pixel_budget(side, side, default_budget);
+        assert!(default_scaled);
+        assert!(u64::from(default_width) * u64::from(default_height) <= default_budget);
+        let (wide_width, wide_height, wide_scaled) = fit_pixel_budget(side, side, 4096 * 4096);
+        assert!(!wide_scaled, "inside the raised budget: no downscale");
+        assert_eq!((wide_width, wide_height), (side, side));
+        // The hostile-MediaBox guard survives a raised budget: still clamped,
+        // proportionally, to the raised budget.
+        let hostile = 200_000_u32 * 300 / 72;
+        let (hostile_width, hostile_height, hostile_scaled) =
+            fit_pixel_budget(hostile, hostile, 4096 * 4096);
+        assert!(hostile_scaled);
+        assert!(u64::from(hostile_width) * u64::from(hostile_height) <= 4096 * 4096);
+        // The request field maps (width, height) budget pairs to the pixel
+        // product the clamp consumes.
+        let options_budget = RenderOptions {
+            render_pixel_budget: Some((4096, 4096)),
+            ..Default::default()
+        };
+        assert_eq!(
+            options_budget
+                .render_pixel_budget
+                .map(|(w, h)| u64::from(w) * u64::from(h)),
+            Some(4096_u64 * 4096)
+        );
+        assert_eq!(RenderOptions::default().render_pixel_budget, None);
+    }
+
     // --- W2.1/W0.2: PDFium library path resolution & loading guard ---------
     //
     // A crafted library_dir must never traverse out (via `..`) to load an
@@ -1867,7 +1937,10 @@ mod tests {
         let count = renderer
             .render_range(
                 fixture("huge-mediabox-1-page.pdf"),
-                RenderOptions { dpi: 300 },
+                RenderOptions {
+                    dpi: 300,
+                    ..Default::default()
+                },
                 0,
                 1,
                 |_index, image| {

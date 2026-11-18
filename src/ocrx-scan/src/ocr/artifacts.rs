@@ -314,6 +314,7 @@ impl<'s> SessionRecognizer<'s> {
         &mut self,
         page: u32,
         image: &RenderedPage,
+        grid_override: Option<u32>,
         cancellation: &CancellationToken,
         heartbeat: &mut dyn FnMut(GenerationProgress),
     ) -> Result<PageArtifactResult, RecognizeError> {
@@ -336,12 +337,21 @@ impl<'s> SessionRecognizer<'s> {
                 let start = row * bytes_per_row + x0 as usize * 3;
                 band_rgb8.extend_from_slice(&image.rgb8[start..start + band_width * 3]);
             }
+            // B-M2.3 diag: the column-split rung rides the retry walk's
+            // decode grid (spike protocol: every retry decode at 2048).
+            let step = grid_override.map(|tokens| DegenerationRetryStep {
+                perturbed: None,
+                image_tokens: Some(tokens),
+                sampling: None,
+                column_split: false,
+                render_budget: None,
+            });
             let request = self.request(
                 &format!("page-{page}-band-{x0}"),
                 x1 - x0,
                 image.height,
                 band_rgb8,
-                None,
+                step.as_ref(),
             )?;
             let response = self
                 .session

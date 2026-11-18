@@ -1,0 +1,314 @@
+{
+  "schema_version": 1,
+  "artifact": "omnidocbench-b0-detect-gate",
+  "model": "PP-DocLayout-L (paddle.inference, pixel-scale=255.0, size=800)",
+  "runtime": "paddle-cpu",
+  "gate": "recall >= 90% @ IoU >= 0.7 (conf >= 0.25)",
+  "pages_scored": 744,
+  "pages_errored": [],
+  "pages_skipped_unreadable": [],
+  "page_time_ms_mean": 2971.1976668010752,
+  "summary": {
+    "table": {
+      "gt_total": 665,
+      "det_total": 0,
+      "matched_total": 0,
+      "recall": 0.0,
+      "precision": null,
+      "mean_iou_of_matched": null,
+      "gate_pass": false
+    },
+    "formula": {
+      "gt_total": 2226,
+      "det_total": 0,
+      "matched_total": 0,
+      "recall": 0.0,
+      "precision": null,
+      "mean_iou_of_matched": null,
+      "gate_pass": false
+    }
+  },
+  "missed_top": [
+    {
+      "image_path": "PPT_8076_MEYER_Chapter_2_-_Language_Change_page_012.png",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_8076_MEYER_Chapter_2_-_Language_Change_page_014.png",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_8076_MEYER_Chapter_2_-_Language_Change_page_021.png",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_CalculusReview_page_014.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_CalculusReview_page_033.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_Catalysis.ppt_page_016.png",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010.png",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_011.png",
+      "class": "table",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_MMAT5390Lecture1_page_023.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_MMAT5390Lecture1_page_024.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_PresentationSpecification_page_010.png",
+      "class": "table",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_StewartCalcET7e_03_02_page_007.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_StewartCalcET7e_03_02_page_010.png",
+      "class": "formula",
+      "missed_n": 3,
+      "gt_n": 3,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_StewartCalcET7e_03_02_page_012.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_StewartCalcET7e_03_02_page_014.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_StewartCalcET7e_03_02_page_015.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_StewartCalcET7e_04_09_page_018.png",
+      "class": "formula",
+      "missed_n": 3,
+      "gt_n": 3,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_020.png",
+      "class": "formula",
+      "missed_n": 4,
+      "gt_n": 4,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_021.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_030.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_034.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_035.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_057.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_090.png",
+      "class": "formula",
+      "missed_n": 3,
+      "gt_n": 3,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_132.png",
+      "class": "formula",
+      "missed_n": 4,
+      "gt_n": 4,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_136.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_ch7_page_142.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_fundamental_theorem_of_calculus___page_006.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_fundamental_theorem_of_calculus___page_013.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lay_linalg5_01_05_page_003.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lay_linalg5_01_05_page_004.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lay_linalg5_01_05_page_005.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lay_linalg5_01_05_page_008.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lay_linalg5_01_05_page_009.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lecture1_page_009.png",
+      "class": "formula",
+      "missed_n": 4,
+      "gt_n": 4,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_lecture1_page_022.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_linear-algebra primer_page_007.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_linear-algebra primer_page_008.png",
+      "class": "formula",
+      "missed_n": 1,
+      "gt_n": 1,
+      "matched_n": 0
+    },
+    {
+      "image_path": "PPT_linear-algebra primer_page_016.png",
+      "class": "formula",
+      "missed_n": 2,
+      "gt_n": 2,
+      "matched_n": 0
+    },
+    {
+      "image_path": "book_en_40.Puzzles.and.Problems.in.Probability.and.Mathematical.Statistics,.Schwarz,.Springer,.2008_page_115.png",
+      "class": "formula",
+      "missed_n": 4,
+      "gt_n": 4,
+      "matched_n": 0
+    }
+  ],
+  "missed_n": 772
+}
