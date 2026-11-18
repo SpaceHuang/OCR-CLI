@@ -29,7 +29,7 @@ ocrx model verify  --model ovisocr3 quality
 ocrx model info    --model ovisocr3
 
 # Fallback model (auto-selected on 6-7 GiB machines; explicit selector)
-ocrx model install balanced         # or compact / quality / reference
+ocrx model install --model ovisocr2 balanced    # or compact / quality / reference
 ```
 
 ## Using OvisOCR3

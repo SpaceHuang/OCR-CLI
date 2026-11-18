@@ -14,8 +14,8 @@ OCR-CLI is a local Rust command-line tool for extracting structured content from
 The current v0.1 scope is intentionally narrow:
 
 - Two supported OCR models selected with `--model`:
-  [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) (default) and
-  [OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3).
+  [OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3) (default) and
+  [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) (fallback).
 - Local PDF input and page rendering through PDFium.
 - Multimodal inference through llama.cpp/libmtmd and a separate `mmproj` GGUF file.
 - OvisOCR2 profiles: `compact`, `balanced`, `quality`, and `reference`.
@@ -24,7 +24,7 @@ The current v0.1 scope is intentionally narrow:
 - Markdown, JSON, progress, resume, and diagnostic workflows exposed by the CLI.
 - A macOS arm64 release/Skill packaging path.
 
-Other OCR models are not part of the v0.1 public contract. In particular, the project does not claim support for HunyuanOCR or other model families. The default model stays OvisOCR2; selecting OvisOCR3 is always explicit (`--model ovisocr3`).
+Other OCR models are not part of the v0.1 public contract. In particular, the project does not claim support for HunyuanOCR or other model families. The default model is OvisOCR3 (D-50 memory rule: `>= 8 GiB` RAM runs OvisOCR3 quality, `6-7 GiB` automatically falls back to OvisOCR2 balanced, `< 6 GiB` keeps the floor error; an explicit `--model` is always honored as-is).
 
 ## Current implementation status
 

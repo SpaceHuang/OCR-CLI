@@ -6,7 +6,7 @@ OCR-CLI 源代码拟按 Apache License, Version 2.0 分发。该许可仅适用�
 
 ## OvisOCR2
 
-OCR-CLI 使用 OvisOCR2 作为 v0.1 默认支持的 OCR 模型。
+OCR-CLI 使用 OvisOCR2 作为受支持的 OCR 模型（v0.1 的初始默认；自 D-48 默认切换起作为低内存回退模型）。
 
 - 原始模型：[ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2)
 - 技术报告：[OvisOCR2 技术报告](https://arxiv.org/abs/2607.13639)
@@ -21,7 +21,7 @@ OvisOCR2 清单将 [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B)
 
 ## OvisOCR3
 
-OCR-CLI 另外支持通过显式选择（`--model ovisocr3`）使用的 OvisOCR3；它绝不是默认模型。
+自 D-48 默认切换起，OCR-CLI 使用 OvisOCR3 作为默认支持的 OCR 模型（全集基准 Overall 90.87 对比 88.45）。
 
 - 原始模型：[ATH-MaaS/OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3)
 - 技术报告：[OvisOCR3 技术报告](https://arxiv.org/abs/2610.33066)

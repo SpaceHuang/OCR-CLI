@@ -325,25 +325,41 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
 /// errors (no install, no load), 6-7 GiB falls back to ovisocr2
 /// balanced, >=8 GiB keeps ovisocr3 quality. An explicit `--model`
 /// (or any explicit profile) is FROZEN — returned unchanged.
-fn resolve_implicit_default_selection(mut options: ScanOptions) -> ScanOptions {
-    if options.model_explicit || options.profile != "auto" {
-        return options;
+/// The implicit-default `(model, profile)` pair (D-50 three-segment
+/// table). `None` = the selection is explicit (a `--model` or an explicit
+/// profile) — the caller must not cross models.
+/// The implicit-default `(model, profile)` pair (D-50 three-segment
+/// table). `None` = the selection is explicit (`model_explicit` or a
+/// non-auto profile) — the caller must not cross models.
+fn resolve_implicit_default_pair(
+    model_explicit: bool,
+    requested_profile: &str,
+    memory_gb: u64,
+) -> Option<Result<(String, String), ocrx_inference_api::InferenceError>> {
+    if model_explicit || requested_profile != "auto" {
+        return None;
     }
+    Some(
+        model_recommend::recommend_default_selection(memory_gb)
+            .map(|(model, profile)| (model.to_owned(), profile.to_owned())),
+    )
+}
+
+/// The parsed pair, or the frozen floor-error exit (exit 6 — the same face
+/// as the profile-recommendation failure).
+fn resolve_implicit_default_selection_or_exit(options: &ScanOptions) -> (String, String) {
     let memory_gb = compose::compose(None)
         .inference
         .devices()
         .snapshot()
         .memory_gb;
-    match model_recommend::recommend_default_selection(memory_gb) {
-        Ok((model, profile)) => {
-            model.clone_into(&mut options.model);
-            profile.clone_into(&mut options.profile);
-            options
-        }
-        Err(error) => {
+    match resolve_implicit_default_pair(options.model_explicit, &options.profile, memory_gb) {
+        Some(Ok(pair)) => pair,
+        Some(Err(error)) => {
             eprintln!("profile recommendation failed: {error:?}");
             std::process::exit(6);
         }
+        None => (options.model.clone(), options.profile.clone()),
     }
 }
 
@@ -636,9 +652,19 @@ fn validate_numeric_options(
     if context_size.is_some_and(|value| value < 1024) {
         return Err("context size must be at least 1024".to_owned());
     }
-    let image_budget = max_image_tokens.unwrap_or(1024);
-    let output_budget = max_output_tokens.unwrap_or(16_384);
-    let context_budget = context_size.unwrap_or(20_480);
+    Ok(())
+}
+
+/// BLOCK-2: the model-dependent half of the numeric gate — the context
+/// must fit the image/output/prompt budget of the RESOLVED model. Runs
+/// after the D-50 default resolution (the pre-parse gate used the
+/// unresolved model's budget and rejected legal fallback configurations).
+fn validate_context_gate(options: &ScanOptions) -> Result<(), String> {
+    let image_budget = options
+        .max_image_tokens
+        .unwrap_or_else(|| default_max_image_tokens(&options.model));
+    let output_budget = options.max_output_tokens.unwrap_or(16_384);
+    let context_budget = options.context_size.unwrap_or(20_480);
     let required = image_budget
         .saturating_add(output_budget)
         .saturating_add(1024);
@@ -870,24 +896,38 @@ fn main() {
             // implicit default resolves through the D-50 three-segment
             // table (same as scan — doctor and scan must agree on the
             // model a user will actually get); `--model` selects the
-            // explicit readiness face and never crosses models.
+            // explicit readiness face and never crosses models. The
+            // implicit default resolves the FULL (model, profile) pair and
+            // BOTH ride the readiness face — recomputing the profile with
+            // the single-model ladder contradicted the scan's resolved
+            // pair at 6-7 GiB (review BLOCK-1).
             let composed = compose::compose(None);
             let snapshot = composed.inference.devices().snapshot();
-            let selected = match model {
-                Some(explicit) => explicit,
-                None => match model_recommend::recommend_default_selection(snapshot.memory_gb) {
-                    Ok((model, _)) => model.to_owned(),
-                    Err(_) => DEFAULT_MODEL.to_owned(),
+            // The resolver only reads model_explicit/profile; build the
+            // minimal probe face from the parse results.
+            let (selected, resolved_profile) = match model {
+                Some(explicit) => (explicit, None),
+                None => match resolve_implicit_default_pair(false, "auto", snapshot.memory_gb) {
+                    Some(Ok(pair)) => (pair.0, Some(pair.1)),
+                    Some(Err(_)) | None => (DEFAULT_MODEL.to_owned(), None),
                 },
             };
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
                 .unwrap_or_else(ocrx_inference::default_cache_root);
-            let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root, &selected);
+            let diagnostics = doctor_diagnostics_from_snapshot(
+                &snapshot,
+                &cache_root,
+                &selected,
+                resolved_profile.as_deref(),
+            );
             let backend_display = doctor_backend_display(&diagnostics);
             if json {
-                println!("{}", doctor_json_report(snapshot, &selected));
+                println!(
+                    "{}",
+                    doctor_json_report(snapshot, &selected, resolved_profile.as_deref())
+                );
             } else {
                 println!(
                     "model={} backend={} image_token_limit={} memory_gb={} metal_available={}",
@@ -916,7 +956,22 @@ fn main() {
                 .unwrap_or_else(ocrx_inference::default_cache_root);
             let composed = compose::compose(Some(cache_root));
             let narrowed = model.is_some();
-            let selected = model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_owned());
+            let snapshot = composed.inference.devices().snapshot();
+            // D-50/BLOCK-1: the no-flag recommend face reports the SAME
+            // (model, profile) the scan would resolve; an explicit --model
+            // keeps the per-model recommendation (never crosses models).
+            let implicit_pair = if narrowed {
+                None
+            } else {
+                resolve_implicit_default_pair(false, "auto", snapshot.memory_gb)
+            };
+            let (selected, implicit_profile) = match &implicit_pair {
+                Some(Ok(pair)) => (pair.0.clone(), Some(pair.1.clone())),
+                _ => (
+                    model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_owned()),
+                    None,
+                ),
+            };
             let model = ocrx_inference_api::ModelId::new(&selected)
                 .unwrap_or_else(|_| unreachable!("model id validated by the CLI parser"));
             if action == "list" {
@@ -967,7 +1022,7 @@ fn main() {
                     Ok(recommendation) => println!(
                         "model={} profile={} memory_gb={} device={}",
                         selected,
-                        recommendation.profile,
+                        implicit_profile.unwrap_or_else(|| recommendation.profile.to_string()),
                         snapshot.memory_gb,
                         composed
                             .inference
@@ -1359,7 +1414,20 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
     // result/checkpoint identity all follow the RESOLVED (model, profile).
     // An explicit --model is frozen (never crosses models); <6 GiB keeps
     // the frozen floor error.
-    let options = resolve_implicit_default_selection(options);
+    let (resolved_model, resolved_profile) = resolve_implicit_default_selection_or_exit(&options);
+    let mut options = options;
+    options.model = resolved_model;
+    options.profile = resolved_profile;
+    // BLOCK-2 (review 2026-11-19): the model-dependent context gate runs
+    // AFTER the resolution — the pre-parse gate used the UNRESOLVED
+    // model's token budget and rejected legal fallback configurations
+    // (6-7 GiB: ovisocr2's 1024 budget makes --context-size 18432 legal,
+    // but the ovisocr3 pre-gate computed 19456 and errored). Model-
+    // independent checks stay in the parser.
+    if let Err(error) = validate_context_gate(&options) {
+        eprintln!("error: {error}");
+        std::process::exit(2);
+    }
     let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
     let report_format = match options.report.as_str() {
         "json" => ReportFormat::Json,
@@ -2132,6 +2200,7 @@ fn doctor_diagnostics_from_snapshot(
     snapshot: &ocrx_inference_api::ResourceSnapshot,
     cache_root: &Path,
     model: &str,
+    resolved_profile: Option<&str>,
 ) -> ocrx_inference_api::DeviceDiagnostics {
     // O3-T21/D-11: the readiness face derives its ladder and installed
     // overview from the SELECTED model's frozen catalog entries — the
@@ -2146,10 +2215,14 @@ fn doctor_diagnostics_from_snapshot(
         .iter()
         .map(ocrx_inference_api::ProfileId::as_str)
         .collect();
-    let recommended_profile =
+    // The resolved profile (implicit default) wins when provided —
+    // recomputing with the single-model ladder produced a profile that
+    // contradicted the scan's resolved pair at 6-7 GiB (review BLOCK-1).
+    let recommended_profile = resolved_profile.map(ToOwned::to_owned).unwrap_or_else(|| {
         ocrx_inference::recommend::recommend_profile(&profile_names, snapshot.memory_gb)
             .map(|profile| profile.to_string())
-            .unwrap_or_else(|_| "unavailable".to_owned());
+            .unwrap_or_else(|_| "unavailable".to_owned())
+    });
     let recommended_device = if snapshot.metal_available {
         "metal"
     } else if snapshot.cuda_available {
@@ -2266,20 +2339,16 @@ fn current_platform() -> &'static str {
     platform_paths::detect().as_str()
 }
 
-fn doctor_json_report(snapshot: ocrx_inference_api::ResourceSnapshot, model: &str) -> String {
+fn doctor_json_report(
+    snapshot: ocrx_inference_api::ResourceSnapshot,
+    model: &str,
+    resolved_profile: Option<&str>,
+) -> String {
     let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(ocrx_inference::default_cache_root);
-    doctor_json_report_with_cache(snapshot, cache_root, model)
-}
-
-fn doctor_json_report_with_cache(
-    snapshot: ocrx_inference_api::ResourceSnapshot,
-    cache_root: PathBuf,
-    model: &str,
-) -> String {
-    doctor_json_report_with_paths(snapshot, cache_root, None, model)
+    doctor_json_report_with_paths(snapshot, cache_root, None, model, resolved_profile)
 }
 
 fn doctor_json_report_with_paths(
@@ -2287,13 +2356,15 @@ fn doctor_json_report_with_paths(
     cache_root: PathBuf,
     home: Option<&Path>,
     model: &str,
+    resolved_profile: Option<&str>,
 ) -> String {
     // T073: doctor flows through the DeviceManager DTO shape. The injected
     // snapshot is ALREADY hardware∩compiled-intersected (production builds
     // it via resource_snapshot()), so the DTO derives from it without
     // re-probing — the formatter tests inject artificial snapshots and the
     // JSON must mirror them (golden behavior).
-    let diagnostics = doctor_diagnostics_from_snapshot(&snapshot, &cache_root, model);
+    let diagnostics =
+        doctor_diagnostics_from_snapshot(&snapshot, &cache_root, model, resolved_profile);
     let profile = diagnostics.recommended_profile.clone();
     let device = diagnostics.recommended_device.clone();
     let platform = diagnostics.platform.clone();
@@ -2873,6 +2944,89 @@ mod tests {
             .expect("cargo should launch the CLI test binary")
     }
 
+    fn run_cli_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
+        if let Ok(binary) = std::env::var("CARGO_BIN_EXE_ocrx") {
+            let mut command = Command::new(binary);
+            command.args(args);
+            for (key, value) in envs {
+                command.env(key, value);
+            }
+            return command.output().expect("CLI test binary should run");
+        }
+        let mut command = Command::new("cargo");
+        command
+            .args(["run", "--quiet", "--bin", "ocrx", "--"])
+            .args(args)
+            .current_dir(env!("CARGO_MANIFEST_DIR"));
+        for (key, value) in envs {
+            command.env(key, value);
+        }
+        command
+            .output()
+            .expect("cargo should launch the CLI test binary")
+    }
+
+    /// BLOCK-1 (review 2026-11-19): the three implicit-default faces —
+    /// `model recommend`, `doctor`, and the scan's resolved pair — must
+    /// agree at the D-50 memory tiers (real CLI subprocesses with
+    /// OCRX_MEMORY_GB).
+    #[test]
+    fn d50_three_faces_agree_at_the_memory_tiers() {
+        for (memory, expected_model, expected_profile) in [
+            ("6", "ovisocr2", "balanced"),
+            ("7", "ovisocr2", "balanced"),
+            ("8", "ovisocr3", "quality"),
+        ] {
+            let envs = [("OCRX_MEMORY_GB", memory)];
+            let recommend = run_cli_with_env(&["model", "recommend"], &envs);
+            let recommend_text = String::from_utf8(recommend.stdout).unwrap();
+            assert!(
+                recommend_text.contains(&format!("model={expected_model}"))
+                    && recommend_text.contains(&format!("profile={expected_profile}")),
+                "{memory} GiB recommend: {recommend_text}"
+            );
+            let doctor = run_cli_with_env(&["doctor", "--report", "json"], &envs);
+            let doctor_text = String::from_utf8(doctor.stdout).unwrap();
+            assert!(
+                doctor_text.contains(&format!("\"model\":\"{expected_model}\""))
+                    && doctor_text
+                        .contains(&format!("\"recommended_profile\":\"{expected_profile}\"")),
+                "{memory} GiB doctor: {doctor_text}"
+            );
+        }
+    }
+
+    /// BLOCK-2 (review 2026-11-19): a legal FALLBACK configuration must
+    /// pass the context gate after the resolution — the pre-parse gate
+    /// rejected --context-size 18432 with the ovisocr3 budget.
+    #[test]
+    fn d50_fallback_context_size_passes_after_resolution() {
+        let output = run_cli_with_env(
+            &[
+                "scan",
+                "missing-review.pdf",
+                "--context-size",
+                "18432",
+                "--offline",
+                "--non-interactive",
+            ],
+            &[("OCRX_MEMORY_GB", "6")],
+        );
+        // The gate must NOT reject the config; the scan proceeds to the
+        // input stage (exit 3 = missing input, the frozen page-count face).
+        assert_eq!(
+            output.status.code(),
+            Some(3),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("context size"),
+            "the context gate must not fire after fallback: {stderr}"
+        );
+    }
+
     #[test]
     fn cli_resume_of_truncated_page_keeps_partial_status_and_exit_10() {
         // BLK-2 regression (real CLI subprocess): a same-parameter --resume
@@ -3195,10 +3349,8 @@ model=ovisocr3
                 expected,
                 "{args:?}"
             );
-            assert!(
-                String::from_utf8(output.stderr).unwrap().is_empty(),
-                "{args:?}"
-            );
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(stderr.is_empty(), "{args:?} stderr={stderr}");
         }
         // Unknown selector: no stdout, scan-family error on stderr, exit 2.
         let output = run_cli_with_cache(&["model", "list", "--model", "qwen3.8"], &cache);
@@ -3616,17 +3768,11 @@ model=ovisocr3
         let mut low = base();
         low.model = "ovisocr3".to_owned();
         low.profile = "auto".to_owned();
-        // An explicit --model (even pointing at ovisocr3) never rewrites.
-        low.model_explicit = true;
-        let frozen = super::resolve_implicit_default_selection(low);
-        assert_eq!(frozen.model, "ovisocr3", "explicit selection frozen");
-        assert_eq!(frozen.profile, "auto");
-        // An explicit profile (even with implicit model) is frozen too.
-        let mut profiled = base();
-        profiled.profile = "quality".to_owned();
-        profiled.model_explicit = false;
-        let frozen = super::resolve_implicit_default_selection(profiled);
-        assert_eq!(frozen.profile, "quality", "explicit profile frozen");
+        // An explicit --model never resolves a cross-model pair; an
+        // explicit profile freezes too (the resolver returns None).
+        assert!(super::resolve_implicit_default_pair(true, "auto", 16).is_none());
+        assert!(super::resolve_implicit_default_pair(false, "quality", 16).is_none());
+        assert!(super::resolve_implicit_default_pair(false, "auto", 16).is_some());
     }
 
     #[test]
@@ -3647,25 +3793,15 @@ model=ovisocr3
             "19456",
         ]);
         assert!(ok.is_ok(), "ovisocr3 resolved budget must fit 19456");
-        let err = parse_scan_args(&[
-            "input.pdf",
-            "--model",
-            "ovisocr3",
-            "--context-size",
-            "19455",
-        ]);
-        assert!(
-            err.is_err(),
-            "expected the resolved budget to overflow 19455"
-        );
-        // The default face is now ovisocr3 (D-48): its base image budget is
-        // 2048, so the context gate boundary moves to
-        // 2048+16384+1024(prompt)=19456.
-        assert!(
-            parse_scan_args(&["input.pdf", "--context-size", "19455"]).is_err(),
-            "ovisocr3 resolved budget (2048+16384+1024=19456) overflows 19455"
-        );
-        assert!(parse_scan_args(&["input.pdf", "--context-size", "19456"]).is_ok());
+        // BLOCK-2: the parse-level gate is gone — the overflow face is
+        // post-resolution (validate_context_gate; covered end-to-end by
+        // d50_fallback_context_size_passes_after_resolution and the
+        // explicit-model orchestration path).
+        // BLOCK-2: the context gate is POST-resolution now — the parser
+        // accepts the args and the gate runs against the RESOLVED model's
+        // budget (ovisocr3 default face: 2048+16384+1024=19456; ovisocr2
+        // fallback face: 1024+16384+1024=18432 — see
+        // d50_fallback_context_size_passes_after_resolution).
     }
 
     #[test]
@@ -3960,6 +4096,7 @@ model=ovisocr3
             empty.clone(),
             Some(&empty),
             DEFAULT_MODEL,
+            None,
         );
         let _ = std::fs::remove_dir_all(&empty);
         // The platform field follows the running OS (macos/windows; other
@@ -4034,17 +4171,33 @@ model=ovisocr3
             empty.clone(),
             Some(&empty),
             DEFAULT_MODEL,
+            None,
         );
-        let explicit_ovisocr3 =
-            super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr3");
+        let explicit_ovisocr3 = super::doctor_json_report_with_paths(
+            snapshot,
+            empty.clone(),
+            Some(&empty),
+            "ovisocr3",
+            None,
+        );
         assert_eq!(default_face, explicit_ovisocr3);
         // The ovisocr2 explicit face stays its own frozen shape (it is the
         // D-50 fallback model, not the default).
-        let explicit_ovisocr2 =
-            super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr2");
+        let explicit_ovisocr2 = super::doctor_json_report_with_paths(
+            snapshot,
+            empty.clone(),
+            Some(&empty),
+            "ovisocr2",
+            None,
+        );
         assert_ne!(default_face, explicit_ovisocr2);
-        let ovisocr3 =
-            super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr3");
+        let ovisocr3 = super::doctor_json_report_with_paths(
+            snapshot,
+            empty.clone(),
+            Some(&empty),
+            "ovisocr3",
+            None,
+        );
         let platform = super::current_platform();
         let escaped_cache_root = super::json_escape_path(&empty);
         assert_eq!(
@@ -4239,6 +4392,7 @@ model=ovisocr3
                 cpu_available: true,
             },
             DEFAULT_MODEL,
+            None,
         );
         assert!(!report.to_ascii_lowercase().contains("authorization="));
         assert!(!report.to_ascii_lowercase().contains("token:"));
