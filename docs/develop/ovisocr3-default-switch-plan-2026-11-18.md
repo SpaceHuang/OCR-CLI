@@ -46,8 +46,8 @@
 |---|---|---|---|
 | G1 质量 | Overall(all) ≥ 89.5；分语言 text 按 D-52 阈值（≥5 页语言回退 ≤0.005，<5 页不阻断）；分语言 TEDS 中文回退 ≤ 0.03 | 90.87 ✓；en_ch_mixed −0.0023 ✓ / other n=2 不阻断（v1.0 口径下 G1 FAIL，D-52 冻结后重判）；zh −0.026 ✓ | **PASS（按 D-52 修订口径；v1.0 口径 = FAIL，如实留痕）** |
 | G2 账本 | 全量退化页 ≤ 83 且截断页 ≤ 4 | 59 / 0 | **PASS** |
-| G3 工程 | 默认面切换（CLI 常量/推荐回退链/doctor/双语文档/发布模板）+ 测试更新；回退链验证 | 待做 | — |
-| G4 确定性 | 30 页金集（沿用 bm23 金集模式）双跑逐字节一致 | 待做 | — |
+| G3 工程 | 默认面切换（CLI 常量/推荐回退链/doctor/双语文档/发布模板）+ 测试更新；回退链验证 | **已执行**（T1/T2）：三段表 `recommend_default_selection` 判别矩阵单测（5/6/7/8 + 余量）；CLI 入口解析（显式冻结断言）；service 面（ovisocr3+auto 各档冻结 quality、回退带 (ovisocr2, balanced) 就位、<6 GiB 地板错误不安装不加载）；doctor/scan 同表解析 + per-model token；默认面 golden 全部更新 | **PASS** |
+| G4 确定性 | 30 页金集（沿用 bm23 金集模式）双跑逐字节一致 | **已执行**：首轮双跑抓出 `artifact_sha256` 确定性 bug（canonicalize 图片路径 strip 失败 → 静默回退绝对路径进哈希）——修复 + 回归测试后重跑 **275 产物逐字节一致 PASS**；checkpoint 身份面确认默认解析为 (ovisocr3, quality) | **PASS（修复一个真确定性缺陷后）** |
 | G5 档案 | 速度/内存/账本归档 | 账本+速度已归档（上表）；**运行时峰值内存已实测归档**（D-50：同页双模型对照，提交内存 5.39/1.98 GB） | **PASS（v1.0 的 PASS 撤销重判——彼时仅有权重文件字节数，无运行时证据）** |
 
 ## 工程任务
@@ -65,6 +65,12 @@
 - 不在本计划内实现双模型路由（D-49 跟进项独立成计划）
 - 不在本计划内重开 M4 表格重读（D-51；重开需先完成 ovisocr3 基线的剩余亏损结构评估）
 - 不动 `feat/next-phase-quality` 分支（M4 挂起件 + 评测基建原样保留）
+
+## 执行记录（G3/G4，2026-11-19）
+
+- T1/T2 落于 `feat/ovisocr3-default-switch` 分支；41 套件 workspace 全绿、fmt/clippy 干净。
+- G4 首轮双跑发现真确定性缺陷：`artifact_sha256` 的 manifest 对 canonicalize 图片路径静默回退绝对路径——修复为 fail-closed 相对名归一并加回归测试；修复后重跑 30 页金集双跑 275 产物逐字节一致。
+- 默认面生效证据：doctor 无旗标 = `ovisocr3/2048`；`--model ovisocr2` = `ovisocr2/1024`；金集 result.json model 面 = `(ovisocr3, quality, revision 7be644a3)`。
 
 ## 成本估算
 
