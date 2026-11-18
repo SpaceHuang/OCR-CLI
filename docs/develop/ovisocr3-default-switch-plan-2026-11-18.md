@@ -1,4 +1,6 @@
-# OvisOCR3 默认模型切换计划（2026-11-18，v1.1 评审修订）
+# OvisOCR3 默认模型切换计划（2026-11-18，v1.2 重审修订）
+
+> **v1.2（重审 BLOCK-1 处置）**：D-50 与 T1 的回退区间统一为无交集三段（`<6 GiB` 报错 / `6 ≤ RAM < 8 GiB` 回退 ovisocr2 balanced / `≥ 8 GiB` 选 ovisocr3 quality），冻结 5/6/7/8 GiB 判别矩阵；修正 6–8 GiB 的历史行为描述；T1–T2 工程量改判中等。重审报告：`docs/review/ovisocr3-default-switch-plan-2026-11-18-re-review.md`。
 
 > **v1.1（评审 BLOCK-1/2/3 处置）**：G1 按原始明细诚实改判 FAIL → D-52 显式冻结 text 回退接受阈值后重判；D-50 重写为实测回退契约（峰值内存已归档）；T1 重估为解析选择契约贯穿工程。评审报告：`docs/review/ovisocr3-default-switch-plan-2026-11-18-review.md`（BLOCK 全文）。
 
@@ -35,7 +37,7 @@
 | D-48 | 切换门槛冻结为下列 G1–G5；全过 → 切默认；任一不过 → 不切换，问题入档 | 默认模型切换是行为变更，必须走与 M4 同级的门禁纪律 |
 | D-49 | 中文表格 TEDS 局部回退（≤0.03/语言）**显式接受**，不作为阻断；跟进项 = 按内容/语言的双模型路由（另立计划） | 英文表格 +0.130（243 表）远大于中文 −0.026（382 表）的净损耗；整体 +0.032 且 Overall +2.42 |
 | D-52 | **text 回退接受阈值显式冻结**（替代 v1.0 的"无回退"口径）：① 样本 ≥ 5 页的语言，text 回退 ≤ 0.005；② 样本 < 5 页的语言不构成阻断（逐页归档备查）。按此口径 en_ch_mixed −0.0023 ✓、other（2 页，实际差异 = 1 页）✓；G1 以 D-52 口径重判 PASS | v1.0 的"无回退"表述与自身数据矛盾（评审 BLOCK-1 成立）。显式阈值 + 样本量条件比绝对化表述更诚实：other 的 −0.0503 全部来自 1 个非中英语种页（另一页逐位相同），统计上不可靠且不影响总体 text +0.0067（1557 页） |
-| D-50 | **内存回退契约（实测冻结）**：地板 = 系统总 RAM **8 GiB**，边界 = `>= 8 GiB` 选 ovisocr3 quality、`< 8 GiB` 回退 ovisocr2 balanced；内存类型 = 系统物理 RAM（非显存/权重文件字节数）；**作用域 = 仅隐式默认选择**（`--model` 未传时的 auto 推荐）——显式 `--model ovisocr3` 冻结不回退（用户点名就要，装不上给清晰错误）；与既有 6 GiB 全局下限的关系 = 6–8 GiB 区间从"直接报错"变为"可用但用 ovisocr2"（收紧为更好），< 6 GiB 维持报错 | 依据 = 同一退化页双模型实测（峰值提交内存 ovisocr3 **5.39 GB** / ovisocr2 1.98 GB；工作集 1.42 / 0.89 GB）——可复核产物：`benchmarks/omnidocbench/reports/analysis/analysis-ovisocr3-memory-probe.json`；5.39 GB 在 8 GiB 机器上过紧、16 GiB 充裕；权重文件字节数（811/578 MB）不是运行时内存，不作地板依据（评审 BLOCK-2 成立） |
+| D-50 | **内存回退契约（实测冻结，v1.2 无交集三段）**——隐式默认 + auto 的系统物理 RAM：① `< 6 GiB`：维持既有 `UnsupportedProfile` 报错（不安装、不加载 ovisocr2 balanced）；② `6 ≤ RAM < 8 GiB`：解析为 `(ovisocr2, balanced)`（回退域）；③ `≥ 8 GiB`：解析为 `(ovisocr3, quality)`。内存类型 = 系统物理 RAM；**作用域 = 仅隐式默认选择**（`--model` 未传）——显式 `--model ovisocr3` 在任何内存档冻结不跨模型回退（用户点名就要，装不上给清晰错误）。判别矩阵（G3/T1 必测）：**5 GiB 报错 / 6 GiB 回退 / 7 GiB 回退 / 8 GiB 选 ovisocr3**（两个边界方向的恰好值入列） | 依据 = 同一退化页双模型实测（峰值提交内存 ovisocr3 **5.39 GB** / ovisocr2 1.98 GB）——可复核产物：`benchmarks/omnidocbench/reports/analysis/analysis-ovisocr3-memory-probe.json`；权重文件字节数不是运行时内存（重审：主体已闭环，仅区间矛盾残留）。历史行为口径更正（重审非阻断清理）：现行代码 <6 GiB 报错、6–8 GiB 在 ovisocr3 单 profile 下回落选 quality（旧 ovisocr2 默认下推荐 compact）——切换后 6–8 GiB 的行为变化是"ovisocr3 quality → 回退 ovisocr2 balanced"，`<6 GiB` 行为不变 |
 | D-51 | M4 表格重读**维持挂起**，但在 ovisocr3 基线上重新评估剩余亏损结构（worst 带已被模型本身救到大半，mid/bad-low 为主）后再议 | 挂起依据（ovisocr2 上 Δ≈0）不自动迁移到新模型 |
 
 ## 验收门（G1–G5）
@@ -52,7 +54,7 @@
 
 | 任务 | 内容 | 验收 |
 |---|---|---|
-| T1 | **解析选择契约贯穿（评审 BLOCK-3 重估）**：① 推荐接口返回 `(model, profile)` 二元组（`ProfileRecommendation` 增加 model 字段），`service.rs` 的 manifest/安装/final identity/`static_identity` 全部改用解析后的 model——不得只换 profile 保留原 model；② 模型相关默认值在回退后**重新解析**：视觉 token（ovisocr3=2048 / ovisocr2=1024）在 `prepare` 前按实际选择的模型计算；③ doctor 的 `image_token_limit` 不再硬编码 1024，报告实际默认面的对应值；④ `DEFAULT_MODEL` → `ovisocr3`；⑤ CLI 区分隐式默认与显式 `--model`（D-50 作用域） | **真实编排判别测试**（非仅推荐函数单测）：隐式默认低配（<8 GiB）回退到 ovisocr2 balanced；显式 ovisocr3 在低配下保持冻结；回退后 session/result/checkpoint 身份 = ovisocr2（model/adapter/资产）；回退后请求视觉 token = 1024；static_identity 与 prepare 选择一致；doctor 报告与实际扫描一致 |
+| T1 | **解析选择契约贯穿（评审 BLOCK-3 重估）**：① 推荐接口返回 `(model, profile)` 二元组（`ProfileRecommendation` 增加 model 字段），`service.rs` 的 manifest/安装/final identity/`static_identity` 全部改用解析后的 model——不得只换 profile 保留原 model；② 模型相关默认值在回退后**重新解析**：视觉 token（ovisocr3=2048 / ovisocr2=1024）在 `prepare` 前按实际选择的模型计算；③ doctor 的 `image_token_limit` 不再硬编码 1024，报告实际默认面的对应值；④ `DEFAULT_MODEL` → `ovisocr3`；⑤ CLI 区分隐式默认与显式 `--model`（D-50 作用域） | **真实编排判别测试**（非仅推荐函数单测）：判别矩阵 5 GiB 报错（负向：不安装不加载）/ 6 GiB 回退 `(ovisocr2, balanced)` / 7 GiB 回退 / 8 GiB `(ovisocr3, quality)`；显式 `--model ovisocr3` 在 6–8 GiB 区间保持冻结不跨模型回退；回退后 session/result/checkpoint 身份 = ovisocr2（model/adapter/资产）；回退后请求视觉 token = 1024；static_identity 与 prepare 选择一致；doctor 报告与实际扫描一致 |
 | T2 | 双语文档 + 发布模板的默认模型面更新（O3 阶段已有双模型文档，改默认指向） | 文档 diff 评审 |
 | T3 | G4 确定性双跑（30 页金集 ×2，逐字节比对） | 零差异 |
 | T4 | 全门记录 + 裁定落档（本文件更新 G3/G4 判定） | 记录完整 |
