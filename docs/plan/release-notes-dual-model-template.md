@@ -8,30 +8,36 @@
 ## Highlights
 
 - Two supported OCR models, selected explicitly with `--model`:
-  - `ovisocr2` (default; unchanged behavior, profiles `compact` / `balanced` / `quality` / `reference`)
-  - `ovisocr3` (new; profile `quality` = Q8_0 + F16 `mmproj`)
-- The default model stays **OvisOCR2**. Existing checkpoints, scripts, and
-  outputs behave byte-identically to previous releases.
+  - `ovisocr3` (NEW DEFAULT; profile `quality` = Q8_0 + F16 `mmproj`;
+    full-set benchmark Overall 90.87 vs 88.45, tables/formulas/text all
+    improved, wall time 2x faster)
+  - `ovisocr2` (fallback / explicit; profiles `compact` / `balanced` /
+    `quality` / `reference`)
+- Default-model resolution (D-50, system physical RAM): `>= 8 GiB` runs
+  OvisOCR3 quality; `6-7 GiB` automatically falls back to OvisOCR2
+  balanced; `< 6 GiB` keeps the frozen floor error. An explicit `--model`
+  is always honored as-is (never cross-model substituted).
 - Cross-model checkpoint isolation: a checkpoint written under one model is
   never reused by a scan of the other model (full rescan).
 
 ## Installing the models
 
 ```bash
-# Default model (as before)
-ocrx model install compact          # or balanced / quality / reference
-
-# OvisOCR3 (explicit selector; quality is its only available profile)
+# New default model (>= 8 GiB RAM resolves this automatically)
 ocrx model install --model ovisocr3 quality
 ocrx model verify  --model ovisocr3 quality
 ocrx model info    --model ovisocr3
+
+# Fallback model (auto-selected on 6-7 GiB machines; explicit selector)
+ocrx model install balanced         # or compact / quality / reference
 ```
 
 ## Using OvisOCR3
 
 ```bash
-ocrx scan document.pdf --model ovisocr3
-ocrx doctor --model ovisocr3 --report json
+ocrx scan document.pdf                       # default face (ovisocr3 on >=8 GiB)
+ocrx scan document.pdf --model ovisocr2      # explicit fallback face
+ocrx doctor                                  # reports the model you would get
 ```
 
 Every other flag (device, resume, progress, routing, output) behaves
