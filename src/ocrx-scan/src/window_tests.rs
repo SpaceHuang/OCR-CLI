@@ -6,7 +6,7 @@
 #![cfg(test)]
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use ocrx_inference_api::{
@@ -184,6 +184,7 @@ impl InferenceSession for FakeSession {
 struct FakeRenderer {
     renders: RefCell<Vec<u32>>,
     fail_pages: RefCell<Vec<u32>>,
+    budgets: RefCell<Vec<(u32, u32, u32)>>,
 }
 
 impl FakeRenderer {
@@ -199,6 +200,21 @@ impl FakeRenderer {
 impl PageRenderer for FakeRenderer {
     fn preflight(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+
+    fn render_budgeted(
+        &mut self,
+        page: u32,
+        pixel_width_budget: u32,
+        pixel_height_budget: u32,
+    ) -> std::io::Result<RenderedPage> {
+        self.renders.borrow_mut().push(page);
+        self.budgets
+            .borrow_mut()
+            .push((page, pixel_width_budget, pixel_height_budget));
+        let mut image = RenderedPage::new(1, 1, vec![200; 3])?;
+        image.generation = u64::from(page);
+        Ok(image)
     }
 
     fn render(&mut self, page: u32) -> std::io::Result<RenderedPage> {
@@ -859,11 +875,12 @@ fn resume_reuses_candidate_pages_even_with_pending_decode() {
 #[test]
 fn empty_eos_output_enters_the_ladder_and_lands_degenerated() {
     // Review BLOCK fix: an immediate-EOS empty OCR page must retry through
-    // the ladder (4 attempts: plain + 3 rungs) and commit as DEGENERATED —
-    // never as a clean success that --resume would silently reuse.
+    // the ladder (5 attempts: plain + the 4 frozen ovisocr2 rungs incl. the
+    // M2 rung) and commit as DEGENERATED — never as a clean success that
+    // --resume would silently reuse.
     let root = temp_root("empty-ladder");
     let mut session = FakeSession::with_depth(1);
-    for _ in 0..4 {
+    for _ in 0..5 {
         session.push(1, empty_eos());
     }
     let mut renderer = FakeRenderer::new();
@@ -882,8 +899,8 @@ fn empty_eos_output_enters_the_ladder_and_lands_degenerated() {
         root.join("page-0001.checkpoint").is_file() || root.join("page-0001.md").is_file(),
         "committed page must write artifacts"
     );
-    // 4 submits: attempt-1 + the three frozen rungs.
-    assert_eq!(session.core.single_calls.get(), 4);
+    // 5 submits: attempt-1 + the four frozen rungs.
+    assert_eq!(session.core.single_calls.get(), 5);
     assert_eq!(summary.completed_pages, 1);
     assert_eq!(
         summary.degenerated_pages, 1,
@@ -950,7 +967,7 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
     let root = temp_root("boundary-serial");
     let boundary = root.join("boundary.jsonl");
     let mut session = FakeSession::with_depth(1);
-    for _ in 0..4 {
+    for _ in 0..5 {
         session.push(1, empty_eos());
     }
     let mut renderer = FakeRenderer::new();
@@ -972,7 +989,7 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(lines.len(), 4, "one record per attempt");
+    assert_eq!(lines.len(), 5, "one record per attempt");
     for (index, record) in lines.iter().enumerate() {
         assert_eq!(record["source"], "scan");
         assert_eq!(record["page_number"], 1);
@@ -1110,6 +1127,7 @@ fn ovisocr2_ladder_keeps_the_frozen_rung_order() {
     let mut session = FakeSession::with_depth(1);
     session.push(1, empty_eos());
     session.push(1, empty_eos());
+    session.push(1, empty_eos());
     session.push(1, eos(1));
     let mut renderer = FakeRenderer::new();
     let compatibility = compatibility();
@@ -1132,11 +1150,15 @@ fn ovisocr2_ladder_keeps_the_frozen_rung_order() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(records.len(), 3);
-    // Attempt 2 = 2048-grid rung; attempt 3 = sampling chain.
+    assert_eq!(records.len(), 4);
+    // Attempt 2 = 2048-grid rung; attempt 3 = sampling chain; attempt 4 =
+    // the M2 budget rung — walk-wide (B-M2.3): every retry carries the
+    // 2048 grid override.
     assert_eq!(records[1]["image_tokens_override"], 2048);
     assert_eq!(records[1]["retry_sampling"], serde_json::Value::Null);
     assert_eq!(records[2]["retry_sampling"], serde_json::json!([1200, 64]));
-    assert_eq!(records[2]["image_tokens_override"], serde_json::Value::Null);
+    assert_eq!(records[2]["image_tokens_override"], 2048);
+    assert_eq!(records[3]["retry_sampling"], serde_json::Value::Null);
+    assert_eq!(records[3]["image_tokens_override"], 2048);
     let _ = std::fs::remove_dir_all(root);
 }

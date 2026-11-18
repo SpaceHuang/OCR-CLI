@@ -223,7 +223,14 @@ fn raw_output_probe_for_empty_pages() {
         // page_number - 1 (explicit, recorded in the sample).
         let page_index = page_number.saturating_sub(1);
         let (image, _, _) = renderer
-            .render_page_rgb8_with_audit(&source, page_index as usize, RenderOptions { dpi })
+            .render_page_rgb8_with_audit(
+                &source,
+                page_index as usize,
+                RenderOptions {
+                    dpi,
+                    ..Default::default()
+                },
+            )
             .unwrap_or_else(|error| panic!("render page {page_number}: {error}"));
         let width = image.width();
         let height = image.height();

@@ -19,8 +19,8 @@ use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 use crate::ocr::artifacts::{RecognizeError, SessionRecognizer};
 use crate::state::{
-    DegenerationRetryStep, JobSummary, PageArtifactResult, PageDiagnostic, RETRY_RASTER_BUDGET,
-    RenderAudit, RenderedPage,
+    DegenerationRetryStep, JobSummary, PageArtifactResult, PageDiagnostic, RenderAudit,
+    RenderedPage,
 };
 
 /// Render port for the OCR pipeline (the legacy `PageRenderer` trait,
@@ -627,27 +627,15 @@ fn serial_attempt_outcome(
     let mut attempts = start_attempt.saturating_sub(1);
     loop {
         attempts += 1;
-        // B-M2.3 diag (spike protocol): every retry decode rides the 2048
-        // grid (the rung's own override, or the walk-wide grid) — the rescue
-        // needs supersampled rasters × 2048 grids together. Attempt 1 keeps
-        // the plain 1024 decode (normal pages untouched).
-        let walk_step: DegenerationRetryStep;
-        let walk_step: DegenerationRetryStep;
+        // The per-model ladder carries every rung's grid override
+        // explicitly — ovisocr2's walk-wide 2048 contract (B-M2.3) lives in
+        // the ladder table itself; ovisocr3's sampling-first rungs keep
+        // image_tokens None. Attempt 1 stays the plain 1024 decode.
         let step: Option<&DegenerationRetryStep> = if attempts == 1 {
             None
         } else {
             let ladder_index = usize::try_from(attempts - 2).unwrap_or(usize::MAX);
-            match config.ladder.get(ladder_index) {
-                Some(rung) if rung.image_tokens.is_some() => Some(rung),
-                Some(rung) => {
-                    walk_step = DegenerationRetryStep {
-                        image_tokens: Some(2048),
-                        ..*rung
-                    };
-                    Some(&walk_step)
-                }
-                None => None,
-            }
+            config.ladder.get(ladder_index)
         };
         // T1: the caller-side render wait is the recorder's R input; every
         // attempt (retry perturbations included) gets its own row.
@@ -658,17 +646,13 @@ fn serial_attempt_outcome(
                 renderer.render_perturbed(page, numerator, denominator)
             }
             _ => {
-                // B-M2.1/D-17 + B-M2.3 diag: the raised raster budget applies
-                // to the WHOLE retry walk (attempts >= 2) — the spike's
-                // adjudicated shape (supersampled raster on every retry
-                // decode; the model input keeps the frozen 2880² fit).
-                // Attempt 1 (normal pages) never sees it.
-                let budget = if attempts >= 2 {
-                    Some((RETRY_RASTER_BUDGET.0, RETRY_RASTER_BUDGET.1))
-                } else {
-                    None
-                };
-                match budget {
+                // BLK-5 (review 2026-11-18): the budget comes from the
+                // CURRENT rung's effective config — never the attempt
+                // count. OvisOCR2's ladder carries the adjudicated
+                // walk-wide (4096, 4096) on every retry rung (B-M2.3
+                // supersampling); OvisOCR3's rungs carry None and keep the
+                // plain render main froze for them.
+                match step.and_then(|rung| rung.render_budget) {
                     Some((width_budget, height_budget)) => {
                         renderer.render_budgeted(page, width_budget, height_budget)
                     }
