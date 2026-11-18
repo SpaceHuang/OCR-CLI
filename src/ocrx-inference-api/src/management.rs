@@ -68,9 +68,13 @@ pub struct ModelDetail {
     pub license_id: String,
 }
 
-/// Profile recommendation result (no implicit install).
+/// Profile recommendation result (no implicit install). `model` is the
+/// RESOLVED model — for the implicit default the T1 cross-model fallback
+/// may return a different model than the request carried (D-50); callers
+/// must thread this model through manifests/identity, never the request's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileRecommendation {
+    pub model: ModelId,
     pub profile: ProfileId,
     /// Human-readable rationale for the CLI to show.
     pub rationale: String,

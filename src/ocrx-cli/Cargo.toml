@@ -12,6 +12,7 @@ workspace = true
 ocrx-core = { path = "../ocrx-core" }
 ocrx-inference = { path = "../ocrx-inference" }
 ocrx-inference-api = { path = "../ocrx-inference-api" }
+ocrx-models = { path = "../ocrx-models" }
 ocrx-scan = { path = "../ocrx-scan" }
 ocrx-output = { path = "../ocrx-output" }
 ocrx-skill = { path = "../ocrx-skill" }

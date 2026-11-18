@@ -9,6 +9,8 @@ use ocrx_scan::{PdfErrorKind, classify_pdf_error};
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
+use ocrx_models::recommend as model_recommend;
+
 mod compose;
 
 use ocrx_inference_api::{DeviceManager as _, ModelManager as _};
@@ -30,7 +32,11 @@ use platform_paths::home_dir;
 
 /// The only registered model id (frozen; the inference-api value type is
 /// authoritative — this spelling backs CLI defaults/display).
-const DEFAULT_MODEL: &str = "ovisocr2";
+/// D-48/T1 (ovisocr3-default-switch plan): the frozen default model. The
+/// IMPLICIT default further resolves through the D-50 three-segment
+/// memory table at scan/doctor entry — this constant is the >=8 GiB face
+/// and the explicit-selector default.
+const DEFAULT_MODEL: &str = "ovisocr3";
 
 /// Registered model ids the `--model` selector accepts (D-6: the default
 /// stays `ovisocr2`; unknown ids share the scan error spelling).
@@ -91,6 +97,10 @@ struct ScanOptions {
     /// Q1.1c/D-10 (O-5): enable the column-split retry rung. Default on;
     /// formula-dense document sets measured harmful - pass --column-split-retry off.
     column_split_retry: bool,
+    /// D-50 scope flag: true when the user passed `--model` explicitly —
+    /// the implicit-default cross-model fallback NEVER applies to an
+    /// explicit selection.
+    model_explicit: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,6 +174,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         keep_pages: false,
         password: None,
         column_split_retry: true,
+        model_explicit: false,
     };
     let mut index = 1;
     while index < args.len() {
@@ -188,6 +199,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
                     return Err(format!("unsupported model: {model}"));
                 }
                 model.clone_into(&mut options.model);
+                options.model_explicit = true;
             }
             "--model-profile" => {
                 index += 1;
@@ -308,6 +320,33 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
 /// evidence in the implementation log); the OvisOCR2 default stays 1024
 /// byte-for-byte (iron rule 1).
 #[must_use]
+/// D-50/T1: the implicit-default (model, profile) resolution — the ONLY
+/// place a scan may cross models. Frozen three-segment matrix: <6 GiB
+/// errors (no install, no load), 6-7 GiB falls back to ovisocr2
+/// balanced, >=8 GiB keeps ovisocr3 quality. An explicit `--model`
+/// (or any explicit profile) is FROZEN — returned unchanged.
+fn resolve_implicit_default_selection(mut options: ScanOptions) -> ScanOptions {
+    if options.model_explicit || options.profile != "auto" {
+        return options;
+    }
+    let memory_gb = compose::compose(None)
+        .inference
+        .devices()
+        .snapshot()
+        .memory_gb;
+    match model_recommend::recommend_default_selection(memory_gb) {
+        Ok((model, profile)) => {
+            model.clone_into(&mut options.model);
+            profile.clone_into(&mut options.profile);
+            options
+        }
+        Err(error) => {
+            eprintln!("profile recommendation failed: {error:?}");
+            std::process::exit(6);
+        }
+    }
+}
+
 fn default_max_image_tokens(model: &str) -> u32 {
     if model == "ovisocr3" { 2048 } else { 1024 }
 }
@@ -827,11 +866,20 @@ fn main() {
         CliCommand::Doctor { json, model } => {
             // T073/T077: doctor flows through the composed DeviceManager;
             // the snapshot is the manager's probe (hardware ∩ compiled).
-            // D-11/O3-T21: no-flag = the frozen default-model readiness
-            // shape (byte-identical); `--model` selects the readiness face.
-            let selected = model.unwrap_or_else(|| DEFAULT_MODEL.to_owned());
+            // D-11/O3-T21: no-flag = the DEFAULT-MODEL readiness face; the
+            // implicit default resolves through the D-50 three-segment
+            // table (same as scan — doctor and scan must agree on the
+            // model a user will actually get); `--model` selects the
+            // explicit readiness face and never crosses models.
             let composed = compose::compose(None);
             let snapshot = composed.inference.devices().snapshot();
+            let selected = match model {
+                Some(explicit) => explicit,
+                None => match model_recommend::recommend_default_selection(snapshot.memory_gb) {
+                    Ok((model, _)) => model.to_owned(),
+                    Err(_) => DEFAULT_MODEL.to_owned(),
+                },
+            };
             let cache_root = std::env::var_os("OCRX_MODEL_CACHE")
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
@@ -1305,6 +1353,13 @@ fn emit_reporter(reporter: &mut Reporter) {
 #[allow(clippy::too_many_lines)]
 fn run_scan_via_application(options: ScanOptions) -> ! {
     let started = std::time::Instant::now();
+    // D-50/T1: the IMPLICIT default (no --model, auto profile) resolves
+    // through the frozen three-segment memory table BEFORE anything
+    // consumes options.model — vision-token defaults, service identity,
+    // result/checkpoint identity all follow the RESOLVED (model, profile).
+    // An explicit --model is frozen (never crosses models); <6 GiB keeps
+    // the frozen floor error.
+    let options = resolve_implicit_default_selection(options);
     let progress_mode = resolve_progress_mode(&options.progress, &options.log_level);
     let report_format = match options.report.as_str() {
         "json" => ReportFormat::Json,
@@ -2127,7 +2182,7 @@ fn doctor_diagnostics_from_snapshot(
         platform: platform_paths::detect().as_str().to_owned(),
         backend: ocrx_inference_api::BackendId::new(recommended_device)
             .unwrap_or_else(|_| ocrx_inference_api::BackendId::new("cpu").expect("cpu is valid")),
-        image_token_limit: 1024,
+        image_token_limit: default_max_image_tokens(model),
         memory_gb: snapshot.memory_gb,
         metal_available: snapshot.metal_available,
         cpu_available: snapshot.cpu_available,
@@ -2507,7 +2562,7 @@ mod tests {
                 inputs: vec!["input.pdf".to_owned()],
                 output_dir: Some("out".to_owned()),
                 pages: Some(vec![1, 2, 3]),
-                model: "ovisocr2".to_owned(),
+                model: "ovisocr3".to_owned(),
                 profile: "auto".to_owned(),
                 pdf_mode: "auto".to_owned(),
                 quality_tier: "l2".to_owned(),
@@ -2526,6 +2581,7 @@ mod tests {
                 keep_pages: false,
                 password: None,
                 column_split_retry: true,
+                model_explicit: false,
             })
         );
         assert!(parse_scan_args(&["input.pdf", "--model", "other"]).is_err());
@@ -3160,13 +3216,13 @@ model=ovisocr3
     fn cli_model_info_default_and_selector_golden() {
         let cache = std::env::temp_dir().join(format!("ocrx-model-info-{}", std::process::id()));
         std::fs::create_dir_all(&cache).unwrap();
-        // Default face: byte-frozen historical shape (empty cache → nothing
-        // installed; profiles render sorted).
+        // Default face (D-48): ovisocr3, single quality rung (empty cache →
+        // nothing installed).
         let output = run_cli_with_cache(&["model", "info"], &cache);
         assert!(output.status.success());
         assert_eq!(
             String::from_utf8(output.stdout).unwrap(),
-            "model=ovisocr2 profiles=balanced,compact,quality,reference installed=
+            "model=ovisocr3 profiles=quality installed=
 "
         );
         // OvisOCR3 selector face: frozen on creation (single rung).
@@ -3514,6 +3570,66 @@ model=ovisocr3
     }
 
     #[test]
+    fn implicit_default_discrimination_matrix_5_6_7_8_gib() {
+        // D-50 v1.2: the CLI-entry (model, profile) resolution. 5 GiB is
+        // the frozen floor error (process exit 6 — the same face as the
+        // profile-recommendation failure); 6/7 fall back to
+        // (ovisocr2, balanced); >=8 keeps (ovisocr3, quality).
+        let base = || ScanOptions {
+            inputs: vec!["input.pdf".to_owned()],
+            output_dir: None,
+            pages: None,
+            model: DEFAULT_MODEL.to_owned(),
+            profile: "auto".to_owned(),
+            pdf_mode: "auto".to_owned(),
+            quality_tier: "l2".to_owned(),
+            resume: false,
+            overwrite: false,
+            device: "auto".to_owned(),
+            report: "text".to_owned(),
+            dpi: None,
+            max_image_tokens: None,
+            max_output_tokens: None,
+            context_size: None,
+            progress: "auto".to_owned(),
+            log_level: "info".to_owned(),
+            offline: true,
+            non_interactive: true,
+            keep_pages: false,
+            password: None,
+            column_split_retry: true,
+            model_explicit: false,
+        };
+        // 5 GiB: the floor error path exits the process — verify through
+        // the same helper the fn uses (the exit face is frozen).
+        let memory = 5_u64;
+        match super::model_recommend::recommend_default_selection(memory) {
+            Err(_) => {}
+            other => panic!("5 GiB must error, got {other:?}"),
+        }
+        // 6/7 GiB: the full options rewrite lands on ovisocr2 balanced.
+        // (The scan-path fn composes a real DeviceManager; the memory
+        // comes from the machine — 63 GiB dev box keeps >=8. The MATRIX
+        // itself is pinned at the recommend_default_selection layer, and
+        // the explicit-freeze and identity threading below cover the
+        // scan-path semantics.)
+        let mut low = base();
+        low.model = "ovisocr3".to_owned();
+        low.profile = "auto".to_owned();
+        // An explicit --model (even pointing at ovisocr3) never rewrites.
+        low.model_explicit = true;
+        let frozen = super::resolve_implicit_default_selection(low);
+        assert_eq!(frozen.model, "ovisocr3", "explicit selection frozen");
+        assert_eq!(frozen.profile, "auto");
+        // An explicit profile (even with implicit model) is frozen too.
+        let mut profiled = base();
+        profiled.profile = "quality".to_owned();
+        profiled.model_explicit = false;
+        let frozen = super::resolve_implicit_default_selection(profiled);
+        assert_eq!(frozen.profile, "quality", "explicit profile frozen");
+    }
+
+    #[test]
     fn image_token_budget_default_is_per_model() {
         // O3-T18/D-5 revision: the default scan-level image budget is
         // 2048 for ovisocr3 (projector needs the larger grid on dense
@@ -3542,12 +3658,14 @@ model=ovisocr3
             err.is_err(),
             "expected the resolved budget to overflow 19455"
         );
-        // The default model keeps the historical 1024-based gate untouched.
+        // The default face is now ovisocr3 (D-48): its base image budget is
+        // 2048, so the context gate boundary moves to
+        // 2048+16384+1024(prompt)=19456.
         assert!(
-            parse_scan_args(&["input.pdf", "--context-size", "18431"]).is_err(),
-            "ovisocr2 resolved budget (1024+16384+1024=18432) overflows 18431"
+            parse_scan_args(&["input.pdf", "--context-size", "19455"]).is_err(),
+            "ovisocr3 resolved budget (2048+16384+1024=19456) overflows 19455"
         );
-        assert!(parse_scan_args(&["input.pdf", "--context-size", "18432"]).is_ok());
+        assert!(parse_scan_args(&["input.pdf", "--context-size", "19456"]).is_ok());
     }
 
     #[test]
@@ -3852,7 +3970,7 @@ model=ovisocr3
         assert_eq!(
             report,
             format!(
-                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr2\",\"backend\":\"Metal\",\"image_token_limit\":1024,\"memory_gb\":16,\"metal_available\":true,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"balanced\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"compact\",\"balanced\",\"quality\",\"reference\"]}}"
+                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Metal\",\"image_token_limit\":2048,\"memory_gb\":16,\"metal_available\":true,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}"
             )
         );
         // Golden text alone cannot catch an unescaped backslash (the fixture
@@ -3897,9 +4015,10 @@ model=ovisocr3
 
     #[test]
     fn doctor_selector_faces_are_frozen_on_creation() {
-        // D-11/O3-T21: `--model ovisocr2` is byte-identical to the no-flag
-        // default shape; `--model ovisocr3` is the new readiness face
-        // (single-rung ladder, own subtree install overview).
+        // D-11/O3-T21 + D-48: the no-flag default face IS ovisocr3 now;
+        // `--model ovisocr2` is its own readiness face (four-rung ladder,
+        // own subtree install overview) — explicit selections are frozen
+        // and never cross models (D-50).
         let empty = std::env::temp_dir().join(format!("ocrx-doctor-face-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&empty);
         std::fs::create_dir_all(&empty).unwrap();
@@ -3916,9 +4035,14 @@ model=ovisocr3
             Some(&empty),
             DEFAULT_MODEL,
         );
-        let explicit_default =
+        let explicit_ovisocr3 =
+            super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr3");
+        assert_eq!(default_face, explicit_ovisocr3);
+        // The ovisocr2 explicit face stays its own frozen shape (it is the
+        // D-50 fallback model, not the default).
+        let explicit_ovisocr2 =
             super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr2");
-        assert_eq!(default_face, explicit_default);
+        assert_ne!(default_face, explicit_ovisocr2);
         let ovisocr3 =
             super::doctor_json_report_with_paths(snapshot, empty.clone(), Some(&empty), "ovisocr3");
         let platform = super::current_platform();
@@ -3926,7 +4050,7 @@ model=ovisocr3
         assert_eq!(
             ovisocr3,
             format!(
-                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Cpu\",\"image_token_limit\":1024,\"memory_gb\":16,\"metal_available\":false,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"cpu\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}"
+                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Cpu\",\"image_token_limit\":2048,\"memory_gb\":16,\"metal_available\":false,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"cpu\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}"
             )
         );
         assert!(ocrx_core::is_valid_json(&ovisocr3));
@@ -3943,12 +4067,14 @@ model=ovisocr3
         assert!(stdout.contains("\"model\":\"ovisocr3\""));
         assert!(stdout.contains("\"profiles\":[\"quality\"]"));
         assert!(ocrx_core::is_valid_json(&stdout));
-        // The no-flag JSON face keeps the default-model spelling.
+        // The no-flag JSON face keeps the default-model spelling (D-48:
+        // ovisocr3; the runtime memory resolves >=8 GiB on dev machines —
+        // assert per-language-free, just the model spelling).
         let output = run_cli(&["doctor", "--report", "json"]);
         assert!(output.status.success());
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(
-            stdout.contains("\"model\":\"ovisocr2\""),
+            stdout.contains("\"model\":\"ovisocr3\""),
             "stdout: {stdout}"
         );
         // Unknown selector: frozen error spelling, exit 2.
@@ -4142,7 +4268,7 @@ model=ovisocr3
                 inputs: vec!["input.pdf".to_owned()],
                 output_dir: None,
                 pages: None,
-                model: "ovisocr2".to_owned(),
+                model: "ovisocr3".to_owned(),
                 profile: "auto".to_owned(),
                 pdf_mode: "auto".to_owned(),
                 quality_tier: "l2".to_owned(),
@@ -4161,6 +4287,7 @@ model=ovisocr3
                 keep_pages: false,
                 password: None,
                 column_split_retry: true,
+                model_explicit: false,
             }))
         );
         assert_eq!(

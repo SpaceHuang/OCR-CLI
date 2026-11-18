@@ -233,6 +233,12 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
             .collect();
         let profile = recommend::recommend_profile(&names, resources.memory_gb)?;
         Ok(ocrx_inference_api::ProfileRecommendation {
+            // The recommend face is per-model by contract (an explicit
+            // --model never crosses models here); the implicit-default
+            // cross-model fallback lives in
+            // recommend::recommend_default_selection and is wired at the
+            // CLI entry where the implicit/explicit distinction is known.
+            model: model.clone(),
             rationale: format!("frozen memory ladder for {} GiB", resources.memory_gb),
             profile,
         })
