@@ -325,6 +325,7 @@ pub fn run_pages_with_session(
                                 &mut table_reread,
                                 session,
                                 config.max_output_tokens,
+                                attempts,
                             )?;
                             TerminalPage::Committed {
                                 page,
@@ -488,6 +489,7 @@ pub fn run_pages_with_session(
                                                 &mut table_reread,
                                                 session,
                                                 config.max_output_tokens,
+                                                attempts,
                                             )?;
                                             TerminalPage::Committed {
                                                 page: pending,
@@ -543,6 +545,7 @@ pub fn run_pages_with_session(
                                 &mut table_reread,
                                 session,
                                 config.max_output_tokens,
+                                attempts,
                             )?;
                             terminal.push(TerminalPage::Committed {
                                 page,
@@ -568,6 +571,7 @@ pub fn run_pages_with_session(
                     &mut table_reread,
                     session,
                     config.max_output_tokens,
+                    1,
                 )?;
                 terminal.push(TerminalPage::Committed {
                     page,
@@ -636,17 +640,34 @@ fn apply_reread_gate(
     table_reread: &mut Option<&mut dyn crate::region_provider::RegionProvider>,
     session: &mut dyn InferenceSession,
     max_output_tokens: u32,
+    attempts: u32,
 ) -> std::io::Result<()> {
     let Some(provider) = table_reread.as_deref_mut() else {
         return Ok(());
     };
+    // BLK-4 (plan D-18): a BAD page (retry-committed, attempts >= 2)
+    // always triggers the reread — F1-F5 gate only the attempt-1 path.
+    let always_trigger = attempts >= 2;
     let mut scoped = crate::reread::PageScopedProvider::new(provider, page);
     let mut decoder = crate::ocr::artifacts::SessionTableDecoder::new(
         session,
         max_output_tokens,
         &format!("page-{page}-table-reread"),
     );
-    crate::reread::apply_table_reread(image, artifact, &mut scoped, &mut decoder)?;
+    let stats = crate::reread::apply_table_reread(
+        image,
+        artifact,
+        &mut scoped,
+        &mut decoder,
+        always_trigger,
+    )?;
+    // BLK-6: per-table outcomes ride the artifact for the committed
+    // sidecar (page-NNNN.reread.json) — page-level counters cannot
+    // attribute multi-table pages.
+    if !stats.detail.is_empty() {
+        artifact.reread_detail_json = serde_json::to_string(&stats.detail)
+            .map_err(|error| std::io::Error::other(format!("reread detail serialize: {error}")))?;
+    }
     Ok(())
 }
 

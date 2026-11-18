@@ -514,6 +514,11 @@ pub struct PageArtifactResult {
     /// tables actually replaced on this page (0 when the pipeline is off).
     pub reread_tables: usize,
     pub reread_replaced: usize,
+    /// BLK-6 (review 2026-11-18): per-table reread outcomes serialized
+    /// (`RereadTableOutcome[]`); empty when the pipeline is off/skipped.
+    /// commit_terminal persists it as `page-NNNN.reread.json` so the B2
+    /// adjudicator can attribute multi-table pages per ordinal.
+    pub reread_detail_json: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
