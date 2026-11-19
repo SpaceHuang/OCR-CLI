@@ -4223,14 +4223,25 @@ model=ovisocr3
         assert!(stdout.contains("\"model\":\"ovisocr3\""));
         assert!(stdout.contains("\"profiles\":[\"quality\"]"));
         assert!(ocrx_core::is_valid_json(&stdout));
-        // The no-flag JSON face keeps the default-model spelling (D-48:
-        // ovisocr3; the runtime memory resolves >=8 GiB on dev machines —
-        // assert per-language-free, just the model spelling).
-        let output = run_cli(&["doctor", "--report", "json"]);
+        // BLOCK-1 (review 2026-11-19): the no-flag doctor face must agree
+        // with the scan's D-50 resolution — pinned per memory tier via
+        // OCRX_MEMORY_GB (the runner's own RAM must not leak into the
+        // assertion): 8 GiB -> ovisocr3/quality, 6 GiB -> ovisocr2/balanced
+        // with the fallback token face.
+        let output = run_cli_with_env(&["doctor", "--report", "json"], &[("OCRX_MEMORY_GB", "8")]);
         assert!(output.status.success());
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(
-            stdout.contains("\"model\":\"ovisocr3\""),
+            stdout.contains("\"model\":\"ovisocr3\"")
+                && stdout.contains("\"recommended_profile\":\"quality\""),
+            "stdout: {stdout}"
+        );
+        let output = run_cli_with_env(&["doctor", "--report", "json"], &[("OCRX_MEMORY_GB", "6")]);
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("\"model\":\"ovisocr2\"")
+                && stdout.contains("\"recommended_profile\":\"balanced\""),
             "stdout: {stdout}"
         );
         // Unknown selector: frozen error spelling, exit 2.
