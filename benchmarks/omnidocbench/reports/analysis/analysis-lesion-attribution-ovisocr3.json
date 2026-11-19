@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "artifact": "ovisocr3-lesion-attribution",
+  "note": "per-sample attribution of the <0.5 lesion population on the ovisocr3 default (r3-ovisocr3 eval); chronic = ovisocr2 also <0.5, o3-new = ovisocr3 regression that o2 rescues",
+  "tables": {
+    "total_below_0_5": 98,
+    "chronic": 73,
+    "o3_new_regressions": 25,
+    "chronic_mean_teds_o3": 0.1248,
+    "chronic_oracle_best_of_two": 0.154,
+    "o2_mean_on_chronic": 0.0933,
+    "zero_tables": 53,
+    "zero_tables_rows_ge_10": 48,
+    "zero_tables_cells_ge_100": 34,
+    "zero_tables_multi_col_header": 22,
+    "o3_new_by_source": {
+      "research_report": 14,
+      "academic_literature": 2,
+      "PPT2PDF": 1,
+      "exam_paper": 1,
+      "colorful_textbook": 3,
+      "note": 1,
+      "newspaper": 3
+    },
+    "o3_new_o2_scores": [
+      0.51,
+      0.57,
+      0.59,
+      0.62,
+      0.66,
+      0.66,
+      0.74,
+      0.76,
+      0.76,
+      0.77,
+      0.78,
+      0.93,
+      0.93,
+      0.94,
+      0.96,
+      0.96,
+      0.99,
+      0.99,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "formulas": {
+    "total_below_0_5": 29,
+    "chronic": 19,
+    "o3_new_regressions": 9,
+    "o3_new_o2_scores": [
+      0.84,
+      0.95,
+      0.97,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "chronic_mean_cdm_o3": 0.1192,
+    "chronic_oracle_best_of_two": 0.127,
+    "fuzzy_scan_subpopulation": {
+      "pages": 30,
+      "scored_samples": 18,
+      "o3_mean": 0.76,
+      "o2_mean": 0.692,
+      "best_of_two_oracle": 0.763,
+      "below_0_5": 4
+    }
+  },
+  "leverage": {
+    "fix_all_formula_below_0_5": "+0.35 Overall",
+    "fix_all_table_below_0_5": "+4.32 Overall",
+    "fuzzy_scan_formulas": "+~0.06 Overall (18 samples, 4 bad) — smallest lever"
+  }
+}
