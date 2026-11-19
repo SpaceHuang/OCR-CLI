@@ -960,17 +960,20 @@ fn main() {
             // D-50/BLOCK-1: the no-flag recommend face reports the SAME
             // (model, profile) the scan would resolve; an explicit --model
             // keeps the per-model recommendation (never crosses models).
-            let implicit_pair = if narrowed {
-                None
+            // D-50 scope (v1.2/re-review): the implicit pair rides ONLY the
+            // recommend face (scan-preparation advice). list/info are
+            // CATALOG faces — the frozen catalog default (ovisocr3) plus
+            // any explicit selector, machine-independent.
+            let (selected, implicit_profile) = if action == "recommend" && !narrowed {
+                match resolve_implicit_default_pair(false, "auto", snapshot.memory_gb) {
+                    Some(Ok(pair)) => (pair.0, Some(pair.1)),
+                    _ => (DEFAULT_MODEL.to_owned(), None),
+                }
             } else {
-                resolve_implicit_default_pair(false, "auto", snapshot.memory_gb)
-            };
-            let (selected, implicit_profile) = match &implicit_pair {
-                Some(Ok(pair)) => (pair.0.clone(), Some(pair.1.clone())),
-                _ => (
+                (
                     model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_owned()),
                     None,
-                ),
+                )
             };
             let model = ocrx_inference_api::ModelId::new(&selected)
                 .unwrap_or_else(|_| unreachable!("model id validated by the CLI parser"));
