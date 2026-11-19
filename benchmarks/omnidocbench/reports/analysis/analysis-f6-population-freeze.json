@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "artifact": "f6-population-freeze",
+  "note": "v1.1 freeze per review BLK-3: per-page detection_N/block_N/emission-shape/trigger-disposition for the F6 v1 population (block-level zero-table pages only; partial-output pages excluded per BLK-1)",
+  "method": "detection_N = sidecar table regions (r3 campaign regions); block_N = HtmlTable blocks in the committed page_json of the ovisocr3 eval scan; emission shape classified from page-0001.md",
+  "population": {
+    "raw_replace": [
+      {
+        "img": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357.png",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "page-c99421f9-4435-44a9-82f8-7b044bb0ee1d.png",
+        "gt_tables": 2,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "page-69c15957-4d6d-485c-a244-04a1a8d29d37.png",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg",
+        "gt_tables": 2,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "jiaocaineedrop_2017.pdf_0.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "jiaocaineedrop_jiaocai_needrop_en_1898.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "scihub_ijop.12033.pdf_5.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      },
+      {
+        "img": "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27.jpg",
+        "gt_tables": 1,
+        "reason": "marker_to_end_clean"
+      }
+    ],
+    "empty_append": [
+      {
+        "img": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png",
+        "gt_tables": 1,
+        "reason": "empty_md"
+      },
+      {
+        "img": "jiaocaineedrop_jiaocai_needrop_en_1417.jpg",
+        "gt_tables": 3,
+        "reason": "empty_md"
+      },
+      {
+        "img": "jiaocaineedrop_jiaocai_needrop_en_3713.jpg",
+        "gt_tables": 1,
+        "reason": "empty_md"
+      },
+      {
+        "img": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+        "gt_tables": 4,
+        "reason": "empty_md"
+      },
+      {
+        "img": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+        "gt_tables": 4,
+        "reason": "empty_md"
+      }
+    ],
+    "excluded": [
+      {
+        "img": "yanbaopptmerge_d346b889f1d85c61950a71d4b0ac2752.pdf_89.jpg",
+        "gt_tables": 1,
+        "reason": "raw_table_with_tail_prose"
+      },
+      {
+        "img": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg",
+        "gt_tables": 2,
+        "reason": "raw_table_with_tail_prose"
+      },
+      {
+        "img": "jiaocaineedrop_jiaocai_needrop_en_922.jpg",
+        "gt_tables": 1,
+        "reason": "text_only_no_safe_anchor"
+      },
+      {
+        "img": "eastmoney_c2abc680754ea4676c752cb3bda24323046ece560f8b23ce66b705887c9bcf9b.pdf_16.jpg",
+        "gt_tables": 1,
+        "reason": "text_only_no_safe_anchor"
+      }
+    ]
+  },
+  "counts": {
+    "raw_replace_pages": 13,
+    "raw_replace_tables": 15,
+    "empty_append_pages": 5,
+    "empty_append_tables": 13,
+    "excluded_pages": 4,
+    "excluded_tables": 5,
+    "trigger_tables_total": 28
+  },
+  "lever": "trigger tables (28) x 0.86 / 665 / 3 x 100 = +1.21 Overall ceiling",
+  "excluded_reasons": "raw_table_with_tail_prose (2 pages: 1-2 non-table lines follow the malformed marker — marker-to-end replacement would delete them) and text_only_no_safe_anchor (2 pages: table content embedded in prose, no contiguous anchor)"
+}
