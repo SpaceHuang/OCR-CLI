@@ -80,5 +80,16 @@
     "fix_all_formula_below_0_5": "+0.35 Overall",
     "fix_all_table_below_0_5": "+4.32 Overall",
     "fuzzy_scan_formulas": "+~0.06 Overall (18 samples, 4 bad) — smallest lever"
+  },
+  "zero_table_prediction_side": {
+    "note": "53 zero-score tables categorized by the PREDICTION side (ovisocr3 eval predictions): the dominant failure is the model emitting NO <table> block at all (content degrades to plain text) — NOT GT noise",
+    "pred_no_table_block": 32,
+    "pred_has_table": 21,
+    "of_which_row_mismatch_gt": 10,
+    "pred_missing_file": 0,
+    "sidecar_table_region_detected_on": "53/53 (100%) — the region signal is fully available",
+    "mechanism_gap": "M4 triggers F1-F5 inspect OUTPUT table HTML; pages with NO output table never trigger, so the reread pipeline never reaches the largest lesion population. A missing-table branch (F6: detected table region with no matching output table block -> crop-reread that region) covers all 53.",
+    "lever": "53 zero-score tables; lifting them to the corpus-average table quality (~0.86) is worth ~+2.9 Overall points — far larger than the M4 campaign population (already-emitted suspect tables, delta ~0)",
+    "caveat": "the B2 campaign measured reread on already-emitted tables (delta ~0); this population is untested — the reread goes from nothing to something, but output quality must be measured, and the no-original comparison changes the fail-closed design (compare-keep has no baseline; needs an acceptance rule)"
   }
 }
