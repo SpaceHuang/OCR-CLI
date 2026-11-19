@@ -734,6 +734,7 @@ dependencies = [
  "ocrx-core",
  "ocrx-inference",
  "ocrx-inference-api",
+ "ocrx-models",
  "ocrx-output",
  "ocrx-scan",
  "ocrx-skill",

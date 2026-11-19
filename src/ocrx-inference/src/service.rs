@@ -794,6 +794,73 @@ mod tests {
     }
 
     #[test]
+    fn d50_matrix_static_identity_5_6_7_8_gib() {
+        // D-50 v1.2 service face. The scan path resolves the cross-model
+        // fallback at the CLI entry (resolve_implicit_default_selection),
+        // so the service only ever sees an EXPLICIT (model, profile) —
+        // these assertions pin that face per memory tier:
+        //   ovisocr3 + auto is FROZEN to quality at every tier >= 6 GiB
+        //   (single-rung ladder; explicit never crosses models), and
+        //   <6 GiB keeps the frozen floor error.
+        //   ovisocr2 + auto (the fallback target) resolves balanced in the
+        //   whole 6-8 GiB band.
+        for memory_gb in [6_u64, 7, 8, 16, 64] {
+            let backend = Arc::new(Mutex::new(FakeRuntimeBackend::new()));
+            let (service, root) = service_with(
+                backend,
+                FakeSystemProbe {
+                    memory_gb: Some(memory_gb),
+                    ..FakeSystemProbe::default()
+                },
+            );
+            let statik = service
+                .static_identity(&ModelId::new("ovisocr3").unwrap(), "auto")
+                .unwrap();
+            assert_eq!(statik.model.model.as_str(), "ovisocr3", "model frozen");
+            assert_eq!(statik.model.profile.as_str(), "quality", "{memory_gb} GiB");
+            assert_eq!(statik.adapter.adapter.as_str(), "ovisocr3");
+            let _ = std::fs::remove_dir_all(root);
+        }
+        for memory_gb in [6_u64, 7] {
+            let backend = Arc::new(Mutex::new(FakeRuntimeBackend::new()));
+            let (service, root) = service_with(
+                backend,
+                FakeSystemProbe {
+                    memory_gb: Some(memory_gb),
+                    ..FakeSystemProbe::default()
+                },
+            );
+            // The fallback target is ready: the scan passes the RESOLVED
+            // explicit profile (ovisocr2, balanced) — the service's own
+            // auto ladder (compact at <12 GiB) is never in this path.
+            let statik = service
+                .static_identity(&ModelId::new("ovisocr2").unwrap(), "balanced")
+                .unwrap();
+            assert_eq!(statik.model.model.as_str(), "ovisocr2");
+            assert_eq!(statik.model.profile.as_str(), "balanced", "{memory_gb} GiB");
+            let _ = std::fs::remove_dir_all(root);
+        }
+        // <6 GiB: the frozen floor error (no install, no load).
+        for memory_gb in [4_u64, 5] {
+            let backend = Arc::new(Mutex::new(FakeRuntimeBackend::new()));
+            let (service, root) = service_with(
+                backend,
+                FakeSystemProbe {
+                    memory_gb: Some(memory_gb),
+                    ..FakeSystemProbe::default()
+                },
+            );
+            let error = service
+                .static_identity(&ModelId::new("ovisocr3").unwrap(), "auto")
+                .unwrap_err();
+            assert!(
+                error.to_string().contains("6 GiB"),
+                "{memory_gb} GiB must hit the floor: {error}"
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
     fn static_identity_resolves_auto_and_carries_the_registry_values() {
         let backend = Arc::new(Mutex::new(FakeRuntimeBackend::new()));
         let (service, root) = service_with(backend, FakeSystemProbe::default());

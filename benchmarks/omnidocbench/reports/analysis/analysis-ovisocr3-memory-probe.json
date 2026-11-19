@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "artifact": "ovisocr3-memory-probe",
+  "method": "PowerShell Start-Process + Get-Process sampling every 500ms over one full scan (a degenerated page exercising the complete retry ladder), same page both models",
+  "page": "color_textbook_zhonggaokao_..._5A电子课本_page_006 (the control2 campaign's degenerated page)",
+  "binary": "C:/t/m23/tgt/release/ocrx.exe (feat/degeneration-rescue@8f8dacf build)",
+  "ovisocr3_quality": {
+    "peak_working_set_gb": 1.42,
+    "peak_commit_gb": 5.39,
+    "exit": 0
+  },
+  "ovisocr2_balanced": {
+    "peak_working_set_gb": 0.89,
+    "peak_commit_gb": 1.98,
+    "exit": 0
+  },
+  "conclusion": "8 GiB floor: ovisocr3 peak commit 5.39 GB is too tight on an 8 GiB machine, comfortable on 16 GiB; the fallback contract in D-50 (v1.1) freezes this boundary",
+  "note": "weight file bytes (811/578 MB) are NOT runtime memory — the v1.0 G5 PASS based on them is revoked in v1.1"
+}

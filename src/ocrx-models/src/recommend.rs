@@ -47,9 +47,65 @@ pub fn recommend_profile(
     )))
 }
 
+/// D-50 (ovisocr3-default-switch plan, v1.2): the implicit-default
+/// three-segment selection — `memory_gb` is SYSTEM physical RAM, and the
+/// return is the parsed `(model, profile)` pair. Scope: ONLY the implicit
+/// default (no `--model` given); an explicit model never crosses models.
+///
+/// Discrimination matrix (frozen, G3/T1 real-orchestration acceptance):
+/// 5 GiB errors, 6 GiB falls back, 7 GiB falls back, 8 GiB picks
+/// ovisocr3 quality — both exact-boundary directions pinned.
+pub fn recommend_default_selection(
+    memory_gb: u64,
+) -> Result<(&'static str, &'static str), ocrx_inference_api::InferenceError> {
+    const OVISOCR2: &str = "ovisocr2";
+    const OVISOCR3: &str = "ovisocr3";
+    if memory_gb < 6 {
+        // The frozen global floor: no install, no load — an explicit error
+        // (never a silent fallback onto ovisocr2 balanced).
+        return Err(ocrx_inference_api::InferenceError::UnsupportedProfile(
+            format!("memory below the 6 GiB profile floor ({memory_gb} GiB)"),
+        ));
+    }
+    if memory_gb < 8 {
+        Ok((OVISOCR2, "balanced"))
+    } else {
+        Ok((OVISOCR3, "quality"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_selection_discrimination_matrix_5_6_7_8_gib() {
+        // D-50 v1.2 frozen matrix: 5 errors, 6/7 fall back, 8 picks
+        // ovisocr3 — both exact-boundary directions pinned.
+        match recommend_default_selection(5) {
+            Err(ocrx_inference_api::InferenceError::UnsupportedProfile(detail)) => {
+                assert!(detail.contains("6 GiB"), "detail: {detail}");
+            }
+            other => panic!("5 GiB must error, got {other:?}"),
+        }
+        assert_eq!(
+            recommend_default_selection(6).unwrap(),
+            ("ovisocr2", "balanced")
+        );
+        assert_eq!(
+            recommend_default_selection(7).unwrap(),
+            ("ovisocr2", "balanced")
+        );
+        assert_eq!(
+            recommend_default_selection(8).unwrap(),
+            ("ovisocr3", "quality")
+        );
+        // Comfortable headroom stays on ovisocr3.
+        assert_eq!(
+            recommend_default_selection(64).unwrap(),
+            ("ovisocr3", "quality")
+        );
+    }
 
     #[test]
     fn recommendation_matches_the_frozen_memory_ladder() {

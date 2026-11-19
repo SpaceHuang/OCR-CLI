@@ -1,0 +1,77 @@
+# OvisOCR3 默认模型切换计划（2026-11-18，v1.2 重审修订）
+
+> **v1.2（重审 BLOCK-1 处置）**：D-50 与 T1 的回退区间统一为无交集三段（`<6 GiB` 报错 / `6 ≤ RAM < 8 GiB` 回退 ovisocr2 balanced / `≥ 8 GiB` 选 ovisocr3 quality），冻结 5/6/7/8 GiB 判别矩阵；修正 6–8 GiB 的历史行为描述；T1–T2 工程量改判中等。重审报告：`docs/review/ovisocr3-default-switch-plan-2026-11-18-re-review.md`。
+
+> **v1.1（评审 BLOCK-1/2/3 处置）**：G1 按原始明细诚实改判 FAIL → D-52 显式冻结 text 回退接受阈值后重判；D-50 重写为实测回退契约（峰值内存已归档）；T1 重估为解析选择契约贯穿工程。评审报告：`docs/review/ovisocr3-default-switch-plan-2026-11-18-review.md`（BLOCK 全文）。
+
+**目标**：将扫描默认模型从 `ovisocr2`（balanced / Q5_K_M）切换为 `ovisocr3`（quality / Q8_0，冻结 revision `7be644a3`），并冻结验收门槛与工程任务。
+
+**基线证据（已实测，同工具链/同 GT/同 1651 页官方基准）**：
+
+| 项 | ovisocr2 balanced | ovisocr3 quality | Δ |
+|---|---|---|---|
+| Overall | 88.4484 | **90.8698** | **+2.4214** |
+| text | 0.9277 | 0.9344 | +0.0067 |
+| CDM | 0.9430 | 0.9772 | +0.0341 |
+| TEDS | 0.7827 | 0.8145 | +0.0319 |
+| 退化页 | 83 | **59** | −24 |
+| 截断页 | 4 | **0** | −4 |
+| 全量耗时 | 3.56 h | **1.81 h** | 2× |
+
+分语言明细（官方逐页明细 + GT page_attribute；text 全部语言如实列出，含 v1.0 遗漏的 `other`）：
+
+| 语言 | 页数 | text (o2→o3) | Δtext | TEDS (o2→o3) | ΔTEDS |
+|---|---|---|---|---|---|
+| english | 755 | 0.9400 → 0.9513 | **+0.0113** | 0.6324 → 0.7624 | **+0.1300** |
+| simplified_chinese | 765 | 0.9170 → 0.9194 | +0.0024 | 0.8785 → 0.8521 | **−0.0264** |
+| en_ch_mixed | 116 | 0.9194 → 0.9171 | **−0.0023** | 0.7606 → 0.7570 | −0.0036 |
+| traditional_chinese | 13 | 0.8899 → 0.9629 | +0.0730 | 0.8417 → 0.8179 | −0.0238 |
+| other | **2** | 0.9956 → 0.9453 | **−0.0503** | （无表格样本） | — |
+
+**v1.0 的"无任何语言回退"口径为假，G1 原口径应判 FAIL**——本表即为更正后的判定依据。`other` 的构成（逐页核对）：全基准仅 2 页，其中 1 页两模型 edit 距离逐位相同（0.00256），回退全部来自另 1 页（0.0063 → 0.1069）；该页为非中英 语种样本。
+
+## 决策
+
+| ID | 决策 | 理由 |
+|---|---|---|
+| D-48 | 切换门槛冻结为下列 G1–G5；全过 → 切默认；任一不过 → 不切换，问题入档 | 默认模型切换是行为变更，必须走与 M4 同级的门禁纪律 |
+| D-49 | 中文表格 TEDS 局部回退（≤0.03/语言）**显式接受**，不作为阻断；跟进项 = 按内容/语言的双模型路由（另立计划） | 英文表格 +0.130（243 表）远大于中文 −0.026（382 表）的净损耗；整体 +0.032 且 Overall +2.42 |
+| D-52 | **text 回退接受阈值显式冻结**（替代 v1.0 的"无回退"口径）：① 样本 ≥ 5 页的语言，text 回退 ≤ 0.005；② 样本 < 5 页的语言不构成阻断（逐页归档备查）。按此口径 en_ch_mixed −0.0023 ✓、other（2 页，实际差异 = 1 页）✓；G1 以 D-52 口径重判 PASS | v1.0 的"无回退"表述与自身数据矛盾（评审 BLOCK-1 成立）。显式阈值 + 样本量条件比绝对化表述更诚实：other 的 −0.0503 全部来自 1 个非中英语种页（另一页逐位相同），统计上不可靠且不影响总体 text +0.0067（1557 页） |
+| D-50 | **内存回退契约（实测冻结，v1.2 无交集三段）**——隐式默认 + auto 的系统物理 RAM：① `< 6 GiB`：维持既有 `UnsupportedProfile` 报错（不安装、不加载 ovisocr2 balanced）；② `6 ≤ RAM < 8 GiB`：解析为 `(ovisocr2, balanced)`（回退域）；③ `≥ 8 GiB`：解析为 `(ovisocr3, quality)`。内存类型 = 系统物理 RAM；**作用域 = 仅隐式默认选择**（`--model` 未传）——显式 `--model ovisocr3` 在任何内存档冻结不跨模型回退（用户点名就要，装不上给清晰错误）。判别矩阵（G3/T1 必测）：**5 GiB 报错 / 6 GiB 回退 / 7 GiB 回退 / 8 GiB 选 ovisocr3**（两个边界方向的恰好值入列） | 依据 = 同一退化页双模型实测（峰值提交内存 ovisocr3 **5.39 GB** / ovisocr2 1.98 GB）——可复核产物：`benchmarks/omnidocbench/reports/analysis/analysis-ovisocr3-memory-probe.json`；权重文件字节数不是运行时内存（重审：主体已闭环，仅区间矛盾残留）。历史行为口径更正（重审非阻断清理）：现行代码 <6 GiB 报错、6–8 GiB 在 ovisocr3 单 profile 下回落选 quality（旧 ovisocr2 默认下推荐 compact）——切换后 6–8 GiB 的行为变化是"ovisocr3 quality → 回退 ovisocr2 balanced"，`<6 GiB` 行为不变 |
+| D-51 | M4 表格重读**维持挂起**，但在 ovisocr3 基线上重新评估剩余亏损结构（worst 带已被模型本身救到大半，mid/bad-low 为主）后再议 | 挂起依据（ovisocr2 上 Δ≈0）不自动迁移到新模型 |
+
+## 验收门（G1–G5）
+
+| 门 | 冻结口径 | 当前实测 | 判定 |
+|---|---|---|---|
+| G1 质量 | Overall(all) ≥ 89.5；分语言 text 按 D-52 阈值（≥5 页语言回退 ≤0.005，<5 页不阻断）；分语言 TEDS 中文回退 ≤ 0.03 | 90.87 ✓；en_ch_mixed −0.0023 ✓ / other n=2 不阻断（v1.0 口径下 G1 FAIL，D-52 冻结后重判）；zh −0.026 ✓ | **PASS（按 D-52 修订口径；v1.0 口径 = FAIL，如实留痕）** |
+| G2 账本 | 全量退化页 ≤ 83 且截断页 ≤ 4 | 59 / 0 | **PASS** |
+| G3 工程 | 默认面切换（CLI 常量/推荐回退链/doctor/双语文档/发布模板）+ 测试更新；回退链验证 | **已执行**（T1/T2）：三段表 `recommend_default_selection` 判别矩阵单测（5/6/7/8 + 余量）；CLI 入口解析（显式冻结断言）；service 面（ovisocr3+auto 各档冻结 quality、回退带 (ovisocr2, balanced) 就位、<6 GiB 地板错误不安装不加载）；doctor/scan 同表解析 + per-model token；默认面 golden 全部更新 | **PASS** |
+| G4 确定性 | 30 页金集（沿用 bm23 金集模式）双跑逐字节一致 | **已执行**：首轮双跑抓出 `artifact_sha256` 确定性 bug（canonicalize 图片路径 strip 失败 → 静默回退绝对路径进哈希）——修复 + 回归测试后重跑 **275 产物逐字节一致 PASS**；checkpoint 身份面确认默认解析为 (ovisocr3, quality) | **PASS（修复一个真确定性缺陷后）** |
+| G5 档案 | 速度/内存/账本归档 | 账本+速度已归档（上表）；**运行时峰值内存已实测归档**（D-50：同页双模型对照，提交内存 5.39/1.98 GB） | **PASS（v1.0 的 PASS 撤销重判——彼时仅有权重文件字节数，无运行时证据）** |
+
+## 工程任务
+
+| 任务 | 内容 | 验收 |
+|---|---|---|
+| T1 | **解析选择契约贯穿（评审 BLOCK-3 重估）**：① 推荐接口返回 `(model, profile)` 二元组（`ProfileRecommendation` 增加 model 字段），`service.rs` 的 manifest/安装/final identity/`static_identity` 全部改用解析后的 model——不得只换 profile 保留原 model；② 模型相关默认值在回退后**重新解析**：视觉 token（ovisocr3=2048 / ovisocr2=1024）在 `prepare` 前按实际选择的模型计算；③ doctor 的 `image_token_limit` 不再硬编码 1024，报告实际默认面的对应值；④ `DEFAULT_MODEL` → `ovisocr3`；⑤ CLI 区分隐式默认与显式 `--model`（D-50 作用域） | **真实编排判别测试**（非仅推荐函数单测）：判别矩阵 5 GiB 报错（负向：不安装不加载）/ 6 GiB 回退 `(ovisocr2, balanced)` / 7 GiB 回退 / 8 GiB `(ovisocr3, quality)`；显式 `--model ovisocr3` 在 6–8 GiB 区间保持冻结不跨模型回退；回退后 session/result/checkpoint 身份 = ovisocr2（model/adapter/资产）；回退后请求视觉 token = 1024；static_identity 与 prepare 选择一致；doctor 报告与实际扫描一致 |
+| T2 | 双语文档 + 发布模板的默认模型面更新（O3 阶段已有双模型文档，改默认指向） | 文档 diff 评审 |
+| T3 | G4 确定性双跑（30 页金集 ×2，逐字节比对） | 零差异 |
+| T4 | 全门记录 + 裁定落档（本文件更新 G3/G4 判定） | 记录完整 |
+| T5（后续，独立计划） | 双模型路由（按语言/表格带选模型；oracle：逐表取优 TEDS = 0.854） | — |
+
+## 明确不做
+
+- 不在本计划内实现双模型路由（D-49 跟进项独立成计划）
+- 不在本计划内重开 M4 表格重读（D-51；重开需先完成 ovisocr3 基线的剩余亏损结构评估）
+- 不动 `feat/next-phase-quality` 分支（M4 挂起件 + 评测基建原样保留）
+
+## 执行记录（G3/G4，2026-11-19）
+
+- T1/T2 落于 `feat/ovisocr3-default-switch` 分支；41 套件 workspace 全绿、fmt/clippy 干净。
+- G4 首轮双跑发现真确定性缺陷：`artifact_sha256` 的 manifest 对 canonicalize 图片路径静默回退绝对路径——修复为 fail-closed 相对名归一并加回归测试；修复后重跑 30 页金集双跑 275 产物逐字节一致。
+- 默认面生效证据：doctor 无旗标 = `ovisocr3/2048`；`--model ovisocr2` = `ovisocr2/1024`；金集 result.json model 面 = `(ovisocr3, quality, revision 7be644a3)`。
+
+## 成本估算
+
+T1–T2：**中**——T1 的推荐接口签名变更波及 recommend/management/service/CLI 四处 + 身份链接线 + 编排判别测试，T2 的默认面文档需逐处核对模型相关参数表述（v1.1/v1.2 已改判；本行 v1.1 替换未落盘，重审两次指出后修正）；T3：30 页 ×2 扫描 ≈ 10 分钟；T4：文档。总计 ≈ 1–1.5 个工程日 + 评测时间（已完成部分不计）。

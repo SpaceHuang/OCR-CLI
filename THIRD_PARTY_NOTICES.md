@@ -6,7 +6,7 @@ OCR-CLI source code is intended to be distributed under the Apache License, Vers
 
 ## OvisOCR2
 
-OCR-CLI uses OvisOCR2 as its default supported OCR model for v0.1.
+OCR-CLI uses OvisOCR2 as a supported OCR model (the v0.1 initial default; since the D-48 default switch it serves as the low-memory fallback model).
 
 - Original model: [ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2)
 - Technical report: [OvisOCR2 Technical Report](https://arxiv.org/abs/2607.13639)
@@ -21,7 +21,7 @@ The OvisOCR2 manifest identifies [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen
 
 ## OvisOCR3
 
-OCR-CLI additionally supports OvisOCR3 as an explicitly selected (`--model ovisocr3`) OCR model; it is never the default.
+OCR-CLI uses OvisOCR3 as its default supported OCR model since the D-48 default switch (full-set benchmark Overall 90.87 vs 88.45).
 
 - Original model: [ATH-MaaS/OvisOCR3](https://huggingface.co/ATH-MaaS/OvisOCR3)
 - Technical report: [OvisOCR3 Technical Report](https://arxiv.org/abs/2610.33066)

@@ -2498,12 +2498,27 @@ pub fn artifact_sha256(markdown: &Path, root: &Path) -> io::Result<String> {
     files.sort();
     let mut manifest = Vec::new();
     for file in files {
-        manifest.extend_from_slice(
-            file.strip_prefix(root)
-                .unwrap_or(&file)
-                .to_string_lossy()
-                .as_bytes(),
-        );
+        // G4 regression fix (found by the 30-page golden double-run): the
+        // manifest must carry the ROOT-RELATIVE name, never the absolute
+        // path. The images directory arrives canonicalized (`\?\...` on
+        // Windows), so a plain strip_prefix(root) fails for it — the old
+        // `unwrap_or(&file)` silently fell back to the ABSOLUTE path,
+        // baking the run's location into the checkpoint hash (identical
+        // content hashed differently at different roots). Try the plain
+        // root, then the canonicalized root; anything else is a loud
+        // error (fail-closed, no path can leak into the hash).
+        let relative = file.strip_prefix(root).ok().or_else(|| {
+            root.canonicalize()
+                .ok()
+                .and_then(|canonical_root| file.strip_prefix(&canonical_root).ok())
+        });
+        let relative = relative.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("artifact path escapes the page root: {}", file.display()),
+            )
+        })?;
+        manifest.extend_from_slice(relative.to_string_lossy().as_bytes());
         manifest.push(0);
         manifest.extend_from_slice(&fs::read(&file)?);
     }
@@ -5699,6 +5714,54 @@ audit=none
             "<!-- page: 1 -->\nnative\n<!-- page: 2 -->\nocr"
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn artifact_hash_is_path_independent_for_identical_content() {
+        // G4 regression (found by the switch's 30-page golden double-run):
+        // two runs of the same page at DIFFERENT absolute roots must hash
+        // identically. The pre-fix manifest silently fell back to the
+        // ABSOLUTE path whenever the images directory (canonicalized,
+        // `\?\...` on Windows) failed strip_prefix against the plain
+        // root — baking the run's location into the checkpoint hash.
+        let root_a = std::env::temp_dir().join(format!("ocrx-artifact-a-{}", std::process::id()));
+        let root_b = std::env::temp_dir()
+            .join("deeper")
+            .join(format!("ocrx-artifact-b-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root_a);
+        let _ = fs::remove_dir_all(root_b.ancestors().nth(1).unwrap());
+        for root in [&root_a, &root_b] {
+            fs::create_dir_all(root).unwrap();
+            fs::create_dir_all(root.join("images")).unwrap();
+            fs::write(
+                root.join("page-0001.md"),
+                "<img src=\"images/page-0001-figure-001.png\" />
+
+body
+",
+            )
+            .unwrap();
+            fs::write(
+                root.join("page-0001.json"),
+                r#"{"schema_version":1,"page_number":1,"termination":"eos","warnings":[],"blocks":[{"type":"visual_region","bbox":[10,20,300,400]}]}"#,
+            )
+            .unwrap();
+            fs::write(
+                root.join("images").join("page-0001-figure-001.png"),
+                b"png-bytes",
+            )
+            .unwrap();
+        }
+        let h1 = super::artifact_sha256(&root_a.join("page-0001.md"), &root_a).unwrap();
+        let h2 = super::artifact_sha256(&root_b.join("page-0001.md"), &root_b).unwrap();
+        assert_eq!(h1, h2, "identical content must hash identically");
+        // An artifact path escaping the page root is a loud error now
+        // (the old fallback silently leaked absolute paths into the hash).
+        let escaped = root_a.join("page-0001.md");
+        let other_root = root_b.join("nonexistent");
+        assert!(super::artifact_sha256(&escaped, &other_root).is_err());
+        let _ = fs::remove_dir_all(&root_a);
+        let _ = fs::remove_dir_all(root_b.ancestors().nth(1).unwrap());
     }
 
     #[test]
