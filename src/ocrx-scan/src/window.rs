@@ -894,6 +894,15 @@ pub(crate) fn commit_terminal(
                 *reread_replaced += artifact.reread_replaced as u64;
                 warnings.extend(artifact_warnings.iter().cloned());
                 write_render_audit(root, page, image.audit)?;
+                // M4.1 (F6): per-region reread outcomes — persisted whenever
+                // the F6 branch ran (zero-table-block pages), including the
+                // all-rejected case (attribution matters for the spike).
+                if !artifact.reread_detail_json.is_empty() {
+                    atomic_write(
+                        root.join(format!("page-{page:04}.reread.json")),
+                        artifact.reread_detail_json.as_bytes(),
+                    )?;
+                }
                 // Raw-output sidecar: preserved whenever the page
                 // degenerated or lost text to repetition cleaning.
                 let raw_pointer = if artifact.degenerated
