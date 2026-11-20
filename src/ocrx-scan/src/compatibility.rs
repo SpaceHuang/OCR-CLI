@@ -188,7 +188,7 @@ mod tests {
         let compatibility = ocr_compatibility("hash", pdf(), &identity(), &config);
         let ocr = compatibility.ocr.as_ref().unwrap();
         assert_eq!(ocr.reread_prompt_version, "table-reread-v1");
-        assert_eq!(ocr.reread_rules_generation, 1);
+        assert_eq!(ocr.reread_rules_generation, 2);
         assert!(ocr.table_reread);
         let off = ocr_compatibility("hash", pdf(), &identity(), &ScanOcrConfig::default());
         let off_ocr = off.ocr.as_ref().unwrap();
@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(on.layout_model_id, "pp-doclayout-v2");
         assert_eq!(on.layout_model_assets_sha256, "hash-lm");
         assert_eq!(on.reread_prompt_version, "table-reread-v1");
-        assert_eq!(on.reread_rules_generation, 1);
+        assert_eq!(on.reread_rules_generation, 2);
         let off = ScanOcrConfig::default().with_reread(None);
         assert!(!off.table_reread);
         assert_eq!(off.reread_prompt_version, "");

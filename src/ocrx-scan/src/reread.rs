@@ -344,7 +344,10 @@ pub const IDENTITY_T2_COVERAGE_OF_REREAD: f64 = 0.25;
 /// generation bump — `reread_rules_generation` carries it into the
 /// checkpoint so artifacts never reuse across rule changes.
 /// 1 = the calibrated set adjudicated by the B0'/D-47 work.
-pub const REREAD_RULES_GENERATION: u32 = 1;
+/// v1.2 (M4.1): bumped 1 -> 2 — the F6 missing-table branch is a new
+/// trigger input (behavior change); generation-1 artifacts never reuse
+/// against generation-2 runs and vice versa (D-55).
+pub const REREAD_RULES_GENERATION: u32 = 2;
 
 /// Content-identity verdict (D-47): Some(replace_ok) when both coverages
 /// clear the floor and thresholds; None = inconclusive (keep original).
@@ -488,6 +491,235 @@ pub fn pairing_verdict(
     Ok(row_order)
 }
 // ---------------------------------------------------------------------------
+// M4.1 F6 missing-table branch (plan v1.2, D-53..D-58): zero-table-block
+// pages whose sidecar regions ARE tables - the model emitted no <table>
+// block (content degraded to plain text or truncated mid-emission). The
+// reread goes from nothing to something; compare-keep has no baseline, so
+// adoption is gated by emission shape + structural validity + content
+// attribution (raw pages) instead.
+// ---------------------------------------------------------------------------
+
+/// The markdown-level emission shape of a zero-table-block page (D-53).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum F6EmissionShape {
+    /// Whitespace-only output - the reread tables are appended.
+    Empty,
+    /// A single unclosed `<table` marker with no non-table prose after it;
+    /// carries the marker byte offset (the replacement anchor).
+    RawSingle { marker_pos: usize },
+    /// Unsafe disposition - v1 does not trigger, does not decode.
+    Ineligible(F6SkipReason),
+}
+
+/// Why a zero-block page's emission shape disqualifies F6 (D-53 v1.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum F6SkipReason {
+    /// Table content embedded in prose - no contiguous anchor.
+    TextOnlyNoAnchor,
+    /// The malformed table attempt is followed by non-table body text -
+    /// marker-to-end replacement would delete it.
+    RawTableWithTailProse,
+    /// Raw marker present but multiple regions share one attempt blob -
+    /// per-region attribution cannot be split safely (D-58).
+    MultiRegionRaw,
+}
+
+/// Classifies the emission shape. `det_n` is the sidecar table-region count
+/// for the page (the caller orders/dedups after eligibility).
+pub fn f6_emission_shape(markdown: &str, det_n: usize) -> F6EmissionShape {
+    if markdown.trim().is_empty() {
+        return F6EmissionShape::Empty;
+    }
+    let Some(marker_pos) = markdown.find("<table") else {
+        return F6EmissionShape::Ineligible(F6SkipReason::TextOnlyNoAnchor);
+    };
+    // Raw marker present: every non-empty line after the marker must be
+    // table-ish (<td/<th/<tr/</table fragments or bare numbers) - any
+    // prose line means marker-to-end replacement would delete body text.
+    let after = &markdown[marker_pos..];
+    let tail_prose = after.lines().any(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        let tableish = ["<td", "<th", "<tr", "</table", "<table"]
+            .iter()
+            .any(|tag| trimmed.contains(tag));
+        !tableish
+            && !trimmed
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b.is_ascii_punctuation())
+    });
+    if tail_prose {
+        return F6EmissionShape::Ineligible(F6SkipReason::RawTableWithTailProse);
+    }
+    if det_n != 1 {
+        return F6EmissionShape::Ineligible(F6SkipReason::MultiRegionRaw);
+    }
+    F6EmissionShape::RawSingle { marker_pos }
+}
+
+/// Structural validity gate (D-54): parsable, at least 2 rows x 2 cols,
+/// not entirely blank. Necessary condition for adoption.
+pub fn f6_structural_gate(html: &str) -> bool {
+    let shape = parse_table_shape(html);
+    shape.parses
+        && shape.rows_x_cols.0 >= 2
+        && shape.rows_x_cols.1 >= 2
+        && shape.cell_fill_ratio > 0.0
+}
+
+/// Content attribution gate (D-54, raw_single arm only): the reread must
+/// recover most of the model's own attempt text (cov_attempt >= 0.50 - the
+/// attempt is the model's reading of the same region) and most of the
+/// reread must be supported by it (cov_reread >= 0.30 - invention bound).
+/// Both directions fail-closed: below the 8-bigram floor is a reject.
+pub fn f6_attribution_pass(attempt_text: &str, reread_html: &str) -> bool {
+    const COV_ATTEMPT_MIN: f64 = 0.50;
+    const COV_REREAD_MIN: f64 = 0.30;
+    match directional_coverage(attempt_text, reread_html) {
+        Some((cov_attempt, cov_reread)) => {
+            cov_attempt >= COV_ATTEMPT_MIN && cov_reread >= COV_REREAD_MIN
+        }
+        None => false,
+    }
+}
+
+/// Orders the detected regions for F6 adoption: IoU dedup first, then the
+/// D-44 dual-hypothesis reading order (row/column bands must agree;
+/// consecutive-y overlap veto applies). `None` = ambiguous - whole-page
+/// F6 skip (D-56).
+pub fn f6_order_regions(regions: &[DetectedRegion]) -> Option<Vec<DetectedRegion>> {
+    let deduped = dedup_regions(regions);
+    let boxes: Vec<(f64, f64, f64, f64)> = deduped.iter().map(|r| r.bbox).collect();
+    let (row_clean, row_order) = bands_order(&boxes, 1);
+    let (col_clean, col_order) = bands_order(&boxes, 0);
+    if !row_clean || !col_clean || row_order != col_order {
+        return None;
+    }
+    if consecutive_y_overlaps(
+        &row_order.iter().map(|i| boxes[*i]).collect::<Vec<_>>(),
+        0.30,
+    ) {
+        return None;
+    }
+    Some(row_order.iter().map(|&i| deduped[i]).collect())
+}
+
+/// The F6 orchestration: zero-table-block pages only (the caller gates on
+/// the block count). Regions are ordered (D-56), each crop decoded, and
+/// adoption decided per arm:
+/// - raw_single: structural gate + attribution gate (cov_attempt/cov_reread)
+/// - empty: structural gate only (no anchor - the weakest link, per plan
+///   D-54 v1.2; the spike's 100% manual review is the content-safety pass)
+///
+/// Adopted tables land as appended `HtmlTable` blocks in reading order and
+/// are written into the markdown per the emission shape (marker-to-end
+/// replacement for raw pages, append for empty pages). Zero text deletion.
+///
+/// Returns the new blocks, the new markdown, and the stats.
+pub fn orchestrate_f6(
+    blocks: &[PageBlock],
+    markdown: &str,
+    page_number: u32,
+    page: &crate::state::RenderedPage,
+    provider: &mut dyn RegionProvider,
+    decoder: &mut dyn TableRereadDecoder,
+) -> std::io::Result<(Vec<PageBlock>, String, RereadStats)> {
+    let mut stats = RereadStats::default();
+    let regions = provider.regions_for_page(page_number);
+    if regions.is_empty() {
+        stats.f6_skipped_shape = true;
+        return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+    }
+    let shape = f6_emission_shape(markdown, regions.len());
+    let (markdown_anchor, attempt_text) = match &shape {
+        F6EmissionShape::RawSingle { marker_pos } => {
+            (Some(*marker_pos), Some(markdown[*marker_pos..].to_owned()))
+        }
+        F6EmissionShape::Empty => (None, None),
+        F6EmissionShape::Ineligible(_) => {
+            stats.f6_skipped_shape = true;
+            return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+        }
+    };
+    let Some(ordered) = f6_order_regions(&regions) else {
+        stats.f6_ordering_ambiguous = true;
+        return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+    };
+    stats.f6_triggered = ordered.len();
+    let mut adopted: Vec<PageBlock> = Vec::new();
+    let mut adopted_html: Vec<String> = Vec::new();
+    for (ordinal, region) in ordered.iter().enumerate() {
+        let crop = crop_region(page, region.bbox)?;
+        let reread_html = decoder.reread_table(&crop)?;
+        let mut outcome = F6RegionOutcome {
+            region_ordinal: ordinal,
+            decoded: true,
+            adopted: false,
+            reject_reason: None,
+        };
+        if f6_structural_gate(&reread_html) {
+            let attribution_ok = match &attempt_text {
+                Some(attempt) => f6_attribution_pass(attempt, &reread_html),
+                None => true, // empty arm: no anchor - structural gate only
+            };
+            if attribution_ok {
+                adopted.push(PageBlock::HtmlTable {
+                    html: reread_html.clone(),
+                });
+                adopted_html.push(reread_html);
+                outcome.adopted = true;
+            } else {
+                outcome.reject_reason = Some("attribution");
+            }
+        } else {
+            outcome.reject_reason = Some("structural");
+        }
+        if outcome.adopted {
+            stats.f6_emitted += 1;
+        } else {
+            stats.f6_rejected += 1;
+        }
+        stats.f6_detail.push(outcome);
+    }
+    // Persistence (D-54): markdown per emission shape; blocks appended in
+    // reading order. Zero deletion of existing content.
+    // D-54 zero-deletion rule: when NOTHING was adopted (all gates
+    // rejected), the page keeps its original markdown and blocks exactly —
+    // the raw attempt text is never deleted by a failed reread.
+    if adopted.is_empty() {
+        return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+    }
+    let new_markdown = match markdown_anchor {
+        Some(marker_pos) => {
+            // raw_single: replace marker-to-end with the adopted tables. The
+            // trigger qualification guarantees no non-table prose after the
+            // marker. Multiple adopted tables concatenate (single-region
+            // arm: exactly one).
+            let mut updated = markdown[..marker_pos].to_owned();
+            for html in &adopted_html {
+                updated.push_str(html);
+                updated.push('\n');
+            }
+            updated
+        }
+        None => {
+            // empty: the whole markdown is the adopted tables.
+            let mut updated = String::new();
+            for html in &adopted_html {
+                updated.push_str(html);
+                updated.push('\n');
+            }
+            updated
+        }
+    };
+    let mut new_blocks = blocks.to_vec();
+    new_blocks.extend(adopted);
+    Ok((new_blocks, new_markdown, stats))
+}
+
+// ---------------------------------------------------------------------------
 // R2.4 orchestration: the per-page table-reread flow. Decode side is a
 // port (TableRereadDecoder) so fakes drive tests and SessionRecognizer
 // implements it in production (TABLE_REREAD_V1 prompt, 1024 grid).
@@ -511,6 +743,32 @@ pub struct RereadStats {
     /// page-level counters cannot attribute multi-table pages (the B2
     /// adjudicator consumes the persisted form).
     pub detail: Vec<RereadTableOutcome>,
+    /// M4.1 (F6 missing-table branch): per-table region outcomes on
+    /// zero-table-block pages, in region reading order.
+    pub f6_detail: Vec<F6RegionOutcome>,
+    /// F6 regions considered (post-ordering) on zero-table-block pages.
+    pub f6_triggered: usize,
+    /// F6 regions adopted (structural + attribution gates passed).
+    pub f6_emitted: usize,
+    /// F6 regions rejected by a gate.
+    pub f6_rejected: usize,
+    /// F6 emission shape was ineligible — the page keeps its text and no
+    /// decode ran (D-53 v1.2).
+    pub f6_skipped_shape: bool,
+    /// F6 region ordering was ambiguous — whole-page skip (D-56).
+    pub f6_ordering_ambiguous: bool,
+}
+
+/// One F6 region's outcome (region reading order; the frozen-population
+/// spike adjudicates per region).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct F6RegionOutcome {
+    pub region_ordinal: usize,
+    pub decoded: bool,
+    pub adopted: bool,
+    /// Why the region was rejected: structural gate, attribution gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reject_reason: Option<&'static str>,
 }
 
 /// One table's reread outcome (reading-order ordinal; persisted as the
@@ -737,6 +995,39 @@ pub fn apply_table_reread(
         })?;
     let original_blocks = document.blocks.clone();
     let page_number = document.page_number;
+    let table_block_count = original_blocks
+        .iter()
+        .filter(|b| block_class(b) == Some(RegionClass::Table))
+        .count();
+    if table_block_count == 0 {
+        // M4.1 F6: zero-table-block pages — the missing-table branch. The
+        // emission-shape qualification and adoption gates live in
+        // orchestrate_f6; the returned markdown replaces the artifact's.
+        let regions = provider.regions_for_page(page_number);
+        let mut stats = RereadStats::default();
+        if regions.is_empty() {
+            stats.f6_skipped_shape = true;
+            return Ok(stats);
+        }
+        let (new_blocks, new_markdown, f6_stats) = orchestrate_f6(
+            &original_blocks,
+            &artifact.markdown,
+            page_number,
+            rendered,
+            provider,
+            decoder,
+        )?;
+        artifact.reread_detail_json = serde_json::to_string(&f6_stats.f6_detail)
+            .map_err(|error| std::io::Error::other(format!("reread detail serialize: {error}")))?;
+        if f6_stats.f6_emitted > 0 {
+            document.blocks = new_blocks;
+            artifact.page_json = document.to_json().map_err(|error| {
+                std::io::Error::other(format!("reread: page_json write failed: {error:?}"))
+            })?;
+            artifact.markdown = new_markdown;
+        }
+        return Ok(f6_stats);
+    }
     let (spliced, stats) = orchestrate_table_reread(
         &original_blocks,
         page_number,
@@ -1033,6 +1324,325 @@ pub fn formula_reread_candidate(latex: &str, region_area_ratio: f64) -> bool {
 
 #[cfg(test)]
 mod tests {
+    // --- M4.1 F6 missing-table branch (plan v1.2) ---------------------------
+
+    fn f6_region(ordinal: usize, bbox: (f64, f64, f64, f64)) -> DetectedRegion {
+        DetectedRegion {
+            class: RegionClass::Table,
+            index_in_class: ordinal,
+            bbox,
+        }
+    }
+
+    fn f6_page() -> crate::state::RenderedPage {
+        crate::state::RenderedPage::new(400, 400, vec![200; 400 * 400 * 3]).unwrap()
+    }
+
+    struct F6Decoder {
+        responses: Vec<String>,
+        calls: std::cell::RefCell<Vec<(f64, f64)>>,
+    }
+    impl TableRereadDecoder for F6Decoder {
+        fn reread_table(&mut self, crop: &crate::state::RenderedPage) -> std::io::Result<String> {
+            self.calls
+                .borrow_mut()
+                .push((crop.width as f64, crop.height as f64));
+            let i = self.calls.borrow().len() - 1;
+            Ok(self.responses[i].clone())
+        }
+    }
+
+    struct F6Provider {
+        regions: Vec<DetectedRegion>,
+    }
+    impl RegionProvider for F6Provider {
+        fn regions_for_page(&mut self, _page: u32) -> Vec<DetectedRegion> {
+            self.regions.clone()
+        }
+    }
+
+    const GOOD_TABLE: &str =
+        "<table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>";
+
+    #[test]
+    fn f6_emission_shape_classifies_the_four_shapes() {
+        // empty
+        assert_eq!(f6_emission_shape("  \n ", 2), F6EmissionShape::Empty);
+        // raw_single clean (marker, no tail prose, det 1)
+        assert_eq!(
+            f6_emission_shape("header\n<table><tr><td>1", 1),
+            F6EmissionShape::RawSingle { marker_pos: 7 }
+        );
+        // tail prose
+        assert_eq!(
+            f6_emission_shape("header\n<table><tr><td>1\nSome trailing prose", 1),
+            F6EmissionShape::Ineligible(F6SkipReason::RawTableWithTailProse)
+        );
+        // text only
+        assert_eq!(
+            f6_emission_shape("just prose\nmore prose", 1),
+            F6EmissionShape::Ineligible(F6SkipReason::TextOnlyNoAnchor)
+        );
+        // multi-region raw
+        assert_eq!(
+            f6_emission_shape("<table><tr><td>1", 2),
+            F6EmissionShape::Ineligible(F6SkipReason::MultiRegionRaw)
+        );
+    }
+
+    #[test]
+    fn f6_structural_gate_rejects_trivial_and_blank_tables() {
+        assert!(f6_structural_gate(GOOD_TABLE));
+        // 1x1: below the 2x2 floor
+        assert!(!f6_structural_gate("<table><tr><td>a</td></tr></table>"));
+        // unparsable
+        assert!(!f6_structural_gate("<table>not a table"));
+        // all-blank cells
+        assert!(!f6_structural_gate(
+            "<table><tr><td></td><td> </td></tr><tr><td>  </td><td></td></tr></table>"
+        ));
+    }
+
+    #[test]
+    fn f6_attribution_gate_both_directions() {
+        let attempt = "<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>";
+        // A faithful reread recovers the attempt content and adds structure.
+        let faithful = "<table><tr><th>alpha beta gamma</th><th>delta epsilon</th></tr></table>";
+        assert!(f6_attribution_pass(attempt, faithful));
+        // A hallucinated table shares nothing with the attempt.
+        assert!(!f6_attribution_pass(
+            attempt,
+            "<table><tr><td>unrelated words entirely</td></tr></table>"
+        ));
+        // Below the 8-bigram floor: fail-closed.
+        assert!(!f6_attribution_pass(
+            "<table><tr><td>x</td></tr></table>",
+            GOOD_TABLE
+        ));
+    }
+
+    #[test]
+    fn f6_order_regions_dedups_and_orders_by_reading_position() {
+        let regions = vec![
+            f6_region(0, (0.0, 200.0, 400.0, 400.0)),
+            f6_region(1, (0.0, 0.0, 400.0, 200.0)),
+            f6_region(2, (1.0, 201.0, 400.0, 400.0)), // dup of region 0
+        ];
+        let ordered = f6_order_regions(&regions).unwrap();
+        assert_eq!(ordered.len(), 2);
+        // reading order: the top region first
+        assert!(ordered[0].bbox.1 == 0.0);
+        assert!((ordered[1].bbox.1 - 200.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn f6_order_regions_returns_none_on_ambiguity() {
+        // two regions with overlapping y-bands (consecutive-y veto)
+        let regions = vec![
+            f6_region(0, (0.0, 0.0, 400.0, 300.0)),
+            f6_region(1, (0.0, 100.0, 400.0, 400.0)),
+        ];
+        assert!(f6_order_regions(&regions).is_none());
+    }
+
+    #[test]
+    fn f6_orchestration_empty_md_appends_adopted_tables() {
+        let blocks: Vec<PageBlock> = vec![md("prose before")];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
+        };
+        let mut decoder = F6Decoder {
+            responses: vec![GOOD_TABLE.to_owned()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut decoder).unwrap();
+        assert_eq!(stats.f6_triggered, 1);
+        assert_eq!(stats.f6_emitted, 1);
+        assert_eq!(stats.f6_rejected, 0);
+        assert_eq!(new_blocks.len(), 2, "prose block + appended table");
+        assert!(matches!(&new_blocks[1], PageBlock::HtmlTable { html } if html == GOOD_TABLE));
+        assert_eq!(new_md.trim(), GOOD_TABLE, "empty md -> the table is the md");
+        assert_eq!(stats.f6_detail.len(), 1);
+        assert!(stats.f6_detail[0].adopted);
+    }
+
+    #[test]
+    fn f6_orchestration_raw_single_replaces_marker_to_end() {
+        let blocks: Vec<PageBlock> = vec![md("header prose")];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
+        };
+        let attempt = "<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>";
+        let mut decoder = F6Decoder {
+            responses: vec![
+                "<table><tr><th>alpha beta gamma</th><th>delta epsilon</th></tr><tr><td>1</td><td>2</td></tr></table>"
+                    .to_owned(),
+            ],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let md = format!("header prose\n{attempt}");
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, &md, 0, &page, &mut provider, &mut decoder).unwrap();
+        assert_eq!(stats.f6_triggered, 1);
+        assert_eq!(stats.f6_emitted, 1);
+        // header prose preserved, marker-to-end replaced
+        assert!(new_md.starts_with("header prose"));
+        assert!(
+            new_md.contains("<th>alpha beta gamma</th>"),
+            "reread adopted"
+        );
+        assert!(
+            !new_md.contains("<td>alpha beta gamma</td>"),
+            "malformed attempt replaced"
+        );
+        assert_eq!(new_blocks.len(), 2);
+        // 0-crop calls: 1 region -> 1 decode
+        assert_eq!(decoder.calls.borrow().len(), 1);
+    }
+
+    #[test]
+    fn f6_orchestration_multi_region_raw_is_skipped() {
+        let blocks: Vec<PageBlock> = vec![md("prose")];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 400.0, 200.0)),
+                f6_region(1, (0.0, 200.0, 400.0, 400.0)),
+            ],
+        };
+        let mut decoder = F6Decoder {
+            responses: vec![],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let md = "<table><tr><td>1"; // raw marker but det_n = 2
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, md, 0, &page, &mut provider, &mut decoder).unwrap();
+        assert!(stats.f6_skipped_shape);
+        assert_eq!(stats.f6_triggered, 0);
+        assert_eq!(new_blocks.len(), 1, "unchanged");
+        assert_eq!(new_md, md, "markdown unchanged");
+        assert!(decoder.calls.borrow().is_empty(), "no decode ran");
+    }
+
+    #[test]
+    fn f6_orchestration_structural_reject_keeps_text() {
+        let blocks: Vec<PageBlock> = vec![md("prose")];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
+        };
+        let mut decoder = F6Decoder {
+            responses: vec!["<table><tr><td>x</td></tr></table>".to_owned()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut decoder).unwrap();
+        assert_eq!(stats.f6_rejected, 1);
+        assert_eq!(stats.f6_emitted, 0);
+        assert_eq!(new_md, "", "rejected reread -> empty md kept");
+        assert_eq!(new_blocks.len(), 1, "only the prose block");
+        assert_eq!(stats.f6_detail[0].reject_reason, Some("structural"));
+    }
+
+    #[test]
+    fn f6_orchestration_attribution_reject_keeps_text_raw_arm() {
+        let blocks: Vec<PageBlock> = vec![md("header")];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
+        };
+        let attempt = "<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>";
+        let mut decoder = F6Decoder {
+            responses: vec![
+                "<table><tr><td>wholly unrelated</td><td>invented words</td></tr><tr><td>more invention</td><td>even more</td></tr></table>"
+                    .to_owned(),
+            ],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let md = format!("header\n{attempt}");
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, &md, 0, &page, &mut provider, &mut decoder).unwrap();
+        assert_eq!(stats.f6_rejected, 1);
+        assert_eq!(stats.f6_emitted, 0);
+        assert_eq!(stats.f6_detail[0].reject_reason, Some("attribution"));
+        assert_eq!(new_md, md, "raw arm: rejected -> attempt text kept");
+        assert_eq!(new_blocks.len(), 1);
+    }
+
+    #[test]
+    fn f6_orchestration_multi_region_empty_orders_by_reading_position() {
+        let blocks: Vec<PageBlock> = vec![];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 200.0, 400.0, 400.0)),
+                f6_region(1, (0.0, 0.0, 400.0, 200.0)),
+            ],
+        };
+        let bottom_table =
+            "<table><tr><th>bottom</th><th>b2</th></tr><tr><td>1</td><td>2</td></tr></table>";
+        let top_table =
+            "<table><tr><th>top</th><th>t2</th></tr><tr><td>3</td><td>4</td></tr></table>";
+        // responses arrive in decode order = reading order (top first)
+        let mut decoder = F6Decoder {
+            responses: vec![top_table.to_owned(), bottom_table.to_owned()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut decoder).unwrap();
+        assert_eq!(stats.f6_triggered, 2);
+        assert_eq!(stats.f6_emitted, 2);
+        // reading order: top (y=0) decoded and emitted first
+        let first_cells = new_md.find("top").unwrap();
+        let bottom_cells = new_md.find("bottom").unwrap();
+        assert!(first_cells < bottom_cells, "top table first in md");
+        assert_eq!(new_blocks.len(), 2);
+    }
+
+    #[test]
+    fn f6_apply_table_reread_dispatches_zero_block_pages() {
+        // end-to-end through apply_table_reread: a zero-table-block page with
+        // an eligible shape goes through the F6 branch, not F1-F5 pairing.
+        let page = f6_page();
+        let document = ocrx_core::PageDocument {
+            schema_version: 1,
+            page_number: 1,
+            blocks: vec![md("prose before")],
+            termination: ocrx_core::Termination::Eos,
+            warnings: vec![],
+        };
+        let mut artifact = crate::state::PageArtifactResult {
+            png: None,
+            markdown: String::new(),
+            page_json: document.to_json().unwrap(),
+            truncated: false,
+            degenerated: false,
+            warnings: vec![],
+            think_blocks_stripped: 0,
+            raw_output: String::new(),
+            reread_tables: 0,
+            reread_replaced: 0,
+            reread_detail_json: String::new(),
+        };
+        let mut provider = F6Provider {
+            regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
+        };
+        let mut decoder = F6Decoder {
+            responses: vec![GOOD_TABLE.to_owned()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let stats =
+            super::apply_table_reread(&page, &mut artifact, &mut provider, &mut decoder, false)
+                .unwrap();
+        assert_eq!(stats.f6_emitted, 1);
+        assert!(artifact.page_json.contains(GOOD_TABLE));
+        assert!(artifact.markdown.contains(GOOD_TABLE));
+        assert!(artifact.reread_detail_json.contains("region_ordinal"));
+    }
+
     use super::*;
     use crate::region_provider::EmptyRegionProvider;
 

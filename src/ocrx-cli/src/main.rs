@@ -2800,7 +2800,7 @@ mod tests {
         assert!(on.contains("\"enabled\":true"), "{on}");
         assert!(on.contains("\"layout_model\":\"pp-doclayout-v2\""));
         assert!(on.contains("\"prompt_version\":\"table-reread-v1\""));
-        assert!(on.contains("\"rules_generation\":1"));
+        assert!(on.contains("\"rules_generation\":2"));
         assert!(on.contains("\"tables_reread_total\":3"));
         assert!(on.contains("\"replaced_total\":1"));
         let dir = std::env::temp_dir().join(format!("ocrx-cli-reread-hash-{}", std::process::id()));
