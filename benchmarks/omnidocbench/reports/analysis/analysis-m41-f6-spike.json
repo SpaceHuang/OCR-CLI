@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "artifact": "m41-f6-spike-adjudication",
+  "note": "T4 spike on the 16-page frozen population (OvisOCR3 + reread on): 0/24 GT tables adopted. Reject-reason decomposition shows WHY: 10 raw pages structural-rejected (the GT tables are giant multi-row financial tables with nested spanning headers — a single reread is also truncated/malformed), 1 raw attribution-rejected, 4 empty pages lost their region signal (sidecar regions.json empty in this run), 1 empty structural-rejected. The F6 mechanism (trigger/shapes/gates/persistence) executed correctly per design — the population itself is beyond the current model family, consistent with the chronic oracle 0.154.",
+  "verdict": "SPIKE FAIL — 0/24 adopted vs pre-registered >=60% gate. M4.1 stops; D-29 one-round calibration is NOT applicable (the failures are capability-bound, not threshold-bound). The missing-table branch stays suspended; a specialized table-structure model (two-stage architecture) is the remaining direction.",
+  "by_arm": {
+    "f6_empty": {
+      "no_regions_signal": 4,
+      "rejected": 1
+    },
+    "f6_raw_single": {
+      "rejected": 11
+    }
+  },
+  "by_outcome": {
+    "no_regions_signal": 4,
+    "rejected": 12
+  },
+  "empty_pages_lost_region_signal": [
+    "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+    "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+    "jiaocaineedrop_jiaocai_needrop_en_1417.jpg",
+    "jiaocaineedrop_jiaocai_needrop_en_3713.jpg"
+  ],
+  "per_page": [
+    {
+      "img": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+      "arm": "f6_empty",
+      "outcome": "no_regions_signal",
+      "regions": 0,
+      "detail": []
+    },
+    {
+      "img": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+      "arm": "f6_empty",
+      "outcome": "no_regions_signal",
+      "regions": 0,
+      "detail": []
+    },
+    {
+      "img": "jiaocaineedrop_2017.pdf_0.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "jiaocaineedrop_jiaocai_needrop_en_1417.jpg",
+      "arm": "f6_empty",
+      "outcome": "no_regions_signal",
+      "regions": 0,
+      "detail": []
+    },
+    {
+      "img": "jiaocaineedrop_jiaocai_needrop_en_1898.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "jiaocaineedrop_jiaocai_needrop_en_3713.jpg",
+      "arm": "f6_empty",
+      "outcome": "no_regions_signal",
+      "regions": 0,
+      "detail": []
+    },
+    {
+      "img": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png",
+      "arm": "f6_empty",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "page-69c15957-4d6d-485c-a244-04a1a8d29d37.png",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357.png",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "scihub_ijop.12033.pdf_5.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    },
+    {
+      "img": "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "attribution": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "attribution"
+        }
+      ]
+    },
+    {
+      "img": "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14.jpg",
+      "arm": "f6_raw_single",
+      "outcome": "rejected",
+      "regions": 1,
+      "reject_reasons": {
+        "structural": 1
+      },
+      "detail": [
+        {
+          "region_ordinal": 0,
+          "decoded": true,
+          "adopted": false,
+          "reject_reason": "structural"
+        }
+      ]
+    }
+  ]
+}
