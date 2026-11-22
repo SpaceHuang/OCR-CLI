@@ -164,7 +164,7 @@ pub fn run_pages_with_session(
     commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     cancellation: &CancellationToken,
     heartbeat: &mut dyn FnMut(u32, GenerationProgress),
-    mut table_reread: Option<&mut dyn crate::region_provider::RegionProvider>,
+    arms: &mut crate::app::RereadArms<'_>,
 ) -> std::io::Result<JobSummary> {
     let root = output_root;
     std::fs::create_dir_all(root)?;
@@ -322,7 +322,7 @@ pub fn run_pages_with_session(
                                 page,
                                 &image,
                                 &mut artifact,
-                                &mut table_reread,
+                                arms,
                                 session,
                                 config.max_output_tokens,
                                 attempts,
@@ -486,7 +486,7 @@ pub fn run_pages_with_session(
                                                 pending,
                                                 &image,
                                                 &mut artifact,
-                                                &mut table_reread,
+                                                arms,
                                                 session,
                                                 config.max_output_tokens,
                                                 attempts,
@@ -542,7 +542,7 @@ pub fn run_pages_with_session(
                                 page,
                                 &image,
                                 &mut retried,
-                                &mut table_reread,
+                                arms,
                                 session,
                                 config.max_output_tokens,
                                 attempts,
@@ -568,7 +568,7 @@ pub fn run_pages_with_session(
                     page,
                     &image,
                     &mut artifact,
-                    &mut table_reread,
+                    arms,
                     session,
                     config.max_output_tokens,
                     1,
@@ -637,28 +637,35 @@ fn apply_reread_gate(
     page: u32,
     image: &RenderedPage,
     artifact: &mut PageArtifactResult,
-    table_reread: &mut Option<&mut dyn crate::region_provider::RegionProvider>,
+    arms: &mut crate::app::RereadArms<'_>,
     session: &mut dyn InferenceSession,
     max_output_tokens: u32,
     attempts: u32,
 ) -> std::io::Result<()> {
-    let Some(provider) = table_reread.as_deref_mut() else {
+    if arms.provider.is_none() {
         return Ok(());
-    };
+    }
     // BLK-4 (plan D-18): a BAD page (retry-committed, attempts >= 2)
     // always triggers the reread — F1-F5 gate only the attempt-1 path.
     let always_trigger = attempts >= 2;
-    let mut scoped = crate::reread::PageScopedProvider::new(provider, page);
-    let mut decoder = crate::ocr::artifacts::SessionTableDecoder::new(
-        session,
-        max_output_tokens,
-        &format!("page-{page}-table-reread"),
-    );
+    // M4.2 dual arm (D-64): F1-F5 VLM reread only under the OLD flag; F6
+    // SLANet reread only under the NEW flag (disjoint populations). Each
+    // decoder is constructed only when its flag is on.
+    let mut vlm_decoder = if arms.vlm_armed {
+        Some(crate::ocr::artifacts::SessionTableDecoder::new(
+            session,
+            max_output_tokens,
+            &format!("page-{page}-table-reread"),
+        ))
+    } else {
+        None
+    };
     let stats = crate::reread::apply_table_reread(
         image,
         artifact,
-        &mut scoped,
-        &mut decoder,
+        page,
+        arms,
+        vlm_decoder.as_mut(),
         always_trigger,
     )?;
     // BLK-6: per-table outcomes ride the artifact for the committed
@@ -692,6 +699,7 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             layout_model_assets_sha256: ocr.layout_model_assets_sha256.clone(),
             reread_prompt_version: ocr.reread_prompt_version.clone(),
             reread_rules_generation: ocr.reread_rules_generation,
+            table_structure_reread: ocr.table_structure_reread.clone(),
         },
         None => ScanOcrSide {
             prompt_id: String::new(),
@@ -710,6 +718,7 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             layout_model_assets_sha256: String::new(),
             reread_prompt_version: String::new(),
             reread_rules_generation: 0,
+            table_structure_reread: None,
         },
     }
 }
@@ -1069,7 +1078,7 @@ fn injected_inference_failure(page: u32) -> Option<String> {
 /// Encodes one rendered page's RGB8 into PNG bytes (synchronous commit-path
 /// fallback for the retired async encode pipeline; phase-4 W3 semantics:
 /// the bytes belong to the terminal render recorded in the entry).
-fn encode_page_png(image: &RenderedPage) -> std::io::Result<Vec<u8>> {
+pub(crate) fn encode_page_png(image: &RenderedPage) -> std::io::Result<Vec<u8>> {
     let img = image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid RGB8 page"))?;
     let mut cursor = std::io::Cursor::new(Vec::new());

@@ -94,6 +94,12 @@ pub struct DocumentOptions {
     /// R2.5: the table-reread configuration (Some = `--table-reread on`
     /// with the layout model resolved through the R2.0 manifest chain).
     pub reread: Option<crate::compatibility::RereadOptions>,
+    /// M4.2/D-64: `--table-structure-reread on` — the F6 SLANet arm. Some =
+    /// the resolved layout identity + regions path (validated symmetrically
+    /// with the old flag by the CLI); the engine spawns at document start
+    /// (D-59, before any page product) and its verified handshake identity
+    /// enters the compatibility.
+    pub structure_reread: Option<crate::compatibility::RereadOptions>,
 }
 
 impl Default for DocumentOptions {
@@ -114,8 +120,21 @@ impl Default for DocumentOptions {
             model: "ovisocr2".to_owned(),
             install: InstallPolicy::offline(),
             reread: None,
+            structure_reread: None,
         }
     }
+}
+
+/// M4.2/D-64: the reread arming state for one document invocation. The
+/// provider (regions sidecar) is shared by both arms; each engine is
+/// constructed only when its flag is on — an unarmed engine can never send
+/// a request (off path byte-identical by construction).
+pub struct RereadArms<'a> {
+    pub provider: Option<&'a mut dyn crate::region_provider::RegionProvider>,
+    /// OLD flag (`--table-reread on`): F1-F5 VLM reread of emitted tables.
+    pub vlm_armed: bool,
+    /// NEW flag (`--table-structure-reread on`): the F6 SLANet arm.
+    pub structure: Option<&'a mut dyn crate::structure_engine::StructureTableEngine>,
 }
 
 /// Progress events the CLI maps onto its Reporter contract.
@@ -321,6 +340,33 @@ impl ScanApplication {
         // BLK-8/RBLK-2: per-document recorder isolation — same page numbers
         // across documents must never accumulate into one profile.
         commit_recorder.reset();
+        // M4.2/D-59/D-63: the structure engine spawns at document start —
+        // BEFORE any identity write, resume classification or page product.
+        // Every startup-class failure is a HARD error (no products).
+        let mut structure_engine = if options.structure_reread.is_some() {
+            Some(
+                crate::structure_engine::StructureEngineClient::spawn_from_env()
+                    .map_err(std::io::Error::other)?,
+            )
+        } else {
+            None
+        };
+        let structure_identity: Option<ocrx_output::StructureRereadIdentity> =
+            structure_engine.as_ref().map(|client| {
+                let hello = client.identity();
+                ocrx_output::StructureRereadIdentity {
+                    engine: hello.engine.clone(),
+                    revision: hello.revision.clone(),
+                    paddleocr: hello.paddleocr.clone(),
+                    paddlex: hello.paddlex.clone(),
+                    paddlepaddle: hello.paddlepaddle.clone(),
+                    models_sha256: hello
+                        .models_sha256
+                        .iter()
+                        .map(|(name, hash)| (name.clone(), hash.sha256.clone()))
+                        .collect(),
+                }
+            });
         let failure =
             |code: u8, kind: &str, message: &str, cause: Option<String>| DocumentOutcome {
                 input: input.to_path_buf(),
@@ -464,11 +510,13 @@ impl ScanApplication {
             layout_model_id: options
                 .reread
                 .as_ref()
+                .or(options.structure_reread.as_ref())
                 .map(|r| r.layout_model_id.clone())
                 .unwrap_or_default(),
             layout_model_assets_sha256: options
                 .reread
                 .as_ref()
+                .or(options.structure_reread.as_ref())
                 .map(|r| r.layout_assets_sha256.clone())
                 .unwrap_or_default(),
             reread_prompt_version: if options.reread.is_some() {
@@ -476,11 +524,16 @@ impl ScanApplication {
             } else {
                 String::new()
             },
-            reread_rules_generation: if options.reread.is_some() {
+            // M4.2/D-63 generation mapping: SLANet ON = 3; old-flag-only ON
+            // = 2 (VLM era semantics; F6 disabled); all-OFF = 0.
+            reread_rules_generation: if options.structure_reread.is_some() {
                 crate::reread::REREAD_RULES_GENERATION
+            } else if options.reread.is_some() {
+                crate::reread::VLM_REREAD_RULES_GENERATION
             } else {
                 0
             },
+            table_structure_reread: structure_identity.clone(),
         };
         let statik: Option<StaticInferenceIdentity> = if shared_prepared.is_none() {
             service
@@ -908,7 +961,11 @@ impl ScanApplication {
                     prompt_schema_version: pack.schema_version,
                     ..crate::compatibility::ScanOcrConfig::default()
                 }
-                .with_reread(options.reread.as_ref()),
+                .with_reread(options.reread.as_ref())
+                .with_structure_reread(
+                    options.structure_reread.as_ref(),
+                    structure_identity.as_ref(),
+                ),
             );
             let config = WindowConfig {
                 compatibility: &compatibility,
@@ -928,9 +985,10 @@ impl ScanApplication {
                 base_image_tokens: options.max_image_tokens,
             };
             let mut slot_events: Vec<(u32, u32, u64)> = Vec::new();
-            // R2.6: the golden gate arms ONLY under --table-reread on; the
-            // provider reads the sidecar regions JSON and degrades to empty
-            // (skip) on any read problem.
+            // M4.2/D-64: the regions provider arms for EITHER flag (the
+            // sidecar regions JSON feeds F1-F5 and F6 alike); each ENGINE
+            // is constructed only when its own flag is on. The provider
+            // degrades to empty (skip) on any read problem.
             let input_stem = input
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
@@ -938,6 +996,7 @@ impl ScanApplication {
             let mut reread_provider = options
                 .reread
                 .as_ref()
+                .or(options.structure_reread.as_ref())
                 .map(|reread| {
                     crate::region_provider::FileRegionProvider::for_document(
                         &reread.regions_path,
@@ -947,6 +1006,15 @@ impl ScanApplication {
                 .map(|provider| {
                     Box::new(provider) as Box<dyn crate::region_provider::RegionProvider>
                 });
+            let mut arms = crate::app::RereadArms {
+                provider: reread_provider
+                    .as_mut()
+                    .map(|provider| &mut **provider as &mut dyn crate::region_provider::RegionProvider),
+                vlm_armed: options.reread.is_some(),
+                structure: structure_engine
+                    .as_mut()
+                    .map(|engine| engine as &mut dyn crate::structure_engine::StructureTableEngine),
+            };
             ocr_summary = run_pages_with_session(
                 executing,
                 renderer,
@@ -958,9 +1026,7 @@ impl ScanApplication {
                 &mut |page: u32, event| {
                     slot_events.push((page, event.generated_tokens, event.elapsed_seconds));
                 },
-                reread_provider.as_mut().map(|provider| {
-                    &mut **provider as &mut dyn crate::region_provider::RegionProvider
-                }),
+                &mut arms,
             )?;
             for (page, tokens, elapsed) in slot_events {
                 emit(ScanEvent::PageProgress {

@@ -34,6 +34,10 @@ pub struct ScanOcrConfig {
     /// caller sets them from the frozen constants.
     pub reread_prompt_version: String,
     pub reread_rules_generation: u32,
+    /// M4.2/D-63: the table-structure reread arm identity. Defaults = None
+    /// (the new flag is OFF; the field serializes as OMITTED — the OFF
+    /// byte-compatibility contract).
+    pub table_structure_reread: Option<ocrx_output::StructureRereadIdentity>,
 }
 
 impl Default for ScanOcrConfig {
@@ -59,6 +63,7 @@ impl Default for ScanOcrConfig {
             layout_model_assets_sha256: String::new(),
             reread_prompt_version: String::new(),
             reread_rules_generation: 0,
+            table_structure_reread: None,
         }
     }
 }
@@ -88,7 +93,10 @@ impl ScanOcrConfig {
                     .clone_from(&reread.layout_assets_sha256);
                 crate::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION
                     .clone_into(&mut self.reread_prompt_version);
-                self.reread_rules_generation = crate::reread::REREAD_RULES_GENERATION;
+                // M4.2/D-63: the old flag records the VLM-era generation (2);
+                // the SLANet arm (generation 3) comes from
+                // with_structure_reread only.
+                self.reread_rules_generation = crate::reread::VLM_REREAD_RULES_GENERATION;
             }
             None => {
                 // Defaults already are the off pipeline (empty/0); assert
@@ -96,6 +104,30 @@ impl ScanOcrConfig {
                 debug_assert!(!self.table_reread && self.reread_rules_generation == 0);
             }
         }
+        self
+    }
+
+    /// M4.2/D-63: fills the table-structure arm from the resolved layout
+    /// options and the verified handshake identity — the same single-source
+    /// contract as [`Self::with_reread`] (checkpoint identity and resume
+    /// pre-compare side never drift). Layout identity fields ride the same
+    /// slots for audit; `table_reread` stays FALSE (old flag off) and the
+    /// reread prompt stays empty.
+    #[must_use]
+    pub fn with_structure_reread(
+        mut self,
+        layout: Option<&RereadOptions>,
+        engine: Option<&ocrx_output::StructureRereadIdentity>,
+    ) -> Self {
+        if let Some(layout) = layout {
+            self.layout_model_id.clone_from(&layout.layout_model_id);
+            self.layout_model_assets_sha256
+                .clone_from(&layout.layout_assets_sha256);
+        }
+        if engine.is_some() {
+            self.reread_rules_generation = crate::reread::REREAD_RULES_GENERATION;
+        }
+        self.table_structure_reread = engine.cloned();
         self
     }
 }
@@ -144,6 +176,7 @@ pub fn ocr_compatibility(
             layout_model_assets_sha256: config.layout_model_assets_sha256.clone(),
             reread_prompt_version: config.reread_prompt_version.clone(),
             reread_rules_generation: config.reread_rules_generation,
+            table_structure_reread: config.table_structure_reread.clone(),
         },
     )
 }
@@ -181,7 +214,10 @@ mod tests {
         let mut config = ScanOcrConfig {
             reread_prompt_version: crate::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION
                 .to_owned(),
-            reread_rules_generation: crate::reread::REREAD_RULES_GENERATION,
+            // M4.2/D-63: an old-flag (VLM F1-F5) config carries the VLM-era
+            // generation; the SLANet generation 3 comes only from
+            // with_structure_reread.
+            reread_rules_generation: crate::reread::VLM_REREAD_RULES_GENERATION,
             ..ScanOcrConfig::default()
         };
         config.table_reread = true;

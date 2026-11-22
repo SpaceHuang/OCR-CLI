@@ -291,8 +291,8 @@ pub use ocrx_primitives::{CancellationToken, GenerationProgress};
 
 pub mod compatibility;
 pub use compatibility::{
-    OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute, ocr_final_compare,
-    ocr_pre_compare,
+    OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute, StructureRereadIdentity,
+    ocr_final_compare, ocr_pre_compare,
 };
 
 pub mod checkpoint_v6;

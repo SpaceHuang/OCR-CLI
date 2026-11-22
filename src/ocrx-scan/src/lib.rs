@@ -24,6 +24,7 @@ pub mod report;
 pub mod reread;
 pub mod resume;
 pub mod state;
+pub mod structure_engine;
 
 pub use state::ladder_for_model;
 pub mod window;

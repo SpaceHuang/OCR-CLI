@@ -40,6 +40,23 @@ pub struct PdfIdentity {
     pub platform: String,
 }
 
+/// M4.2/D-63: the table-structure reread engine identity, from the
+/// verified sidecar handshake. Stored on `OcrIdentity` as `Option` —
+/// `None` serializes as an OMITTED field (OFF products stay byte-identical),
+/// `Some` carries the full supply-chain identity (exact-equality compare on
+/// resume).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StructureRereadIdentity {
+    pub engine: String,
+    pub revision: String,
+    pub paddleocr: String,
+    pub paddlex: String,
+    pub paddlepaddle: String,
+    /// Model-dir audit hashes from the hello frame (sorted map, D-63).
+    #[serde(default)]
+    pub models_sha256: std::collections::BTreeMap<String, String>,
+}
+
 /// OCR-side execution identity. `inference` is the full platform identity
 /// (stored for audit); matching consumes only the execution fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +99,11 @@ pub struct OcrIdentity {
     /// a generation bump by contract). 0 = no reread rules.
     #[serde(default)]
     pub reread_rules_generation: u32,
+    /// M4.2/D-63: the SLANet table-structure reread arm. `skip_serializing_if`
+    /// is the OFF byte-compatibility contract: an OFF product must NOT carry
+    /// the field at all (diff-verified by T2's byte-equality test).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_structure_reread: Option<StructureRereadIdentity>,
 }
 
 /// Versioned structured scan compatibility (`schema_version = 1`).
@@ -174,6 +196,8 @@ pub struct ScanOcrSide {
     /// R2.5/BLK-5 — see [`OcrIdentity`] (defaults = off/empty pipeline).
     pub reread_prompt_version: String,
     pub reread_rules_generation: u32,
+    /// M4.2/D-63 — see [`OcrIdentity`] (None = the new flag is OFF).
+    pub table_structure_reread: Option<StructureRereadIdentity>,
 }
 
 fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
@@ -193,6 +217,7 @@ fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
         && ocr.layout_model_assets_sha256 == side.layout_model_assets_sha256
         && ocr.reread_prompt_version == side.reread_prompt_version
         && ocr.reread_rules_generation == side.reread_rules_generation
+        && ocr.table_structure_reread == side.table_structure_reread
 }
 
 /// Phase 1 — static pre-comparison (RBLK-2/RBLK-4, prepare-free fast path).
@@ -258,6 +283,7 @@ pub fn ocr_final_compare(stored: &ScanCompatibility, identity: &InferenceIdentit
             layout_model_assets_sha256: ocr.layout_model_assets_sha256.clone(),
             reread_prompt_version: ocr.reread_prompt_version.clone(),
             reread_rules_generation: ocr.reread_rules_generation,
+            table_structure_reread: ocr.table_structure_reread.clone(),
         },
     ) && ocr.inference.backend == identity.backend
         && ocr.inference.batch_depth == identity.batch_depth
@@ -337,6 +363,7 @@ mod tests {
             layout_model_assets_sha256: String::new(),
             reread_prompt_version: String::new(),
             reread_rules_generation: 0,
+            table_structure_reread: None,
         }
     }
 
@@ -370,6 +397,7 @@ mod tests {
                 layout_model_assets_sha256: String::new(),
                 reread_prompt_version: String::new(),
                 reread_rules_generation: 0,
+                table_structure_reread: None,
             },
         )
     }
@@ -630,6 +658,97 @@ mod tests {
         let mut stored_new = compat;
         stored_new.ocr.as_mut().unwrap().reread_rules_generation = 2;
         assert!(!ocr_pre_compare(&stored_new, &statik, &matching));
+    }
+
+    #[test]
+    fn m42_structure_identity_generation_and_flag_paths() {
+        // M4.2 D-63/D-64: generation 2 (old-flag VLM era) and generation 3
+        // (SLANet arm) never cross-resume in EITHER direction, and the
+        // engine identity must match exactly for reuse.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let statik = StaticInferenceIdentity::from_execution(&current);
+        let (compat, matching) = reread_on(&current); // generation-2 stored/run
+        let mut engine = StructureRereadIdentity {
+            engine: "slanet-plus".to_owned(),
+            revision: "bae6e5f8".to_owned(),
+            paddleocr: "3.7.0".to_owned(),
+            paddlex: "3.7.2".to_owned(),
+            paddlepaddle: "3.4.0".to_owned(),
+            models_sha256: std::collections::BTreeMap::new(),
+        };
+
+        // SLANet ON (generation 3) vs stored old-flag products (generation 2).
+        let mut slanet_run = matching.clone();
+        slanet_run.reread_rules_generation = 3;
+        slanet_run.table_structure_reread = Some(engine.clone());
+        assert!(!ocr_pre_compare(&compat, &statik, &slanet_run));
+
+        // Reverse: stored SLANet products, old-flag-only run.
+        let mut stored_slanet = compat.clone();
+        stored_slanet.ocr.as_mut().unwrap().reread_rules_generation = 3;
+        stored_slanet.ocr.as_mut().unwrap().table_structure_reread = Some(engine.clone());
+        assert!(!ocr_pre_compare(&stored_slanet, &statik, &matching));
+
+        // Same generation, different engine identity: no reuse.
+        let mut run_same_gen = matching.clone();
+        run_same_gen.reread_rules_generation = 3;
+        run_same_gen.table_structure_reread = Some(engine.clone());
+        let mut stored_same_gen = compat.clone();
+        stored_same_gen.ocr.as_mut().unwrap().reread_rules_generation = 3;
+        engine.revision = "other".to_owned();
+        stored_same_gen.ocr.as_mut().unwrap().table_structure_reread = Some(engine);
+        assert!(!ocr_pre_compare(&stored_same_gen, &statik, &run_same_gen));
+
+        // Identical identity + generation: reuse stays possible.
+        let mut engine_same = StructureRereadIdentity {
+            engine: "slanet-plus".to_owned(),
+            revision: "bae6e5f8".to_owned(),
+            paddleocr: "3.7.0".to_owned(),
+            paddlex: "3.7.2".to_owned(),
+            paddlepaddle: "3.4.0".to_owned(),
+            models_sha256: std::collections::BTreeMap::new(),
+        };
+        let mut run_match = matching.clone();
+        run_match.reread_rules_generation = 3;
+        run_match.table_structure_reread = Some(engine_same.clone());
+        let mut stored_match = compat.clone();
+        stored_match.ocr.as_mut().unwrap().reread_rules_generation = 3;
+        stored_match.ocr.as_mut().unwrap().table_structure_reread = Some(engine_same);
+        assert!(ocr_pre_compare(&stored_match, &statik, &run_match));
+    }
+
+    #[test]
+    fn m42_off_omits_the_structure_field_serialization_contract() {
+        // OFF byte-compatibility (D-63 skip_serializing_if): an OFF product
+        // must NOT carry the field at all — byte-identical to pre-M4.2
+        // output. ON products DO carry it.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let off = stored(&current);
+        let json = serde_json::to_string(&off).unwrap();
+        assert!(
+            !json.contains("table_structure_reread"),
+            "OFF identity must omit the structure field: {json}"
+        );
+        let mut on = stored(&current);
+        on.ocr.as_mut().unwrap().table_structure_reread = Some(StructureRereadIdentity {
+            engine: "slanet-plus".to_owned(),
+            revision: "bae6e5f8".to_owned(),
+            paddleocr: "3.7.0".to_owned(),
+            paddlex: "3.7.2".to_owned(),
+            paddlepaddle: "3.4.0".to_owned(),
+            models_sha256: std::collections::BTreeMap::new(),
+        });
+        let json_on = serde_json::to_string(&on).unwrap();
+        assert!(json_on.contains("table_structure_reread"));
+        // Round-trip preserves the identity (checkpoint resume contract).
+        let parsed: ScanCompatibility = serde_json::from_str(&json_on).unwrap();
+        assert_eq!(
+            parsed.ocr.as_ref().unwrap().table_structure_reread,
+            on.ocr.as_ref().unwrap().table_structure_reread
+        );
+        // Pre-M4.2 products (no field) deserialize to None.
+        let parsed_off: ScanCompatibility = serde_json::from_str(&json).unwrap();
+        assert!(parsed_off.ocr.as_ref().unwrap().table_structure_reread.is_none());
     }
 
     #[test]

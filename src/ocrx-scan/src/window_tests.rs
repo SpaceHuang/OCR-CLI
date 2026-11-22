@@ -327,6 +327,7 @@ impl crate::region_provider::RegionProvider for GateRegionProvider {
                 class: crate::reread::RegionClass::Table,
                 index_in_class: *i,
                 bbox: (0.0, 0.0, 1.0, 1.0),
+                conf: 0.9,
             })
             .collect()
     }
@@ -356,7 +357,11 @@ fn reread_gate_off_never_constructs_the_pipeline() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -405,7 +410,11 @@ fn reread_gate_on_replaces_and_counts_through_the_production_decoder() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        Some(&mut provider),
+        &mut crate::app::RereadArms {
+            provider: Some(&mut provider as &mut dyn crate::region_provider::RegionProvider),
+            vlm_armed: true,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -460,7 +469,11 @@ fn reread_gate_skip_leaves_artifacts_untouched() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        Some(&mut provider),
+        &mut crate::app::RereadArms {
+            provider: Some(&mut provider as &mut dyn crate::region_provider::RegionProvider),
+            vlm_armed: true,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -519,7 +532,15 @@ fn r2_7_armed_but_not_triggered_is_byte_identical() {
             &CommitRecorder::disabled(),
             &CancellationToken::new(),
             &mut |_, _| {},
-            if armed { Some(&mut provider) } else { None },
+            &mut crate::app::RereadArms {
+                provider: if armed {
+                    Some(&mut provider as &mut dyn crate::region_provider::RegionProvider)
+                } else {
+                    None
+                },
+                vlm_armed: armed,
+                structure: None,
+            },
         )
         .unwrap();
         assert_eq!(summary.completed_pages, 1);
@@ -578,7 +599,15 @@ fn r2_7_replacement_diff_is_exactly_the_target_table() {
             &CommitRecorder::disabled(),
             &CancellationToken::new(),
             &mut |_, _| {},
-            if armed { Some(&mut provider) } else { None },
+            &mut crate::app::RereadArms {
+                provider: if armed {
+                    Some(&mut provider as &mut dyn crate::region_provider::RegionProvider)
+                } else {
+                    None
+                },
+                vlm_armed: armed,
+                structure: None,
+            },
         )
         .unwrap();
         let md = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
@@ -649,7 +678,11 @@ fn r2_7_checkpoint_hash_matches_the_replaced_markdown() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        Some(&mut provider),
+        &mut crate::app::RereadArms {
+            provider: Some(&mut provider as &mut dyn crate::region_provider::RegionProvider),
+            vlm_armed: true,
+            structure: None,
+        },
     )
     .unwrap();
     let markdown = std::fs::read_to_string(root.join("page-0001.md")).unwrap();
@@ -701,7 +734,11 @@ fn blk5_ovisocr3_retries_keep_the_plain_render_never_budgeted() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -759,7 +796,11 @@ fn blk4_bad_page_reread_always_triggers_but_identity_still_guards() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        Some(&mut provider),
+        &mut crate::app::RereadArms {
+            provider: Some(&mut provider as &mut dyn crate::region_provider::RegionProvider),
+            vlm_armed: true,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.tables_reread_total, 1, "bad page always triggers");
@@ -798,7 +839,11 @@ fn window_fills_use_the_identity_batch_depth_without_backfill() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     // Depth 2 over [1,2,3] → one full window + one single-page window.
@@ -845,7 +890,11 @@ fn keep_pages_true_keeps_full_page_pngs_non_empty_and_decodable() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2);
@@ -885,7 +934,11 @@ fn max_output_tokens_rides_every_request_blk3() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -916,7 +969,11 @@ fn render_failures_record_diagnostics_and_continue() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -948,7 +1005,11 @@ fn cancelled_windows_commit_nothing_mechanism_a() {
         &CommitRecorder::disabled(),
         &cancellation,
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     // Zero commits: no checkpoint, no artifacts.
@@ -994,7 +1055,11 @@ fn degenerated_pages_retry_through_the_frozen_ladder() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2);
@@ -1045,7 +1110,11 @@ fn m2_rung_renders_budgeted_4096_and_escapes_with_the_2048_grid() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -1111,7 +1180,11 @@ fn m2_rung_stays_unused_when_the_penalty_rung_escapes() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -1165,7 +1238,11 @@ fn exhausted_five_attempt_ladder_commits_the_m2_terminal_attempt_marked() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -1195,7 +1272,11 @@ fn window_batch_failure_falls_back_to_depth_one() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2, "depth-1 rerun recovers both");
@@ -1339,7 +1420,11 @@ fn resume_reuses_candidate_pages_even_with_pending_decode() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 2);
@@ -1380,7 +1465,11 @@ fn empty_eos_output_enters_the_ladder_and_lands_degenerated() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert!(
@@ -1438,7 +1527,11 @@ fn empty_output_recovered_by_a_rung_commits_clean() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(session.core.single_calls.get(), 2);
@@ -1470,7 +1563,11 @@ fn boundary_samples_record_one_line_per_serial_attempt() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.degenerated_pages, 1);
@@ -1523,7 +1620,11 @@ fn boundary_samples_record_the_recovery_outcome() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.degenerated_pages, 0);
@@ -1555,7 +1656,11 @@ fn boundary_disabled_by_default_writes_nothing() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     // No boundary.jsonl in the output root (sink unset -> zero writes).
@@ -1589,7 +1694,11 @@ fn ovisocr3_ladder_runs_the_sampling_rung_first() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     assert_eq!(summary.completed_pages, 1);
@@ -1636,7 +1745,11 @@ fn ovisocr2_ladder_keeps_the_frozen_rung_order() {
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut |_, _| {},
-        None,
+        &mut crate::app::RereadArms {
+            provider: None,
+            vlm_armed: false,
+            structure: None,
+        },
     )
     .unwrap();
     let records: Vec<serde_json::Value> = std::fs::read_to_string(&boundary)

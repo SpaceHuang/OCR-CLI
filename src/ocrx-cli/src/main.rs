@@ -104,6 +104,11 @@ struct ScanOptions {
     /// R2.5: the table-reread pipeline switch (`--table-reread on`, off
     /// default). Requires `--layout-model pp-doclayout-v2` + `--layout-regions`.
     table_reread: bool,
+    /// M4.2/D-64: the F6 SLANet table-structure reread switch
+    /// (`--table-structure-reread on`, off default). Same layout-input
+    /// requirement as `--table-reread`; disjoint population (zero-table-block
+    /// pages). Off = the field is omitted from every product identity.
+    structure_reread: bool,
     /// R2.5: layout model id (only `pp-doclayout-v2` in frozen v1).
     layout_model: Option<String>,
     /// R2.5: sidecar regions JSON path for the document (R1 route A file form).
@@ -183,6 +188,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         column_split_retry: true,
         model_explicit: false,
         table_reread: false,
+        structure_reread: false,
         layout_model: None,
         layout_regions: None,
     };
@@ -307,6 +313,13 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
                 index += 1;
                 let value = enum_value(args, index, "--table-reread", &["on", "off"])?.to_owned();
                 options.table_reread = value == "on";
+            }
+            // M4.2/D-64: the F6 SLANet arm switch.
+            "--table-structure-reread" => {
+                index += 1;
+                let value = enum_value(args, index, "--table-structure-reread", &["on", "off"])?
+                    .to_owned();
+                options.structure_reread = value == "on";
             }
             "--layout-model" => {
                 index += 1;
@@ -653,10 +666,18 @@ fn enum_value<'a>(
 /// the sidecar regions file; the model/regions flags are meaningless (and
 /// misleading for the identity) without the switch.
 fn validate_reread(options: &ScanOptions) -> Result<(), String> {
-    if options.table_reread {
+    // M4.2/D-64: symmetric validation — EITHER switch requires the frozen
+    // layout model id and the sidecar regions file.
+    for (flag, enabled) in [
+        ("--table-reread", options.table_reread),
+        ("--table-structure-reread", options.structure_reread),
+    ] {
+        if !enabled {
+            continue;
+        }
         let model = options.layout_model.as_deref().unwrap_or_default();
         if model.is_empty() {
-            return Err("--table-reread on requires --layout-model pp-doclayout-v2".to_owned());
+            return Err(format!("{flag} on requires --layout-model pp-doclayout-v2"));
         }
         if model != ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID {
             return Err(format!(
@@ -666,14 +687,20 @@ fn validate_reread(options: &ScanOptions) -> Result<(), String> {
         }
         let regions = options.layout_regions.as_deref().unwrap_or_default();
         if regions.is_empty() {
-            return Err("--table-reread on requires --layout-regions <regions.json>".to_owned());
+            return Err(format!("{flag} on requires --layout-regions <regions.json>"));
         }
         let regions_path = Path::new(regions);
         if !regions_path.is_file() && !regions_path.is_dir() {
             return Err(format!("--layout-regions path not found: {regions}"));
         }
-    } else if options.layout_model.is_some() || options.layout_regions.is_some() {
-        return Err("--layout-model/--layout-regions require --table-reread on".to_owned());
+    }
+    if !options.table_reread && !options.structure_reread
+        && (options.layout_model.is_some() || options.layout_regions.is_some())
+    {
+        return Err(
+            "--layout-model/--layout-regions require --table-reread on or --table-structure-reread on"
+                .to_owned(),
+        );
     }
     Ok(())
 }
@@ -684,11 +711,17 @@ fn validate_reread(options: &ScanOptions) -> Result<(), String> {
 fn reread_options(
     options: &ScanOptions,
 ) -> Result<Option<ocrx_scan::compatibility::RereadOptions>, String> {
-    let Some(model) = options
-        .layout_model
-        .as_deref()
-        .filter(|_| options.table_reread)
-    else {
+    layout_reread_options(options, options.table_reread)
+}
+
+/// M4.2/D-64: the shared layout resolution, parameterized by which switch
+/// is armed (the OLD flag and the structure flag carry identical layout
+/// inputs; each gets its own resolved RereadOptions).
+fn layout_reread_options(
+    options: &ScanOptions,
+    enabled: bool,
+) -> Result<Option<ocrx_scan::compatibility::RereadOptions>, String> {
+    let Some(model) = options.layout_model.as_deref().filter(|_| enabled) else {
         return Ok(None);
     };
     let manifest = ocrx_models::layout::paddlex_layout_manifest(model, None)
@@ -723,7 +756,10 @@ fn reread_result_identity(
                 reread.layout_model_id,
                 reread.layout_assets_sha256,
                 ocrx_scan::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION,
-                ocrx_scan::reread::REREAD_RULES_GENERATION,
+                // M4.2/D-63: old-flag-only ON records the VLM-era generation
+                // (2). The SLANet arm's generation (3) lives in the
+                // checkpoint compatibility identity, not this display blob.
+                ocrx_scan::reread::VLM_REREAD_RULES_GENERATION,
             ),
         ),
         None => (
@@ -1579,6 +1615,13 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             std::process::exit(2);
         }
     };
+    let structure_reread = match layout_reread_options(&options, options.structure_reread) {
+        Ok(structure_reread) => structure_reread,
+        Err(error) => {
+            eprintln!("error: {error}");
+            std::process::exit(2);
+        }
+    };
     let resolved_inputs = if multi {
         match resolve_scan_inputs(&options.inputs) {
             Ok(inputs) => inputs,
@@ -1758,6 +1801,7 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             license_accepted: true,
         },
         reread: reread.clone(),
+        structure_reread: structure_reread.clone(),
     };
     // One owner for the whole invocation (X1): the first input spawns it,
     // later documents SwitchDocument inside the port.
@@ -2581,6 +2625,86 @@ mod tests {
     use ocrx_scan::plan::dynamic_fallback_requires_model_assets;
     use ocrx_scan::state::OcrQueuePage;
 
+    // --- M4.2/D-64: the new-flag combination table --------------------------
+
+    fn structure_reread_on_args(regions: &Path) -> Vec<&str> {
+        let regions_str = regions.to_str().expect("temp path is utf-8");
+        vec![
+            "a.pdf",
+            "--table-structure-reread",
+            "on",
+            "--layout-model",
+            "pp-doclayout-v2",
+            "--layout-regions",
+            Box::leak(regions_str.to_owned().into_boxed_str()),
+        ]
+    }
+
+    #[test]
+    fn structure_reread_flag_parses_and_defaults_off() {
+        let base = parse_scan_args(&["a.pdf"]).unwrap();
+        assert!(!base.structure_reread);
+        // ON parses (validation runs inside parse; layout inputs required —
+        // including that the regions path EXISTS).
+        let tmp = std::env::temp_dir().join("ocrx-m42-regions-exists.json");
+        std::fs::write(&tmp, b"{}").unwrap();
+        let on = parse_scan_args(&structure_reread_on_args(&tmp)).unwrap();
+        assert!(on.structure_reread);
+        assert_eq!(on.layout_model.as_deref(), Some("pp-doclayout-v2"));
+        let off = parse_scan_args(&["a.pdf", "--table-structure-reread", "off"]).unwrap();
+        assert!(!off.structure_reread);
+        assert!(parse_scan_args(&["a.pdf", "--table-structure-reread", "maybe"]).is_err());
+        // ON without the layout inputs: parse-time validation rejects (D-64).
+        let err = parse_scan_args(&["a.pdf", "--table-structure-reread", "on"]).unwrap_err();
+        assert!(err.contains("--table-structure-reread on"), "{err}");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn structure_reread_on_requires_layout_inputs_symmetrically() {
+        // D-64: the NEW flag has the SAME layout-input requirement as the
+        // old (model id, regions path presence).
+        let tmp = std::env::temp_dir().join("ocrx-m42-regions-sym.json");
+        std::fs::write(&tmp, b"{}").unwrap();
+        let on = parse_scan_args(&structure_reread_on_args(&tmp)).unwrap();
+        assert!(super::validate_reread(&on).is_ok());
+        let missing = std::env::temp_dir().join("ocrx-m42-regions-missing.json");
+        let _ = std::fs::remove_file(&missing);
+        let err = parse_scan_args(&structure_reread_on_args(&missing)).unwrap_err();
+        assert!(err.contains("path not found"), "{err}");
+        let _ = std::fs::remove_file(&tmp);
+
+        // Layout flags without EITHER switch: still an error, and the
+        // message names BOTH switches. (Built directly — parse itself
+        // already rejects this combination.)
+        let err = super::validate_reread(&ScanOptions {
+            layout_model: Some("pp-doclayout-v2".to_owned()),
+            ..parse_scan_args(&["a.pdf"]).unwrap()
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("--table-structure-reread on"),
+            "message must name both switches: {err}"
+        );
+    }
+
+    #[test]
+    fn old_flag_only_run_keeps_the_vlm_era_generation_in_the_result_identity() {
+        // D-63: old-flag-only ON reports the VLM-era generation (2) in the
+        // result identity blob; the SLANet generation (3) lives in the
+        // checkpoint compatibility identity.
+        let on = super::reread_result_identity(
+            Some(&ocrx_scan::compatibility::RereadOptions {
+                layout_model_id: "pp-doclayout-v2".to_owned(),
+                layout_assets_sha256: "hash".to_owned(),
+                regions_path: PathBuf::from("r.json"),
+            }),
+            0,
+            0,
+        );
+        assert!(on.contains("\"rules_generation\":2"), "{on}");
+    }
+
     // --- X1.3: orchestrated output layout and exit aggregation -------------
 
     #[test]
@@ -2947,6 +3071,7 @@ mod tests {
                 column_split_retry: true,
                 model_explicit: false,
                 table_reread: false,
+                structure_reread: false,
                 layout_model: None,
                 layout_regions: None,
             })
@@ -3434,6 +3559,7 @@ mod tests {
                 layout_model_assets_sha256: String::new(),
                 reread_prompt_version: String::new(),
                 reread_rules_generation: 0,
+                table_structure_reread: None,
             },
         );
         // Artifacts must be intact for reuse: the md the checkpoint hashes.
@@ -4761,6 +4887,7 @@ model=ovisocr3
                 column_split_retry: true,
                 model_explicit: false,
                 table_reread: false,
+                structure_reread: false,
                 layout_model: None,
                 layout_regions: None,
             }))

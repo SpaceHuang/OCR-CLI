@@ -35,6 +35,10 @@ pub struct DetectedRegion {
     /// Pixel bbox `(x0, y0, x1, y1)`; geometry is used ONLY for dedup and
     /// trigger area ratios — never for block association.
     pub bbox: (f64, f64, f64, f64),
+    /// Detector confidence, recorded per-region into `f6_detail` for later
+    /// calibration (M4.2 D-61: phase 1 records, never filters). Regions
+    /// from test fixtures may use 0.0.
+    pub conf: f64,
 }
 
 impl DetectedRegion {
@@ -344,10 +348,20 @@ pub const IDENTITY_T2_COVERAGE_OF_REREAD: f64 = 0.25;
 /// generation bump — `reread_rules_generation` carries it into the
 /// checkpoint so artifacts never reuse across rule changes.
 /// 1 = the calibrated set adjudicated by the B0'/D-47 work.
-/// v1.2 (M4.1): bumped 1 -> 2 — the F6 missing-table branch is a new
-/// trigger input (behavior change); generation-1 artifacts never reuse
-/// against generation-2 runs and vice versa (D-55).
-pub const REREAD_RULES_GENERATION: u32 = 2;
+/// 2 = M4.1: the F6 missing-table branch with the D-54 double-formula
+/// attribution gate (VLM F6 arm — branch WIP, never shipped; M4.2 removes
+/// it from the runtime).
+/// 3 = M4.2 (current): the calibrated SLANet rules — cov_attempt single-gate
+/// attribution (D-29 one-round calibration, cov_reread removed with T0
+/// evidence) + the ruling-line pre-check gate. Generation-2 artifacts never
+/// reuse against generation-3 runs and vice versa (D-63; T2/T4 regressions
+/// cover both directions and both flag paths).
+pub const REREAD_RULES_GENERATION: u32 = 3;
+
+/// The generation recorded for old-flag-only runs (`--table-reread on`,
+/// F1-F5 VLM reread; F6 disabled in the M4.2 runtime). Equals the M4.1-era
+/// value so era artifacts cannot cross-resume with generation-3 runs.
+pub const VLM_REREAD_RULES_GENERATION: u32 = 2;
 
 /// Content-identity verdict (D-47): Some(replace_ok) when both coverages
 /// clear the floor and thresholds; None = inconclusive (keep original).
@@ -569,18 +583,21 @@ pub fn f6_structural_gate(html: &str) -> bool {
         && shape.cell_fill_ratio > 0.0
 }
 
-/// Content attribution gate (D-54, raw_single arm only): the reread must
-/// recover most of the model's own attempt text (cov_attempt >= 0.50 - the
-/// attempt is the model's reading of the same region) and most of the
-/// reread must be supported by it (cov_reread >= 0.30 - invention bound).
-/// Both directions fail-closed: below the 8-bigram floor is a reject.
+/// Content attribution gate (M4.2 D-62 calibrated; raw_single arm only):
+/// the reread must recover most of the model's own attempt text
+/// (cov_attempt >= 0.50 — the attempt is the model's reading of the same
+/// region). The cov_reread >= 0.30 clause was REMOVED by the D-29
+/// one-round calibration: it has a structural length bias (a correct
+/// reread is much longer than a garbled attempt) and rejected objectively
+/// good tables (T0: TEDS 0.998 rejected at cov_reread 0.248); fabrication
+/// risk is covered by the ruling-line gate + structural gate + the T5
+/// stage-A full manual review. Fail-closed: below the 8-bigram floor is a
+/// reject. Generation 3 semantics (D-63) — any further threshold change
+/// requires generation + 1 (R2.5/D-42).
 pub fn f6_attribution_pass(attempt_text: &str, reread_html: &str) -> bool {
     const COV_ATTEMPT_MIN: f64 = 0.50;
-    const COV_REREAD_MIN: f64 = 0.30;
     match directional_coverage(attempt_text, reread_html) {
-        Some((cov_attempt, cov_reread)) => {
-            cov_attempt >= COV_ATTEMPT_MIN && cov_reread >= COV_REREAD_MIN
-        }
+        Some((cov_attempt, _cov_reread)) => cov_attempt >= COV_ATTEMPT_MIN,
         None => false,
     }
 }
@@ -624,7 +641,7 @@ pub fn orchestrate_f6(
     page_number: u32,
     page: &crate::state::RenderedPage,
     provider: &mut dyn RegionProvider,
-    decoder: &mut dyn TableRereadDecoder,
+    engine: &mut dyn crate::structure_engine::StructureTableEngine,
 ) -> std::io::Result<(Vec<PageBlock>, String, RereadStats)> {
     let mut stats = RereadStats::default();
     let regions = provider.regions_for_page(page_number);
@@ -652,29 +669,56 @@ pub fn orchestrate_f6(
     let mut adopted_html: Vec<String> = Vec::new();
     for (ordinal, region) in ordered.iter().enumerate() {
         let crop = crop_region(page, region.bbox)?;
-        let reread_html = decoder.reread_table(&crop)?;
+        // M4.2: the engine verdict replaces the VLM decode. Runtime faults
+        // are per-region dispositions (D-63 (3)/(4)), never a page failure.
+        let verdict = match crate::window::encode_page_png(&crop) {
+            Ok(png) => engine.recognize(&png, page_number, ordinal),
+            Err(error) => Err(crate::structure_engine::EngineErrorKind::EngineError(
+                error.to_string(),
+            )),
+        };
         let mut outcome = F6RegionOutcome {
             region_ordinal: ordinal,
             decoded: true,
             adopted: false,
             reject_reason: None,
+            conf: region.conf,
+            engine: crate::structure_engine::EXPECTED_ENGINE,
         };
-        if f6_structural_gate(&reread_html) {
-            let attribution_ok = match &attempt_text {
-                Some(attempt) => f6_attribution_pass(attempt, &reread_html),
-                None => true, // empty arm: no anchor - structural gate only
-            };
-            if attribution_ok {
-                adopted.push(PageBlock::HtmlTable {
-                    html: reread_html.clone(),
-                });
-                adopted_html.push(reread_html);
-                outcome.adopted = true;
-            } else {
-                outcome.reject_reason = Some("attribution");
+        let reread_html = match verdict {
+            Ok(crate::structure_engine::StructureOutcome::Html(html)) => Some(html),
+            Ok(crate::structure_engine::StructureOutcome::Reject(reject)) => {
+                outcome.reject_reason = match reject {
+                    crate::structure_engine::StructureReject::NoRulingLines => {
+                        Some("no_ruling_lines")
+                    }
+                    crate::structure_engine::StructureReject::EmptyOutput => Some("empty_output"),
+                };
+                None
             }
-        } else {
-            outcome.reject_reason = Some("structural");
+            Err(kind) => {
+                outcome.reject_reason = Some(kind.reject_reason());
+                None
+            }
+        };
+        if let Some(reread_html) = reread_html {
+            if f6_structural_gate(&reread_html) {
+                let attribution_ok = match &attempt_text {
+                    Some(attempt) => f6_attribution_pass(attempt, &reread_html),
+                    None => true, // empty arm: no anchor - structural gate only
+                };
+                if attribution_ok {
+                    adopted.push(PageBlock::HtmlTable {
+                        html: reread_html.clone(),
+                    });
+                    adopted_html.push(reread_html);
+                    outcome.adopted = true;
+                } else {
+                    outcome.reject_reason = Some("attribution");
+                }
+            } else {
+                outcome.reject_reason = Some("structural");
+            }
         }
         if outcome.adopted {
             stats.f6_emitted += 1;
@@ -731,7 +775,7 @@ pub trait TableRereadDecoder {
 }
 
 /// Per-page reread outcome counters (result-schema inputs, R2.6).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RereadStats {
     pub pairing_skipped: bool,
     pub triggered: usize,
@@ -760,15 +804,21 @@ pub struct RereadStats {
 }
 
 /// One F6 region's outcome (region reading order; the frozen-population
-/// spike adjudicates per region).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+/// spike adjudicates per region). M4.2: carries the detector confidence
+/// (D-61 audit) and the engine id (D-63 identity chain).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct F6RegionOutcome {
     pub region_ordinal: usize,
     pub decoded: bool,
     pub adopted: bool,
-    /// Why the region was rejected: structural gate, attribution gate.
+    /// Frozen vocabulary: structural | attribution | empty_output |
+    /// no_ruling_lines | engine_error | engine_down.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reject_reason: Option<&'static str>,
+    /// Detector confidence (D-61: recorded, never filtered in phase 1).
+    pub conf: f64,
+    /// Engine id from the verified handshake identity.
+    pub engine: &'static str,
 }
 
 /// One table's reread outcome (reading-order ordinal; persisted as the
@@ -985,10 +1035,19 @@ fn replace_table_fragment(markdown: &str, ordinal: usize, html: &str) -> Option<
 pub fn apply_table_reread(
     rendered: &crate::state::RenderedPage,
     artifact: &mut crate::state::PageArtifactResult,
-    provider: &mut dyn RegionProvider,
-    decoder: &mut dyn TableRereadDecoder,
+    page_number: u32,
+    arms: &mut crate::app::RereadArms<'_>,
+    vlm_decoder: Option<&mut crate::ocr::artifacts::SessionTableDecoder<'_>>,
     always_trigger: bool,
 ) -> std::io::Result<RereadStats> {
+    // M4.2: the provider reborrow happens HERE (single arms borrow) — the
+    // page scope serves both the F6 arm and the F1-F5 arm.
+    let Some(provider) = arms.provider.as_deref_mut() else {
+        // No regions sidecar: nothing can arm (the CLI requires the layout
+        // inputs for either switch; this is the degraded-empty read path).
+        return Ok(RereadStats::default());
+    };
+    let mut scoped = PageScopedProvider::new(provider, page_number);
     let mut document =
         ocrx_core::PageDocument::from_json(&artifact.page_json).map_err(|error| {
             std::io::Error::other(format!("reread: page_json parse failed: {error:?}"))
@@ -1000,10 +1059,17 @@ pub fn apply_table_reread(
         .filter(|b| block_class(b) == Some(RegionClass::Table))
         .count();
     if table_block_count == 0 {
-        // M4.1 F6: zero-table-block pages — the missing-table branch. The
-        // emission-shape qualification and adoption gates live in
+        // M4.2 F6: zero-table-block pages — the missing-table branch, run
+        // ONLY when the structure engine is armed (D-64: old-flag-only runs
+        // do NOT trigger F6 — the VLM F6 arm was removed with generation 3).
+        // The emission-shape qualification and adoption gates live in
         // orchestrate_f6; the returned markdown replaces the artifact's.
-        let regions = provider.regions_for_page(page_number);
+        let Some(engine) = arms.structure.as_deref_mut() else {
+            let mut stats = RereadStats::default();
+            stats.f6_skipped_shape = true;
+            return Ok(stats);
+        };
+        let regions = scoped.regions_for_page(page_number);
         let mut stats = RereadStats::default();
         if regions.is_empty() {
             stats.f6_skipped_shape = true;
@@ -1014,8 +1080,8 @@ pub fn apply_table_reread(
             &artifact.markdown,
             page_number,
             rendered,
-            provider,
-            decoder,
+            &mut scoped,
+            engine,
         )?;
         artifact.reread_detail_json = serde_json::to_string(&f6_stats.f6_detail)
             .map_err(|error| std::io::Error::other(format!("reread detail serialize: {error}")))?;
@@ -1028,11 +1094,16 @@ pub fn apply_table_reread(
         }
         return Ok(f6_stats);
     }
+    let Some(decoder) = vlm_decoder.map(|decoder| decoder as &mut dyn TableRereadDecoder) else {
+        // F1-F5 disarmed (old flag off) with table blocks present: keep the
+        // original blocks unchanged (byte-identical off path by construction).
+        return Ok(RereadStats::default());
+    };
     let (spliced, stats) = orchestrate_table_reread(
         &original_blocks,
         page_number,
         rendered,
-        provider,
+        &mut scoped,
         decoder,
         always_trigger,
     )?;
@@ -1331,6 +1402,7 @@ mod tests {
             class: RegionClass::Table,
             index_in_class: ordinal,
             bbox,
+            conf: 0.9,
         }
     }
 
@@ -1338,17 +1410,29 @@ mod tests {
         crate::state::RenderedPage::new(400, 400, vec![200; 400 * 400 * 3]).unwrap()
     }
 
-    struct F6Decoder {
+    /// F6 engine fake: scripted HTML verdicts; records crop sizes decoded
+    /// from the PNG IHDR (the production path sends PNG bytes).
+    struct F6Engine {
         responses: Vec<String>,
         calls: std::cell::RefCell<Vec<(f64, f64)>>,
     }
-    impl TableRereadDecoder for F6Decoder {
-        fn reread_table(&mut self, crop: &crate::state::RenderedPage) -> std::io::Result<String> {
-            self.calls
-                .borrow_mut()
-                .push((crop.width as f64, crop.height as f64));
+    impl crate::structure_engine::StructureTableEngine for F6Engine {
+        fn recognize(
+            &mut self,
+            png: &[u8],
+            _page: u32,
+            _ordinal: usize,
+        ) -> Result<
+            crate::structure_engine::StructureOutcome,
+            crate::structure_engine::EngineErrorKind,
+        > {
+            let width = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+            let height = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
+            self.calls.borrow_mut().push((f64::from(width), f64::from(height)));
             let i = self.calls.borrow().len() - 1;
-            Ok(self.responses[i].clone())
+            Ok(crate::structure_engine::StructureOutcome::Html(
+                self.responses[i].clone(),
+            ))
         }
     }
 
@@ -1404,11 +1488,16 @@ mod tests {
     }
 
     #[test]
-    fn f6_attribution_gate_both_directions() {
+    fn f6_attribution_gate_calibrated_single_formula() {
         let attempt = "<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>";
         // A faithful reread recovers the attempt content and adds structure.
         let faithful = "<table><tr><th>alpha beta gamma</th><th>delta epsilon</th></tr></table>";
         assert!(f6_attribution_pass(attempt, faithful));
+        // Generation-3 calibration: a CORRECT but much longer reread passes
+        // (cov_attempt dominates; the removed cov_reread clause rejected
+        // objectively good tables — T0 evidence, D-62).
+        let long_faithful = "<table><tr><th>alpha beta gamma</th><th>delta epsilon</th></tr>                             <tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr>                             <tr><td>5</td><td>6</td></tr><tr><td>7</td><td>8</td></tr>                             <tr><td>9</td><td>10</td></tr></table>";
+        assert!(f6_attribution_pass(attempt, long_faithful));
         // A hallucinated table shares nothing with the attempt.
         assert!(!f6_attribution_pass(
             attempt,
@@ -1452,12 +1541,12 @@ mod tests {
         let mut provider = F6Provider {
             regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
         };
-        let mut decoder = F6Decoder {
+        let mut engine = F6Engine {
             responses: vec![GOOD_TABLE.to_owned()],
             calls: std::cell::RefCell::new(Vec::new()),
         };
         let (new_blocks, new_md, stats) =
-            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
         assert_eq!(stats.f6_triggered, 1);
         assert_eq!(stats.f6_emitted, 1);
         assert_eq!(stats.f6_rejected, 0);
@@ -1476,7 +1565,7 @@ mod tests {
             regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
         };
         let attempt = "<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>";
-        let mut decoder = F6Decoder {
+        let mut engine = F6Engine {
             responses: vec![
                 "<table><tr><th>alpha beta gamma</th><th>delta epsilon</th></tr><tr><td>1</td><td>2</td></tr></table>"
                     .to_owned(),
@@ -1485,7 +1574,7 @@ mod tests {
         };
         let md = format!("header prose\n{attempt}");
         let (new_blocks, new_md, stats) =
-            orchestrate_f6(&blocks, &md, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_f6(&blocks, &md, 0, &page, &mut provider, &mut engine).unwrap();
         assert_eq!(stats.f6_triggered, 1);
         assert_eq!(stats.f6_emitted, 1);
         // header prose preserved, marker-to-end replaced
@@ -1500,7 +1589,7 @@ mod tests {
         );
         assert_eq!(new_blocks.len(), 2);
         // 0-crop calls: 1 region -> 1 decode
-        assert_eq!(decoder.calls.borrow().len(), 1);
+        assert_eq!(engine.calls.borrow().len(), 1);
     }
 
     #[test]
@@ -1513,18 +1602,18 @@ mod tests {
                 f6_region(1, (0.0, 200.0, 400.0, 400.0)),
             ],
         };
-        let mut decoder = F6Decoder {
+        let mut engine = F6Engine {
             responses: vec![],
             calls: std::cell::RefCell::new(Vec::new()),
         };
         let md = "<table><tr><td>1"; // raw marker but det_n = 2
         let (new_blocks, new_md, stats) =
-            orchestrate_f6(&blocks, md, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_f6(&blocks, md, 0, &page, &mut provider, &mut engine).unwrap();
         assert!(stats.f6_skipped_shape);
         assert_eq!(stats.f6_triggered, 0);
         assert_eq!(new_blocks.len(), 1, "unchanged");
         assert_eq!(new_md, md, "markdown unchanged");
-        assert!(decoder.calls.borrow().is_empty(), "no decode ran");
+        assert!(engine.calls.borrow().is_empty(), "no decode ran");
     }
 
     #[test]
@@ -1534,12 +1623,12 @@ mod tests {
         let mut provider = F6Provider {
             regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
         };
-        let mut decoder = F6Decoder {
+        let mut engine = F6Engine {
             responses: vec!["<table><tr><td>x</td></tr></table>".to_owned()],
             calls: std::cell::RefCell::new(Vec::new()),
         };
         let (new_blocks, new_md, stats) =
-            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
         assert_eq!(stats.f6_rejected, 1);
         assert_eq!(stats.f6_emitted, 0);
         assert_eq!(new_md, "", "rejected reread -> empty md kept");
@@ -1555,7 +1644,7 @@ mod tests {
             regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
         };
         let attempt = "<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>";
-        let mut decoder = F6Decoder {
+        let mut engine = F6Engine {
             responses: vec![
                 "<table><tr><td>wholly unrelated</td><td>invented words</td></tr><tr><td>more invention</td><td>even more</td></tr></table>"
                     .to_owned(),
@@ -1564,7 +1653,7 @@ mod tests {
         };
         let md = format!("header\n{attempt}");
         let (new_blocks, new_md, stats) =
-            orchestrate_f6(&blocks, &md, 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_f6(&blocks, &md, 0, &page, &mut provider, &mut engine).unwrap();
         assert_eq!(stats.f6_rejected, 1);
         assert_eq!(stats.f6_emitted, 0);
         assert_eq!(stats.f6_detail[0].reject_reason, Some("attribution"));
@@ -1587,12 +1676,12 @@ mod tests {
         let top_table =
             "<table><tr><th>top</th><th>t2</th></tr><tr><td>3</td><td>4</td></tr></table>";
         // responses arrive in decode order = reading order (top first)
-        let mut decoder = F6Decoder {
+        let mut engine = F6Engine {
             responses: vec![top_table.to_owned(), bottom_table.to_owned()],
             calls: std::cell::RefCell::new(Vec::new()),
         };
         let (new_blocks, new_md, stats) =
-            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut decoder).unwrap();
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
         assert_eq!(stats.f6_triggered, 2);
         assert_eq!(stats.f6_emitted, 2);
         // reading order: top (y=0) decoded and emitted first
@@ -1630,12 +1719,23 @@ mod tests {
         let mut provider = F6Provider {
             regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
         };
-        let mut decoder = F6Decoder {
+        let mut engine = F6Engine {
             responses: vec![GOOD_TABLE.to_owned()],
             calls: std::cell::RefCell::new(Vec::new()),
         };
         let stats =
-            super::apply_table_reread(&page, &mut artifact, &mut provider, &mut decoder, false)
+            super::apply_table_reread(
+                &page,
+                &mut artifact,
+                1,
+                &mut crate::app::RereadArms {
+                    provider: Some(&mut provider),
+                    vlm_armed: false,
+                    structure: Some(&mut engine),
+                },
+                None,
+                false,
+            )
                 .unwrap();
         assert_eq!(stats.f6_emitted, 1);
         assert!(artifact.page_json.contains(GOOD_TABLE));
@@ -1651,6 +1751,7 @@ mod tests {
             class,
             index_in_class: index,
             bbox,
+            conf: 0.9,
         }
     }
 

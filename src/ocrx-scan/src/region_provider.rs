@@ -104,6 +104,7 @@ impl FileRegionProvider {
                         class: RegionClass::Table,
                         index_in_class: r.index_in_class,
                         bbox: r.bbox_px.into(),
+                        conf: r.conf,
                     }),
                     _ => None, // other classes are outside this plan's scope
                 })
