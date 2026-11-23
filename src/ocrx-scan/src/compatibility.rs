@@ -140,7 +140,7 @@ impl ScanOcrConfig {
     /// compatibility (resume isolation across regions changes).
     #[must_use]
     pub fn with_regions_identity(mut self, regions_sha256: &str) -> Self {
-        self.regions_sha256 = regions_sha256.to_owned();
+        regions_sha256.clone_into(&mut self.regions_sha256);
         self
     }
 }
