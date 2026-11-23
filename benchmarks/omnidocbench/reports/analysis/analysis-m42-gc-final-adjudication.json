@@ -1,0 +1,34 @@
+{
+ "artifact": "m42-gc-final-adjudication",
+ "date": "2026-11-23",
+ "binary": "gen 4 (D-68), commit abaaad2 lineage",
+ "gates": {
+  "G-A": {
+   "verdict": "PASS",
+   "evidence": "full-corpus OFF md 1651/1651 byte-identical vs battle baseline; T4b OFF 16/16; attribution sample 20/20 (same-feature builds required — recorded lesson)"
+  },
+  "G-B": {
+   "verdict": "PASS",
+   "evidence": "official eval on 16-page gen-4 ON: improved 14/24, regressions 0, trigger-domain mean 0.507, raw 5/11, empty 9/13"
+  },
+  "G-C": {
+   "verdict": "PASS",
+   "evidence": {
+    "overall": "91.50 vs 90.87 (+0.63), official formula (1-text_edit+CDM+TEDS)/3x100",
+    "table_teds": "0.8328 vs 0.8145 (+0.0183), strictly higher",
+    "cdm": "2352 same / 0 diff",
+    "text": "predictions byte-identical on non-trigger pages (G-A proof); eval-level nondeterminism on ONE dense-index page (identical input bytes scored 1.0 then 0.0295 — measurement noise, ~-0.02 Overall); 2 trigger pages' text edit improved (0.919->0.995, 0.849->0.860)"
+   }
+  },
+  "G-D": {
+   "verdict": "RECORDED",
+   "evidence": "186.3 s/table CPU (65-crop T0 measurement); worker RSS peak ~2.1 GB"
+  }
+ },
+ "overall_verdict": "PASS — all four gates green; M4.2 GO for landing on feat/next-phase-quality",
+ "postgate_notes": [
+  "T0 det-spike masked 9 pipeline IndexErrors as empty_output; the worker surfaces them as error frames (engine_error, D-63(3)) — recorded as the T0 measurement caveat",
+  "dca64e05/1417 r1-r2/3713 r0-r2 engine_error are DETERMINISTIC pipeline throws on product-rendered pixels (stable across runs); dispositions keep-original, zero harm",
+  "eval nondeterminism caveat: dense index pages can swing per-page edit between eval runs with identical input bytes"
+ ]
+}
