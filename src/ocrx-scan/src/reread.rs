@@ -863,6 +863,9 @@ pub struct RereadStats {
     pub triggered: usize,
     pub decoded: usize,
     pub identity_blocked: usize,
+    /// M4.2 review-2026-11-23: degenerate-crop keep-originals (a distinct
+    /// cause from identity_blocked — the crop itself was unclippable).
+    pub crop_blocked: usize,
     pub compare_rejected: usize,
     pub replaced: usize,
     /// BLK-6 (review 2026-11-18): per-table outcomes in reading order —
@@ -894,7 +897,8 @@ pub struct F6RegionOutcome {
     pub decoded: bool,
     pub adopted: bool,
     /// Frozen vocabulary: structural | attribution | empty_output |
-    /// no_ruling_lines | engine_error | engine_down.
+    /// no_ruling_lines | engine_error | engine_down | degenerate_region
+    /// (added with the review-2026-11-23 crop-disposition fix).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reject_reason: Option<&'static str>,
     /// Detector confidence (D-61: recorded, never filtered in phase 1).
@@ -984,9 +988,11 @@ pub fn orchestrate_table_reread(
             outcome.triggered = true;
             stats.triggered += 1;
             // Same frozen contract as F6: a degenerate crop is a per-table
-            // keep-original disposition, never a scan failure.
+            // keep-original disposition, never a scan failure. Counted in
+            // its OWN bucket (crop_blocked) — identity_blocked means the
+            // content-identity gate said no, a different cause.
             let Ok(crop) = crop_region(page, region.bbox) else {
-                stats.identity_blocked += 1;
+                stats.crop_blocked += 1;
                 stats.detail.push(outcome);
                 continue;
             };
@@ -1685,6 +1691,66 @@ mod tests {
         assert_eq!(new_blocks.len(), 2);
         // 0-crop calls: 1 region -> 1 decode
         assert_eq!(engine.calls.borrow().len(), 1);
+    }
+
+    /// Review-2026-11-23 regression: a degenerate bbox must NOT abort the
+    /// scan — it is a per-region `degenerate_region` rejection and the page
+    /// completes with its original content (frozen no-scan-failure contract).
+    #[test]
+    fn degenerate_crop_is_a_per_region_rejection_never_a_scan_abort() {
+        let blocks: Vec<PageBlock> = vec![md("prose before")];
+        let page = f6_page();
+        // r0 is degenerate (inverted box), r1 is a real table region.
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (400.0, 100.0, 100.0, 400.0)),
+                f6_region(1, (0.0, 0.0, 400.0, 400.0)),
+            ],
+        };
+        let mut engine = F6Engine {
+            responses: vec![GOOD_TABLE.to_owned()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_rejected, 1);
+        assert_eq!(stats.f6_emitted, 1, "the good region still adopts");
+        assert_eq!(stats.f6_detail.len(), 2);
+        // The D-68 fallback orders by x, so the good region (x=0) comes
+        // first; locate the degenerate one by its rejection.
+        let degenerate = stats
+            .f6_detail
+            .iter()
+            .find(|o| o.reject_reason == Some("degenerate_region"))
+            .expect("degenerate region recorded");
+        assert!(!degenerate.decoded);
+        assert!(!degenerate.adopted);
+        let adopted_outcome = stats
+            .f6_detail
+            .iter()
+            .find(|o| o.adopted)
+            .expect("good region adopted");
+        assert_eq!(adopted_outcome.reject_reason, None);
+        assert_eq!(new_blocks.len(), 2, "prose block + appended table");
+        // empty-arm markdown: the appended table IS the new markdown
+        assert!(new_md.contains(GOOD_TABLE), "adopted table appended");
+        // the real region WAS called with a valid PNG crop
+        assert_eq!(engine.calls.borrow().len(), 1);
+    }
+
+    /// Review-2026-11-23 regression: the model may emit an UPPERCASE
+    /// `<TABLE` marker — the raw_single shape must recognize it
+    /// (case-insensitive, byte-accurate positions preserved).
+    #[test]
+    fn raw_single_marker_is_case_insensitive() {
+        let md = "prose
+<TABLE><tr><td>alpha beta</td><td>gamma</td></tr></table>";
+        match f6_emission_shape(md, 1) {
+            F6EmissionShape::RawSingle { marker_pos } => {
+                assert_eq!(&md[marker_pos..marker_pos + 7], "<TABLE>");
+            }
+            other => panic!("expected RawSingle, got {other:?}"),
+        }
     }
 
     /// D-68 (generation 4): the REAL 2x2 grid from the T4 finding — two
