@@ -1011,10 +1011,18 @@ impl ScanApplication {
             // sidecar regions JSON feeds F1-F5 and F6 alike); each ENGINE
             // is constructed only when its own flag is on. The provider
             // degrades to empty (skip) on any read problem.
+            //
+            // M4.2 RBLK-1: provenance validation BEFORE consumption — the
+            // sidecar must record the frozen layout model+revision and its
+            // page set must fit this document; anything else degrades to
+            // the empty provider (never consumed, never trusted).
             let input_stem = input
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let document_page_count =
+                u32::try_from(pdf_cell.borrow_mut().page_count(input).unwrap_or(0))
+                    .unwrap_or(u32::MAX);
             let mut reread_provider = options
                 .reread
                 .as_ref()
@@ -1024,6 +1032,26 @@ impl ScanApplication {
                         &reread.regions_path,
                         &input_stem,
                     )
+                })
+                .map(|provider| {
+                    let provenance_ok = provider.layout_id() == ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID
+                        && provider.layout_revision()
+                            == ocrx_models::layout::PADDLE_LAYOUT_REVISION
+                        && provider
+                            .page_list()
+                            .iter()
+                            .all(|page| *page >= 1 && *page <= document_page_count)
+                        && !provider.page_list().is_empty();
+                    if !provenance_ok {
+                        eprintln!(
+                            "warn: regions sidecar provenance mismatch                              (model={:?} revision={:?} pages={:?}) — reread degraded to empty for {input_stem}",
+                            provider.layout_id(),
+                            provider.layout_revision(),
+                            provider.page_list(),
+                        );
+                        return crate::region_provider::FileRegionProvider::empty();
+                    }
+                    provider
                 })
                 .map(|provider| {
                     Box::new(provider) as Box<dyn crate::region_provider::RegionProvider>
@@ -1050,12 +1078,6 @@ impl ScanApplication {
                 },
                 &mut arms,
             )?;
-            // M4.2 BLOCK-3: the verified engine identity rides the summary
-            // so result.json can reflect the structure arm.
-            ocr_summary.structure_reread_json = structure_identity
-                .as_ref()
-                .map(|identity| serde_json::to_string(identity).unwrap_or_default())
-                .unwrap_or_default();
             for (page, tokens, elapsed) in slot_events {
                 emit(ScanEvent::PageProgress {
                     page,
@@ -1177,11 +1199,15 @@ impl ScanApplication {
         summary.think_blocks_stripped += ocr_summary.think_blocks_stripped;
         summary.tables_reread_total += ocr_summary.tables_reread_total;
         summary.replaced_total += ocr_summary.replaced_total;
-        // M4.2 BLOCK-3: the structure-arm identity rides the outcome summary
-        // (result.json must reflect a structure-only run).
-        summary
-            .structure_reread_json
-            .clone_from(&ocr_summary.structure_reread_json);
+        // M4.2 BLOCK-3 / RBLK-3: UNCONDITIONAL — the outcome summary must
+        // carry the current run's engine identity even when EVERY page was
+        // resumed (the ocr phase never runs, so ocr_summary carries nothing).
+        // Without this, a fully-resumed structure run would omit
+        // table_structure_reread from result.json.
+        summary.structure_reread_json = structure_identity
+            .as_ref()
+            .map(|identity| serde_json::to_string(identity).unwrap_or_default())
+            .unwrap_or_default();
         summary.warnings.extend(ocr_summary.warnings.clone());
         summary.diagnostics.clone_from(&ocr_summary.diagnostics);
         summary.cancelled |= ocr_summary.cancelled;

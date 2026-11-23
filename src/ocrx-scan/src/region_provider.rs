@@ -24,8 +24,20 @@ use serde::Deserialize;
 
 use crate::reread::{DetectedRegion, RegionClass};
 
+/// Parsed sidecar: regions per page + the recorded provenance.
+type ParsedRegions = (
+    std::collections::BTreeMap<u32, Vec<DetectedRegion>>,
+    String,
+    String,
+    Vec<u32>,
+);
+
 #[derive(Debug, Deserialize)]
 struct RegionsFile {
+    #[serde(default)]
+    model_id: Option<String>,
+    #[serde(default)]
+    revision: Option<String>,
     #[serde(default)]
     pages: Vec<PageEntry>,
 }
@@ -57,6 +69,11 @@ pub trait RegionProvider {
 /// any read/parse problem degrades to an empty provider (scan never fails).
 pub struct FileRegionProvider {
     pages: std::collections::BTreeMap<u32, Vec<DetectedRegion>>,
+    /// Provenance recorded in the sidecar (empty when the file predates the
+    /// provenance fields or the file is absent — the provider is empty then).
+    layout_id: String,
+    layout_revision: String,
+    page_list: Vec<u32>,
 }
 
 impl FileRegionProvider {
@@ -65,10 +82,24 @@ impl FileRegionProvider {
     #[must_use]
     pub fn open(path: impl AsRef<std::path::Path>) -> Self {
         match Self::parse(path.as_ref()) {
-            Ok(pages) => Self { pages },
-            Err(_) => Self {
-                pages: std::collections::BTreeMap::new(),
+            Ok((pages, layout_id, layout_revision, page_list)) => Self {
+                pages,
+                layout_id,
+                layout_revision,
+                page_list,
             },
+            Err(_) => Self::empty(),
+        }
+    }
+
+    /// The provenance-free empty provider (frozen degradation shape).
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            pages: std::collections::BTreeMap::new(),
+            layout_id: String::new(),
+            layout_revision: String::new(),
+            page_list: Vec::new(),
         }
     }
 
@@ -107,14 +138,15 @@ impl FileRegionProvider {
         Self::open(path)
     }
 
-    fn parse(
-        path: &std::path::Path,
-    ) -> std::io::Result<std::collections::BTreeMap<u32, Vec<DetectedRegion>>> {
+    fn parse(path: &std::path::Path) -> std::io::Result<ParsedRegions> {
         let text = std::fs::read_to_string(path)?;
         let file: RegionsFile = serde_json::from_str(&text).map_err(|error| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
         })?;
+        let layout_id = file.model_id.unwrap_or_default();
+        let layout_revision = file.revision.unwrap_or_default();
         let mut pages = std::collections::BTreeMap::new();
+        let mut page_list = Vec::new();
         for entry in file.pages {
             let regions: Vec<DetectedRegion> = entry
                 .regions
@@ -130,8 +162,28 @@ impl FileRegionProvider {
                 })
                 .collect();
             pages.insert(entry.page, regions);
+            page_list.push(entry.page);
         }
-        Ok(pages)
+        Ok((pages, layout_id, layout_revision, page_list))
+    }
+
+    /// M4.2 BLOCK-1/RBLK-1: the sidecar's recorded layout identity — the
+    /// caller validates it against the frozen layout model before the
+    /// provider's regions are consumed.
+    #[must_use]
+    pub fn layout_id(&self) -> &str {
+        &self.layout_id
+    }
+
+    #[must_use]
+    pub fn layout_revision(&self) -> &str {
+        &self.layout_revision
+    }
+
+    /// The sidecar's page numbers (source order; for coverage validation).
+    #[must_use]
+    pub fn page_list(&self) -> &[u32] {
+        &self.page_list
     }
 }
 
