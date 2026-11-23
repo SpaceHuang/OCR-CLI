@@ -1,10 +1,40 @@
-# M4.2 专用表格结构重读（SLANet-plus 臂）开发计划 v1.3
+# M4.2 专用表格结构重读（SLANet-plus 臂）开发计划 v1.4
 
 日期：2026-11-22（v1.0 同日评审 NO-GO 5 项阻断，本文为修订版）
 分支：feat/next-phase-quality
 前置：M4.1 F6 计划（T4 spike FAIL，0/24 采纳）；M4.2 oracle spike 裁决（GO）
 评审记录：`docs/review/m4-2-table-structure-reread-plan-2026-11-22-review.md`（v1.0 NO-GO，BLK-1..5）；`-re-review.md`（第二轮，attribution 缺口）；`-re-review-2.md`（第三轮，RBLK-2 generation）；`-re-review-3.md`（第四轮，复核 RBLK-2 未落地）
-状态：v1.3 修订完成，待重审
+状态：v1.4 修订完成，待重审
+
+**v1.3 → v1.4 修订摘要（T4 生产实测发现：排序歧义跳过吞掉 8 张最高价值表）**
+
+T1–T3 已实施（`bd2f98f`，710 测试全绿）并完成 T4 生产触发域实测：
+OFF 逐字节一致（触发页 16/16 + 全集 md 1651/1651 + 归因抽样 20/20）；ON 端到端
+走通（真实 sidecar 子进程、握手、表格线门、attribution、持久化；一次 engine_error
+按 D-63③ 兜底保原）。但 **D-56 排序歧义跳过 + 纵向重叠 veto 在生产路径吞掉
+8 张已验证可恢复的表**（两个东财 2×2 表格网格页 + 3713 页）——T0 的 det spike
+按文件序喂入，从未经过该门；生产可达采纳 7/24 < G-B 门 12/24，T4-ON 实测与
+可达性模拟逐页吻合（证据：`C:/t/m23/m42_t4_reachability.py` 输出 + t4-report.json）。
+
+**修订（用户裁决，2026-11-23）：空臂排序歧义不再跳页，改为坐标定序**。裁剪时每
+区域的编号与 bbox 像素坐标全程已记录——卡住的只是"不敢在两种解释间拍板"，不是
+信息缺失。空页（md 为空）不存在可被打乱的既有内容，D-56"防错序插入污染原文"的
+理由不成立：
+
+- **D-56（v1.4 修订）**：empty 臂排序歧义 / 纵向重叠 veto 时**不再整页跳过**，
+  改用确定性坐标序：按 x 区间重叠 ≥0.3 切纵向栏带（列优先），栏带按左→右，
+  栏带内按上→下；切不出多栏时退化为单栏上→下（与原一致序等价）。顺序决定与
+  `f6_ordering_ambiguous=true` 标记一并入 f6_detail/stats（可审计）。raw 臂保持
+  原严格跳过不变（按定义 det_N==1，实际不可达，纯防御）。**依据**：空页追加是
+  纯新增内容；官方逐表 TEDS 匹配与顺序无关；被吞 8 表 T0 实测 TEDS 0.74–1.00，
+  为全体最高价值恢复。**实现后不得再无代次调整排序规则（R2.5/D-42 继续适用）**。
+- **T4 补充验收**：4 个跳过页重跑 ON——5f75/6e1c 应各采纳 4 张（md 相对 OFF
+  变化）、1417/3713 应逐区域 empty_output 拒绝（md 仍一致）；dca64e05 的
+  engine_error 为瞬态（重跑确认）。
+- **构建环境教训（入 T6 档案）**：OFF 字节一致性对比必须同 feature 构建
+  （`--features vulkan`）——裸 cargo build 得到 CPU 后端二进制，与 GPU 二进制
+  对比会产生 logits 漂移假差异。
+- G-B 门数值不变（≥12/24）；v1.4 下生产预测回到 15/24（62.5%）。
 
 **v1.2 → v1.3 修订摘要（第三轮 RBLK-2：校准改规则 → 代次必须 +1）**
 
@@ -238,6 +268,13 @@ GO 进 T1；任一不满足 → 停止集成。<br>**v1.2 门后复核（含 att
 T0→T1 的停止条件复核；**约束性门是 T5 G-B/G-C**（实施后实测，不可选择性地跳过）。
 若评审要求更强的 T0 独立性，替代方案 = 重跑 spike（成本 ~1.4h CPU）后按本门判定 | 数值门 + 停止条件成对出现（BLK-2 解除）；门后证据完整
 （重审剩余阻断解除）；post-hoc 性质如实披露，不冒充预注册 |
+| D-68 | **空臂排序确定化（v1.4，用户裁决 2026-11-23）**：empty 臂遇排序歧义
+或纵向重叠 veto 时不再整页跳过，改用确定性坐标序——按 x 区间重叠 ≥0.3 切纵向
+栏带，栏带左→右、栏带内上→下（多栏退化情形 = 单栏上→下，与原一致序等价）；
+`f6_ordering_ambiguous=true` 与顺序决定入 stats/f6_detail。raw 臂原严格跳过
+不变（纯防御，det_N==1 按定义单区域）。排序规则调整同样受代次契约约束 | T0 的
+det spike 未经过排序门（文件序喂入）是 T0 设计盲区，v1.4 如实修正；被吞 8 表
+T0 实测 0.74–1.00；空页追加无既有内容可打乱，D-56 跳过理由不成立 |
 
 ---
 
@@ -272,14 +309,20 @@ diff 断言）；ON/OFF 不互 resume；引擎哈希不同不复用；**generati
 | T3 | 引擎接入 `orchestrate_f6`：区域裁剪（PNG）→ 表格线门（sidecar 侧）→
 结构门 → attribution 门（raw 臂）→ raw_single 标记替换 / empty 追加 →
 `f6_detail`（engine、conf、reject_reason 枚举）→ reread sidecar；
-**conf 传递链**：sidecar 解析 → `DetectedRegion.conf` → f6_detail | 既有 F6 单测改造为 SLANet fake 全绿；新增：多区域排序（D-56）、
+**conf 传递链**：sidecar 解析 → `DetectedRegion.conf` → f6_detail | 既有 F6 单测改造为 SLANet fake 全绿；新增：多区域排序（D-56；
+v1.4 空臂确定化为 D-68）、
 空产出保原、表格线门跳过（no_ruling_lines 计数）、sidecar 运行中死亡 →
 后续区域 engine_down、零采纳产物逐字节不变守恒；conf 链 fixture 断言 |
-| T4 | 段落级回归：16 页全集 ON/OFF 本地对比 | 非触发页逐字节不变；触发页
-md/page_json/reread sidecar 三产物一致；checkpoint 哈希随新产物更新；
-ON 后 resume 不复用 OFF 产物（反之亦然）；**generation 回归：旧 flag ON/
-新 flag OFF（generation 2 语义）与 SLANet ON（generation 3）的 checkpoint
-互相不复用，双向各 1 条实测** |
+| T4 | 段落级回归：16 页全集 ON/OFF 本地对比。**v1.4 补充**：D-68 实施后
+4 个排序跳过页（5f75/6e1c/1417/3713）重跑 ON——5f75/6e1c 各采纳 4 张且 md
+相对 OFF 变化；1417/3713 逐区域 empty_output 拒绝且 md 仍一致；dca64e05
+engine_error 瞬态重跑确认 | 非触发页逐字节不变；触发页 md/page_json/reread
+sidecar 三产物一致；checkpoint 哈希随新产物更新；ON 后 resume 不复用 OFF
+产物（反之亦然）；**generation 回归：旧 flag ON/新 flag OFF（generation 2
+语义）与 SLANet ON（generation 3）的 checkpoint 互相不复用，双向各 1 条
+实测**；✅ 已完成（2026-11-23）：OFF 16/16 与 r3 基线逐字节一致 + 全集
+1651/1651 md 一致 + 归因抽样 20/20；ON 首轮 6 采纳/1 engine_error/8 排序
+丢失/1 拒绝，与可达性模拟逐页吻合 |
 | T5 | 基准门（D-65 G-A→G-D 顺序）+ **stage-A 人工复核**：458 OFF 双扫描 →
 16 页 ON → stage-A 全部发射表 100% 人工复核（含无 GT 匹配者）→ 458 ON | 四门判定表 + 判定 JSON；stage-A 预注册处置（D-62）：
 任何内容错误 → NO-GO 或收窄上报；G-C 失败即整体 NO-GO |
@@ -313,6 +356,6 @@ T3 覆盖 html 含换行/属性场景 |
 
 ## 6. 评审流程
 
-v1.3 → 重审（第三轮 RBLK-2 解除复核：generation 3 + 双向不复用验收已落文件；
-预期关注残留：D-67 post-hoc 披露是否要求重跑 spike、D-63 ④ 不自动重启的取舍）→
-PASS 后按 §4 顺序执行，T5 判定表 + stage-A 复核为最终 GO/NO-GO。
+v1.4 → 重审（唯一新增裁决点：D-68 空臂排序确定化——用户方向已确认 2026-11-23，
+本文冻结其具体规则与验收）→ PASS 后实施 D-68 + T4 补充验收 → T5（G-B/G-C 全集
++ stage-A 人工复核）为最终 GO/NO-GO。
