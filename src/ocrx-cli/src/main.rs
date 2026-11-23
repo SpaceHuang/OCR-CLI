@@ -748,9 +748,21 @@ fn layout_reread_options(
 /// reread execution identity (frozen prompt version + rules generation).
 fn reread_result_identity(
     reread: Option<&ocrx_scan::compatibility::RereadOptions>,
+    structure_json: &str,
     tables_reread_total: u64,
     replaced_total: u64,
 ) -> String {
+    // M4.2 BLOCK-3: the structure arm reports ITS OWN section — a
+    // structure-only run must never render as enabled:false. Empty json =
+    // the arm did not run (the blob keeps its exact pre-M4.2 shape).
+    let structure_part = if structure_json.is_empty() {
+        String::new()
+    } else {
+        let rules = ocrx_scan::reread::REREAD_RULES_GENERATION;
+        format!(
+            ",\"table_structure_reread\":{{\"enabled\":true,\"engine_identity\":{structure_json},\"rules_generation\":{rules}}}"
+        )
+    };
     let (_enabled, model_part) = match reread {
         Some(reread) => (
             true,
@@ -771,7 +783,7 @@ fn reread_result_identity(
         ),
     };
     format!(
-        "{{{model_part},\"tables_reread_total\":{tables_reread_total},\"replaced_total\":{replaced_total}}}"
+        "{{{model_part}{structure_part},\"tables_reread_total\":{tables_reread_total},\"replaced_total\":{replaced_total}}}"
     )
 }
 
@@ -1955,6 +1967,7 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             elapsed_ms: document.elapsed_ms,
             reread_json: reread_result_identity(
                 reread.as_ref(),
+                &document.summary.structure_reread_json,
                 document.summary.tables_reread_total,
                 document.summary.replaced_total,
             ),
@@ -2692,6 +2705,30 @@ mod tests {
     }
 
     #[test]
+    fn structure_only_run_reports_its_own_section() {
+        // M4.2 BLOCK-3: a structure-only run must NOT render as
+        // enabled:false — its own section rides the blob with the verified
+        // engine identity and the current rules generation.
+        let identity = serde_json::json!({
+            "engine": "slanet-plus", "revision": "bae6e5f8",
+            "paddleocr": "3.7.0", "paddlex": "3.7.2",
+            "paddlepaddle": "3.4.0", "models_sha256": {}
+        });
+        let blob = super::reread_result_identity(None, &identity.to_string(), 4, 0);
+        assert!(
+            blob.contains("\"enabled\":false"),
+            "old arm stays off: {blob}"
+        );
+        assert!(blob.contains("\"table_structure_reread\""), "{blob}");
+        assert!(blob.contains("\"slanet-plus\""), "{blob}");
+        assert!(blob.contains("\"rules_generation\":4"), "{blob}");
+        assert!(blob.contains("\"tables_reread_total\":4"), "{blob}");
+        // OFF runs keep the exact pre-M4.2 shape (no structure section).
+        let off = super::reread_result_identity(None, "", 0, 0);
+        assert!(!off.contains("table_structure_reread"), "{off}");
+    }
+
+    #[test]
     fn old_flag_only_run_keeps_the_vlm_era_generation_in_the_result_identity() {
         // D-63: old-flag-only ON reports the VLM-era generation (2) in the
         // result identity blob; the SLANet generation (3) lives in the
@@ -2702,6 +2739,7 @@ mod tests {
                 layout_assets_sha256: "hash".to_owned(),
                 regions_path: PathBuf::from("r.json"),
             }),
+            "",
             0,
             0,
         );
@@ -2909,7 +2947,7 @@ mod tests {
         // R2.5/BLK-5: the result identity reflects the effective reread
         // execution identity; the asset hash follows the frozen canonical
         // rule and is deterministic across resolutions.
-        let off = super::reread_result_identity(None, 0, 0);
+        let off = super::reread_result_identity(None, "", 0, 0);
         assert!(off.contains("\"enabled\":false"), "{off}");
         assert!(off.contains("\"prompt_version\":\"\""));
         assert!(off.contains("\"rules_generation\":0"));
@@ -2921,6 +2959,7 @@ mod tests {
                 layout_assets_sha256: "hash".to_owned(),
                 regions_path: PathBuf::from("r.json"),
             }),
+            "",
             3,
             1,
         );
@@ -3543,6 +3582,7 @@ mod tests {
                 platform: current_platform().to_owned(),
             },
             ocrx_output::OcrIdentity {
+                regions_sha256: String::new(),
                 inference: identity,
                 prompt_id: "ocr-markdown".to_owned(),
                 prompt_version: "ocr-markdown-v1".to_owned(),
@@ -4748,7 +4788,7 @@ model=ovisocr3
         };
         let fields = ScanResultFields {
             model_identity: Some(&identity),
-            reread_json: super::reread_result_identity(None, 0, 0),
+            reread_json: super::reread_result_identity(None, "", 0, 0),
             status: "success",
             input: Path::new("in.pdf"),
             markdown_path: None,
@@ -4798,7 +4838,7 @@ model=ovisocr3
         let identity = test_support_identity();
         let fields = ScanResultFields {
             model_identity: Some(&identity),
-            reread_json: super::reread_result_identity(None, 0, 0),
+            reread_json: super::reread_result_identity(None, "", 0, 0),
             status: "success",
             input: Path::new("in.pdf"),
             markdown_path: None,
@@ -5024,6 +5064,7 @@ model=ovisocr3
             input: PathBuf::from("in.pdf"),
             output_dir: PathBuf::from("out"),
             summary: ocrx_scan::state::JobSummary {
+                structure_reread_json: String::new(),
                 selected_pages: 1,
                 completed_pages: 1,
                 failed_pages: 0,

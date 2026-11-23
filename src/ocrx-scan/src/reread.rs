@@ -840,9 +840,48 @@ pub fn orchestrate_f6(
             updated
         }
     };
-    let mut new_blocks = blocks.to_vec();
+    let mut new_blocks = match markdown_anchor {
+        Some(marker_pos) => {
+            // BLOCK-2 (review 2026-11-23): the markdown replacement removes
+            // the garbled attempt — the page_json blocks must mirror it.
+            // The raw_single shape guarantee is "nothing but the attempt
+            // lives after the marker", so every block carrying part of the
+            // attempt text is dropped (blocks BEFORE the marker are kept:
+            // zero deletion of real content).
+            let attempt_head: String = markdown[marker_pos..]
+                .trim_start()
+                .chars()
+                .take(24)
+                .collect();
+            // A single rule covers it: any block carrying part of the attempt
+            // is dropped. Blocks before the marker (real prose) never contain
+            // the attempt head.
+            let mut kept = Vec::new();
+            for block in blocks {
+                let carries_attempt = !attempt_head.is_empty()
+                    && block_text(block).is_some_and(|text| text.contains(&attempt_head));
+                if carries_attempt {
+                    continue;
+                }
+                kept.push(block.clone());
+            }
+            kept
+        }
+        None => blocks.to_vec(),
+    };
     new_blocks.extend(adopted);
     Ok((new_blocks, new_markdown, stats))
+}
+
+/// The searchable text of a block (Markdown content / Formula latex /
+/// HtmlTable html); visual regions have none.
+fn block_text(block: &PageBlock) -> Option<&str> {
+    match block {
+        PageBlock::Markdown { content } => Some(content),
+        PageBlock::Formula { latex, .. } => Some(latex),
+        PageBlock::HtmlTable { html } => Some(html),
+        PageBlock::VisualRegion { .. } => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1184,6 +1223,15 @@ pub fn apply_table_reread(
         )?;
         artifact.reread_detail_json = serde_json::to_string(&f6_stats.f6_detail)
             .map_err(|error| std::io::Error::other(format!("reread detail serialize: {error}")))?;
+        // BLOCK-3 (review 2026-11-23): the F6 stats must ride the SAME
+        // artifact counters the JobSummary accumulates — otherwise a
+        // structure-only run reports zero rereads in result.json.
+        artifact.reread_tables = f6_stats
+            .f6_detail
+            .iter()
+            .filter(|outcome| outcome.decoded)
+            .count();
+        artifact.reread_replaced = f6_stats.f6_emitted;
         if f6_stats.f6_emitted > 0 {
             document.blocks = new_blocks;
             artifact.page_json = document.to_json().map_err(|error| {
@@ -1736,6 +1784,51 @@ mod tests {
         assert!(new_md.contains(GOOD_TABLE), "adopted table appended");
         // the real region WAS called with a valid PNG crop
         assert_eq!(engine.calls.borrow().len(), 1);
+    }
+
+    /// BLOCK-2 (review 2026-11-23) regression: raw_single must keep the
+    /// page_json blocks CONSISTENT with the replaced markdown — the garbled
+    /// attempt block is dropped, the adopted table appended, prose kept.
+    #[test]
+    fn raw_single_drops_the_attempt_block_from_page_json() {
+        let prose = md("header prose");
+        let attempt = md("<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>");
+        let blocks: Vec<PageBlock> = vec![prose, attempt];
+        let page = f6_page();
+        let raw_md = "header prose
+<table><tr><td>alpha beta gamma</td><td>delta epsilon</td></tr></table>";
+        let mut provider = F6Provider {
+            regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
+        };
+        let reread = "<table><tr><th>alpha beta gamma</th><th>delta epsilon</th></tr><tr><td>1</td><td>2</td></tr></table>";
+        let mut engine = F6Engine {
+            responses: vec![reread.to_owned()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, raw_md, 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_emitted, 1);
+        assert_eq!(new_blocks.len(), 2, "prose kept + reread table appended");
+        assert!(
+            matches!(&new_blocks[0], PageBlock::Markdown { content } if content == "header prose"),
+            "prose block kept"
+        );
+        assert!(
+            matches!(&new_blocks[1], PageBlock::HtmlTable { html } if html == reread),
+            "attempt block REPLACED by the reread table"
+        );
+        assert!(
+            new_md.contains(reread)
+                && !new_md.contains(
+                    "alpha beta gamma
+"
+                ),
+            "md replaced"
+        );
+        assert!(
+            !matches!(&new_blocks[0], PageBlock::Markdown { content } if content.contains("alpha")),
+            "no attempt text left in blocks"
+        );
     }
 
     /// Review-2026-11-23 regression: the model may emit an UPPERCASE

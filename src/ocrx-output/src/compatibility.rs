@@ -104,6 +104,11 @@ pub struct OcrIdentity {
     /// the field at all (diff-verified by T2's byte-equality test).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub table_structure_reread: Option<StructureRereadIdentity>,
+    /// M4.2 BLOCK-1: sha256 of the regions file consumed by the reread
+    /// arms ("" = none). Omitted when empty — OFF products stay
+    /// byte-identical; a regions change invalidates reread products.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub regions_sha256: String,
 }
 
 /// Versioned structured scan compatibility (`schema_version = 1`).
@@ -198,6 +203,8 @@ pub struct ScanOcrSide {
     pub reread_rules_generation: u32,
     /// M4.2/D-63 — see [`OcrIdentity`] (None = the new flag is OFF).
     pub table_structure_reread: Option<StructureRereadIdentity>,
+    /// M4.2 BLOCK-1 — see [`OcrIdentity`].
+    pub regions_sha256: String,
 }
 
 fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
@@ -218,6 +225,7 @@ fn scan_side_matches(ocr: &OcrIdentity, side: &ScanOcrSide) -> bool {
         && ocr.reread_prompt_version == side.reread_prompt_version
         && ocr.reread_rules_generation == side.reread_rules_generation
         && ocr.table_structure_reread == side.table_structure_reread
+        && ocr.regions_sha256 == side.regions_sha256
 }
 
 /// Phase 1 — static pre-comparison (RBLK-2/RBLK-4, prepare-free fast path).
@@ -284,6 +292,7 @@ pub fn ocr_final_compare(stored: &ScanCompatibility, identity: &InferenceIdentit
             reread_prompt_version: ocr.reread_prompt_version.clone(),
             reread_rules_generation: ocr.reread_rules_generation,
             table_structure_reread: ocr.table_structure_reread.clone(),
+            regions_sha256: ocr.regions_sha256.clone(),
         },
     ) && ocr.inference.backend == identity.backend
         && ocr.inference.batch_depth == identity.batch_depth
@@ -363,6 +372,7 @@ mod tests {
             layout_model_assets_sha256: String::new(),
             reread_prompt_version: String::new(),
             reread_rules_generation: 0,
+            regions_sha256: String::new(),
             table_structure_reread: None,
         }
     }
@@ -397,6 +407,7 @@ mod tests {
                 layout_model_assets_sha256: String::new(),
                 reread_prompt_version: String::new(),
                 reread_rules_generation: 0,
+                regions_sha256: String::new(),
                 table_structure_reread: None,
             },
         )
@@ -762,6 +773,58 @@ mod tests {
             models_sha256: std::collections::BTreeMap::new(),
         });
         stored
+    }
+
+    #[test]
+    fn m42_regions_sha256_change_invalidates_reread_products() {
+        // M4.2 BLOCK-1: swapping or regenerating the regions file changes
+        // the recorded sha256 — reread products never reuse across that
+        // change (either direction). Identical sha reuses.
+        let current = identity("cpu", 8, "Q4_K_M");
+        let statik = StaticInferenceIdentity::from_execution(&current);
+        let mut stored_base = stored(&current);
+        {
+            let ocr = stored_base.ocr.as_mut().unwrap();
+            ocr.table_reread = true;
+            ocr.reread_rules_generation = 2;
+            ocr.regions_sha256 = "regions-sha-A".to_owned();
+        }
+        let mut run = side();
+        run.table_reread = true;
+        run.reread_rules_generation = 2;
+        run.regions_sha256 = "regions-sha-A".to_owned();
+        assert!(
+            ocr_pre_compare(&stored_base, &statik, &run),
+            "same regions reuses"
+        );
+        run.regions_sha256 = "regions-sha-B".to_owned();
+        assert!(
+            !ocr_pre_compare(&stored_base, &statik, &run),
+            "swapped regions must reprocess"
+        );
+        // Reverse direction too.
+        let mut stored_b = stored(&current);
+        stored_b.ocr.as_mut().unwrap().regions_sha256 = "regions-sha-B".to_owned();
+        let mut run_a = side();
+        run_a.table_reread = true;
+        run_a.reread_rules_generation = 2;
+        run_a.regions_sha256 = "regions-sha-A".to_owned();
+        assert!(!ocr_pre_compare(&stored_b, &statik, &run_a));
+        // Pre-M4.2 products carry NO sha (empty); a run WITH one is a
+        // different regions view -> reprocess (fail-closed).
+        assert!(!ocr_pre_compare(
+            &stored_base,
+            &statik,
+            &side_with_regions("x")
+        ));
+    }
+
+    fn side_with_regions(sha: &str) -> ScanOcrSide {
+        let mut s = side();
+        s.table_reread = true;
+        s.reread_rules_generation = 2;
+        s.regions_sha256 = sha.to_owned();
+        s
     }
 
     #[test]

@@ -351,6 +351,24 @@ impl ScanApplication {
         } else {
             None
         };
+        // M4.2 BLOCK-1: the identity of the regions file this document
+        // consumes ("" when absent) — pins reread products to the exact
+        // regions content and makes a mis-passed file auditable.
+        let input_stem_early = input
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let regions_identity = options
+            .reread
+            .as_ref()
+            .or(options.structure_reread.as_ref())
+            .map(|reread| {
+                crate::region_provider::FileRegionProvider::regions_file_identity(
+                    &reread.regions_path,
+                    &input_stem_early,
+                )
+            })
+            .unwrap_or_default();
         let structure_identity: Option<ocrx_output::StructureRereadIdentity> =
             structure_engine.as_ref().map(|client| {
                 let hello = client.identity();
@@ -380,6 +398,7 @@ impl ScanApplication {
                     think_blocks_stripped: 0,
                     tables_reread_total: 0,
                     replaced_total: 0,
+                    structure_reread_json: String::new(),
                     warnings: Vec::new(),
                     diagnostics: Vec::new(),
                     cancelled: false,
@@ -534,6 +553,7 @@ impl ScanApplication {
                 0
             },
             table_structure_reread: structure_identity.clone(),
+            regions_sha256: regions_identity.clone(),
         };
         let statik: Option<StaticInferenceIdentity> = if shared_prepared.is_none() {
             service
@@ -940,6 +960,7 @@ impl ScanApplication {
             think_blocks_stripped: 0,
             tables_reread_total: 0,
             replaced_total: 0,
+            structure_reread_json: String::new(),
             warnings: Vec::new(),
             diagnostics: Vec::new(),
             cancelled: false,
@@ -965,7 +986,8 @@ impl ScanApplication {
                 .with_structure_reread(
                     options.structure_reread.as_ref(),
                     structure_identity.as_ref(),
-                ),
+                )
+                .with_regions_identity(&regions_identity),
             );
             let config = WindowConfig {
                 compatibility: &compatibility,
@@ -1028,6 +1050,12 @@ impl ScanApplication {
                 },
                 &mut arms,
             )?;
+            // M4.2 BLOCK-3: the verified engine identity rides the summary
+            // so result.json can reflect the structure arm.
+            ocr_summary.structure_reread_json = structure_identity
+                .as_ref()
+                .map(|identity| serde_json::to_string(identity).unwrap_or_default())
+                .unwrap_or_default();
             for (page, tokens, elapsed) in slot_events {
                 emit(ScanEvent::PageProgress {
                     page,
@@ -1133,6 +1161,7 @@ impl ScanApplication {
             think_blocks_stripped: reuse_think,
             tables_reread_total: 0,
             replaced_total: 0,
+            structure_reread_json: String::new(),
             warnings: {
                 let mut warnings: Vec<String> = reuse_warnings.into_iter().collect();
                 warnings.sort();

@@ -42,6 +42,7 @@ pub fn side() -> ScanOcrSide {
         reread_prompt_version: String::new(),
         reread_rules_generation: 0,
         table_structure_reread: None,
+        regions_sha256: String::new(),
     }
 }
 
@@ -119,6 +120,7 @@ pub fn ocr_compatibility() -> ScanCompatibility {
             reread_prompt_version: String::new(),
             reread_rules_generation: 0,
             table_structure_reread: None,
+            regions_sha256: String::new(),
         },
     )
 }

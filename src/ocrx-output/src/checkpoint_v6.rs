@@ -592,6 +592,7 @@ mod tests {
                 reread_prompt_version: String::new(),
                 reread_rules_generation: 0,
                 table_structure_reread: None,
+                regions_sha256: String::new(),
             },
         )
     }

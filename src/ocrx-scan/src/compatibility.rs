@@ -38,6 +38,10 @@ pub struct ScanOcrConfig {
     /// (the new flag is OFF; the field serializes as OMITTED — the OFF
     /// byte-compatibility contract).
     pub table_structure_reread: Option<ocrx_output::StructureRereadIdentity>,
+    /// M4.2 BLOCK-1: sha256 of the regions file actually consumed ("" = no
+    /// reread arm). A regions swap/regeneration changes the hash and
+    /// invalidates reread products on resume.
+    pub regions_sha256: String,
 }
 
 impl Default for ScanOcrConfig {
@@ -64,6 +68,7 @@ impl Default for ScanOcrConfig {
             reread_prompt_version: String::new(),
             reread_rules_generation: 0,
             table_structure_reread: None,
+            regions_sha256: String::new(),
         }
     }
 }
@@ -130,6 +135,14 @@ impl ScanOcrConfig {
         self.table_structure_reread = engine.cloned();
         self
     }
+
+    /// M4.2 BLOCK-1: pins the consumed regions-file identity into the
+    /// compatibility (resume isolation across regions changes).
+    #[must_use]
+    pub fn with_regions_identity(mut self, regions_sha256: &str) -> Self {
+        self.regions_sha256 = regions_sha256.to_owned();
+        self
+    }
 }
 
 /// Builds the native/empty compatibility (dpi and every OCR-only field are
@@ -177,6 +190,7 @@ pub fn ocr_compatibility(
             reread_prompt_version: config.reread_prompt_version.clone(),
             reread_rules_generation: config.reread_rules_generation,
             table_structure_reread: config.table_structure_reread.clone(),
+            regions_sha256: config.regions_sha256.clone(),
         },
     )
 }

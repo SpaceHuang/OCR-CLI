@@ -622,6 +622,7 @@ pub fn run_pages_with_session(
         think_blocks_stripped,
         tables_reread_total: reread_tables,
         replaced_total: reread_replaced,
+        structure_reread_json: String::new(),
         warnings: warnings.into_iter().collect(),
         diagnostics,
         cancelled: cancellation.is_cancelled(),
@@ -700,6 +701,7 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             reread_prompt_version: ocr.reread_prompt_version.clone(),
             reread_rules_generation: ocr.reread_rules_generation,
             table_structure_reread: ocr.table_structure_reread.clone(),
+            regions_sha256: ocr.regions_sha256.clone(),
         },
         None => ScanOcrSide {
             prompt_id: String::new(),
@@ -719,6 +721,7 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             reread_prompt_version: String::new(),
             reread_rules_generation: 0,
             table_structure_reread: None,
+            regions_sha256: String::new(),
         },
     }
 }

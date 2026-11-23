@@ -325,6 +325,11 @@ pub struct JobSummary {
     /// `tables_reread_total` / `replaced_total`).
     pub tables_reread_total: u64,
     pub replaced_total: u64,
+    /// M4.2/D-63 BLOCK-3: the verified structure-engine identity (serialized
+    /// StructureRereadIdentity), populated by the app when the
+    /// `--table-structure-reread` arm ran. Empty = the arm did not run
+    /// (result.json keeps its exact pre-M4.2 shape).
+    pub structure_reread_json: String,
     pub warnings: Vec<String>,
     pub diagnostics: Vec<PageDiagnostic>,
     pub cancelled: bool,
@@ -342,6 +347,11 @@ pub fn merge_job_summaries(native: JobSummary, ocr: JobSummary) -> JobSummary {
         failed_pages: native.failed_pages + ocr.failed_pages,
         tables_reread_total: native.tables_reread_total + ocr.tables_reread_total,
         replaced_total: native.replaced_total + ocr.replaced_total,
+        structure_reread_json: if ocr.structure_reread_json.is_empty() {
+            native.structure_reread_json.clone()
+        } else {
+            ocr.structure_reread_json.clone()
+        },
         truncated_pages: native.truncated_pages + ocr.truncated_pages,
         degenerated_pages: native.degenerated_pages + ocr.degenerated_pages,
         think_blocks_stripped: native.think_blocks_stripped + ocr.think_blocks_stripped,
@@ -725,6 +735,7 @@ mod tests {
             think_blocks_stripped: 3,
             tables_reread_total: 0,
             replaced_total: 0,
+            structure_reread_json: String::new(),
             warnings: vec!["a".to_owned()],
             diagnostics: vec![],
             cancelled: false,
@@ -738,6 +749,7 @@ mod tests {
             think_blocks_stripped: 5,
             tables_reread_total: 0,
             replaced_total: 0,
+            structure_reread_json: String::new(),
             warnings: vec!["b".to_owned()],
             diagnostics: vec![],
             cancelled: true,

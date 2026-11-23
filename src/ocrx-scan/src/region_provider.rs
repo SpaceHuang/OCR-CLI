@@ -72,6 +72,26 @@ impl FileRegionProvider {
         }
     }
 
+    /// M4.2 BLOCK-1: the identity of the regions file THIS document would
+    /// consume (sha256 over its bytes; "" when the file is absent — the
+    /// provider itself degrades to empty). Folds into the compatibility
+    /// identity so swapping/regenerating regions invalidates reread
+    /// products, and so a mis-passed regions file is auditable in the
+    /// checkpoint.
+    #[must_use]
+    pub fn regions_file_identity(root: impl AsRef<std::path::Path>, stem: &str) -> String {
+        let root = root.as_ref();
+        let path = if root.is_dir() {
+            root.join(format!("{stem}.regions.json"))
+        } else {
+            root.to_path_buf()
+        };
+        match std::fs::read(&path) {
+            Ok(bytes) => ocrx_primitives::sha256(&bytes),
+            Err(_) => String::new(),
+        }
+    }
+
     /// R3 orchestrated form: `root` is a REGIONS DIRECTORY — the document's
     /// file is `<root>/<input stem>.regions.json` (the sidecar writes one
     /// file per PDF). A FILE path keeps the single-document form. Both
