@@ -351,12 +351,16 @@ pub const IDENTITY_T2_COVERAGE_OF_REREAD: f64 = 0.25;
 /// 2 = M4.1: the F6 missing-table branch with the D-54 double-formula
 /// attribution gate (VLM F6 arm — branch WIP, never shipped; M4.2 removes
 /// it from the runtime).
-/// 3 = M4.2 (current): the calibrated SLANet rules — cov_attempt single-gate
-/// attribution (D-29 one-round calibration, cov_reread removed with T0
-/// evidence) + the ruling-line pre-check gate. Generation-2 artifacts never
-/// reuse against generation-3 runs and vice versa (D-63; T2/T4 regressions
-/// cover both directions and both flag paths).
-pub const REREAD_RULES_GENERATION: u32 = 3;
+/// 3 = M4.2 pre-D-68: the calibrated SLANet rules with STRICT ordering skip
+/// (empty-arm ordering ambiguity / y-overlap veto dropped whole pages; only
+/// the T4 first-round artifacts exist — never reused).
+/// 4 = M4.2 (current): D-68 — the calibrated SLANet rules with the empty-arm
+/// deterministic coordinate ordering fallback (column bands left->right,
+/// within band top->bottom; `f6_ordering_ambiguous=true` audit stays set).
+/// cov_attempt single-gate attribution + ruling-line pre-check gate are
+/// unchanged since 3. Generations 2/3 never reuse against 4 and vice versa
+/// (D-63/D-68; T2 matrix covers 2/3, 3/4, 2/4 both directions).
+pub const REREAD_RULES_GENERATION: u32 = 4;
 
 /// The generation recorded for old-flag-only runs (`--table-reread on`,
 /// F1-F5 VLM reread; F6 disabled in the M4.2 runtime). Equals the M4.1-era
@@ -602,10 +606,47 @@ pub fn f6_attribution_pass(attempt_text: &str, reread_html: &str) -> bool {
     }
 }
 
+/// D-68 (generation 4): deterministic coordinate order for the EMPTY arm
+/// fallback — column bands (x-interval overlap >= 0.3) left->right, within
+/// a band top->bottom. A single-band page degenerates to top->bottom (the
+/// same order the dual-hypothesis agreement would produce). The decision is
+/// AUDITED, not silent: `f6_ordering_ambiguous` stays true and every
+/// outcome carries `order = "coordinate_fallback"`.
+fn coordinate_fallback_order(regions: &[DetectedRegion]) -> Vec<DetectedRegion> {
+    let mut order: Vec<usize> = (0..regions.len()).collect();
+    order.sort_by_key(|i| (regions[*i].bbox.0 * 1000.0).round() as i64);
+    let mut bands: Vec<Vec<usize>> = Vec::new();
+    for i in order {
+        let fits = match bands.last() {
+            Some(last) => {
+                let prev = regions[*last.last().expect("non-empty band")].bbox;
+                let b = regions[i].bbox;
+                let inter = prev.2.min(b.2) - prev.0.max(b.0);
+                let smaller = (prev.2 - prev.0).min(b.2 - b.0);
+                smaller > 0.0 && inter / smaller >= 0.3
+            }
+            None => false,
+        };
+        if fits {
+            bands.last_mut().expect("last exists").push(i);
+        } else {
+            bands.push(vec![i]);
+        }
+    }
+    let mut out = Vec::new();
+    for band in bands {
+        let mut within = band;
+        within.sort_by_key(|i| (regions[*i].bbox.1 * 1000.0).round() as i64);
+        out.extend(within);
+    }
+    out.into_iter().map(|i| regions[i]).collect()
+}
+
 /// Orders the detected regions for F6 adoption: IoU dedup first, then the
 /// D-44 dual-hypothesis reading order (row/column bands must agree;
 /// consecutive-y overlap veto applies). `None` = ambiguous - whole-page
-/// F6 skip (D-56).
+/// F6 skip (D-56; M4.2 D-68: the EMPTY arm falls back to
+/// `coordinate_fallback_order` instead — see orchestrate_f6).
 pub fn f6_order_regions(regions: &[DetectedRegion]) -> Option<Vec<DetectedRegion>> {
     let deduped = dedup_regions(regions);
     let boxes: Vec<(f64, f64, f64, f64)> = deduped.iter().map(|r| r.bbox).collect();
@@ -660,9 +701,22 @@ pub fn orchestrate_f6(
             return Ok((blocks.to_vec(), markdown.to_owned(), stats));
         }
     };
-    let Some(ordered) = f6_order_regions(&regions) else {
-        stats.f6_ordering_ambiguous = true;
-        return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+    // D-68 (generation 4): ordering ambiguity / y-overlap veto on the EMPTY
+    // arm no longer skips the page — there is no pre-existing content to
+    // corrupt, so the deterministic coordinate order is used and the
+    // decision is AUDITED (`f6_ordering_ambiguous` stays true, every
+    // outcome's `order` marks the fallback). The RAW arm keeps the strict
+    // skip (marker replacement pairs with existing content; defensive:
+    // det_N == 1 by definition).
+    let (ordered, order_source) = match f6_order_regions(&regions) {
+        Some(ordered) => (ordered, "dual_hypothesis"),
+        None => {
+            stats.f6_ordering_ambiguous = true;
+            if markdown_anchor.is_some() {
+                return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+            }
+            (coordinate_fallback_order(&regions), "coordinate_fallback")
+        }
     };
     stats.f6_triggered = ordered.len();
     let mut adopted: Vec<PageBlock> = Vec::new();
@@ -684,6 +738,7 @@ pub fn orchestrate_f6(
             reject_reason: None,
             conf: region.conf,
             engine: crate::structure_engine::EXPECTED_ENGINE,
+            order: order_source,
         };
         let reread_html = match verdict {
             Ok(crate::structure_engine::StructureOutcome::Html(html)) => Some(html),
@@ -819,6 +874,10 @@ pub struct F6RegionOutcome {
     pub conf: f64,
     /// Engine id from the verified handshake identity.
     pub engine: &'static str,
+    /// D-68 audit: how this region's write order was decided —
+    /// "dual_hypothesis" (D-44 agreement) or "coordinate_fallback"
+    /// (generation 4 empty-arm determinized order).
+    pub order: &'static str,
 }
 
 /// One table's reread outcome (reading-order ordinal; persisted as the
@@ -1590,6 +1649,99 @@ mod tests {
         assert_eq!(new_blocks.len(), 2);
         // 0-crop calls: 1 region -> 1 decode
         assert_eq!(engine.calls.borrow().len(), 1);
+    }
+
+    /// D-68 (generation 4): the REAL 2x2 grid from the T4 finding — two
+    /// table columns; dual-hypothesis order disagrees, so the EMPTY arm
+    /// falls back to the deterministic coordinate order (left column
+    /// top->bottom, then right column top->bottom) instead of skipping.
+    #[test]
+    fn d68_empty_arm_ambiguous_order_falls_back_to_coordinate_order() {
+        let blocks: Vec<PageBlock> = vec![];
+        let page = f6_page();
+        // sidecar (detector) order: right-top, right-bottom, left-top, left-bottom
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (834.3, 294.3, 1566.0, 1031.8)),
+                f6_region(1, (833.7, 1067.9, 1565.6, 1806.3)),
+                f6_region(2, (73.6, 296.0, 801.2, 1397.3)),
+                f6_region(3, (75.0, 1433.7, 801.4, 1806.3)),
+            ],
+        };
+        // Responses are scripted in CALL order = the D-68 fallback order:
+        // left column (top->bottom), then right column (top->bottom).
+        let mut engine = F6Engine {
+            responses: vec![
+                "<table><tr><th>LEFT_TOP</th><th>x</th></tr><tr><td>a</td><td>b</td></tr></table>"
+                    .to_owned(),
+                "<table><tr><th>LEFT_BOTTOM</th><th>x</th></tr><tr><td>a</td><td>b</td></tr></table>"
+                    .to_owned(),
+                "<table><tr><th>RIGHT_TOP</th><th>x</th></tr><tr><td>a</td><td>b</td></tr></table>"
+                    .to_owned(),
+                "<table><tr><th>RIGHT_BOTTOM</th><th>x</th></tr><tr><td>a</td><td>b</td></tr></table>"
+                    .to_owned(),
+            ],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, new_md, stats) =
+            orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
+        assert!(stats.f6_ordering_ambiguous, "fallback decision must be audited");
+        assert_eq!(stats.f6_emitted, 4, "nothing lost to the ordering gate");
+        // Write order: left column (top->bottom), then right column (top->bottom).
+        let joined = new_md.clone();
+        let lt = joined.find("LEFT_TOP").expect("left-top present");
+        let lb = joined.find("LEFT_BOTTOM").expect("left-bottom present");
+        let rt = joined.find("RIGHT_TOP").expect("right-top present");
+        let rb = joined.find("RIGHT_BOTTOM").expect("right-bottom present");
+        assert!(lt < lb && lb < rt && rt < rb, "column-major order: {joined}");
+        // Audit fields on every outcome.
+        assert!(stats
+            .f6_detail
+            .iter()
+            .all(|o| o.order == "coordinate_fallback" && o.adopted));
+    }
+
+    /// D-68: the RAW arm keeps the strict whole-page skip on ordering
+    /// ambiguity. NOTE: multi-region raw pages exit EARLIER at the D-53
+    /// shape gate (raw_single requires det_N == 1), so this guard is
+    /// defense-in-depth — production shapes can never reach it. This test
+    /// pins the reachable D-53 behavior; the unreachable D-68 raw guard is
+    /// documented in `orchestrate_f6`.
+    #[test]
+    fn d68_raw_multi_region_pages_exit_at_the_shape_gate() {
+        let blocks: Vec<PageBlock> = vec![md("prose")];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (834.3, 294.3, 1566.0, 1031.8)),
+                f6_region(1, (73.6, 296.0, 801.2, 1397.3)),
+            ],
+        };
+        let mut engine = F6Engine {
+            responses: vec![GOOD_TABLE.to_owned()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let raw = "<table><tr><td>alpha</td><td>beta</td></tr></table>";
+        let (new_blocks, new_md, stats) = orchestrate_f6(
+            &blocks,
+            &format!("prose
+{raw}"),
+            0,
+            &page,
+            &mut provider,
+            &mut engine,
+        )
+        .unwrap();
+        assert!(
+            stats.f6_skipped_shape,
+            "det_N==2 raw pages are D-53 ineligible before ordering"
+        );
+        assert!(!stats.f6_ordering_ambiguous);
+        assert_eq!(stats.f6_emitted, 0);
+        assert_eq!(stats.f6_detail.len(), 0);
+        assert_eq!(engine.calls.borrow().len(), 0, "no engine call before skip");
+        assert_eq!(new_blocks.len(), 1, "original blocks kept");
+        assert!(new_md.contains(raw));
     }
 
     #[test]

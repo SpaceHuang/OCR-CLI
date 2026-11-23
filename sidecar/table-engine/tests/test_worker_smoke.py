@@ -72,6 +72,12 @@ def test_worker_serves_matches_t0_postgate_set():
     hello = json.loads(lines[0])
     assert hello["type"] == "hello"
     results = [json.loads(l) for l in lines[1:]]
+    # Evidence cache FIRST (a 70+ minute run must never lose its compute to
+    # a late assertion): dump the raw verdicts before any comparison.
+    Path(r"D:/t/m42-smoke-results.json").write_text(
+        json.dumps({"hello": hello, "results": results}, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
     got_ok = {}
     got_reject = {}

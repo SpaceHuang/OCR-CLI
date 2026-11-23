@@ -662,59 +662,92 @@ mod tests {
 
     #[test]
     fn m42_structure_identity_generation_and_flag_paths() {
-        // M4.2 D-63/D-64: generation 2 (old-flag VLM era) and generation 3
-        // (SLANet arm) never cross-resume in EITHER direction, and the
-        // engine identity must match exactly for reuse.
+        // M4.2 D-63/D-64/D-68 EXECUTABLE GENERATION MATRIX (v1.6):
+        // - 2 <-> 3: old-flag era vs first SLANet generation (historical);
+        // - 3 <-> 4: SAME SLANet engine identity, ONLY the generation
+        //   differs (D-68 ordering change) — bidirectional non-reuse. This
+        //   is the core guard: the engine identity must not substitute for
+        //   the generation gate;
+        // - 2 <-> 4: old-flag gen 2 vs current SLANet gen 4, bidirectional.
+        // Every mismatched pair fails; identical identity + generation
+        // reuses.
         let current = identity("cpu", 8, "Q4_K_M");
         let statik = StaticInferenceIdentity::from_execution(&current);
         let (compat, matching) = reread_on(&current); // generation-2 stored/run
-        let mut engine = StructureRereadIdentity {
+        let engine = |revision: &str| StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
-            revision: "bae6e5f8".to_owned(),
+            revision: revision.to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
             models_sha256: std::collections::BTreeMap::new(),
         };
 
-        // SLANet ON (generation 3) vs stored old-flag products (generation 2).
-        let mut slanet_run = matching.clone();
-        slanet_run.reread_rules_generation = 3;
-        slanet_run.table_structure_reread = Some(engine.clone());
-        assert!(!ocr_pre_compare(&compat, &statik, &slanet_run));
+        // --- 2 <-> 3 (historical isolation) ---------------------------------
+        let mut gen3_run = matching.clone();
+        gen3_run.reread_rules_generation = 3;
+        gen3_run.table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(!ocr_pre_compare(&compat, &statik, &gen3_run));
+        let mut stored_gen3 = compat.clone();
+        stored_gen3.ocr.as_mut().unwrap().reread_rules_generation = 3;
+        stored_gen3.ocr.as_mut().unwrap().table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(!ocr_pre_compare(&stored_gen3, &statik, &matching));
 
-        // Reverse: stored SLANet products, old-flag-only run.
-        let mut stored_slanet = compat.clone();
-        stored_slanet.ocr.as_mut().unwrap().reread_rules_generation = 3;
-        stored_slanet.ocr.as_mut().unwrap().table_structure_reread = Some(engine.clone());
-        assert!(!ocr_pre_compare(&stored_slanet, &statik, &matching));
+        // --- 3 <-> 4: SAME engine identity, ONLY generation differs --------
+        let mut stored_gen3_same_engine = compat.clone();
+        stored_gen3_same_engine.ocr.as_mut().unwrap().reread_rules_generation = 3;
+        stored_gen3_same_engine.ocr.as_mut().unwrap().table_structure_reread =
+            Some(engine("bae6e5f8"));
+        let mut gen4_run = matching.clone();
+        gen4_run.reread_rules_generation = 4;
+        gen4_run.table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(
+            !ocr_pre_compare(&stored_gen3_same_engine, &statik, &gen4_run),
+            "gen-3 empty-skip products must NEVER reuse under the gen-4 run"
+        );
+        // Reverse: stored gen 4, run is gen 3.
+        assert!(
+            !ocr_pre_compare(&stored_gen4_fixture(&current), &statik, &gen3_run),
+            "gen-4 products must never reuse under a gen-3 run"
+        );
 
-        // Same generation, different engine identity: no reuse.
-        let mut run_same_gen = matching.clone();
-        run_same_gen.reread_rules_generation = 3;
-        run_same_gen.table_structure_reread = Some(engine.clone());
-        let mut stored_same_gen = compat.clone();
-        stored_same_gen.ocr.as_mut().unwrap().reread_rules_generation = 3;
-        engine.revision = "other".to_owned();
-        stored_same_gen.ocr.as_mut().unwrap().table_structure_reread = Some(engine);
-        assert!(!ocr_pre_compare(&stored_same_gen, &statik, &run_same_gen));
+        // --- 2 <-> 4 (old flag vs current SLANet) ---------------------------
+        assert!(!ocr_pre_compare(&compat, &statik, &gen4_run));
+        assert!(!ocr_pre_compare(
+            &stored_gen4_fixture(&current),
+            &statik,
+            &matching
+        ));
+
+        // Engine-identity mismatch at the SAME generation: no reuse either.
+        let mut stored_diff_engine = compat.clone();
+        stored_diff_engine.ocr.as_mut().unwrap().reread_rules_generation = 4;
+        stored_diff_engine.ocr.as_mut().unwrap().table_structure_reread =
+            Some(engine("other-revision"));
+        assert!(!ocr_pre_compare(&stored_diff_engine, &statik, &gen4_run));
 
         // Identical identity + generation: reuse stays possible.
-        let mut engine_same = StructureRereadIdentity {
+        let mut stored_match = compat.clone();
+        stored_match.ocr.as_mut().unwrap().reread_rules_generation = 4;
+        stored_match.ocr.as_mut().unwrap().table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(ocr_pre_compare(&stored_match, &statik, &gen4_run));
+    }
+
+    /// A stored compatibility carrying the CURRENT generation (4) with the
+    /// exact SLANet engine identity — the 3<->4 fixture's counterpart.
+    fn stored_gen4_fixture(current: &InferenceIdentity) -> ScanCompatibility {
+        let mut stored = stored(current);
+        let ocr = stored.ocr.as_mut().unwrap();
+        ocr.reread_rules_generation = 4;
+        ocr.table_structure_reread = Some(StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
             revision: "bae6e5f8".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
             models_sha256: std::collections::BTreeMap::new(),
-        };
-        let mut run_match = matching.clone();
-        run_match.reread_rules_generation = 3;
-        run_match.table_structure_reread = Some(engine_same.clone());
-        let mut stored_match = compat.clone();
-        stored_match.ocr.as_mut().unwrap().reread_rules_generation = 3;
-        stored_match.ocr.as_mut().unwrap().table_structure_reread = Some(engine_same);
-        assert!(ocr_pre_compare(&stored_match, &statik, &run_match));
+        });
+        stored
     }
 
     #[test]
