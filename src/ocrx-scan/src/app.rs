@@ -1177,6 +1177,9 @@ impl ScanApplication {
         summary.think_blocks_stripped += ocr_summary.think_blocks_stripped;
         summary.tables_reread_total += ocr_summary.tables_reread_total;
         summary.replaced_total += ocr_summary.replaced_total;
+        // M4.2 BLOCK-3: the structure-arm identity rides the outcome summary
+        // (result.json must reflect a structure-only run).
+        summary.structure_reread_json = ocr_summary.structure_reread_json.clone();
         summary.warnings.extend(ocr_summary.warnings.clone());
         summary.diagnostics.clone_from(&ocr_summary.diagnostics);
         summary.cancelled |= ocr_summary.cancelled;
