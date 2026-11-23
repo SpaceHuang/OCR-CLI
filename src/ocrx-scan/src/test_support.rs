@@ -41,7 +41,7 @@ pub fn side() -> ScanOcrSide {
         layout_model_assets_sha256: String::new(),
         reread_prompt_version: String::new(),
         reread_rules_generation: 0,
-            table_structure_reread: None,
+        table_structure_reread: None,
     }
 }
 

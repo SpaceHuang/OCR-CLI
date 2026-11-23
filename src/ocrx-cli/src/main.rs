@@ -317,8 +317,8 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             // M4.2/D-64: the F6 SLANet arm switch.
             "--table-structure-reread" => {
                 index += 1;
-                let value = enum_value(args, index, "--table-structure-reread", &["on", "off"])?
-                    .to_owned();
+                let value =
+                    enum_value(args, index, "--table-structure-reread", &["on", "off"])?.to_owned();
                 options.structure_reread = value == "on";
             }
             "--layout-model" => {
@@ -687,14 +687,17 @@ fn validate_reread(options: &ScanOptions) -> Result<(), String> {
         }
         let regions = options.layout_regions.as_deref().unwrap_or_default();
         if regions.is_empty() {
-            return Err(format!("{flag} on requires --layout-regions <regions.json>"));
+            return Err(format!(
+                "{flag} on requires --layout-regions <regions.json>"
+            ));
         }
         let regions_path = Path::new(regions);
         if !regions_path.is_file() && !regions_path.is_dir() {
             return Err(format!("--layout-regions path not found: {regions}"));
         }
     }
-    if !options.table_reread && !options.structure_reread
+    if !options.table_reread
+        && !options.structure_reread
         && (options.layout_model.is_some() || options.layout_regions.is_some())
     {
         return Err(
@@ -736,7 +739,7 @@ fn layout_reread_options(
     }
     Ok(Some(ocrx_scan::compatibility::RereadOptions {
         layout_model_id: manifest.model.as_str().to_owned(),
-        layout_assets_sha256: ocrx_primitives::sha256(canonical.as_bytes()),
+        layout_assets_sha256: ocrx_output::sha256(canonical.as_bytes()),
         regions_path: PathBuf::from(options.layout_regions.as_deref().unwrap_or_default()),
     }))
 }
@@ -2960,7 +2963,7 @@ mod tests {
         }
         assert_eq!(
             first.layout_assets_sha256,
-            ocrx_primitives::sha256(canonical.as_bytes())
+            ocrx_output::sha256(canonical.as_bytes())
         );
         assert_eq!(first.layout_model_id, "pp-doclayout-v2");
         base.table_reread = false;
@@ -4178,6 +4181,10 @@ model=ovisocr3
             keep_pages: false,
             password: None,
             column_split_retry: true,
+            table_reread: false,
+            structure_reread: false,
+            layout_model: None,
+            layout_regions: None,
             model_explicit: false,
         };
         // 5 GiB: the floor error path exits the process — verify through

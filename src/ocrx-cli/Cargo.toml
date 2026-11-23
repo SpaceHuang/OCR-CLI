@@ -15,8 +15,6 @@ ocrx-inference-api = { path = "../ocrx-inference-api" }
 ocrx-models = { path = "../ocrx-models" }
 ocrx-scan = { path = "../ocrx-scan" }
 ocrx-output = { path = "../ocrx-output" }
-ocrx-models = { path = "../ocrx-models" }
-ocrx-primitives = { path = "../ocrx-primitives" }
 ocrx-skill = { path = "../ocrx-skill" }
 ctrlc = "3.5.2"
 vulkano = { version = "=0.35.2", optional = true }

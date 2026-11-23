@@ -13,6 +13,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 pytest.importorskip("paddleocr", reason="paddle required (local smoke)")
+# The smoke consumes machine-local T0 artifacts; without them (any other
+# machine / a fresh clone) it must SKIP, never fail or run for 70+ minutes.
+_t0_crops = Path(r"D:/t/m42-t0-crops")
+if not (_t0_crops / "regions-manifest.json").exists():
+    pytest.skip("local T0 crops not present on this machine", allow_module_level=True)
 
 import worker  # noqa: E402
 

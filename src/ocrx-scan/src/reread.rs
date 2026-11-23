@@ -548,7 +548,13 @@ pub fn f6_emission_shape(markdown: &str, det_n: usize) -> F6EmissionShape {
     if markdown.trim().is_empty() {
         return F6EmissionShape::Empty;
     }
-    let Some(marker_pos) = markdown.find("<table") else {
+    // Case-insensitive: the model can emit <TABLE (marker search per
+    // code-review 2026-11-23); positions are byte-accurate either way.
+    let Some(marker_pos) = markdown
+        .to_ascii_lowercase()
+        .find("<table")
+        .filter(|pos| pos + 6 <= markdown.len())
+    else {
         return F6EmissionShape::Ineligible(F6SkipReason::TextOnlyNoAnchor);
     };
     // Raw marker present: every non-empty line after the marker must be
@@ -722,7 +728,28 @@ pub fn orchestrate_f6(
     let mut adopted: Vec<PageBlock> = Vec::new();
     let mut adopted_html: Vec<String> = Vec::new();
     for (ordinal, region) in ordered.iter().enumerate() {
-        let crop = crop_region(page, region.bbox)?;
+        // A degenerate/unclippable region is a PER-REGION disposition, never
+        // a scan failure (frozen contract: scan never fails on provider
+        // problems — code-review 2026-11-23).
+        let crop = match crop_region(page, region.bbox) {
+            Ok(crop) => crop,
+            Err(error) => {
+                stats.f6_rejected += 1;
+                // The region keeps its original content; the disposition and
+                // the cause ride f6_detail (page-NNNN.reread.json).
+                stats.f6_detail.push(F6RegionOutcome {
+                    region_ordinal: ordinal,
+                    decoded: false,
+                    adopted: false,
+                    reject_reason: Some("degenerate_region"),
+                    conf: region.conf,
+                    engine: crate::structure_engine::EXPECTED_ENGINE,
+                    order: order_source,
+                });
+                let _ = error;
+                continue;
+            }
+        };
         // M4.2: the engine verdict replaces the VLM decode. Runtime faults
         // are per-region dispositions (D-63 (3)/(4)), never a page failure.
         let verdict = match crate::window::encode_page_png(&crop) {
@@ -956,7 +983,13 @@ pub fn orchestrate_table_reread(
         if always_trigger || table_reread_candidate(html, area_ratio) {
             outcome.triggered = true;
             stats.triggered += 1;
-            let crop = crop_region(page, region.bbox)?;
+            // Same frozen contract as F6: a degenerate crop is a per-table
+            // keep-original disposition, never a scan failure.
+            let Ok(crop) = crop_region(page, region.bbox) else {
+                stats.identity_blocked += 1;
+                stats.detail.push(outcome);
+                continue;
+            };
             let reread_html = decoder.reread_table(&crop)?;
             outcome.decoded = true;
             stats.decoded += 1;
@@ -1124,9 +1157,10 @@ pub fn apply_table_reread(
         // The emission-shape qualification and adoption gates live in
         // orchestrate_f6; the returned markdown replaces the artifact's.
         let Some(engine) = arms.structure.as_deref_mut() else {
-            let mut stats = RereadStats::default();
-            stats.f6_skipped_shape = true;
-            return Ok(stats);
+            return Ok(RereadStats {
+                f6_skipped_shape: true,
+                ..RereadStats::default()
+            });
         };
         let regions = scoped.regions_for_page(page_number);
         let mut stats = RereadStats::default();
@@ -1487,7 +1521,9 @@ mod tests {
         > {
             let width = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
             let height = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
-            self.calls.borrow_mut().push((f64::from(width), f64::from(height)));
+            self.calls
+                .borrow_mut()
+                .push((f64::from(width), f64::from(height)));
             let i = self.calls.borrow().len() - 1;
             Ok(crate::structure_engine::StructureOutcome::Html(
                 self.responses[i].clone(),
@@ -1683,9 +1719,12 @@ mod tests {
             ],
             calls: std::cell::RefCell::new(Vec::new()),
         };
-        let (new_blocks, new_md, stats) =
+        let (_new_blocks, new_md, stats) =
             orchestrate_f6(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
-        assert!(stats.f6_ordering_ambiguous, "fallback decision must be audited");
+        assert!(
+            stats.f6_ordering_ambiguous,
+            "fallback decision must be audited"
+        );
         assert_eq!(stats.f6_emitted, 4, "nothing lost to the ordering gate");
         // Write order: left column (top->bottom), then right column (top->bottom).
         let joined = new_md.clone();
@@ -1693,12 +1732,17 @@ mod tests {
         let lb = joined.find("LEFT_BOTTOM").expect("left-bottom present");
         let rt = joined.find("RIGHT_TOP").expect("right-top present");
         let rb = joined.find("RIGHT_BOTTOM").expect("right-bottom present");
-        assert!(lt < lb && lb < rt && rt < rb, "column-major order: {joined}");
+        assert!(
+            lt < lb && lb < rt && rt < rb,
+            "column-major order: {joined}"
+        );
         // Audit fields on every outcome.
-        assert!(stats
-            .f6_detail
-            .iter()
-            .all(|o| o.order == "coordinate_fallback" && o.adopted));
+        assert!(
+            stats
+                .f6_detail
+                .iter()
+                .all(|o| o.order == "coordinate_fallback" && o.adopted)
+        );
     }
 
     /// D-68: the RAW arm keeps the strict whole-page skip on ordering
@@ -1724,8 +1768,10 @@ mod tests {
         let raw = "<table><tr><td>alpha</td><td>beta</td></tr></table>";
         let (new_blocks, new_md, stats) = orchestrate_f6(
             &blocks,
-            &format!("prose
-{raw}"),
+            &format!(
+                "prose
+{raw}"
+            ),
             0,
             &page,
             &mut provider,
@@ -1875,20 +1921,19 @@ mod tests {
             responses: vec![GOOD_TABLE.to_owned()],
             calls: std::cell::RefCell::new(Vec::new()),
         };
-        let stats =
-            super::apply_table_reread(
-                &page,
-                &mut artifact,
-                1,
-                &mut crate::app::RereadArms {
-                    provider: Some(&mut provider),
-                    vlm_armed: false,
-                    structure: Some(&mut engine),
-                },
-                None,
-                false,
-            )
-                .unwrap();
+        let stats = super::apply_table_reread(
+            &page,
+            &mut artifact,
+            1,
+            &mut crate::app::RereadArms {
+                provider: Some(&mut provider),
+                vlm_armed: false,
+                structure: Some(&mut engine),
+            },
+            None,
+            false,
+        )
+        .unwrap();
         assert_eq!(stats.f6_emitted, 1);
         assert!(artifact.page_json.contains(GOOD_TABLE));
         assert!(artifact.markdown.contains(GOOD_TABLE));

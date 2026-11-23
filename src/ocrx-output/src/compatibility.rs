@@ -695,9 +695,16 @@ mod tests {
 
         // --- 3 <-> 4: SAME engine identity, ONLY generation differs --------
         let mut stored_gen3_same_engine = compat.clone();
-        stored_gen3_same_engine.ocr.as_mut().unwrap().reread_rules_generation = 3;
-        stored_gen3_same_engine.ocr.as_mut().unwrap().table_structure_reread =
-            Some(engine("bae6e5f8"));
+        stored_gen3_same_engine
+            .ocr
+            .as_mut()
+            .unwrap()
+            .reread_rules_generation = 3;
+        stored_gen3_same_engine
+            .ocr
+            .as_mut()
+            .unwrap()
+            .table_structure_reread = Some(engine("bae6e5f8"));
         let mut gen4_run = matching.clone();
         gen4_run.reread_rules_generation = 4;
         gen4_run.table_structure_reread = Some(engine("bae6e5f8"));
@@ -721,9 +728,16 @@ mod tests {
 
         // Engine-identity mismatch at the SAME generation: no reuse either.
         let mut stored_diff_engine = compat.clone();
-        stored_diff_engine.ocr.as_mut().unwrap().reread_rules_generation = 4;
-        stored_diff_engine.ocr.as_mut().unwrap().table_structure_reread =
-            Some(engine("other-revision"));
+        stored_diff_engine
+            .ocr
+            .as_mut()
+            .unwrap()
+            .reread_rules_generation = 4;
+        stored_diff_engine
+            .ocr
+            .as_mut()
+            .unwrap()
+            .table_structure_reread = Some(engine("other-revision"));
         assert!(!ocr_pre_compare(&stored_diff_engine, &statik, &gen4_run));
 
         // Identical identity + generation: reuse stays possible.
@@ -781,7 +795,14 @@ mod tests {
         );
         // Pre-M4.2 products (no field) deserialize to None.
         let parsed_off: ScanCompatibility = serde_json::from_str(&json).unwrap();
-        assert!(parsed_off.ocr.as_ref().unwrap().table_structure_reread.is_none());
+        assert!(
+            parsed_off
+                .ocr
+                .as_ref()
+                .unwrap()
+                .table_structure_reread
+                .is_none()
+        );
     }
 
     #[test]

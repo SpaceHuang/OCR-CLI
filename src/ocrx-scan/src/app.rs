@@ -1007,9 +1007,9 @@ impl ScanApplication {
                     Box::new(provider) as Box<dyn crate::region_provider::RegionProvider>
                 });
             let mut arms = crate::app::RereadArms {
-                provider: reread_provider
-                    .as_mut()
-                    .map(|provider| &mut **provider as &mut dyn crate::region_provider::RegionProvider),
+                provider: reread_provider.as_mut().map(|provider| {
+                    &mut **provider as &mut dyn crate::region_provider::RegionProvider
+                }),
                 vlm_armed: options.reread.is_some(),
                 structure: structure_engine
                     .as_mut()
