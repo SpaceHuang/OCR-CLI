@@ -1,0 +1,23 @@
+{
+ "artifact": "m42-rebase-and-review-fixes",
+ "date": "2026-11-23",
+ "review": "feat-next-phase-quality-code-review-2026-11-23.md (BLOCK-1/BLOCK-2)",
+ "block_1_resolution": {
+  "rebase": "64 branch commits rebased onto main (40d5544, PR#16 D-50 default switch included); main.rs 4 conflicts resolved keeping BOTH sides (main model_explicit + branch reread flags)",
+  "default_face": "DEFAULT_MODEL=ovisocr3 at the CLI face (identical to main, main.rs:39); app.rs/compatibility.rs internal ovisocr2 literals are IDENTICAL to main (main itself carries them — the CLI always passes options.model explicitly so the app.rs default value is unreachable in production)",
+  "gate_rerun": "T4 OFF 16 pages re-run on the rebased binary (fresh dirs D:/t/m42-t4c): 16/16 md byte-identical vs the r3 battle baseline. G-B/G-C conclusions used explicit --model ovisocr3, unaffected by the default-face change; OFF identity re-proven post-rebase"
+ },
+ "block_2_resolution": {
+  "fmt": "0 diffs (cargo fmt --check)",
+  "clippy": "0 errors with -D warnings (field_reassign_with_default -> struct-init; uninlined_format_args -> inlined; never_loop -> single read; unused variable -> underscore)"
+ },
+ "non_blocking_resolution": {
+  "crop_degenerate": "crop_region errors are now per-region (F6: degenerate_region reject) / per-table (F1-F5: identity_blocked keep-original) dispositions — the no-scan-failure contract holds",
+  "boundary_violation": "ocrx-cli no longer deps ocrx-primitives; sha256 re-exported through ocrx-output (validator back to 1)",
+  "table_marker_case": "<table marker search case-insensitive (byte-accurate positions preserved)",
+  "smoke_portability": "skips cleanly without machine-local T0 artifacts",
+  "pre_existing_python_failures": "6 failures confirmed pre-existing/environmental vs main baseline (review's own control) — not addressed on this branch"
+ },
+ "tests": "717 workspace tests green (fmt 0 diffs, clippy -D warnings 0 errors)",
+ "commits": "rebase + d04677c (review fixes)"
+}
