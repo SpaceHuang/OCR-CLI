@@ -108,5 +108,9 @@ def test_worker_serves_matches_t0_postgate_set():
             assert rid in got_reject, f"{gt_key} expected reject"
             if row["crop_png"].startswith("p04_r0_EXTRA"):
                 assert got_reject[rid] == "no_ruling_lines"
-    assert len(got_ok) == 15
-    assert len(got_reject) == 12
+    # The worker emits ENGINE-level verdicts only — the adoption gates
+    # (structural/attribution) live Rust-side. Engine-level non-empty = 17
+    # candidates minus the 1 pseudo table the ruling gate rejects = 16.
+    # Rejects = 10 empty_output + 1 no_ruling_lines = 11.
+    assert len(got_ok) == 16, f"got {len(got_ok)} ok verdicts"
+    assert len(got_reject) == 11, f"got {len(got_reject)} rejects"
