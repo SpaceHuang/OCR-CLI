@@ -1,10 +1,21 @@
-# M4.2 专用表格结构重读（SLANet-plus 臂）开发计划 v1.5
+# M4.2 专用表格结构重读（SLANet-plus 臂）开发计划 v1.6
 
 日期：2026-11-22（v1.0 同日评审 NO-GO 5 项阻断，本文为修订版）
 分支：feat/next-phase-quality
 前置：M4.1 F6 计划（T4 spike FAIL，0/24 采纳）；M4.2 oracle spike 裁决（GO）
 评审记录：`docs/review/m4-2-table-structure-reread-plan-2026-11-22-review.md`（v1.0 NO-GO，BLK-1..5）；`-re-review.md`（第二轮，attribution 缺口）；`-re-review-2.md`（第三轮，RBLK-2 generation）；`-re-review-3.md`（第四轮，复核 RBLK-2 未落地）
-状态：v1.5 修订完成，待重审
+状态：v1.6 修订完成，待重审
+
+**v1.5 → v1.6 修订摘要（第六轮：回归矩阵可执行化 + D-64 残留代次清理）**
+
+- T4 尾部验收的 SLANet 臂代次改为 **4**：明确实测 `2 ↔ 4`（旧 flag gen 2 vs
+  SLANet gen 4）；`3 ↔ 4` 以**相同引擎身份、仅代次不同**的 checkpoint fixture
+  覆盖双向不复用（防引擎身份差异替代表次门通过）。
+- T2 拆成明确矩阵（删除不可执行的"每对两类路径"表述）：`2 ↔ 3` = 既有历史
+  隔离回归；`3 ↔ 4` = SLANet 同臂同身份仅代次不同，双向；`2 ↔ 4` = 旧 flag
+  gen 2 与 SLANet gen 4，双向。
+- D-64 组合表的"隔离只能靠 generation 3 门"同步改为 **generation 4**。
+- 非阻断：§1.2 补"D-68 后当前代次为 4"。
 
 **v1.4 → v1.5 修订摘要（第五轮 RBLK-3：D-68 改采纳行为 → 代次必须 3 → 4）**
 
@@ -125,8 +136,8 @@ VLM 重读臂 spike FAIL（0/24 采纳，能力边界）。其触发/门/持久�
 （发射形态前置资格、结构有效性门、page-NNNN.reread.json）保留，引擎换
 SLANet-plus。**M4.1 的 VLM F6 臂是从未落地的分支工作树 WIP，M4.2 的 T1 将其
 移除**——运行时不存在 VLM F6，"不再新增"与"运行时没有"两个表述同时成立。
-代次契约沿用：M4.1 WIP 的 generation=2 不落地，M4.2 落地即 generation=3
-（见 D-63）。
+代次契约沿用：M4.1 WIP 的 generation=2 不落地；M4.2 落地时为 generation=3，
+D-68 后当前代次为 **4**（见 D-63/D-68）。
 
 ### 1.3 两个口径的 spike（各自冻结，不得混用）
 
@@ -262,7 +273,7 @@ F6 不触发 \|<br>\| off \| on \| 仅 F6 SLANet 臂；**校验同旧规则：�
 --layout-model/--layout-regions** \|<br>\| on \| on \| F1–F5 VLM + F6 SLANet
 （人群不相交：已发射 vs 零块） \|<br>**代次注记**：旧 ON/新 OFF 组合的
 "F6 不触发"本身是相对 generation 2 配置的行为变化，且该组合没有新引擎身份字段
-可挡旧 F6 产物 resume——隔离只能靠 generation 3 门（T2/T4 验收覆盖）<br>
+可挡旧 F6 产物 resume——隔离只能靠 generation 4 门（T2/T4 验收覆盖）<br>
 新 flag 经 `apply_reread_gate` 同一 arming 点接线（arm 条件 = 各自 flag）；
 端到端接线验收进 T2/T3 | 每个组合的行为唯一可测（BLK-4）；layout 参数校验对称；
 旧 ON/新 OFF 的代次隔离有明确机制与测试（RBLK-2） |
@@ -326,9 +337,9 @@ no_ruling_lines 1（EXTRA 伪表）/ attribution_cov_attempt 1） |
 OcrIdentity → compatibility）；**identity 序列化契约**（D-63 skip 方案）；
 `REREAD_RULES_GENERATION = 4` 常量 + 注释更新（2/3/4 语义，D-63）；
 D-64 组合表各臂行为 | OFF checkpoint/result 字节相等测试（新增字段被省略的
-diff 断言）；ON/OFF 不互 resume；引擎哈希不同不复用；**generation 两两双向
-不复用：2/3、3/4、2/4（gen-N checkpoint 在 gen-M 运行不复用、反向亦然；
-每对两类路径各 1 条：旧 flag ON/新 flag OFF = gen 2、SLANet ON = gen 4）**；
+diff 断言）；ON/OFF 不互 resume；引擎哈希不同不复用；**代次隔离矩阵（双向不复用，可执行拆分）：`2 ↔ 3` = 既有历史隔离回归；
+`3 ↔ 4` = SLANet 同臂、同引擎身份、仅代次不同的 checkpoint fixture 双向
+不复用；`2 ↔ 4` = 旧 flag gen 2 与当前 SLANet gen 4 双向不复用**；
 ON+启动故障 → 硬错误退出码断言；组合表 4 臂各 1 条端到端单测 |
 | T3 | 引擎接入 `orchestrate_f6`：区域裁剪（PNG）→ 表格线门（sidecar 侧）→
 结构门 → attribution 门（raw 臂）→ raw_single 标记替换 / empty 追加 →
