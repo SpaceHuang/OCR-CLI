@@ -345,9 +345,10 @@ v1.4 空臂确定化为 D-68，**审计断言：回退仍置 f6_ordering_ambiguo
 `no_ruling_lines`、3713 逐区域 `empty_output`，两页 md 仍一致；dca64e05
 engine_error 瞬态重跑确认 | 非触发页逐字节不变；触发页 md/page_json/reread
 sidecar 三产物一致；checkpoint 哈希随新产物更新；ON 后 resume 不复用 OFF
-产物（反之亦然）；**generation 回归：旧 flag ON/新 flag OFF（generation 2
-语义）与 SLANet ON（generation 3）的 checkpoint 互相不复用，双向各 1 条
-实测**；✅ 已完成（2026-11-23）：OFF 16/16 与 r3 基线逐字节一致 + 全集
+产物（反之亦然）；**generation 回归（实测 `2 ↔ 4`：旧 flag gen 2 与当前
+SLANet gen 4 的 checkpoint 互相不复用，双向各 1 条）；`3 ↔ 4` 由 T2 的同
+引擎身份 checkpoint fixture 覆盖（仅代次不同，防止引擎身份差异替代表次门）**；
+✅ 已完成（2026-11-23）：OFF 16/16 与 r3 基线逐字节一致 + 全集
 1651/1651 md 一致 + 归因抽样 20/20；ON 首轮 6 采纳/1 engine_error/8 排序
 丢失/1 拒绝，与可达性模拟逐页吻合 |
 | T5 | 基准门（D-65 G-A→G-D 顺序）+ **stage-A 人工复核**：458 OFF 双扫描 →
