@@ -1,10 +1,29 @@
-# M4.2 专用表格结构重读（SLANet-plus 臂）开发计划 v1.4
+# M4.2 专用表格结构重读（SLANet-plus 臂）开发计划 v1.5
 
 日期：2026-11-22（v1.0 同日评审 NO-GO 5 项阻断，本文为修订版）
 分支：feat/next-phase-quality
 前置：M4.1 F6 计划（T4 spike FAIL，0/24 采纳）；M4.2 oracle spike 裁决（GO）
 评审记录：`docs/review/m4-2-table-structure-reread-plan-2026-11-22-review.md`（v1.0 NO-GO，BLK-1..5）；`-re-review.md`（第二轮，attribution 缺口）；`-re-review-2.md`（第三轮，RBLK-2 generation）；`-re-review-3.md`（第四轮，复核 RBLK-2 未落地）
-状态：v1.4 修订完成，待重审
+状态：v1.5 修订完成，待重审
+
+**v1.4 → v1.5 修订摘要（第五轮 RBLK-3：D-68 改采纳行为 → 代次必须 3 → 4）**
+
+D-68 改变 empty 臂的排序与采纳行为（5f75/6e1c 从"排序跳过"变为"各追加 4 张"），
+沿用 generation 3 会使 resume 直接复用 D-68 前的排序跳过产物——T4 首轮已产生
+generation 3 页面产物，继续扫描会合法绕过新逻辑。修订：
+
+- `REREAD_RULES_GENERATION` 统一升级为 **4**；代次语义冻结：
+  `2 = M4.1 双公式/VLM F6（未落地）`、`3 = M4.2 D-68 前（empty 排序歧义整页
+  跳过；仅 T4 首轮产物存在，禁止复用）`、`4 = M4.2 D-68（empty 坐标定序回退，
+  当前规则）`。gen 2 旧 flag 语义不变（D-63）。
+- 新增 generation **3/4 双向不复用**回归；T2/T4 覆盖 旧 flag ON/新 flag OFF
+  （gen 2）与 SLANet ON（gen 4）双向隔离（不是旧测试改名）。
+- D-68 补充验收改用**全新输出目录**并核对 5f75/6e1c 的 md 由 gen 4 执行产生
+  （checkpoint 兼容性身份 = gen 4），禁止复用 gen 3 旧产物。
+- 非阻断修正吸收：① 1417 的拒绝断言按区域拆分——3 个 GT 配对区域 =
+  `empty_output`、额外伪表区域 = `no_ruling_lines`（3713 维持 `empty_output`）；
+  ② T3 验收明确 D-68 审计契约：回退后仍置 `f6_ordering_ambiguous=true`、
+  顺序决定写入 stats/f6_detail、raw 臂仍整页严格跳过。
 
 **v1.3 → v1.4 修订摘要（T4 生产实测发现：排序歧义跳过吞掉 8 张最高价值表）**
 
@@ -226,12 +245,14 @@ no_ruling_lines,engine_error,engine_down} / skipped_shape）。**T5 stage-A：ON
 f6_rejected{engine_down}（phase 1 不自动重启），扫描正常完成，identity 记录计数<br>
 **identity 序列化契约**：新增字段 `#[serde(skip_serializing_if = "Option::is_none")]`
 （OFF = None = 序列化省略 = checkpoint/result 逐字节不变）；ON 携带完整引擎身份
-{engine, revision, paddleocr, paddlex, paddlepaddle, models_sha, flag}；resume 门：
-**`REREAD_RULES_GENERATION = 3`** + 引擎身份不匹配不复用产物。**代次语义（冻结，
+{engine, revision, paddleocr, paddlex, paddlepaddle, models_sha256, flag}；resume 门：
+**`REREAD_RULES_GENERATION = 4`** + 引擎身份不匹配不复用产物。**代次语义（冻结，
 同步更新常量注释）**：`2 = M4.1 双公式/VLM F6`（未落地 WIP，运行时不存在）、
-`3 = M4.2 校准后 SLANet 规则`（cov_attempt 单门 + 表格线门）——依 R2.5/D-42
-"校准一轮 = generation + 1"（第三轮 RBLK-2）；generation 2 产物在 generation 3
-运行下不复用，反向亦然 | 四类故障唯一处置消除 D-63/D-64 冲突（BLK-3）；
+`3 = M4.2 D-68 前（empty 排序歧义整页跳过；仅 T4 首轮产物存在，禁止复用）`、
+`4 = M4.2 D-68（empty 坐标定序回退，当前规则）`——依 R2.5/D-42"规则变化 =
+generation + 1"（第三轮 RBLK-2、第五轮 RBLK-3）；generation 2/3 产物在
+generation 4 运行下不复用，反向亦然（T2/T4 回归覆盖全部组合） | 四类故障唯一
+处置消除 D-63/D-64 冲突（BLK-3）；
 `skip_serializing_if` 方案可用既有 OFF 产物 diff 测试机械验证（BLK-4）；
 代次回归进 T2/T4（RBLK-2 解除） |
 | D-64 | **flag 组合行为表（冻结）**：<br>\| 旧 --table-reread \| 新
@@ -272,7 +293,10 @@ T0→T1 的停止条件复核；**约束性门是 T5 G-B/G-C**（实施后实测
 或纵向重叠 veto 时不再整页跳过，改用确定性坐标序——按 x 区间重叠 ≥0.3 切纵向
 栏带，栏带左→右、栏带内上→下（多栏退化情形 = 单栏上→下，与原一致序等价）；
 `f6_ordering_ambiguous=true` 与顺序决定入 stats/f6_detail。raw 臂原严格跳过
-不变（纯防御，det_N==1 按定义单区域）。排序规则调整同样受代次契约约束 | T0 的
+不变（纯防御，det_N==1 按定义单区域）。**代次 = 4**（本项改变采纳行为，
+R2.5/D-42 契约 + 第五轮 RBLK-3）。**审计契约（T3 验收）**：回退后仍置
+`f6_ordering_ambiguous=true`、顺序决定写入 stats/f6_detail、raw 臂仍整页
+严格跳过 | T0 的
 det spike 未经过排序门（文件序喂入）是 T0 设计盲区，v1.4 如实修正；被吞 8 表
 T0 实测 0.74–1.00；空页追加无既有内容可打乱，D-56 跳过理由不成立 |
 
@@ -300,22 +324,25 @@ no_ruling_lines 1（EXTRA 伪表）/ attribution_cov_attempt 1） |
 | T2 | Rust 客户端 + CLI：spawn/握手/超时/僵尸回收（D-63 四类处置表）；
 `--table-structure-reread` 全链（ScanOptions → `apply_reread_gate` arming →
 OcrIdentity → compatibility）；**identity 序列化契约**（D-63 skip 方案）；
-`REREAD_RULES_GENERATION = 3` 常量 + 注释更新（2/3 语义，D-63）；
+`REREAD_RULES_GENERATION = 4` 常量 + 注释更新（2/3/4 语义，D-63）；
 D-64 组合表各臂行为 | OFF checkpoint/result 字节相等测试（新增字段被省略的
-diff 断言）；ON/OFF 不互 resume；引擎哈希不同不复用；**generation 2/3 双向
-不复用（gen2 checkpoint 在 gen3 运行不复用、反向亦然；两类路径各 1 条：
-旧 flag ON/新 flag OFF、SLANet ON）**；ON+启动故障 → 硬错误退出码断言；
-组合表 4 臂各 1 条端到端单测 |
+diff 断言）；ON/OFF 不互 resume；引擎哈希不同不复用；**generation 两两双向
+不复用：2/3、3/4、2/4（gen-N checkpoint 在 gen-M 运行不复用、反向亦然；
+每对两类路径各 1 条：旧 flag ON/新 flag OFF = gen 2、SLANet ON = gen 4）**；
+ON+启动故障 → 硬错误退出码断言；组合表 4 臂各 1 条端到端单测 |
 | T3 | 引擎接入 `orchestrate_f6`：区域裁剪（PNG）→ 表格线门（sidecar 侧）→
 结构门 → attribution 门（raw 臂）→ raw_single 标记替换 / empty 追加 →
 `f6_detail`（engine、conf、reject_reason 枚举）→ reread sidecar；
 **conf 传递链**：sidecar 解析 → `DetectedRegion.conf` → f6_detail | 既有 F6 单测改造为 SLANet fake 全绿；新增：多区域排序（D-56；
-v1.4 空臂确定化为 D-68）、
+v1.4 空臂确定化为 D-68，**审计断言：回退仍置 f6_ordering_ambiguous=true、
+顺序入 stats/f6_detail、raw 臂维持整页严格跳过**）、
 空产出保原、表格线门跳过（no_ruling_lines 计数）、sidecar 运行中死亡 →
 后续区域 engine_down、零采纳产物逐字节不变守恒；conf 链 fixture 断言 |
-| T4 | 段落级回归：16 页全集 ON/OFF 本地对比。**v1.4 补充**：D-68 实施后
-4 个排序跳过页（5f75/6e1c/1417/3713）重跑 ON——5f75/6e1c 各采纳 4 张且 md
-相对 OFF 变化；1417/3713 逐区域 empty_output 拒绝且 md 仍一致；dca64e05
+| T4 | 段落级回归：16 页全集 ON/OFF 本地对比。**v1.4/v1.5 补充**：D-68（gen 4）
+实施后 4 个排序跳过页**用全新输出目录**重跑 ON——5f75/6e1c 各采纳 4 张且 md
+相对 OFF 变化（checkpoint 兼容性身份须为 generation 4，禁止复用 gen 3 旧
+产物）；1417 逐区域拒绝 = 3 个 GT 配对区域 `empty_output` + 额外伪表区域
+`no_ruling_lines`、3713 逐区域 `empty_output`，两页 md 仍一致；dca64e05
 engine_error 瞬态重跑确认 | 非触发页逐字节不变；触发页 md/page_json/reread
 sidecar 三产物一致；checkpoint 哈希随新产物更新；ON 后 resume 不复用 OFF
 产物（反之亦然）；**generation 回归：旧 flag ON/新 flag OFF（generation 2
@@ -356,6 +383,6 @@ T3 覆盖 html 含换行/属性场景 |
 
 ## 6. 评审流程
 
-v1.4 → 重审（唯一新增裁决点：D-68 空臂排序确定化——用户方向已确认 2026-11-23，
-本文冻结其具体规则与验收）→ PASS 后实施 D-68 + T4 补充验收 → T5（G-B/G-C 全集
-+ stage-A 人工复核）为最终 GO/NO-GO。
+v1.5 → 重审（唯一阻断 RBLK-3：generation 4 + 3/4 双向不复用已落文件；D-68
+实施与 T4 补充验收在新代次下执行）→ PASS 后实施 D-68 → T4 补充验收 →
+T5（G-B/G-C 全集 + stage-A 人工复核）为最终 GO/NO-GO。
