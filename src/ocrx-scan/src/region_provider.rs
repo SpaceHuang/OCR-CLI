@@ -29,6 +29,7 @@ type ParsedRegions = (
     std::collections::BTreeMap<u32, Vec<DetectedRegion>>,
     String,
     String,
+    String,
     Vec<u32>,
 );
 
@@ -38,6 +39,10 @@ struct RegionsFile {
     model_id: Option<String>,
     #[serde(default)]
     revision: Option<String>,
+    /// M4.2 RBLK-1: sha256 of the SOURCE PDF the sidecar was generated from
+    /// (legacy sidecars predate the field and deserialize as empty).
+    #[serde(default)]
+    source_pdf_sha256: Option<String>,
     #[serde(default)]
     pages: Vec<PageEntry>,
 }
@@ -73,6 +78,7 @@ pub struct FileRegionProvider {
     /// provenance fields or the file is absent — the provider is empty then).
     layout_id: String,
     layout_revision: String,
+    source_pdf_sha256: String,
     page_list: Vec<u32>,
 }
 
@@ -82,10 +88,11 @@ impl FileRegionProvider {
     #[must_use]
     pub fn open(path: impl AsRef<std::path::Path>) -> Self {
         match Self::parse(path.as_ref()) {
-            Ok((pages, layout_id, layout_revision, page_list)) => Self {
+            Ok((pages, layout_id, layout_revision, source_pdf_sha256, page_list)) => Self {
                 pages,
                 layout_id,
                 layout_revision,
+                source_pdf_sha256,
                 page_list,
             },
             Err(_) => Self::empty(),
@@ -99,6 +106,7 @@ impl FileRegionProvider {
             pages: std::collections::BTreeMap::new(),
             layout_id: String::new(),
             layout_revision: String::new(),
+            source_pdf_sha256: String::new(),
             page_list: Vec::new(),
         }
     }
@@ -145,6 +153,7 @@ impl FileRegionProvider {
         })?;
         let layout_id = file.model_id.unwrap_or_default();
         let layout_revision = file.revision.unwrap_or_default();
+        let source_pdf_sha256 = file.source_pdf_sha256.unwrap_or_default();
         let mut pages = std::collections::BTreeMap::new();
         let mut page_list = Vec::new();
         for entry in file.pages {
@@ -164,7 +173,13 @@ impl FileRegionProvider {
             pages.insert(entry.page, regions);
             page_list.push(entry.page);
         }
-        Ok((pages, layout_id, layout_revision, page_list))
+        Ok((
+            pages,
+            layout_id,
+            layout_revision,
+            source_pdf_sha256,
+            page_list,
+        ))
     }
 
     /// M4.2 BLOCK-1/RBLK-1: the sidecar's recorded layout identity — the
@@ -184,6 +199,13 @@ impl FileRegionProvider {
     #[must_use]
     pub fn page_list(&self) -> &[u32] {
         &self.page_list
+    }
+
+    /// M4.2 RBLK-1: the SOURCE PDF's sha256 as recorded by the sidecar
+    /// ("" = legacy sidecar without the binding).
+    #[must_use]
+    pub fn source_pdf_sha256(&self) -> &str {
+        &self.source_pdf_sha256
     }
 }
 

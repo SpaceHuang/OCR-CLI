@@ -1041,13 +1041,20 @@ impl ScanApplication {
                             .page_list()
                             .iter()
                             .all(|page| *page >= 1 && *page <= document_page_count)
-                        && !provider.page_list().is_empty();
+                        && !provider.page_list().is_empty()
+                        // RBLK-1 (round 3): the sidecar must be bound to
+                        // THIS document's source PDF — a sidecar generated
+                        // from another PDF (same page count) is rejected.
+                        // Legacy sidecars without the binding are also
+                        // rejected (fail-closed).
+                        && provider.source_pdf_sha256() == input_sha256;
                     if !provenance_ok {
                         eprintln!(
-                            "warn: regions sidecar provenance mismatch                              (model={:?} revision={:?} pages={:?}) — reread degraded to empty for {input_stem}",
+                            "warn: regions sidecar provenance mismatch                              (model={:?} revision={:?} pages={:?} source_sha_matches={}) — reread degraded to empty for {input_stem}",
                             provider.layout_id(),
                             provider.layout_revision(),
                             provider.page_list(),
+                            provider.source_pdf_sha256() == input_sha256,
                         );
                         return crate::region_provider::FileRegionProvider::empty();
                     }

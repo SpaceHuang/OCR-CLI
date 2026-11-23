@@ -28,6 +28,7 @@ Frozen preprocessing (D-45, the values the B0'/pairing runs validated):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -234,10 +235,15 @@ def main(argv=None) -> int:
             continue
         if not regions:
             report["zero_table_pages"] += 1
+        # M4.2 RBLK-1: bind the sidecar to its SOURCE PDF (sha256 over the
+        # pdf bytes) — the consumer validates this against the scan input
+        # before trusting any region.
+        source_sha = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
         payload = {
             "schema_version": SCHEMA_VERSION,
             "model_id": MODEL_ID,
             "revision": MODEL_REVISION,
+            "source_pdf_sha256": source_sha,
             "pages": [{"page": 1, "regions": regions}],
         }
         out_path = args.output_dir / f"{stem}.regions.json"
