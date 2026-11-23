@@ -1,0 +1,44 @@
+{
+ "artifact": "table-engine-slanet-plus",
+ "revision": "bae6e5f8",
+ "pinned": {
+  "paddleocr": "3.7.0",
+  "paddlex": "3.7.2",
+  "paddlepaddle": "3.4.0"
+ },
+ "models": {
+  "PP-LCNet_x1_0_doc_ori": {
+   "files": 6,
+   "sha256": "fa9a9fa6062766b78d7f071563a4406fa6c9cd9f5e20dda77bed1c7b9e21f9b4"
+  },
+  "PP-LCNet_x1_0_table_cls": {
+   "files": 6,
+   "sha256": "17f5f69783e84a647a50ac4205cd1e07962720575d32bb785356ee0fa8b88e04"
+  },
+  "PP-OCRv4_server_det": {
+   "files": 6,
+   "sha256": "654c33ef22414cbc91fb9202d200c6f3ba45434581b7a1a51976885728fa1a17"
+  },
+  "PP-OCRv4_server_rec_doc": {
+   "files": 6,
+   "sha256": "bd7094c7cdd167b1936d2be28398f8482dffd9c52157c814d58e39deb44aaa4d"
+  },
+  "RT-DETR-L_wired_table_cell_det": {
+   "files": 6,
+   "sha256": "f86961524c83e633ad62cead99c2fa70c5c882b4f3bc677c5f800e60e85a2cfd"
+  },
+  "RT-DETR-L_wireless_table_cell_det": {
+   "files": 6,
+   "sha256": "383630eaa38e3594e230eb76f8d99aace9edc88f3c776a82058fceac92ce844c"
+  },
+  "SLANeXt_wired": {
+   "files": 6,
+   "sha256": "7d841e6397de0011504573bd615378c7c6c4b7526a86b734aee9e54942079f2d"
+  },
+  "SLANeXt_wireless": {
+   "files": 6,
+   "sha256": "d4b5e9839504054a13c5953ca72afd66613a10a57f38ef778398c0783e125a6b"
+  }
+ },
+ "note": "M4.2 D-63 supply-chain freeze. The worker hashes each model dir (sorted rel-path + bytes, sha256) at startup and reports it in the hello frame; the Rust client compares against THIS manifest (fail-closed on any mismatch). Model dirs from paddlex official_models (C:/Users/<user>/.paddlex/official_models)."
+}
