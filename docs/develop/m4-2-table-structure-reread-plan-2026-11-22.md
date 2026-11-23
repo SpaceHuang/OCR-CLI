@@ -4,7 +4,7 @@
 分支：feat/next-phase-quality
 前置：M4.1 F6 计划（T4 spike FAIL，0/24 采纳）；M4.2 oracle spike 裁决（GO）
 评审记录：`docs/review/m4-2-table-structure-reread-plan-2026-11-22-review.md`（v1.0 NO-GO，BLK-1..5）；`-re-review.md`（第二轮，attribution 缺口）；`-re-review-2.md`（第三轮，RBLK-2 generation）；`-re-review-3.md`（第四轮，复核 RBLK-2 未落地）
-状态：v1.6 修订完成，待重审
+状态：**已实施并完成全部验证（2026-11-23）。四门终判 PASS：G-A 全集 OFF 1651/1651 逐字节一致；G-B 14/24 改善、0 退化、均值 0.507；G-C Overall 91.50 vs 90.87（+0.63）、TEDS +0.0183；G-D 186.3s/表、RSS ~2.1GB 入档。stage-A 人工复核通过。实现提交：abaaad2（D-68/gen4）、36c1ef6（模型哈希 manifest）、4b950f6+后续（冒烟真值表）、c747e03（终判归档）**
 
 **v1.5 → v1.6 修订摘要（第六轮：回归矩阵可执行化 + D-64 残留代次清理）**
 
