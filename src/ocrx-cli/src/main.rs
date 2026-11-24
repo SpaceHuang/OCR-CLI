@@ -101,6 +101,18 @@ struct ScanOptions {
     /// the implicit-default cross-model fallback NEVER applies to an
     /// explicit selection.
     model_explicit: bool,
+    /// R2.5: the table-reread pipeline switch (`--table-reread on`, off
+    /// default). Requires `--layout-model pp-doclayout-v2` + `--layout-regions`.
+    table_reread: bool,
+    /// M4.2/D-64: the F6 SLANet table-structure reread switch
+    /// (`--table-structure-reread on`, off default). Same layout-input
+    /// requirement as `--table-reread`; disjoint population (zero-table-block
+    /// pages). Off = the field is omitted from every product identity.
+    structure_reread: bool,
+    /// R2.5: layout model id (only `pp-doclayout-v2` in frozen v1).
+    layout_model: Option<String>,
+    /// R2.5: sidecar regions JSON path for the document (R1 route A file form).
+    layout_regions: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,6 +187,10 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         password: None,
         column_split_retry: true,
         model_explicit: false,
+        table_reread: false,
+        structure_reread: false,
+        layout_model: None,
+        layout_regions: None,
     };
     let mut index = 1;
     while index < args.len() {
@@ -284,6 +300,37 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
             }
             "--resume" => options.resume = true,
             "--overwrite" => options.overwrite = true,
+            // Q1.1c/O-5: the column-split rung switch (documented; the
+            // parse arm was missing - passing it used to be a usage error).
+            "--column-split-retry" => {
+                index += 1;
+                let value =
+                    enum_value(args, index, "--column-split-retry", &["on", "off"])?.to_owned();
+                options.column_split_retry = value == "on";
+            }
+            // R2.5: the table-reread pipeline switch + its frozen inputs.
+            "--table-reread" => {
+                index += 1;
+                let value = enum_value(args, index, "--table-reread", &["on", "off"])?.to_owned();
+                options.table_reread = value == "on";
+            }
+            // M4.2/D-64: the F6 SLANet arm switch.
+            "--table-structure-reread" => {
+                index += 1;
+                let value =
+                    enum_value(args, index, "--table-structure-reread", &["on", "off"])?.to_owned();
+                options.structure_reread = value == "on";
+            }
+            "--layout-model" => {
+                index += 1;
+                let value = required_value(args, index, "--layout-model")?;
+                options.layout_model = Some(value.to_owned());
+            }
+            "--layout-regions" => {
+                index += 1;
+                let value = required_value(args, index, "--layout-regions")?;
+                options.layout_regions = Some(value.to_owned());
+            }
             // X1.1: an additional positional is another input, not an
             // unknown flag — options and inputs may interleave.
             flag if !flag.starts_with('-') => options.inputs.push((*flag).to_owned()),
@@ -294,6 +341,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
     if options.resume && options.overwrite {
         return Err("--resume and --overwrite are mutually exclusive".to_owned());
     }
+    validate_reread(&options)?;
     if options.inputs.len() > 1 && options.output_dir.is_none() {
         // X1.3: multiple documents fan out under an explicit output root;
         // there is no silent per-cwd default for the orchestrated mode.
@@ -612,6 +660,131 @@ fn enum_value<'a>(
         .contains(&value)
         .then_some(value)
         .ok_or_else(|| format!("invalid value for {option}: {value}"))
+}
+
+/// R2.5 reread-switch validation: `on` needs the frozen layout model id and
+/// the sidecar regions file; the model/regions flags are meaningless (and
+/// misleading for the identity) without the switch.
+fn validate_reread(options: &ScanOptions) -> Result<(), String> {
+    // M4.2/D-64: symmetric validation — EITHER switch requires the frozen
+    // layout model id and the sidecar regions file.
+    for (flag, enabled) in [
+        ("--table-reread", options.table_reread),
+        ("--table-structure-reread", options.structure_reread),
+    ] {
+        if !enabled {
+            continue;
+        }
+        let model = options.layout_model.as_deref().unwrap_or_default();
+        if model.is_empty() {
+            return Err(format!("{flag} on requires --layout-model pp-doclayout-v2"));
+        }
+        if model != ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID {
+            return Err(format!(
+                "--layout-model must be {} in frozen v1 (got {model})",
+                ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID
+            ));
+        }
+        let regions = options.layout_regions.as_deref().unwrap_or_default();
+        if regions.is_empty() {
+            return Err(format!(
+                "{flag} on requires --layout-regions <regions.json>"
+            ));
+        }
+        let regions_path = Path::new(regions);
+        if !regions_path.is_file() && !regions_path.is_dir() {
+            return Err(format!("--layout-regions path not found: {regions}"));
+        }
+    }
+    if !options.table_reread
+        && !options.structure_reread
+        && (options.layout_model.is_some() || options.layout_regions.is_some())
+    {
+        return Err(
+            "--layout-model/--layout-regions require --table-reread on or --table-structure-reread on"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+/// R2.5: resolves the effective reread configuration — the layout model is
+/// resolved through the R2.0 manifest chain and the identity asset hash is
+/// the FROZEN rule sha256 over the manifest-order `role:sha256` lines.
+fn reread_options(
+    options: &ScanOptions,
+) -> Result<Option<ocrx_scan::compatibility::RereadOptions>, String> {
+    layout_reread_options(options, options.table_reread)
+}
+
+/// M4.2/D-64: the shared layout resolution, parameterized by which switch
+/// is armed (the OLD flag and the structure flag carry identical layout
+/// inputs; each gets its own resolved RereadOptions).
+fn layout_reread_options(
+    options: &ScanOptions,
+    enabled: bool,
+) -> Result<Option<ocrx_scan::compatibility::RereadOptions>, String> {
+    let Some(model) = options.layout_model.as_deref().filter(|_| enabled) else {
+        return Ok(None);
+    };
+    let manifest = ocrx_models::layout::paddlex_layout_manifest(model, None)
+        .map_err(|error| format!("layout model {model} is not resolvable: {error}"))?;
+    let mut canonical = String::new();
+    for asset in &manifest.assets {
+        canonical.push_str(&format!(
+            "{}:{}
+",
+            asset.role, asset.sha256
+        ));
+    }
+    Ok(Some(ocrx_scan::compatibility::RereadOptions {
+        layout_model_id: manifest.model.as_str().to_owned(),
+        layout_assets_sha256: ocrx_output::sha256(canonical.as_bytes()),
+        regions_path: PathBuf::from(options.layout_regions.as_deref().unwrap_or_default()),
+    }))
+}
+
+/// R2.5/BLK-5 result identity sync: result.json reflects the effective
+/// reread execution identity (frozen prompt version + rules generation).
+fn reread_result_identity(
+    reread: Option<&ocrx_scan::compatibility::RereadOptions>,
+    structure_json: &str,
+    tables_reread_total: u64,
+    replaced_total: u64,
+) -> String {
+    // M4.2 BLOCK-3: the structure arm reports ITS OWN section — a
+    // structure-only run must never render as enabled:false. Empty json =
+    // the arm did not run (the blob keeps its exact pre-M4.2 shape).
+    let structure_part = if structure_json.is_empty() {
+        String::new()
+    } else {
+        let rules = ocrx_scan::reread::REREAD_RULES_GENERATION;
+        format!(
+            ",\"table_structure_reread\":{{\"enabled\":true,\"engine_identity\":{structure_json},\"rules_generation\":{rules}}}"
+        )
+    };
+    let (_enabled, model_part) = match reread {
+        Some(reread) => (
+            true,
+            format!(
+                "\"enabled\":true,\"layout_model\":\"{}\",\"layout_assets_sha256\":\"{}\",\"prompt_version\":\"{}\",\"rules_generation\":{}",
+                reread.layout_model_id,
+                reread.layout_assets_sha256,
+                ocrx_scan::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION,
+                // M4.2/D-63: old-flag-only ON records the VLM-era generation
+                // (2). The SLANet arm's generation (3) lives in the
+                // checkpoint compatibility identity, not this display blob.
+                ocrx_scan::reread::VLM_REREAD_RULES_GENERATION,
+            ),
+        ),
+        None => (
+            false,
+            "\"enabled\":false,\"prompt_version\":\"\",\"rules_generation\":0".to_owned(),
+        ),
+    };
+    format!(
+        "{{{model_part}{structure_part},\"tables_reread_total\":{tables_reread_total},\"replaced_total\":{replaced_total}}}"
+    )
 }
 
 fn number_value(args: &[&str], index: usize, option: &str) -> Result<u32, String> {
@@ -1448,6 +1621,22 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
     // Plain single-file scans skip input resolution entirely: their
     // historical missing-file behavior is the page-count failure (exit 3),
     // produced by the app's page-count gate (kind=input).
+    // R2.5: the reread configuration resolves once up front (manifest
+    // chain + frozen asset-hash rule); identity and result.json share it.
+    let reread = match reread_options(&options) {
+        Ok(reread) => reread,
+        Err(error) => {
+            eprintln!("error: {error}");
+            std::process::exit(2);
+        }
+    };
+    let structure_reread = match layout_reread_options(&options, options.structure_reread) {
+        Ok(structure_reread) => structure_reread,
+        Err(error) => {
+            eprintln!("error: {error}");
+            std::process::exit(2);
+        }
+    };
     let resolved_inputs = if multi {
         match resolve_scan_inputs(&options.inputs) {
             Ok(inputs) => inputs,
@@ -1626,6 +1815,8 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             non_interactive: options.non_interactive,
             license_accepted: true,
         },
+        reread: reread.clone(),
+        structure_reread: structure_reread.clone(),
     };
     // One owner for the whole invocation (X1): the first input spawns it,
     // later documents SwitchDocument inside the port.
@@ -1774,6 +1965,12 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             image_dir: &document.output_dir.join("images"),
             image_count: document.images_count,
             elapsed_ms: document.elapsed_ms,
+            reread_json: reread_result_identity(
+                reread.as_ref(),
+                &document.summary.structure_reread_json,
+                document.summary.tables_reread_total,
+                document.summary.replaced_total,
+            ),
         });
         if let Err(error) = ocrx_output::atomic_write(
             document.output_dir.join("result.json"),
@@ -2056,6 +2253,10 @@ struct ScanResultFields<'a> {
     image_dir: &'a Path,
     image_count: usize,
     elapsed_ms: u128,
+    /// R2.5/R2.6: precomputed reread object (identity + counters — ONE
+    /// key; a second `reread` would shadow the identity in last-wins
+    /// parsers).
+    reread_json: String,
 }
 
 fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
@@ -2132,7 +2333,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         .join(",");
     let pdf_routing = fields.pdf_routing.join(",");
     format!(
-        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
+        "{{\"schema_version\":3,\"job_id\":\"scan\",\"status\":\"{}\",\"input\":\"{}\",\"markdown_path\":{},\"output_dir\":\"{}\",\"required_quality_tier\":\"{}\",\"document_type\":\"{}\",\"ocr_model_loaded\":{},\"model\":{},\"backend\":\"{}\",\"reread\":{},\"pages\":{{\"total\":{},\"completed\":{},\"failed\":{},\"truncated\":{},\"degenerated\":{},\"think_blocks_stripped_total\":{}}},\"routing_counts\":{{\"native_text\":{},\"ocr\":{},\"empty\":{},\"fallback\":{}}},\"images\":{{\"directory\":\"{}\",\"count\":{}}},\"elapsed_ms\":{},\"warnings\":{},\"diagnostics\":[{}],\"pdf_routing\":[{}],\"routing_metadata\":[{}]}}",
         fields.status,
         json_escape_path(fields.input),
         markdown,
@@ -2142,6 +2343,7 @@ fn serialize_scan_result(fields: &ScanResultFields<'_>) -> String {
         fields.ocr_model_loaded,
         model,
         fields.backend,
+        fields.reread_json,
         fields.total_pages,
         fields.completed_pages,
         fields.failed_pages,
@@ -2314,7 +2516,12 @@ fn print_help(topic: Option<&str>) {
             println!("  --log-level error|warn|info|debug|trace");
             println!("  --offline                    do not download");
             println!("  --non-interactive            disable interactive prompts");
-            println!("  --keep-pages                 keep full-page PNGs after merge");
+            println!(
+                "  --table-reread on|off        table region reread pipeline (default off)
+  --layout-model ID            layout model id (frozen v1: pp-doclayout-v2)
+  --layout-regions PATH        sidecar regions JSON for the document
+  --keep-pages                 keep full-page PNGs after merge"
+            );
             println!("  --password VALUE             PDF open password (never logged)");
             println!("  --resume | --overwrite       mutually exclusive");
         }
@@ -2433,6 +2640,111 @@ mod tests {
     };
     use ocrx_scan::plan::dynamic_fallback_requires_model_assets;
     use ocrx_scan::state::OcrQueuePage;
+
+    // --- M4.2/D-64: the new-flag combination table --------------------------
+
+    fn structure_reread_on_args(regions: &Path) -> Vec<&str> {
+        let regions_str = regions.to_str().expect("temp path is utf-8");
+        vec![
+            "a.pdf",
+            "--table-structure-reread",
+            "on",
+            "--layout-model",
+            "pp-doclayout-v2",
+            "--layout-regions",
+            Box::leak(regions_str.to_owned().into_boxed_str()),
+        ]
+    }
+
+    #[test]
+    fn structure_reread_flag_parses_and_defaults_off() {
+        let base = parse_scan_args(&["a.pdf"]).unwrap();
+        assert!(!base.structure_reread);
+        // ON parses (validation runs inside parse; layout inputs required —
+        // including that the regions path EXISTS).
+        let tmp = std::env::temp_dir().join("ocrx-m42-regions-exists.json");
+        std::fs::write(&tmp, b"{}").unwrap();
+        let on = parse_scan_args(&structure_reread_on_args(&tmp)).unwrap();
+        assert!(on.structure_reread);
+        assert_eq!(on.layout_model.as_deref(), Some("pp-doclayout-v2"));
+        let off = parse_scan_args(&["a.pdf", "--table-structure-reread", "off"]).unwrap();
+        assert!(!off.structure_reread);
+        assert!(parse_scan_args(&["a.pdf", "--table-structure-reread", "maybe"]).is_err());
+        // ON without the layout inputs: parse-time validation rejects (D-64).
+        let err = parse_scan_args(&["a.pdf", "--table-structure-reread", "on"]).unwrap_err();
+        assert!(err.contains("--table-structure-reread on"), "{err}");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn structure_reread_on_requires_layout_inputs_symmetrically() {
+        // D-64: the NEW flag has the SAME layout-input requirement as the
+        // old (model id, regions path presence).
+        let tmp = std::env::temp_dir().join("ocrx-m42-regions-sym.json");
+        std::fs::write(&tmp, b"{}").unwrap();
+        let on = parse_scan_args(&structure_reread_on_args(&tmp)).unwrap();
+        assert!(super::validate_reread(&on).is_ok());
+        let missing = std::env::temp_dir().join("ocrx-m42-regions-missing.json");
+        let _ = std::fs::remove_file(&missing);
+        let err = parse_scan_args(&structure_reread_on_args(&missing)).unwrap_err();
+        assert!(err.contains("path not found"), "{err}");
+        let _ = std::fs::remove_file(&tmp);
+
+        // Layout flags without EITHER switch: still an error, and the
+        // message names BOTH switches. (Built directly — parse itself
+        // already rejects this combination.)
+        let err = super::validate_reread(&ScanOptions {
+            layout_model: Some("pp-doclayout-v2".to_owned()),
+            ..parse_scan_args(&["a.pdf"]).unwrap()
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("--table-structure-reread on"),
+            "message must name both switches: {err}"
+        );
+    }
+
+    #[test]
+    fn structure_only_run_reports_its_own_section() {
+        // M4.2 BLOCK-3: a structure-only run must NOT render as
+        // enabled:false — its own section rides the blob with the verified
+        // engine identity and the current rules generation.
+        let identity = serde_json::json!({
+            "engine": "slanet-plus", "revision": "bae6e5f8",
+            "paddleocr": "3.7.0", "paddlex": "3.7.2",
+            "paddlepaddle": "3.4.0", "models_sha256": {}
+        });
+        let blob = super::reread_result_identity(None, &identity.to_string(), 4, 0);
+        assert!(
+            blob.contains("\"enabled\":false"),
+            "old arm stays off: {blob}"
+        );
+        assert!(blob.contains("\"table_structure_reread\""), "{blob}");
+        assert!(blob.contains("\"slanet-plus\""), "{blob}");
+        assert!(blob.contains("\"rules_generation\":4"), "{blob}");
+        assert!(blob.contains("\"tables_reread_total\":4"), "{blob}");
+        // OFF runs keep the exact pre-M4.2 shape (no structure section).
+        let off = super::reread_result_identity(None, "", 0, 0);
+        assert!(!off.contains("table_structure_reread"), "{off}");
+    }
+
+    #[test]
+    fn old_flag_only_run_keeps_the_vlm_era_generation_in_the_result_identity() {
+        // D-63: old-flag-only ON reports the VLM-era generation (2) in the
+        // result identity blob; the SLANet generation (3) lives in the
+        // checkpoint compatibility identity.
+        let on = super::reread_result_identity(
+            Some(&ocrx_scan::compatibility::RereadOptions {
+                layout_model_id: "pp-doclayout-v2".to_owned(),
+                layout_assets_sha256: "hash".to_owned(),
+                regions_path: PathBuf::from("r.json"),
+            }),
+            "",
+            0,
+            0,
+        );
+        assert!(on.contains("\"rules_generation\":2"), "{on}");
+    }
 
     // --- X1.3: orchestrated output layout and exit aggregation -------------
 
@@ -2553,6 +2865,150 @@ mod tests {
 
     #[test]
     fn scan_parser_accepts_multiple_positional_inputs_with_output_root() {
+        let options = parse_scan_args(&[
+            "a.pdf",
+            "--table-reread",
+            "on",
+            "--layout-model",
+            "pp-doclayout-v2",
+            "--layout-regions",
+            &format!("missing-regions-{}.json", std::process::id()),
+        ]);
+        // A nonexistent regions file fails the completeness check with a
+        // targeted message instead of a scan-time surprise.
+        let error = options.err().unwrap_or_default();
+        assert!(error.contains("--layout-regions"), "{error}");
+        let dir = std::env::temp_dir().join(format!("ocrx-cli-reread-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let regions = dir.join("regions.json");
+        std::fs::write(&regions, "{}").unwrap();
+        let regions_path = regions.to_string_lossy().into_owned();
+        let on = parse_scan_args(&[
+            "a.pdf",
+            "--table-reread",
+            "on",
+            "--layout-model",
+            "pp-doclayout-v2",
+            "--layout-regions",
+            &regions_path,
+        ])
+        .unwrap();
+        assert!(on.table_reread);
+        assert_eq!(on.layout_model.as_deref(), Some("pp-doclayout-v2"));
+        assert_eq!(on.layout_regions.as_deref(), Some(regions_path.as_str()));
+        let off = parse_scan_args(&["a.pdf"]).unwrap();
+        assert!(!off.table_reread);
+        assert_eq!(off.layout_model, None);
+        assert_eq!(off.layout_regions, None);
+        // column-split retry arm (documented switch, parse arm restored).
+        let split_off = parse_scan_args(&["a.pdf", "--column-split-retry", "off"]).unwrap();
+        assert!(!split_off.column_split_retry);
+        let split_on = parse_scan_args(&["a.pdf", "--column-split-retry", "on"]).unwrap();
+        assert!(split_on.column_split_retry);
+        let _ = std::fs::remove_dir_all(&dir);
+        // Completeness/shape of the reread switch (no fs needed).
+        let missing_model = parse_scan_args(&["a.pdf", "--table-reread", "on"])
+            .err()
+            .unwrap();
+        assert!(missing_model.contains("--layout-model"), "{missing_model}");
+        let unknown = parse_scan_args(&[
+            "a.pdf",
+            "--table-reread",
+            "on",
+            "--layout-model",
+            "mineru-layout",
+            "--layout-regions",
+            "r.json",
+        ])
+        .err()
+        .unwrap();
+        assert!(unknown.contains("pp-doclayout-v2"), "{unknown}");
+        let missing_regions = parse_scan_args(&[
+            "a.pdf",
+            "--table-reread",
+            "on",
+            "--layout-model",
+            "pp-doclayout-v2",
+        ])
+        .err()
+        .unwrap();
+        assert!(
+            missing_regions.contains("--layout-regions"),
+            "{missing_regions}"
+        );
+        for stray in [
+            ["a.pdf", "--layout-model", "pp-doclayout-v2"].as_slice(),
+            ["a.pdf", "--layout-regions", "r.json"].as_slice(),
+        ] {
+            let err = parse_scan_args(stray).err().unwrap();
+            assert!(err.contains("--table-reread on"), "{err}");
+        }
+        assert!(parse_scan_args(&["a.pdf", "--table-reread", "maybe"]).is_err());
+        // R2.5/BLK-5: the result identity reflects the effective reread
+        // execution identity; the asset hash follows the frozen canonical
+        // rule and is deterministic across resolutions.
+        let off = super::reread_result_identity(None, "", 0, 0);
+        assert!(off.contains("\"enabled\":false"), "{off}");
+        assert!(off.contains("\"prompt_version\":\"\""));
+        assert!(off.contains("\"rules_generation\":0"));
+        assert!(off.contains("\"tables_reread_total\":0"));
+        assert!(off.contains("\"replaced_total\":0"));
+        let on = super::reread_result_identity(
+            Some(&ocrx_scan::compatibility::RereadOptions {
+                layout_model_id: "pp-doclayout-v2".to_owned(),
+                layout_assets_sha256: "hash".to_owned(),
+                regions_path: PathBuf::from("r.json"),
+            }),
+            "",
+            3,
+            1,
+        );
+        assert!(on.contains("\"enabled\":true"), "{on}");
+        assert!(on.contains("\"layout_model\":\"pp-doclayout-v2\""));
+        assert!(on.contains("\"prompt_version\":\"table-reread-v1\""));
+        assert!(on.contains("\"rules_generation\":2"));
+        assert!(on.contains("\"tables_reread_total\":3"));
+        assert!(on.contains("\"replaced_total\":1"));
+        let dir = std::env::temp_dir().join(format!("ocrx-cli-reread-hash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let regions = dir.join("regions.json");
+        std::fs::write(&regions, "{}").unwrap();
+        let mut base = parse_scan_args(&[
+            "a.pdf",
+            "--table-reread",
+            "on",
+            "--layout-model",
+            "pp-doclayout-v2",
+            "--layout-regions",
+            regions.to_string_lossy().as_ref(),
+        ])
+        .unwrap();
+        let first = super::reread_options(&base).unwrap().unwrap();
+        let second = super::reread_options(&base).unwrap().unwrap();
+        assert_eq!(first.layout_assets_sha256, second.layout_assets_sha256);
+        // Frozen canonical rule: sha256 over manifest-order role:sha256 lines.
+        let manifest = ocrx_models::layout::paddlex_layout_manifest(
+            ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID,
+            None,
+        )
+        .unwrap();
+        let mut canonical = String::new();
+        for asset in &manifest.assets {
+            canonical.push_str(&format!(
+                "{}:{}
+",
+                asset.role, asset.sha256
+            ));
+        }
+        assert_eq!(
+            first.layout_assets_sha256,
+            ocrx_output::sha256(canonical.as_bytes())
+        );
+        assert_eq!(first.layout_model_id, "pp-doclayout-v2");
+        base.table_reread = false;
+        base.layout_model = None;
+        assert!(super::reread_options(&base).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
         let options = parse_scan_args(&["a.pdf", "b.pdf", "-o", "root", "--resume"]).unwrap();
         assert_eq!(options.inputs, vec!["a.pdf".to_owned(), "b.pdf".to_owned()]);
         assert_eq!(options.output_dir.as_deref(), Some("root"));
@@ -2656,6 +3112,10 @@ mod tests {
                 password: None,
                 column_split_retry: true,
                 model_explicit: false,
+                table_reread: false,
+                structure_reread: false,
+                layout_model: None,
+                layout_regions: None,
             })
         );
         assert!(parse_scan_args(&["input.pdf", "--model", "other"]).is_err());
@@ -3122,6 +3582,7 @@ mod tests {
                 platform: current_platform().to_owned(),
             },
             ocrx_output::OcrIdentity {
+                regions_sha256: String::new(),
                 inference: identity,
                 prompt_id: "ocr-markdown".to_owned(),
                 prompt_version: "ocr-markdown-v1".to_owned(),
@@ -3135,6 +3596,13 @@ mod tests {
                 pixel_width_budget: 2880,
                 pixel_height_budget: 2880,
                 page_parser_version: "ovis-page-v1".to_owned(),
+                table_reread: false,
+                formula_reread: false,
+                layout_model_id: String::new(),
+                layout_model_assets_sha256: String::new(),
+                reread_prompt_version: String::new(),
+                reread_rules_generation: 0,
+                table_structure_reread: None,
             },
         );
         // Artifacts must be intact for reuse: the md the checkpoint hashes.
@@ -3753,6 +4221,10 @@ model=ovisocr3
             keep_pages: false,
             password: None,
             column_split_retry: true,
+            table_reread: false,
+            structure_reread: false,
+            layout_model: None,
+            layout_regions: None,
             model_explicit: false,
         };
         // 5 GiB: the floor error path exits the process — verify through
@@ -3932,6 +4404,7 @@ model=ovisocr3
             image_dir: Path::new("/tmp/output/images"),
             image_count: 3,
             elapsed_ms: 42,
+            reread_json: String::new(),
         });
 
         assert!(json.contains("\"status\":\"partial\""));
@@ -3977,6 +4450,7 @@ model=ovisocr3
             image_dir: Path::new("/tmp/output/images"),
             image_count: 0,
             elapsed_ms: 1,
+            reread_json: String::new(),
         });
         assert!(json.contains("\"routing_metadata\":[{\"page\":3"));
         assert!(json.contains("native_validation_failed"));
@@ -4031,6 +4505,7 @@ model=ovisocr3
             image_dir: Path::new("/tmp/output/images"),
             image_count: 0,
             elapsed_ms: 1,
+            reread_json: String::new(),
         });
 
         assert!(json.contains("\"warnings\":[\"truncated\",\"render_scaled\"]"));
@@ -4313,6 +4788,7 @@ model=ovisocr3
         };
         let fields = ScanResultFields {
             model_identity: Some(&identity),
+            reread_json: super::reread_result_identity(None, "", 0, 0),
             status: "success",
             input: Path::new("in.pdf"),
             markdown_path: None,
@@ -4362,6 +4838,7 @@ model=ovisocr3
         let identity = test_support_identity();
         let fields = ScanResultFields {
             model_identity: Some(&identity),
+            reread_json: super::reread_result_identity(None, "", 0, 0),
             status: "success",
             input: Path::new("in.pdf"),
             markdown_path: None,
@@ -4456,6 +4933,10 @@ model=ovisocr3
                 password: None,
                 column_split_retry: true,
                 model_explicit: false,
+                table_reread: false,
+                structure_reread: false,
+                layout_model: None,
+                layout_regions: None,
             }))
         );
         assert_eq!(
@@ -4583,12 +5064,15 @@ model=ovisocr3
             input: PathBuf::from("in.pdf"),
             output_dir: PathBuf::from("out"),
             summary: ocrx_scan::state::JobSummary {
+                structure_reread_json: String::new(),
                 selected_pages: 1,
                 completed_pages: 1,
                 failed_pages: 0,
                 truncated_pages: 0,
                 degenerated_pages: 0,
                 think_blocks_stripped: 0,
+                tables_reread_total: 0,
+                replaced_total: 0,
                 warnings: Vec::new(),
                 diagnostics: Vec::new(),
                 cancelled: false,

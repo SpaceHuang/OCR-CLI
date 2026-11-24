@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""R1b ordinal-agreement harness (m4-table-reopen plan, review RBLK-1).
+
+Perfect-detector lower-bound check: take the B0a frozen GT table boxes as
+if detection were perfect, apply a candidate reading-order rule, and
+compare the generated per-class ordinals against the GT `order`-derived
+ordinals on every multi-table page. Also reports the per-page ambiguity
+verdict of the adaptive rule (the runtime fallback skips ambiguous pages).
+
+Rules:
+  rowmajor_yc_xc : sort by (y center, x center)              [v1.1 rule, falsified]
+  rowgroup       : y-overlap band clustering, x within band
+  adaptive       : row-grouped if vertically clean, else column-grouped
+                   if horizontally clean, else AMBIGUOUS (runtime skips)
+
+  python scripts/omnidocbench-region-ordinal-check.py \
+      --region-truth benchmarks/omnidocbench/region-truth/region-truth.json \
+      [--rule adaptive]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+
+def load_json(path: Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def boxes_with_gt_ordinal(page: dict) -> list[dict]:
+    """GT table boxes carrying the GT class-ordinal.
+
+    The B0a artifact stores regions ALREADY in GT reading order (order
+    field, det-index tiebreak) with per-class ordinals assigned in that
+    sequence — so the table-class subsequence IS the GT ordinal ground
+    truth."""
+    out = []
+    ordinal = 0
+    for r in page["regions"]:
+        if r["class"] != "table":
+            continue
+        poly = r["poly"]
+        out.append({
+            "gt_ordinal": ordinal,
+            "box": (min(poly[0::2]), min(poly[1::2]), max(poly[0::2]), max(poly[1::2])),
+        })
+        ordinal += 1
+    return out
+
+
+def overlaps(a: tuple, b: tuple, axis: int, frac: float = 0.3) -> bool:
+    """True when the ranges on `axis` overlap by >= frac of the smaller."""
+    a0, a1 = a[axis], a[axis + 2]
+    b0, b1 = b[axis], b[axis + 2]
+    inter = min(a1, b1) - max(a0, b0)
+    smaller = min(a1 - a0, b1 - b0)
+    if smaller <= 0:
+        return False
+    return inter / smaller >= frac
+
+
+def cluster_bands(items: list[dict], axis: int, frac: float = 0.3) -> list[list[dict]]:
+    """Greedy band clustering along `axis`: a region joins the last band
+    while it overlaps that band's running extent by >= frac."""
+    ordered = sorted(items, key=lambda it: it["box"][axis])
+    bands: list[list[dict]] = []
+    for it in ordered:
+        if bands and overlaps(bands[-1][-1]["box"], it["box"], axis, frac):
+            bands[-1].append(it)
+            # running extent grows with the band
+            bands[-1][-1] = it
+        else:
+            bands.append([it])
+    return bands
+
+
+def rule_rowmajor_yc_xc(items: list[dict]):
+    ordered = sorted(items, key=lambda it: (
+        (it["box"][1] + it["box"][3]) / 2,
+        (it["box"][0] + it["box"][2]) / 2,
+    ))
+    return [it["gt_ordinal"] for it in ordered], False
+
+
+def rule_rowgroup(items: list[dict]):
+    bands = cluster_bands(list(items), axis=1)  # y axis
+    bands.sort(key=lambda band: min(it["box"][1] for it in band))
+    ordered = []
+    for band in bands:
+        ordered.extend(sorted(band, key=lambda it: it["box"][0]))
+    return [it["gt_ordinal"] for it in ordered], False
+
+
+def _clean_bands(bands: list[list[dict]], axis: int) -> bool:
+    extents = []
+    for band in bands:
+        lo = min(it["box"][axis] for it in band)
+        hi = max(it["box"][axis + 2] for it in band)
+        extents.append((lo, hi))
+    extents.sort()
+    return all(extents[i][1] <= extents[i + 1][0] + 1e-6 for i in range(len(extents) - 1))
+
+
+def _y_overlap_frac(a: tuple, b: tuple) -> float:
+    inter = min(a[3], b[3]) - max(a[1], b[1])
+    smaller = min(a[3] - a[1], b[3] - b[1])
+    if smaller <= 0:
+        return 0.0
+    return max(0.0, inter) / smaller
+
+
+PAIR_Y_OVERLAP_FRAC = 0.30
+
+
+def _consecutive_y_overlaps(order_items: list[dict], frac: float) -> bool:
+    """True when any two CONSECUTIVE tables in the generated order have
+    overlapping y-ranges - their relative order came from x (or a y-center
+    hairline), which the GT reading order may contradict."""
+    return any(
+        _y_overlap_frac(order_items[i]["box"], order_items[i + 1]["box"]) >= frac
+        for i in range(len(order_items) - 1)
+    )
+
+
+def _bands_order(items: list[dict], axis: int, frac: float):
+    bands = cluster_bands(list(items), axis=axis)
+    bands.sort(key=lambda band: min(it["box"][axis] for it in band))
+    clean = _clean_bands(bands, axis=axis)
+    ordered = []
+    for band in bands:
+        ordered.extend(sorted(band, key=lambda it: it["box"][1 - axis]))
+    return clean, ordered
+
+
+def rule_adaptive(items: list[dict]):
+    """Dual-hypothesis agreement (review RBLK-1): the page is reread-eligible
+    ONLY when the row-major and column-major interpretations are BOTH clean
+    AND produce the SAME order (with the consecutive-pair y-overlap veto).
+    Anything else is AMBIGUOUS and skipped at runtime — editorial reading
+    orders that disagree with geometry can never be resolved from boxes."""
+    row_clean, row_order = _bands_order(items, axis=1, frac=0.3)
+    col_clean, col_order = _bands_order(items, axis=0, frac=0.3)
+    if not (row_clean and col_clean):
+        return [it["gt_ordinal"] for it in row_order], True
+    if row_order != col_order:
+        return row_order, True
+    row_ordinals = [it["gt_ordinal"] for it in row_order]
+    col_ordinals = [it["gt_ordinal"] for it in col_order]
+    if row_ordinals != col_ordinals:
+        return row_ordinals, True
+    if _consecutive_y_overlaps(row_order, PAIR_Y_OVERLAP_FRAC):
+        return row_ordinals, True
+    return row_ordinals, False
+
+
+RULES = {
+    "rowmajor_yc_xc": rule_rowmajor_yc_xc,
+    "rowgroup": rule_rowgroup,
+    "adaptive": rule_adaptive,
+}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--region-truth", required=True)
+    parser.add_argument("--rule", default="adaptive", choices=sorted(RULES))
+    args = parser.parse_args()
+    truth = load_json(Path(args.region_truth))
+    rule = RULES[args.rule]
+
+    multi = 0
+    eligible = 0
+    eligible_correct = 0
+    skipped = 0
+    unsafe_pages = []
+    for page in truth["pages"]:
+        items = boxes_with_gt_ordinal(page)
+        if len(items) < 2:
+            continue  # single-table pages: no ordinal ambiguity by construction
+        multi += 1
+        generated, is_ambiguous = rule([dict(it) for it in items])
+        gt = [it["gt_ordinal"] for it in items]
+        if is_ambiguous:
+            # runtime skips the page: never reread, cannot mis-pair
+            skipped += 1
+            continue
+        # eligible: the page IS reread - the ordinal must be exactly right
+        eligible += 1
+        if generated == gt:
+            eligible_correct += 1
+        else:
+            unsafe_pages.append({
+                "image_path": page["image_path"],
+                "gt": gt,
+                "generated": generated,
+            })
+
+    result = {
+        "rule": args.rule,
+        "multi_table_pages": multi,
+        "eligible_pages": eligible,
+        "eligible_ordinal_correct": eligible_correct,
+        "eligible_correct_rate": (eligible_correct / eligible) if eligible else None,
+        "pages_skipped_at_runtime": skipped,
+        "unsafe_pages": unsafe_pages,
+        "unsafe_n": len(unsafe_pages),
+        "hard_gate": {
+            "scope": "perfect-box lower bound ONLY; real-output pairing safety is gated by omnidocbench-region-pairing-check.py (its hard_gate.pass ANDs this gate)",
+            "unsafe_zero_required": True,
+            "pass": eligible == eligible_correct and len(unsafe_pages) == 0,
+        },
+        "real_detector_three_state": "REMOVED from this harness - synthetic perturbation was not a valid test (review round 3); real-output pairing safety is gated by omnidocbench-region-pairing-check.py, whose hard_gate.pass ANDs this file's perfect-box gate",
+    }
+    # pool coverage over the B0b frozen corpus (reproducible artifact)
+    b0b_path = Path(args.region_truth).parent.parent / "b0b-corpus" / "b0b-corpus.json"
+    coverage = None
+    if b0b_path.exists():
+        b0b = load_json(b0b_path)
+        eligible_set = {
+            page["image_path"]
+            for page in truth["pages"]
+            if len(boxes_with_gt_ordinal(page)) >= 1
+        }
+        ambiguous_set = set()
+        for page in truth["pages"]:
+            items = boxes_with_gt_ordinal(page)
+            if len(items) >= 2:
+                _, amb = rule([dict(it) for it in items])
+                if amb:
+                    ambiguous_set.add(page["image_path"])
+        eligible_set -= ambiguous_set
+        coverage = {}
+        for band in ("worst", "mid", "good-en", "good-zh", "good-other", "bad-low"):
+            members = b0b.get("tables", {}).get(band, [])
+            if not members:
+                continue
+            safe = sum(1 for m in members if m["image_path"] in eligible_set)
+            coverage[band] = {"eligible": safe, "total": len(members), "frac": round(safe / len(members), 4)}
+        pools = coverage.get("worst", {}).get("eligible", 0) + coverage.get("mid", {}).get("eligible", 0) + coverage.get("bad-low", {}).get("eligible", 0)
+        pools_total = coverage.get("worst", {}).get("total", 0) + coverage.get("mid", {}).get("total", 0) + coverage.get("bad-low", {}).get("total", 0)
+        coverage["adjudication_pools"] = {
+            "eligible": pools, "total": pools_total,
+            "frac": round(pools / pools_total, 4) if pools_total else None,
+        }
+        result["b0b_pool_coverage"] = coverage
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

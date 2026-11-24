@@ -239,6 +239,18 @@ mod tests {
             sha256(&payload),
             "streamed file hash must equal the in-memory hash across block boundaries"
         );
+        // Sub-block lengths too (found during the R2.0 layout work: the
+        // boundary test covered 55+ only).
+        for len in [0_usize, 1, 17, 18, 54] {
+            let payload: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            let path = root.join(format!("short-{len}.bin"));
+            std::fs::write(&path, &payload).unwrap();
+            assert_eq!(
+                sha256_file(&path).unwrap(),
+                sha256(&payload),
+                "streamed file hash must equal the in-memory hash at length {len}"
+            );
+        }
         assert!(sha256_file(&root.join("missing.bin")).is_err());
         let _ = std::fs::remove_dir_all(root);
     }

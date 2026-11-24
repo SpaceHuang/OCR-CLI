@@ -164,6 +164,7 @@ pub fn run_pages_with_session(
     commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     cancellation: &CancellationToken,
     heartbeat: &mut dyn FnMut(u32, GenerationProgress),
+    arms: &mut crate::app::RereadArms<'_>,
 ) -> std::io::Result<JobSummary> {
     let root = output_root;
     std::fs::create_dir_all(root)?;
@@ -177,6 +178,8 @@ pub fn run_pages_with_session(
     let mut completed = 0_u32;
     let mut failed = 0_u32;
     let mut truncated = 0_u32;
+    let mut reread_tables = 0_u64;
+    let mut reread_replaced = 0_u64;
     let mut degenerated = 0_u32;
     let mut think_blocks_stripped = 0_u64;
     let mut warnings = std::collections::BTreeSet::new();
@@ -280,6 +283,8 @@ pub fn run_pages_with_session(
                 &mut truncated,
                 &mut degenerated,
                 &mut think_blocks_stripped,
+                &mut reread_tables,
+                &mut reread_replaced,
                 &mut warnings,
                 &mut diagnostics,
             )?;
@@ -312,12 +317,23 @@ pub fn run_pages_with_session(
                         TerminalPage::RenderFailed { page, cancelled }
                     }
                     SerialOutcome::Terminal(outcome) => match outcome {
-                        Ok((image, artifact, attempts)) => TerminalPage::Committed {
-                            page,
-                            image,
-                            artifact,
-                            attempts,
-                        },
+                        Ok((image, mut artifact, attempts)) => {
+                            apply_reread_gate(
+                                page,
+                                &image,
+                                &mut artifact,
+                                arms,
+                                session,
+                                config.max_output_tokens,
+                                attempts,
+                            )?;
+                            TerminalPage::Committed {
+                                page,
+                                image,
+                                artifact,
+                                attempts,
+                            }
+                        }
                         Err((audit, error)) => TerminalPage::RecognizeFailed { page, audit, error },
                     },
                 },
@@ -338,6 +354,8 @@ pub fn run_pages_with_session(
                 &mut truncated,
                 &mut degenerated,
                 &mut think_blocks_stripped,
+                &mut reread_tables,
+                &mut reread_replaced,
                 &mut warnings,
                 &mut diagnostics,
             )?;
@@ -463,7 +481,16 @@ pub fn run_pages_with_session(
                                         }
                                     }
                                     SerialOutcome::Terminal(outcome) => match outcome {
-                                        Ok((image, artifact, attempts)) => {
+                                        Ok((image, mut artifact, attempts)) => {
+                                            apply_reread_gate(
+                                                pending,
+                                                &image,
+                                                &mut artifact,
+                                                arms,
+                                                session,
+                                                config.max_output_tokens,
+                                                attempts,
+                                            )?;
                                             TerminalPage::Committed {
                                                 page: pending,
                                                 image,
@@ -510,12 +537,23 @@ pub fn run_pages_with_session(
                         terminal.push(TerminalPage::RenderFailed { page, cancelled });
                     }
                     SerialOutcome::Terminal(outcome) => match outcome {
-                        Ok((image, retried, attempts)) => terminal.push(TerminalPage::Committed {
-                            page,
-                            image,
-                            artifact: retried,
-                            attempts,
-                        }),
+                        Ok((image, mut retried, attempts)) => {
+                            apply_reread_gate(
+                                page,
+                                &image,
+                                &mut retried,
+                                arms,
+                                session,
+                                config.max_output_tokens,
+                                attempts,
+                            )?;
+                            terminal.push(TerminalPage::Committed {
+                                page,
+                                image,
+                                artifact: retried,
+                                attempts,
+                            });
+                        }
                         Err((audit, msg)) => terminal.push(TerminalPage::RecognizeFailed {
                             page,
                             audit,
@@ -525,6 +563,16 @@ pub fn run_pages_with_session(
                 }
             } else if let Some((_, image)) = images.iter().find(|(entry, _)| *entry == page) {
                 let image = image.clone();
+                let mut artifact = artifact;
+                apply_reread_gate(
+                    page,
+                    &image,
+                    &mut artifact,
+                    arms,
+                    session,
+                    config.max_output_tokens,
+                    1,
+                )?;
                 terminal.push(TerminalPage::Committed {
                     page,
                     image,
@@ -551,6 +599,8 @@ pub fn run_pages_with_session(
             &mut truncated,
             &mut degenerated,
             &mut think_blocks_stripped,
+            &mut reread_tables,
+            &mut reread_replaced,
             &mut warnings,
             &mut diagnostics,
         )?;
@@ -570,10 +620,63 @@ pub fn run_pages_with_session(
         truncated_pages: truncated,
         degenerated_pages: degenerated,
         think_blocks_stripped,
+        tables_reread_total: reread_tables,
+        replaced_total: reread_replaced,
+        structure_reread_json: String::new(),
         warnings: warnings.into_iter().collect(),
         diagnostics,
         cancelled: cancellation.is_cancelled(),
     })
+}
+
+/// R2.6 golden gate: the ONLY arming point of the reread pipeline.
+/// `provider` = `None` on the off path — the orchestration is never
+/// constructed, so no reread request can exist (byte-identical off path by
+/// construction). The decode rides the same session through the frozen
+/// production decoder (TABLE_REREAD_V1 prompt, 1024 grid).
+fn apply_reread_gate(
+    page: u32,
+    image: &RenderedPage,
+    artifact: &mut PageArtifactResult,
+    arms: &mut crate::app::RereadArms<'_>,
+    session: &mut dyn InferenceSession,
+    max_output_tokens: u32,
+    attempts: u32,
+) -> std::io::Result<()> {
+    if arms.provider.is_none() {
+        return Ok(());
+    }
+    // BLK-4 (plan D-18): a BAD page (retry-committed, attempts >= 2)
+    // always triggers the reread — F1-F5 gate only the attempt-1 path.
+    let always_trigger = attempts >= 2;
+    // M4.2 dual arm (D-64): F1-F5 VLM reread only under the OLD flag; F6
+    // SLANet reread only under the NEW flag (disjoint populations). Each
+    // decoder is constructed only when its flag is on.
+    let mut vlm_decoder = if arms.vlm_armed {
+        Some(crate::ocr::artifacts::SessionTableDecoder::new(
+            session,
+            max_output_tokens,
+            &format!("page-{page}-table-reread"),
+        ))
+    } else {
+        None
+    };
+    let stats = crate::reread::apply_table_reread(
+        image,
+        artifact,
+        page,
+        arms,
+        vlm_decoder.as_mut(),
+        always_trigger,
+    )?;
+    // BLK-6: per-table outcomes ride the artifact for the committed
+    // sidecar (page-NNNN.reread.json) — page-level counters cannot
+    // attribute multi-table pages.
+    if !stats.detail.is_empty() {
+        artifact.reread_detail_json = serde_json::to_string(&stats.detail)
+            .map_err(|error| std::io::Error::other(format!("reread detail serialize: {error}")))?;
+    }
+    Ok(())
 }
 
 /// The resume-side snapshot for the window-loop final compare (scan-side
@@ -591,6 +694,14 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             pixel_width_budget: ocr.pixel_width_budget,
             pixel_height_budget: ocr.pixel_height_budget,
             page_parser_version: ocr.page_parser_version.clone(),
+            table_reread: ocr.table_reread,
+            formula_reread: ocr.formula_reread,
+            layout_model_id: ocr.layout_model_id.clone(),
+            layout_model_assets_sha256: ocr.layout_model_assets_sha256.clone(),
+            reread_prompt_version: ocr.reread_prompt_version.clone(),
+            reread_rules_generation: ocr.reread_rules_generation,
+            table_structure_reread: ocr.table_structure_reread.clone(),
+            regions_sha256: ocr.regions_sha256.clone(),
         },
         None => ScanOcrSide {
             prompt_id: String::new(),
@@ -603,6 +714,14 @@ fn resume_side(compatibility: &ScanCompatibility) -> ScanOcrSide {
             pixel_width_budget: 0,
             pixel_height_budget: 0,
             page_parser_version: String::new(),
+            table_reread: false,
+            formula_reread: false,
+            layout_model_id: String::new(),
+            layout_model_assets_sha256: String::new(),
+            reread_prompt_version: String::new(),
+            reread_rules_generation: 0,
+            table_structure_reread: None,
+            regions_sha256: String::new(),
         },
     }
 }
@@ -753,6 +872,8 @@ pub(crate) fn commit_terminal(
     truncated: &mut u32,
     degenerated: &mut u32,
     think_blocks_stripped: &mut u64,
+    reread_tables: &mut u64,
+    reread_replaced: &mut u64,
     warnings: &mut std::collections::BTreeSet<String>,
     diagnostics: &mut Vec<PageDiagnostic>,
 ) -> std::io::Result<()> {
@@ -781,8 +902,19 @@ pub(crate) fn commit_terminal(
                     *degenerated += 1;
                 }
                 *think_blocks_stripped += u64::from(artifact.think_blocks_stripped);
+                *reread_tables += artifact.reread_tables as u64;
+                *reread_replaced += artifact.reread_replaced as u64;
                 warnings.extend(artifact_warnings.iter().cloned());
                 write_render_audit(root, page, image.audit)?;
+                // M4.1 (F6): per-region reread outcomes — persisted whenever
+                // the F6 branch ran (zero-table-block pages), including the
+                // all-rejected case (attribution matters for the spike).
+                if !artifact.reread_detail_json.is_empty() {
+                    atomic_write(
+                        root.join(format!("page-{page:04}.reread.json")),
+                        artifact.reread_detail_json.as_bytes(),
+                    )?;
+                }
                 // Raw-output sidecar: preserved whenever the page
                 // degenerated or lost text to repetition cleaning.
                 let raw_pointer = if artifact.degenerated
@@ -949,7 +1081,7 @@ fn injected_inference_failure(page: u32) -> Option<String> {
 /// Encodes one rendered page's RGB8 into PNG bytes (synchronous commit-path
 /// fallback for the retired async encode pipeline; phase-4 W3 semantics:
 /// the bytes belong to the terminal render recorded in the entry).
-fn encode_page_png(image: &RenderedPage) -> std::io::Result<Vec<u8>> {
+pub(crate) fn encode_page_png(image: &RenderedPage) -> std::io::Result<Vec<u8>> {
     let img = image::RgbImage::from_raw(image.width, image.height, image.rgb8.clone())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid RGB8 page"))?;
     let mut cursor = std::io::Cursor::new(Vec::new());

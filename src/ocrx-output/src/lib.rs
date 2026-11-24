@@ -287,12 +287,12 @@ use std::path::{Path, PathBuf};
 // CLI must be passable to the runtime's token-generation loop, so the trait
 // below shares `ocrx_primitives::CancellationToken` instead of keeping a private,
 // type-incompatible duplicate.
-pub use ocrx_primitives::{CancellationToken, GenerationProgress};
+pub use ocrx_primitives::{CancellationToken, GenerationProgress, sha256};
 
 pub mod compatibility;
 pub use compatibility::{
-    OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute, ocr_final_compare,
-    ocr_pre_compare,
+    OcrIdentity, PdfIdentity, ScanCompatibility, ScanOcrSide, ScanRoute, StructureRereadIdentity,
+    ocr_final_compare, ocr_pre_compare,
 };
 
 pub mod checkpoint_v6;

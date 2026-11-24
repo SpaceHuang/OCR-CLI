@@ -1,0 +1,53 @@
+{
+  "rule": "adaptive",
+  "multi_table_pages": 117,
+  "eligible_pages": 95,
+  "eligible_ordinal_correct": 95,
+  "eligible_correct_rate": 1.0,
+  "pages_skipped_at_runtime": 22,
+  "unsafe_pages": [],
+  "unsafe_n": 0,
+  "hard_gate": {
+    "scope": "perfect-box lower bound ONLY; real-output pairing safety is gated by omnidocbench-region-pairing-check.py (its hard_gate.pass ANDs this gate)",
+    "unsafe_zero_required": true,
+    "pass": true
+  },
+  "real_detector_three_state": "REMOVED from this harness - synthetic perturbation was not a valid test (review round 3); real-output pairing safety is gated by omnidocbench-region-pairing-check.py, whose hard_gate.pass ANDs this file's perfect-box gate",
+  "b0b_pool_coverage": {
+    "worst": {
+      "eligible": 22,
+      "total": 36,
+      "frac": 0.6111
+    },
+    "mid": {
+      "eligible": 73,
+      "total": 89,
+      "frac": 0.8202
+    },
+    "good-en": {
+      "eligible": 107,
+      "total": 120,
+      "frac": 0.8917
+    },
+    "good-zh": {
+      "eligible": 278,
+      "total": 297,
+      "frac": 0.936
+    },
+    "good-other": {
+      "eligible": 25,
+      "total": 26,
+      "frac": 0.9615
+    },
+    "bad-low": {
+      "eligible": 51,
+      "total": 97,
+      "frac": 0.5258
+    },
+    "adjudication_pools": {
+      "eligible": 146,
+      "total": 222,
+      "frac": 0.6577
+    }
+  }
+}

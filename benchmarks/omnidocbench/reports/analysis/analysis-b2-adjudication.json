@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "artifact": "omnidocbench-b2-adjudication",
+  "rule": "m4-table-reopen plan 3.4 five gates (D-22/D-46)",
+  "safe_eligible_pages": 384,
+  "gates": {
+    "coverage": {
+      "gate": 1,
+      "rule": "pool tables on safe-eligible pages triggered >= 80%",
+      "pool_tables_safe_eligible": 99,
+      "triggered": 58,
+      "coverage": 0.5858585858585859,
+      "absolute_pool_tables": 222,
+      "absolute_coverage": 0.26126126126126126,
+      "pass": false
+    },
+    "replacement": {
+      "gate": 2,
+      "rule": "normal-page replacements <= 2% of normal-page table samples",
+      "normal_page_table_samples": 568,
+      "replaced": 18,
+      "rate": 0.03169014084507042,
+      "pass": false
+    },
+    "good_band": {
+      "gate": 3,
+      "rule": "good-band paired mean dTEDS >= -0.02 AND regressions (d < -0.10) <= max(3, 2%)",
+      "paired_tables": 443,
+      "mean_delta": -0.0035153631743886447,
+      "regressions": 2,
+      "regression_cap": 8,
+      "regression_keys": [
+        "page-5d58cdf7-6d00-4ea5-97b2-358cbc0cab21.png_[0]",
+        "notes_f7f010b78016aeebd76e56d9283eb67f_50.jpg_[0]"
+      ],
+      "pass": true
+    },
+    "worst_bad": {
+      "gate": 4,
+      "rule": "worst/bad-band mean dTEDS >= +0.3 (paired safe-eligible subset)",
+      "paired_tables": 52,
+      "mean_delta": -0.0027135441245870686,
+      "deltas": {
+        "newspaper_2a6b4fa088699701a6fa9ccecfb5c25d_1.jpg_[0]": 0.0,
+        "notes_1ba14cb325bc448f7201b20502ecf2b5_79.jpg_[0]": 0.0,
+        "notes_f7f010b78016aeebd76e56d9283eb67f_50.jpg_[1]": 0.0,
+        "yanbaopptmerge_5473246b8da789b9bfdeef53a70c4d72afd480415d5cbcedb83d105856710328.pdf_8.jpg_[1]": 0.0,
+        "yanbaopptmerge_70a45bf10fb90ae0c91d44a11e0a97a8f9515d85626b54eb50a80b6146e5c2bf.pdf_10.jpg_[0]": 0.0,
+        "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010.png_[0]": 0.0,
+        "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006.png_[0]": 0.0,
+        "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg_[0]": 0.0,
+        "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg_[1]": 0.0,
+        "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328.jpg_[0]": 0.0,
+        "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328.jpg_[1]": 0.0,
+        "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3.jpg_[0]": 0.0,
+        "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2.jpg_[0]": 0.0,
+        "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg_[0]": 0.0,
+        "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg_[1]": 0.0,
+        "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[0]": 0.0,
+        "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[1]": 0.0,
+        "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[2]": 0.0,
+        "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg_[3]": 0.0,
+        "jiaocai_jiaocai_en_310.jpg_[0]": 0.0,
+        "jiaocaineedrop_2017.pdf_0.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_1349.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_1358.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_1478.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_1898.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_194.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_2211.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_482.jpg_[0]": 0.0,
+        "jiaocaineedrop_jiaocai_needrop_en_922.jpg_[0]": 0.0,
+        "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.jpg_[0]": 0.0,
+        "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.jpg_[1]": 0.0,
+        "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.jpg_[2]": 0.0,
+        "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png_[0]": 0.0,
+        "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8.png_[0]": -0.1411,
+        "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png_[0]": 0.0,
+        "page-69c15957-4d6d-485c-a244-04a1a8d29d37.png_[0]": 0.0,
+        "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41.png_[0]": 0.0,
+        "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41.png_[1]": 0.0,
+        "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png_[0]": 0.0,
+        "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png_[1]": 0.0,
+        "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png_[2]": 0.0,
+        "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.png_[0]": 0.0,
+        "page-d5e0cd38-ac0f-422c-b6d5-c8f001720491.png_[0]": 0.0,
+        "page-dca64e05-1ce6-49ee-857a-9b5d05a87357.png_[0]": 0.0,
+        "page-e6c5454d-90ad-495c-85db-a416b7cd6452.png_[0]": 0.0,
+        "page-e6c5454d-90ad-495c-85db-a416b7cd6452.png_[1]": 0.0,
+        "page-e6c5454d-90ad-495c-85db-a416b7cd6452.png_[2]": 0.0,
+        "scihub_ijop.12033.pdf_5.jpg_[0]": 0.0,
+        "scihub_j.1528-1167.2008.01552.x.pdf_3.jpg_[0]": 0.0,
+        "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8.jpg_[0]": 0.0,
+        "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27.jpg_[0]": 0.0,
+        "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14.jpg_[0]": 0.0
+      },
+      "pass": false
+    },
+    "projection_drift": {
+      "gate": 5,
+      "rule": "T-PROJ full-set projection recorded AND control normal-page checkpoint zero-drift",
+      "zero_drift": {
+        "checked": 914,
+        "missing": 1,
+        "drifted": [],
+        "pass": true
+      },
+      "projection": {
+        "recorded": true
+      },
+      "pass": true
+    }
+  },
+  "verdict": "NO-GO"
+}

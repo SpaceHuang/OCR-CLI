@@ -155,7 +155,68 @@ fn assemble(
         warnings,
         think_blocks_stripped: response.think_blocks_stripped,
         raw_output: response.raw_text.clone(),
+        reread_tables: 0,
+        reread_replaced: 0,
+        reread_detail_json: String::new(),
     })
+}
+
+/// R2.6 production decoder: the reread decode rides the SAME session with
+/// the frozen TABLE_REREAD_V1 prompt and the frozen 1024 decode grid on the
+/// cropped region (m4 plan R2.3/R2.4). The image id embeds the page number
+/// (`page-N-table-reread`) so sessions/fakes can key their responses.
+pub struct SessionTableDecoder<'s> {
+    session: &'s mut dyn InferenceSession,
+    max_output_tokens: u32,
+    image_id: String,
+}
+
+impl<'s> SessionTableDecoder<'s> {
+    #[must_use]
+    pub fn new(
+        session: &'s mut dyn InferenceSession,
+        max_output_tokens: u32,
+        image_id: &str,
+    ) -> Self {
+        Self {
+            session,
+            max_output_tokens,
+            image_id: image_id.to_owned(),
+        }
+    }
+}
+
+impl crate::reread::TableRereadDecoder for SessionTableDecoder<'_> {
+    fn reread_table(&mut self, crop: &crate::state::RenderedPage) -> std::io::Result<String> {
+        let generation = GenerationParams {
+            max_output_tokens: self.max_output_tokens,
+            temperature_milli: 0,
+            thinking: false,
+        };
+        let image = ImageInput::new(
+            self.image_id.clone(),
+            crop.width,
+            crop.height,
+            crop.rgb8.clone(),
+        )
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+        let request = TaskRequest::new(
+            super::prompt::reread::TABLE_REREAD_V1,
+            vec![image],
+            generation,
+        )
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+        // Frozen R2.3 decode grid for the region reread = the plain
+        // attempt-1 grid (1024); no override needed (2048 is the only
+        // platform override, reserved for the degeneration ladder).
+        let _ = &request;
+        let cancellation = CancellationToken::new();
+        let response = self
+            .session
+            .submit(request, &cancellation, &mut |_| {})
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        Ok(response.raw_text.trim().to_owned())
+    }
 }
 
 /// Session-driven page recognizer: builds the OCR request per page (the
@@ -421,6 +482,9 @@ impl<'s> SessionRecognizer<'s> {
             warnings,
             think_blocks_stripped,
             raw_output: merged_raw,
+            reread_tables: 0,
+            reread_replaced: 0,
+            reread_detail_json: String::new(),
         })
     }
 

@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "artifact": "ovisocr3-lesion-attribution",
+  "note": "per-sample attribution of the <0.5 lesion population on the ovisocr3 default (r3-ovisocr3 eval); chronic = ovisocr2 also <0.5, o3-new = ovisocr3 regression that o2 rescues",
+  "tables": {
+    "total_below_0_5": 98,
+    "chronic": 73,
+    "o3_new_regressions": 25,
+    "chronic_mean_teds_o3": 0.1248,
+    "chronic_oracle_best_of_two": 0.154,
+    "o2_mean_on_chronic": 0.0933,
+    "zero_tables": 53,
+    "zero_tables_rows_ge_10": 48,
+    "zero_tables_cells_ge_100": 34,
+    "zero_tables_multi_col_header": 22,
+    "o3_new_by_source": {
+      "research_report": 14,
+      "academic_literature": 2,
+      "PPT2PDF": 1,
+      "exam_paper": 1,
+      "colorful_textbook": 3,
+      "note": 1,
+      "newspaper": 3
+    },
+    "o3_new_o2_scores": [
+      0.51,
+      0.57,
+      0.59,
+      0.62,
+      0.66,
+      0.66,
+      0.74,
+      0.76,
+      0.76,
+      0.77,
+      0.78,
+      0.93,
+      0.93,
+      0.94,
+      0.96,
+      0.96,
+      0.99,
+      0.99,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "formulas": {
+    "total_below_0_5": 29,
+    "chronic": 19,
+    "o3_new_regressions": 9,
+    "o3_new_o2_scores": [
+      0.84,
+      0.95,
+      0.97,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "chronic_mean_cdm_o3": 0.1192,
+    "chronic_oracle_best_of_two": 0.127,
+    "fuzzy_scan_subpopulation": {
+      "pages": 30,
+      "scored_samples": 18,
+      "o3_mean": 0.76,
+      "o2_mean": 0.692,
+      "best_of_two_oracle": 0.763,
+      "below_0_5": 4
+    }
+  },
+  "leverage": {
+    "fix_all_formula_below_0_5": "+0.35 Overall",
+    "fix_all_table_below_0_5": "+4.32 Overall",
+    "fuzzy_scan_formulas": "+~0.06 Overall (18 samples, 4 bad) — smallest lever"
+  },
+  "zero_table_prediction_side": {
+    "note": "53 zero-score tables categorized by the PREDICTION side (ovisocr3 eval predictions): the dominant failure is the model emitting NO <table> block at all (content degrades to plain text) — NOT GT noise",
+    "pred_no_table_block": 32,
+    "pred_has_table": 21,
+    "of_which_row_mismatch_gt": 10,
+    "pred_missing_file": 0,
+    "sidecar_table_region_detected_on": "53/53 (100%) — the region signal is fully available",
+    "mechanism_gap": "M4 triggers F1-F5 inspect OUTPUT table HTML; pages with NO output table never trigger, so the reread pipeline never reaches the largest lesion population. A missing-table branch (F6: detected table region with no matching output table block -> crop-reread that region) covers all 53.",
+    "lever": "53 zero-score tables; lifting them to the corpus-average table quality (~0.86) is worth ~+2.9 Overall points — far larger than the M4 campaign population (already-emitted suspect tables, delta ~0)",
+    "caveat": "the B2 campaign measured reread on already-emitted tables (delta ~0); this population is untested — the reread goes from nothing to something, but output quality must be measured, and the no-original comparison changes the fail-closed design (compare-keep has no baseline; needs an acceptance rule)"
+  }
+}

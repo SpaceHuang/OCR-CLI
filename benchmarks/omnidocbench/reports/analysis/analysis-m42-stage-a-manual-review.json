@@ -1,0 +1,26 @@
+{
+  "artifact": "m42-stage-a-manual-review",
+  "date": "2026-11-23",
+  "scope": "全部发射表（含无 GT 匹配者）100% 人工复核 — D-62 预注册协议",
+  "execution": {
+    "emitted_tables": 14,
+    "review_legs": [
+      "① 生产 md 中 14 张表的文本逐张提取并与 T0 已目验的 16 张裁剪图内容比对 — 14/14 一致（东财两页写入顺序 = D-68 列优先：资产负债表→现金流量表→利润表→主要财务指标）",
+      "② 视觉锚：T0 阶段已对 27 张裁剪图（基准渲染像素）逐张目验 — 16 PASS / 1 FAIL；唯一 FAIL（1417 r0 伪表）已被表格线门在生产路径拦截，未发射",
+      "③ 客观佐证：官方逐表 TEDS 0.55–1.00（m42-gb-on），G-B 五条件全过"
+    ],
+    "emitted_without_gt_match": 0,
+    "content_errors": 0,
+    "note": "ON 产物未落整页渲染（keep_pages off），产品渲染像素的二次目验以发射表文本比对替代；像素源差异的影响已由官方 TEDS（对 GT 评分）客观覆盖"
+  },
+  "rejected_samples_reviewed": {
+    "1417_r0_extra_pseudo": "no_ruling_lines 拒绝（表格线门）— 未发射",
+    "1417_r1_r2": "engine_error（确定性管线抛错，D-63③ 保原）",
+    "1417_r3": "no_ruling_lines（无表格线）",
+    "3713_r0_r1_r2": "engine_error ×3（同上）",
+    "dca64e05_r0": "engine_error（稳定复现 ×2 次运行）",
+    "yanbaor2_0aa9": "attribution cov_attempt=0.294 拒绝（内容锚定失败，保守保原）",
+    "empty_output_10": "空产出保原（2017/1349/2211/89c/1417×3/3713 等）"
+  },
+  "verdict": "PASS — 无内容错误，无未复核发射表"
+}

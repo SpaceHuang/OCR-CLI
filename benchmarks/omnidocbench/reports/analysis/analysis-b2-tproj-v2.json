@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "tool": "omnidocbench-paired-projection",
+  "population_id": "r3-b0b-table-corpus-v2",
+  "components": {
+    "text": {
+      "official_n": 1557,
+      "population_n": 375,
+      "paired_n": 375,
+      "missing_candidate_n": 0,
+      "official_all_mean": 0.0722758698319611,
+      "projected_all_mean": 0.0722758698319611,
+      "paired_mean_delta": 0.0,
+      "population_delta_sum": 0.0,
+      "official_component": 0.9277241301680389,
+      "projected_component": 0.9277241301680389,
+      "delta_component": 0.0
+    },
+    "cdm": {
+      "official_n": 2352,
+      "population_n": 0,
+      "paired_n": 0,
+      "missing_candidate_n": 0,
+      "official_all_mean": 0.9430480442176871,
+      "projected_all_mean": 0.9430480442176871,
+      "paired_mean_delta": 0.0,
+      "population_delta_sum": 0.0,
+      "official_component": 0.9430480442176871,
+      "projected_component": 0.9430480442176871,
+      "delta_component": 0.0
+    },
+    "teds": {
+      "official_n": 665,
+      "population_n": 665,
+      "paired_n": 665,
+      "missing_candidate_n": 0,
+      "official_all_mean": 0.7826805077263671,
+      "projected_all_mean": 0.7817603465082777,
+      "paired_mean_delta": -0.000920161218089516,
+      "population_delta_sum": -0.6119072100295282,
+      "official_component": 0.7826805077263671,
+      "projected_component": 0.7817603465082777,
+      "delta_component": -0.0009201612180893548
+    }
+  },
+  "overall": {
+    "official": 88.44842273706978,
+    "projected": 88.4177506964668,
+    "delta": -0.030672040602979678
+  }
+}

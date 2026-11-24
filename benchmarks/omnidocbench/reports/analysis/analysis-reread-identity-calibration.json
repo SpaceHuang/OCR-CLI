@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "artifact": "omnidocbench-reread-identity-calibration",
+  "normalization": "strip tags -> collapse whitespace -> lowercase -> char bigrams (frozen v1)",
+  "min_text_bigrams": 8,
+  "sample": 300,
+  "measured_legitimate_n": 248,
+  "measured_foreign_n": 244,
+  "inconclusive_or_missing": 52,
+  "legitimate_distribution": {
+    "coverage_of_original_in_reread": {
+      "n": 248,
+      "min": 0.0479,
+      "p5": 0.6364,
+      "p25": 0.875,
+      "median": 0.9592
+    },
+    "coverage_of_reread_in_original": {
+      "n": 248,
+      "min": 0.0909,
+      "p5": 0.3538,
+      "p25": 0.8391,
+      "median": 0.945
+    }
+  },
+  "foreign_distribution": {
+    "coverage_of_original_in_reread": {
+      "n": 244,
+      "min": 0.0,
+      "p5": 0.0,
+      "p25": 0.0,
+      "median": 0.0362
+    },
+    "coverage_of_reread_in_original": {
+      "n": 244,
+      "min": 0.0,
+      "p5": 0.0,
+      "p25": 0.0,
+      "median": 0.0237
+    }
+  },
+  "frozen_thresholds": {
+    "T1_coverage_of_original": 0.4,
+    "T2_coverage_of_reread": 0.25
+  },
+  "operating_point": {
+    "legitimate_pass": "238/248 = 0.960",
+    "foreign_pass": "7/244 = 0.029",
+    "rationale": "blocked legitimate = keep original (fail-closed, zero risk); passed foreign still faces compare-keep + B2 gate-3"
+  }
+}

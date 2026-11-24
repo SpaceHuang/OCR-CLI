@@ -8,6 +8,7 @@ pub mod builtin;
 pub mod cache;
 pub mod catalog;
 pub mod install;
+pub mod layout;
 pub mod recommend;
 pub mod remove;
 pub mod transport;
