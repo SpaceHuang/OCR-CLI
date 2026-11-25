@@ -124,10 +124,10 @@ def test_worker_serves_matches_t0_postgate_set():
         "jiaocaineedrop_jiaocai_needrop_en_3713",
         "yanbaor2_89c3718f",
     )
-        for rid, (page, row, parts) in ids.items():
-            # EXTRA det regions carry gt_key=None (no GT pairing) — the
-            # 0aa9 suffix probe needs a string (M4.3 P0 smoke run).
-            gt_key = row["gt_key"] or ""
+    for rid, (page, row, parts) in ids.items():
+        # EXTRA det regions carry gt_key=None (no GT pairing) — the
+        # 0aa9 suffix probe needs a string (M4.3 P0 smoke run).
+        gt_key = row["gt_key"] or ""
         expect_empty = page["img"].startswith(EXPECT_EMPTY_STEMS) and row["crop_png"] not in (
             "p04_r0_EXTRA_conf0.98.png",
             "p04_r3_match0_conf0.97.png",
