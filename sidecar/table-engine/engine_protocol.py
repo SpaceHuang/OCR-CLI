@@ -93,8 +93,38 @@ class Ping:
         return cls(id=int(obj["id"]))
 
 
+@dataclass
+class RegionsRequest:
+    """M4.3 P2a (D-71): generate route-A regions for EVERY page of the pdf.
+    The model dir rides the request (the CLI owns the installed layout
+    assets); the payload binding (source_pdf_sha256) is computed worker-side."""
+
+    id: int
+    pdf_path: str
+    model_dir: str
+
+    @classmethod
+    def from_json(cls, line: str) -> "RegionsRequest":
+        obj = json.loads(line)
+        if obj.get("type") != "regions":
+            raise ProtocolError(f"expected regions frame, got {obj.get('type')!r}")
+        for key in ("id", "pdf_path", "model_dir"):
+            if key not in obj:
+                raise ProtocolError(f"regions frame missing {key!r}")
+        return cls(id=int(obj["id"]), pdf_path=obj["pdf_path"], model_dir=obj["model_dir"])
+
+
 def result_ok(request_id: int, html: str) -> str:
     return json.dumps({"type": "result", "id": request_id, "ok": True, "html": html}, sort_keys=True)
+
+
+def regions_ok(request_id: int, regions_json: str) -> str:
+    """M4.3 P2a: the regions payload rides its own success key (a `regions`
+    request never answers with `html`)."""
+    return json.dumps(
+        {"type": "result", "id": request_id, "ok": True, "regions_json": regions_json},
+        sort_keys=True,
+    )
 
 
 def result_reject(request_id: int, reject: str) -> str:

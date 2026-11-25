@@ -116,6 +116,7 @@ def serve(in_stream=None, out_stream=None) -> int:
     in_stream = in_stream if in_stream is not None else sys.stdin.buffer
     out_stream = out_stream if out_stream is not None else sys.stdout.buffer
     pipeline = TablePipeline()
+    regions = None  # M4.3 P2a: the layout detector loads lazily per model dir
     proto.write_frame(out_stream, build_hello())
     while True:
         line = proto.read_frame(in_stream)
@@ -125,11 +126,31 @@ def serve(in_stream=None, out_stream=None) -> int:
             request = proto.Recognize.from_json(line)
         except proto.ProtocolError:
             try:
-                ping = proto.Ping.from_json(line)
-            except proto.ProtocolError as error:
-                proto.write_frame(out_stream, proto.error_frame(-1, str(error)))
-                return 2  # unusable connection
-            proto.write_frame(out_stream, proto.result_ok(ping.id, "pong"))
+                regions_request = proto.RegionsRequest.from_json(line)
+            except proto.ProtocolError:
+                try:
+                    ping = proto.Ping.from_json(line)
+                except proto.ProtocolError as error:
+                    proto.write_frame(out_stream, proto.error_frame(-1, str(error)))
+                    return 2  # unusable connection
+                proto.write_frame(out_stream, proto.result_ok(ping.id, "pong"))
+                continue
+            # M4.3 P2a: per-request fault = error frame, keep serving
+            # (D-63 (3) semantics; the CLI decides degrade vs hard error).
+            try:
+                import layout_regions
+
+                if regions is None:
+                    regions = layout_regions.LayoutRegions()
+                payload = regions.regions_for_pdf(
+                    regions_request.pdf_path, regions_request.model_dir
+                )
+                proto.write_frame(out_stream, proto.regions_ok(regions_request.id, payload))
+            except Exception as error:  # noqa: BLE001
+                proto.write_frame(
+                    out_stream,
+                    proto.error_frame(regions_request.id, f"{type(error).__name__}: {error}"),
+                )
             continue
         try:
             png_bytes = request.png_bytes

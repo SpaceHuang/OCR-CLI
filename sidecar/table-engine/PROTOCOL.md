@@ -1,4 +1,4 @@
-# Table Engine Sidecar 协议 v1（冻结 fixture 契约，M4.2 D-59；v1.1 = M4.3 D-72 代次拆分）
+# Table Engine Sidecar 协议 v1（冻结 fixture 契约，M4.2 D-59；v1.1 = M4.3 D-72 代次拆分；v1.2 = P2a regions 帧）
 
 行分隔 JSON（每行一个完整 JSON 对象，UTF-8），stdin/stdout 全双工严格串行：
 Rust 客户端一次只有一个未决请求；worker 按序应答。stderr 仅用于日志，
@@ -64,6 +64,26 @@ engine_error）。两者任一不匹配，旧 ON 产物不复用（fail-closed�
 ```
 
 （pong 复用 result 帧形，避免第三种成功帧。）
+
+## 请求：regions 生成（M4.3 P2a，D-71② route A）
+
+```json
+{"type":"regions","id":8,"pdf_path":"D:/docs/a.pdf","model_dir":"<installed pp-doclayout-v2 dir>"}
+```
+
+成功（整文档 route A payload，含 `source_pdf_sha256` 绑定与全页覆盖）：
+
+```json
+{"type":"result","id":8,"ok":true,"regions_json":"{...}"}
+```
+
+- `regions_json` = route A schema 原文（schema_version/model_id/revision/
+  source_pdf_sha256/pages[]，页号 1-based 覆盖全部页）——由
+  `layout_regions.py`（与 benchmark sidecar 脚本同一实现）生成，CLI 落盘为
+  `<regions-root>/<stem>.regions.json` 后走既有 provider 校验。
+- 模型目录由请求携带（CLI 持有已安装资产路径）；检测器按 model_dir 惰性加载，
+  与表结构管线互不影响。
+- 单请求故障 = error 帧（保连接，D-63 (3) 语义；降级决策在 CLI）。
 
 ## 冻结常量
 

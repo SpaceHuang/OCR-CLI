@@ -65,6 +65,35 @@ class TestRecognize:
             pass
 
 
+class TestRegions:
+    def test_roundtrip_parses_request(self):
+        frame = json.dumps(
+            {"type": "regions", "id": 9, "pdf_path": "D:/docs/a.pdf", "model_dir": "M"}
+        )
+        request = proto.RegionsRequest.from_json(frame)
+        assert request.id == 9
+        assert request.pdf_path == "D:/docs/a.pdf"
+        assert request.model_dir == "M"
+
+    def test_wrong_type_raises(self):
+        try:
+            proto.RegionsRequest.from_json('{"type":"recognize","id":1}')
+            raise AssertionError("expected ProtocolError")
+        except proto.ProtocolError:
+            pass
+
+    def test_missing_field_raises(self):
+        try:
+            proto.RegionsRequest.from_json('{"type":"regions","id":1,"pdf_path":"p"}')
+            raise AssertionError("expected ProtocolError")
+        except proto.ProtocolError:
+            pass
+
+    def test_regions_ok_shape(self):
+        obj = json.loads(proto.regions_ok(9, '{"pages":[]}'))
+        assert obj == {"type": "result", "id": 9, "ok": True, "regions_json": '{"pages":[]}'}
+
+
 class TestResults:
     def test_result_ok_shape(self):
         obj = json.loads(proto.result_ok(7, "<table>"))
