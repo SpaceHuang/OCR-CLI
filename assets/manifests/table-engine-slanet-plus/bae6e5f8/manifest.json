@@ -4,7 +4,8 @@
  "pinned": {
   "paddleocr": "3.7.0",
   "paddlex": "3.7.2",
-  "paddlepaddle": "3.4.0"
+  "paddlepaddle_gpu": "3.3.1 (cu126, D-79 ship runtime)",
+  "paddlepaddle_cpu_fallback": "3.4.0"
  },
  "models": {
   "PP-LCNet_x1_0_doc_ori": {
@@ -40,5 +41,5 @@
    "sha256": "d4b5e9839504054a13c5953ca72afd66613a10a57f38ef778398c0783e125a6b"
   }
  },
- "note": "M4.2 D-63 supply-chain freeze. The worker hashes each model dir (sorted rel-path + bytes, sha256) at startup and reports it in the hello frame; the Rust client compares against THIS manifest (fail-closed on any mismatch). Model dirs from paddlex official_models (C:/Users/<user>/.paddlex/official_models)."
+ "note": "M4.2 D-63 supply-chain freeze. The worker hashes each model dir (sorted rel-path + bytes, sha256) at startup and reports it in the hello frame; the Rust client compares against THIS manifest (fail-closed on any mismatch). Model dirs from paddlex official_models (C:/Users/<user>/.paddlex/official_models). M4.3 D-79: runtime moved to paddlepaddle-gpu 3.3.1 (model dirs unchanged — same SHAs); device rides the hello frame and the product identity."
 }

@@ -22,13 +22,13 @@ use std::time::Duration;
 /// match; the handshake compares every field, D-63).
 pub const EXPECTED_ENGINE: &str = "slanet-plus";
 /// M4.3 D-72: the M4.2 single `revision` split into two axes — the model-dir
-/// freeze (manifest-keyed) and the worker behavior generation (`proto2` =
+/// freeze (manifest-keyed) and the worker behavior generation (`proto3` =
 /// first bump: P0 no-table-found handling instead of the worker-side crash).
 pub const EXPECTED_MODELS_REVISION: &str = "bae6e5f8";
-pub const EXPECTED_PROTOCOL_REVISION: &str = "proto2";
+pub const EXPECTED_PROTOCOL_REVISION: &str = "proto3";
 pub const EXPECTED_PADDLEOCR: &str = "3.7.0";
 pub const EXPECTED_PADDLEX: &str = "3.7.2";
-pub const EXPECTED_PADDLEPADDLE: &str = "3.4.0";
+pub const EXPECTED_PADDLEPADDLE: &str = "3.3.1";
 
 /// Handshake deadline (D-63 (2); the hello precedes any model load, so 30s
 /// only covers interpreter boot + model-dir hashing).
@@ -51,6 +51,10 @@ pub struct EngineIdentity {
     pub engine: String,
     pub models_revision: String,
     pub protocol_revision: String,
+    /// M4.3 D-79: inference device (gpu | cpu) — recorded for audit and
+    /// compared on resume so cpu-era and gpu-era products never cross-reuse.
+    #[serde(default)]
+    pub device: String,
     pub paddleocr: String,
     pub paddlex: String,
     pub paddlepaddle: String,
@@ -190,6 +194,7 @@ impl StructureEngineClient {
                 engine: String::new(),
                 models_revision: String::new(),
                 protocol_revision: String::new(),
+                device: String::new(),
                 paddleocr: String::new(),
                 paddlex: String::new(),
                 paddlepaddle: String::new(),
@@ -548,6 +553,7 @@ mod tests {
             engine: "other".to_owned(),
             models_revision: "deadbeef".to_owned(),
             protocol_revision: "proto0".to_owned(),
+            device: String::new(),
             paddleocr: "1.0".to_owned(),
             paddlex: "1.0".to_owned(),
             paddlepaddle: "1.0".to_owned(),
@@ -574,8 +580,8 @@ mod tests {
             .and_then(serde_json::Value::as_object)
             .unwrap();
         let hello: EngineIdentity = serde_json::from_str(
-            r#"{"type":"hello","engine":"slanet-plus","models_revision":"bae6e5f8","protocol_revision":"proto2","paddleocr":"3.7.0",
-                "paddlex":"3.7.2","paddlepaddle":"3.4.0"}"#,
+            r#"{"type":"hello","engine":"slanet-plus","models_revision":"bae6e5f8","protocol_revision":"proto3","device":"gpu","paddleocr":"3.7.0",
+                "paddlex":"3.7.2","paddlepaddle":"3.3.1"}"#,
         )
         .unwrap();
         assert!(

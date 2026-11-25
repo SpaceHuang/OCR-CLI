@@ -376,6 +376,7 @@ impl ScanApplication {
                     engine: hello.engine.clone(),
                     models_revision: hello.models_revision.clone(),
                     protocol_revision: hello.protocol_revision.clone(),
+                    device: hello.device.clone(),
                     paddleocr: hello.paddleocr.clone(),
                     paddlex: hello.paddlex.clone(),
                     paddlepaddle: hello.paddlepaddle.clone(),

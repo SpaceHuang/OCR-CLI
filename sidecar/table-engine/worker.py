@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import importlib.metadata
+import os
 import sys
 from pathlib import Path
 
@@ -65,6 +66,7 @@ def build_hello() -> str:
         engine=proto.ENGINE_ID,
         models_revision=proto.EXPECTED_MODELS_REVISION,
         protocol_revision=proto.EXPECTED_PROTOCOL_REVISION,
+        device=engine_device(),
         paddleocr=_metadata_version("paddleocr"),
         paddlex=_metadata_version("paddlex"),
         paddlepaddle=_metadata_version("paddlepaddle"),
@@ -72,10 +74,23 @@ def build_hello() -> str:
     ).to_json()
 
 
-class TablePipeline:
-    """Lazy TableRecognitionPipelineV2 wrapper — the spike-frozen config."""
+# M4.3 D-79: the inference device. "gpu" = paddlepaddle-gpu era (the ship
+# configuration); "cpu" stays available as the fallback channel. The device
+# rides the hello frame and the product identity — cpu-era and gpu-era
+# products never cross-resume.
+DEVICE_ENV = "OCRX_TABLE_ENGINE_DEVICE"
 
-    def __init__(self) -> None:
+
+def engine_device() -> str:
+    return os.environ.get(DEVICE_ENV, "cpu").strip().lower() or "cpu"
+
+
+class TablePipeline:
+    """Lazy TableRecognitionPipelineV2 wrapper — the spike-frozen config,
+    on the configured device."""
+
+    def __init__(self, device: str) -> None:
+        self._device = device
         self._pipe = None
 
     def _ensure_loaded(self):
@@ -83,7 +98,7 @@ class TablePipeline:
             from paddleocr import TableRecognitionPipelineV2  # heavy import
 
             self._pipe = TableRecognitionPipelineV2(
-                device="cpu",
+                device=self._device,
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 enable_mkldnn=False,
@@ -115,7 +130,7 @@ class TablePipeline:
 def serve(in_stream=None, out_stream=None) -> int:
     in_stream = in_stream if in_stream is not None else sys.stdin.buffer
     out_stream = out_stream if out_stream is not None else sys.stdout.buffer
-    pipeline = TablePipeline()
+    pipeline = TablePipeline(engine_device())
     regions = None  # M4.3 P2a: the layout detector loads lazily per model dir
     proto.write_frame(out_stream, build_hello())
     while True:

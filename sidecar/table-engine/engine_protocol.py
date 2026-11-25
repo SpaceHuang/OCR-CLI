@@ -19,7 +19,7 @@ ENGINE_ID = "slanet-plus"
 # behavior generation (changes on any worker-side behavior change, e.g. the
 # P0 no-table-found handling).
 EXPECTED_MODELS_REVISION = "bae6e5f8"
-EXPECTED_PROTOCOL_REVISION = "proto2"
+EXPECTED_PROTOCOL_REVISION = "proto3"
 EXPECTED_PADDLEOCR = "3.7.0"
 EXPECTED_PADDLEX = "3.7.2"
 EXPECTED_PADDLEPADDLE = "3.4.0"
@@ -33,6 +33,7 @@ class Hello:
     engine: str
     models_revision: str
     protocol_revision: str
+    device: str
     paddleocr: str
     paddlex: str
     paddlepaddle: str
@@ -45,6 +46,7 @@ class Hello:
                 "engine": self.engine,
                 "models_revision": self.models_revision,
                 "protocol_revision": self.protocol_revision,
+                "device": self.device,
                 "paddleocr": self.paddleocr,
                 "paddlex": self.paddlex,
                 "paddlepaddle": self.paddlepaddle,

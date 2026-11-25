@@ -2710,9 +2710,10 @@ mod tests {
         // enabled:false — its own section rides the blob with the verified
         // engine identity and the current rules generation.
         let identity = serde_json::json!({
-            "engine": "slanet-plus", "models_revision": "bae6e5f8", "protocol_revision": "proto2",
+            "engine": "slanet-plus", "models_revision": "bae6e5f8", "protocol_revision": "proto3",
+            "device": "gpu",
             "paddleocr": "3.7.0", "paddlex": "3.7.2",
-            "paddlepaddle": "3.4.0", "models_sha256": {}
+            "paddlepaddle": "3.3.1", "models_sha256": {}
         });
         let blob = super::reread_result_identity(None, &identity.to_string(), 4, 0);
         assert!(

@@ -33,7 +33,7 @@ def test_hello_reports_frozen_versions_and_model_hashes():
     hello = json.loads(worker.build_hello())
     assert hello["engine"] == "slanet-plus"
     assert hello["models_revision"] == "bae6e5f8"
-    assert hello["protocol_revision"] == "proto2"
+    assert hello["protocol_revision"] == "proto3"
     assert hello["paddleocr"] == "3.7.0"
     assert hello["paddlex"] == "3.7.2"
     assert hello["paddlepaddle"] == "3.4.0"

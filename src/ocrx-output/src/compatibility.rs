@@ -50,8 +50,11 @@ pub struct StructureRereadIdentity {
     pub engine: String,
     /// D-72 split: model-dir freeze (manifest-keyed, `bae6e5f8`).
     pub models_revision: String,
-    /// D-72 split: worker behavior generation (`proto2` = P0 no-table-found fix).
+    /// D-72 split: worker behavior generation (`proto3` = GPU migration).
     pub protocol_revision: String,
+    /// D-79: inference device (gpu | cpu) — era separation on resume.
+    #[serde(default)]
+    pub device: String,
     pub paddleocr: String,
     pub paddlex: String,
     pub paddlepaddle: String,
@@ -691,7 +694,8 @@ mod tests {
         let engine = |models_revision: &str| StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
             models_revision: models_revision.to_owned(),
-            protocol_revision: "proto2".to_owned(),
+            protocol_revision: "proto3".to_owned(),
+            device: "gpu".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -800,7 +804,8 @@ mod tests {
         ocr.table_structure_reread = Some(StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
             models_revision: "bae6e5f8".to_owned(),
-            protocol_revision: "proto2".to_owned(),
+            protocol_revision: "proto3".to_owned(),
+            device: "gpu".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -877,7 +882,8 @@ mod tests {
         on.ocr.as_mut().unwrap().table_structure_reread = Some(StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
             models_revision: "bae6e5f8".to_owned(),
-            protocol_revision: "proto2".to_owned(),
+            protocol_revision: "proto3".to_owned(),
+            device: "gpu".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),

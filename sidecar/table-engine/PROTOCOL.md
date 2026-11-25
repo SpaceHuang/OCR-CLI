@@ -1,4 +1,4 @@
-# Table Engine Sidecar 协议 v1（冻结 fixture 契约，M4.2 D-59；v1.1 = M4.3 D-72 代次拆分；v1.2 = P2a regions 帧）
+# Table Engine Sidecar 协议 v1（冻结 fixture 契约，M4.2 D-59；v1.1 = M4.3 D-72 代次拆分；v1.2 = P2a regions 帧；v1.3 = G0 D-79 device/proto3）
 
 行分隔 JSON（每行一个完整 JSON 对象，UTF-8），stdin/stdout 全双工严格串行：
 Rust 客户端一次只有一个未决请求；worker 按序应答。stderr 仅用于日志，
@@ -7,8 +7,8 @@ Rust 客户端一次只有一个未决请求；worker 按序应答。stderr 仅�
 ## 启动握手（worker → Rust，启动后立即发送，先于任何模型加载）
 
 ```json
-{"type":"hello","engine":"slanet-plus","models_revision":"bae6e5f8","protocol_revision":"proto2",
- "paddleocr":"3.7.0","paddlex":"3.7.2","paddlepaddle":"3.4.0",
+{"type":"hello","engine":"slanet-plus","models_revision":"bae6e5f8","protocol_revision":"proto3","device":"gpu",
+ "paddleocr":"3.7.0","paddlex":"3.7.2","paddlepaddle":"3.3.1",
  "models_sha256":{"<model_dir_name>":"<sha256>","...":"..."}}
 ```
 
@@ -18,9 +18,12 @@ paddlex/paddlepaddle）；models_sha256 与 `assets/manifests/table-engine-slane
 任何不匹配 = D-63② 启动类故障（硬错误，无页面产物）。
 
 **D-72 代次语义**：`models_revision` 只在模型目录文件变化时变更（manifest 重冻结）；
-`protocol_revision`（`proto2` 起）在 worker 行为变化时变更——首个变更 = M4.3 P0
-no-table-found 修复（空 `table_res_list` 走 empty_output 拒绝，不再崩溃为
-engine_error）。两者任一不匹配，旧 ON 产物不复用（fail-closed）。
+`protocol_revision` 在 worker 行为变化时变更：`proto2` = P0 no-table-found 修复
+（空 `table_res_list` 走 empty_output 拒绝，不再崩溃为 engine_error）；`proto3` =
+D-79 GPU 迁移（运行时 paddlepaddle-gpu 3.3.1 cu126；hello 新增 `device` 字段）。
+`device`（`OCRX_TABLE_ENGINE_DEVICE` 环境变量，缺省 cpu）记录进 hello 与产物身份：
+cpu-era 与 gpu-era 产物互不复用（D-79 回退通道保留）。两者任一不匹配，旧 ON 产物
+不复用（fail-closed）。
 
 ## 请求：识别（Rust → worker）
 
