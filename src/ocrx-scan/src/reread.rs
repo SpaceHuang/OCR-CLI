@@ -729,12 +729,18 @@ fn dedup_cell_set(html: &str) -> std::collections::HashSet<String> {
 /// iff |A∩B| / |A∪B| >= 0.60 for any comparable B (|B| >= floor); tables
 /// below the floor leave the comparison domain; an EMPTY domain is a
 /// fail-closed reject (`dup_undecidable`).
-pub fn dedup_vs_emitted(candidate_html: &str, emitted: &[&str]) -> DedupVerdict {
+/// Returns the verdict plus the max Jaccard seen against comparable emitted
+/// tables (the D-75 calibration distribution rides the sidecar).
+pub fn dedup_vs_emitted_with_jaccard(
+    candidate_html: &str,
+    emitted: &[&str],
+) -> (DedupVerdict, Option<f64>) {
     let a = dedup_cell_set(candidate_html);
     if a.len() < DEDUP_CELL_FLOOR {
-        return DedupVerdict::DegenerateCandidate;
+        return (DedupVerdict::DegenerateCandidate, None);
     }
     let mut comparable = 0usize;
+    let mut max_jaccard: Option<f64> = None;
     for table in emitted {
         let b = dedup_cell_set(table);
         if b.len() < DEDUP_CELL_FLOOR {
@@ -743,15 +749,30 @@ pub fn dedup_vs_emitted(candidate_html: &str, emitted: &[&str]) -> DedupVerdict 
         comparable += 1;
         let inter = a.intersection(&b).count();
         let union = a.len() + b.len() - inter;
-        if union > 0 && f64::from(inter as u32) / f64::from(union as u32) >= DUP_JACCARD_MIN {
-            return DedupVerdict::Duplicate;
+        let jaccard = if union > 0 {
+            f64::from(inter as u32) / f64::from(union as u32)
+        } else {
+            0.0
+        };
+        max_jaccard = Some(match max_jaccard {
+            Some(current) if current >= jaccard => current,
+            _ => jaccard,
+        });
+        if jaccard >= DUP_JACCARD_MIN {
+            return (DedupVerdict::Duplicate, max_jaccard);
         }
     }
     if comparable == 0 {
-        DedupVerdict::Undecidable
+        (DedupVerdict::Undecidable, None)
     } else {
-        DedupVerdict::Pass
+        (DedupVerdict::Pass, max_jaccard)
     }
+}
+
+/// Convenience wrapper (verdict only) — tests and callers that ignore the
+/// audit value.
+pub fn dedup_vs_emitted(candidate_html: &str, emitted: &[&str]) -> DedupVerdict {
+    dedup_vs_emitted_with_jaccard(candidate_html, emitted).0
 }
 
 /// M4.3 partial-arm orchestration (gen 5, D-69): pages with >= 1 emitted
@@ -801,6 +822,7 @@ pub fn orchestrate_partial(
             conf: region.conf,
             engine: crate::structure_engine::EXPECTED_ENGINE,
             order: "det_ordinal",
+            jaccard: None,
         };
         // A degenerate/unclippable candidate is a per-region disposition,
         // never a scan failure (frozen contract, same as the whole-page arm).
@@ -839,7 +861,10 @@ pub fn orchestrate_partial(
         };
         if let Some(reread_html) = reread_html {
             if f6_structural_gate(&reread_html) {
-                match dedup_vs_emitted(&reread_html, &emitted_htmls) {
+                let (verdict, jaccard) =
+                    dedup_vs_emitted_with_jaccard(&reread_html, &emitted_htmls);
+                outcome.jaccard = jaccard;
+                match verdict {
                     DedupVerdict::Pass => {
                         outcome.adopted = true;
                         adopted.push(PageBlock::HtmlTable {
@@ -984,6 +1009,7 @@ pub fn orchestrate_f6(
                     conf: region.conf,
                     engine: crate::structure_engine::EXPECTED_ENGINE,
                     order: order_source,
+                    jaccard: None,
                 });
                 let _ = error;
                 continue;
@@ -1005,6 +1031,7 @@ pub fn orchestrate_f6(
             conf: region.conf,
             engine: crate::structure_engine::EXPECTED_ENGINE,
             order: order_source,
+            jaccard: None,
         };
         let reread_html = match verdict {
             Ok(crate::structure_engine::StructureOutcome::Html(html)) => Some(html),
@@ -1204,6 +1231,11 @@ pub struct F6RegionOutcome {
     /// (generation 4 empty-arm determinized order), or "det_ordinal"
     /// (M4.3 partial arm: candidates consumed in detection order, D-76).
     pub order: &'static str,
+    /// M4.3 D-75 audit: the candidate's max Jaccard against the emitted
+    /// tables (partial arm only; the calibration distribution rides the
+    /// sidecar). None on the whole-page arm and pre-dedup rejections.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jaccard: Option<f64>,
 }
 
 /// One table's reread outcome (reading-order ordinal; persisted as the
