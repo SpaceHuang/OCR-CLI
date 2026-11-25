@@ -741,6 +741,35 @@ mod tests {
             &matching
         ));
 
+        // --- 4 <-> 5 (M4.3 partial arm): SAME engine identity, ONLY the
+        // generation differs (D-69/D-75/D-76 rule change) — bidirectional
+        // non-reuse, mirroring the 3 <-> 4 boundary.
+        let mut gen4_stored_for_5 = compat.clone();
+        gen4_stored_for_5
+            .ocr
+            .as_mut()
+            .unwrap()
+            .reread_rules_generation = 4;
+        gen4_stored_for_5
+            .ocr
+            .as_mut()
+            .unwrap()
+            .table_structure_reread = Some(engine("bae6e5f8"));
+        let mut gen5_run = matching.clone();
+        gen5_run.reread_rules_generation = 5;
+        gen5_run.table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(
+            !ocr_pre_compare(&gen4_stored_for_5, &statik, &gen5_run),
+            "gen-4 products must NEVER reuse under the gen-5 run"
+        );
+        let mut stored_gen5 = compat.clone();
+        stored_gen5.ocr.as_mut().unwrap().reread_rules_generation = 5;
+        stored_gen5.ocr.as_mut().unwrap().table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(
+            !ocr_pre_compare(&stored_gen5, &statik, &gen4_run),
+            "gen-5 products must never reuse under a gen-4 run"
+        );
+
         // Engine-identity mismatch at the SAME generation: no reuse either.
         let mut stored_diff_engine = compat.clone();
         stored_diff_engine

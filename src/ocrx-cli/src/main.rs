@@ -2721,7 +2721,7 @@ mod tests {
         );
         assert!(blob.contains("\"table_structure_reread\""), "{blob}");
         assert!(blob.contains("\"slanet-plus\""), "{blob}");
-        assert!(blob.contains("\"rules_generation\":4"), "{blob}");
+        assert!(blob.contains("\"rules_generation\":5"), "{blob}");
         assert!(blob.contains("\"tables_reread_total\":4"), "{blob}");
         // OFF runs keep the exact pre-M4.2 shape (no structure section).
         let off = super::reread_result_identity(None, "", 0, 0);

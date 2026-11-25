@@ -354,13 +354,18 @@ pub const IDENTITY_T2_COVERAGE_OF_REREAD: f64 = 0.25;
 /// 3 = M4.2 pre-D-68: the calibrated SLANet rules with STRICT ordering skip
 /// (empty-arm ordering ambiguity / y-overlap veto dropped whole pages; only
 /// the T4 first-round artifacts exist — never reused).
-/// 4 = M4.2 (current): D-68 — the calibrated SLANet rules with the empty-arm
+/// 4 = M4.2: D-68 — the calibrated SLANet rules with the empty-arm
 /// deterministic coordinate ordering fallback (column bands left->right,
 /// within band top->bottom; `f6_ordering_ambiguous=true` audit stays set).
 /// cov_attempt single-gate attribution + ruling-line pre-check gate are
 /// unchanged since 3. Generations 2/3 never reuse against 4 and vice versa
 /// (D-63/D-68; T2 matrix covers 2/3, 3/4, 2/4 both directions).
-pub const REREAD_RULES_GENERATION: u32 = 4;
+/// 5 = M4.3: the partial-missing-table arm (D-69 trigger det>block>=1,
+/// D-70 gate chain with the D-75 dedup-vs-emitted Jaccard 0.60, D-76 fixed
+/// insertion anchor). D-75 calibration clause: if the Rust dedup threshold
+/// is calibrated, the FINAL rule becomes 6 — never edit 5's semantics in
+/// place. 4 never reuses against 5 and vice versa (same engine identity).
+pub const REREAD_RULES_GENERATION: u32 = 5;
 
 /// The generation recorded for old-flag-only runs (`--table-reread on`,
 /// F1-F5 VLM reread; F6 disabled in the M4.2 runtime). Equals the M4.1-era
@@ -670,6 +675,240 @@ pub fn f6_order_regions(regions: &[DetectedRegion]) -> Option<Vec<DetectedRegion
     Some(row_order.iter().map(|&i| deduped[i]).collect())
 }
 
+// ---------------------------------------------------------------------------
+// M4.3 (generation 5): the partial-missing-table arm — D-69 (trigger +
+// trailing candidates), D-70 (gate chain: ruling + structural + dedup),
+// D-75 (dedup-vs-emitted formula), D-76 (fixed insertion anchor).
+// ---------------------------------------------------------------------------
+
+/// D-75 dedup gate verdicts (fail-closed on undecidable).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DedupVerdict {
+    /// No emitted table matched — the candidate may proceed.
+    Pass,
+    /// Candidate has fewer than the 2-cell floor — degenerate, reject.
+    DegenerateCandidate,
+    /// Cell-set Jaccard >= 0.60 against SOME emitted table — duplicate.
+    Duplicate,
+    /// No comparable emitted table (all below the floor) — fail-closed.
+    Undecidable,
+}
+
+/// D-75 initial threshold (the one D-29 calibration round may move it; any
+/// change lifts the final rule to generation 6 — never edit in place).
+pub const DUP_JACCARD_MIN: f64 = 0.60;
+/// D-75 floor: a comparable table needs >= 2 nontrivial normalized cells.
+const DEDUP_CELL_FLOOR: usize = 2;
+/// Cell membership: normalized text >= 2 chars counts as a set member.
+const DEDUP_CELL_MIN_CHARS: usize = 2;
+
+/// D-75 set construction (frozen algorithm): every th/td cell text ->
+/// strip tags -> collapse whitespace -> lowercase (NO bigram step); cells
+/// whose normalized length >= 2 chars are members.
+fn dedup_cell_set(html: &str) -> std::collections::HashSet<String> {
+    let lower = html.to_ascii_lowercase();
+    let mut set = std::collections::HashSet::new();
+    for row in lower.split("<tr>").skip(1) {
+        let body = match row.find("</tr>") {
+            Some(end) => &row[..end],
+            None => row,
+        };
+        for cell in split_cells(body) {
+            let stripped = strip_tags(cell.text);
+            let lowered = stripped.to_lowercase();
+            let collapsed: String = lowered.split_whitespace().collect::<Vec<_>>().join("");
+            if collapsed.chars().count() >= DEDUP_CELL_MIN_CHARS {
+                set.insert(collapsed);
+            }
+        }
+    }
+    set
+}
+
+/// D-75 dedup-vs-emitted: candidate A vs EVERY emitted table B; duplicate
+/// iff |A∩B| / |A∪B| >= 0.60 for any comparable B (|B| >= floor); tables
+/// below the floor leave the comparison domain; an EMPTY domain is a
+/// fail-closed reject (`dup_undecidable`).
+pub fn dedup_vs_emitted(candidate_html: &str, emitted: &[&str]) -> DedupVerdict {
+    let a = dedup_cell_set(candidate_html);
+    if a.len() < DEDUP_CELL_FLOOR {
+        return DedupVerdict::DegenerateCandidate;
+    }
+    let mut comparable = 0usize;
+    for table in emitted {
+        let b = dedup_cell_set(table);
+        if b.len() < DEDUP_CELL_FLOOR {
+            continue;
+        }
+        comparable += 1;
+        let inter = a.intersection(&b).count();
+        let union = a.len() + b.len() - inter;
+        if union > 0 && f64::from(inter as u32) / f64::from(union as u32) >= DUP_JACCARD_MIN {
+            return DedupVerdict::Duplicate;
+        }
+    }
+    if comparable == 0 {
+        DedupVerdict::Undecidable
+    } else {
+        DedupVerdict::Pass
+    }
+}
+
+/// M4.3 partial-arm orchestration (gen 5, D-69): pages with >= 1 emitted
+/// table AND det regions beyond the emitted count. Candidates are the
+/// TRAILING unpaired det regions (class-ordinal pairing makes the unpaired
+/// set exactly the tail); each is decoded and gated
+/// (ruling -> structural -> dedup-vs-emitted, D-70 production chain; no
+/// cov_attempt — the arm has no anchor text). Adopted tables insert AFTER
+/// the last emitted table block (D-76 fixed anchor; det-ordinal order; zero
+/// deletion, md/page_json mirror). Returns unchanged content when the page
+/// is not a partial page or nothing was adopted.
+#[allow(clippy::too_many_arguments)]
+pub fn orchestrate_partial(
+    blocks: &[PageBlock],
+    markdown: &str,
+    page_number: u32,
+    page: &crate::state::RenderedPage,
+    provider: &mut dyn RegionProvider,
+    engine: &mut dyn crate::structure_engine::StructureTableEngine,
+) -> std::io::Result<(Vec<PageBlock>, String, RereadStats)> {
+    let mut stats = RereadStats::default();
+    let emitted_htmls: Vec<&str> = blocks
+        .iter()
+        .filter_map(|block| match block {
+            PageBlock::HtmlTable { html } => Some(html.as_str()),
+            _ => None,
+        })
+        .collect();
+    let block_n = emitted_htmls.len();
+    let regions = provider.regions_for_page(page_number);
+    if regions.len() <= block_n {
+        // Not a partial page (the caller's loose gate may pass here when the
+        // provider serves fewer regions than the page has tables).
+        return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+    }
+    let candidates = &regions[block_n..];
+    stats.f6_partial_triggered = candidates.len();
+    let mut adopted: Vec<PageBlock> = Vec::new();
+    let mut adopted_html: Vec<String> = Vec::new();
+    for (index, region) in candidates.iter().enumerate() {
+        let ordinal = block_n + index;
+        let mut outcome = F6RegionOutcome {
+            region_ordinal: ordinal,
+            decoded: true,
+            adopted: false,
+            reject_reason: None,
+            conf: region.conf,
+            engine: crate::structure_engine::EXPECTED_ENGINE,
+            order: "det_ordinal",
+        };
+        // A degenerate/unclippable candidate is a per-region disposition,
+        // never a scan failure (frozen contract, same as the whole-page arm).
+        let crop = match crop_region(page, region.bbox) {
+            Ok(crop) => crop,
+            Err(error) => {
+                outcome.decoded = false;
+                outcome.reject_reason = Some("degenerate_region");
+                let _ = error;
+                stats.f6_partial_rejected += 1;
+                stats.f6_detail.push(outcome);
+                continue;
+            }
+        };
+        let verdict = match crate::window::encode_page_png(&crop) {
+            Ok(png) => engine.recognize(&png, page_number, ordinal),
+            Err(error) => Err(crate::structure_engine::EngineErrorKind::EngineError(
+                error.to_string(),
+            )),
+        };
+        let reread_html = match verdict {
+            Ok(crate::structure_engine::StructureOutcome::Html(html)) => Some(html),
+            Ok(crate::structure_engine::StructureOutcome::Reject(reject)) => {
+                outcome.reject_reason = match reject {
+                    crate::structure_engine::StructureReject::NoRulingLines => {
+                        Some("no_ruling_lines")
+                    }
+                    crate::structure_engine::StructureReject::EmptyOutput => Some("empty_output"),
+                };
+                None
+            }
+            Err(kind) => {
+                outcome.reject_reason = Some(kind.reject_reason());
+                None
+            }
+        };
+        if let Some(reread_html) = reread_html {
+            if f6_structural_gate(&reread_html) {
+                match dedup_vs_emitted(&reread_html, &emitted_htmls) {
+                    DedupVerdict::Pass => {
+                        outcome.adopted = true;
+                        adopted.push(PageBlock::HtmlTable {
+                            html: reread_html.clone(),
+                        });
+                        adopted_html.push(reread_html);
+                    }
+                    DedupVerdict::Duplicate => {
+                        outcome.reject_reason = Some("duplicate_of_emitted");
+                        stats.f6_partial_dup_rejected += 1;
+                    }
+                    DedupVerdict::Undecidable => {
+                        outcome.reject_reason = Some("dup_undecidable");
+                        stats.f6_partial_dup_undecidable += 1;
+                    }
+                    DedupVerdict::DegenerateCandidate => {
+                        outcome.reject_reason = Some("structural");
+                    }
+                }
+            } else {
+                outcome.reject_reason = Some("structural");
+            }
+        }
+        if outcome.adopted {
+            stats.f6_partial_emitted += 1;
+        } else {
+            stats.f6_partial_rejected += 1;
+        }
+        stats.f6_detail.push(outcome);
+    }
+    if adopted.is_empty() {
+        return Ok((blocks.to_vec(), markdown.to_owned(), stats));
+    }
+    // D-76 persistence: page_json — insert AFTER the last emitted table
+    // block (block_n >= 1 by the arm's gate, so the anchor exists); md —
+    // insert after the last `</table>` (the md mirror of the same anchor);
+    // if the md carries no table end (abnormal md/block divergence) the
+    // insertion falls back to the md tail — still deterministic, still
+    // zero-deletion. Multiple candidates keep det-ordinal order.
+    let anchor_block = blocks
+        .iter()
+        .rposition(|block| matches!(block, PageBlock::HtmlTable { .. }))
+        .unwrap_or(0)
+        + 1;
+    let mut new_blocks = blocks[..anchor_block].to_vec();
+    new_blocks.extend(adopted.iter().cloned());
+    new_blocks.extend(blocks[anchor_block..].iter().cloned());
+    let anchor_md = markdown.rfind("</table>").map(|pos| pos + "</table>".len());
+    let mut new_markdown = String::with_capacity(markdown.len() + 1024);
+    match anchor_md {
+        Some(end) => {
+            new_markdown.push_str(&markdown[..end]);
+            for html in &adopted_html {
+                new_markdown.push_str("\n\n");
+                new_markdown.push_str(html);
+            }
+            new_markdown.push_str(&markdown[end..]);
+        }
+        None => {
+            new_markdown.push_str(markdown);
+            for html in &adopted_html {
+                new_markdown.push_str("\n\n");
+                new_markdown.push_str(html);
+            }
+        }
+    }
+    Ok((new_blocks, new_markdown, stats))
+}
+
 /// The F6 orchestration: zero-table-block pages only (the caller gates on
 /// the block count). Regions are ordered (D-56), each crop decoded, and
 /// adoption decided per arm:
@@ -925,6 +1164,22 @@ pub struct RereadStats {
     pub f6_skipped_shape: bool,
     /// F6 region ordering was ambiguous — whole-page skip (D-56).
     pub f6_ordering_ambiguous: bool,
+    /// M4.3 (gen 5, D-69): partial-missing-table arm — pages with >= 1
+    /// emitted table AND det regions beyond the emitted count. The
+    /// candidates are the TRAILING unpaired det regions (class-ordinal
+    /// pairing); dispositions ride f6_detail with det ordinals.
+    pub f6_partial_triggered: usize,
+    /// M4.3: partial-arm candidates adopted (ruling + structural + dedup
+    /// gates passed; D-70 production gate chain).
+    pub f6_partial_emitted: usize,
+    /// M4.3: partial-arm candidates rejected by the gate chain.
+    pub f6_partial_rejected: usize,
+    /// M4.3 D-75: candidate duplicates an already-emitted table
+    /// (cell-set Jaccard >= 0.60 against any emitted table).
+    pub f6_partial_dup_rejected: usize,
+    /// M4.3 D-75 fail-closed: no comparable emitted table (all unparsable)
+    /// — the candidate is rejected and counted here (`dup_undecidable`).
+    pub f6_partial_dup_undecidable: usize,
 }
 
 /// One F6 region's outcome (region reading order; the frozen-population
@@ -945,8 +1200,9 @@ pub struct F6RegionOutcome {
     /// Engine id from the verified handshake identity.
     pub engine: &'static str,
     /// D-68 audit: how this region's write order was decided —
-    /// "dual_hypothesis" (D-44 agreement) or "coordinate_fallback"
-    /// (generation 4 empty-arm determinized order).
+    /// "dual_hypothesis" (D-44 agreement), "coordinate_fallback"
+    /// (generation 4 empty-arm determinized order), or "det_ordinal"
+    /// (M4.3 partial arm: candidates consumed in detection order, D-76).
     pub order: &'static str,
 }
 
@@ -1241,37 +1497,76 @@ pub fn apply_table_reread(
         }
         return Ok(f6_stats);
     }
-    let Some(decoder) = vlm_decoder.map(|decoder| decoder as &mut dyn TableRereadDecoder) else {
-        // F1-F5 disarmed (old flag off) with table blocks present: keep the
-        // original blocks unchanged (byte-identical off path by construction).
-        return Ok(RereadStats::default());
-    };
-    let (spliced, stats) = orchestrate_table_reread(
-        &original_blocks,
-        page_number,
-        rendered,
-        &mut scoped,
-        decoder,
-        always_trigger,
-    )?;
-    artifact.reread_tables = stats.decoded;
-    artifact.reread_replaced = stats.replaced;
-    if stats.pairing_skipped {
-        return Ok(stats);
+    // M4.3 (gen 5): F1-F5 (old flag) keeps running FIRST when armed —
+    // compare-keep replacements preserve the block count, so the partial
+    // arm's candidates are computed against the post-F1-F5 document. When
+    // the old flag is off the page content stands unchanged here and only
+    // the partial arm may add rescue tables.
+    let mut stats = RereadStats::default();
+    if let Some(decoder) = vlm_decoder.map(|decoder| decoder as &mut dyn TableRereadDecoder) {
+        let (spliced, f1f5) = orchestrate_table_reread(
+            &original_blocks,
+            page_number,
+            rendered,
+            &mut scoped,
+            decoder,
+            always_trigger,
+        )?;
+        artifact.reread_tables = f1f5.decoded;
+        artifact.reread_replaced = f1f5.replaced;
+        if !f1f5.pairing_skipped && f1f5.replaced > 0 {
+            document.blocks = spliced;
+            artifact.page_json = document.to_json().map_err(|error| {
+                std::io::Error::other(format!("reread: page_json write failed: {error:?}"))
+            })?;
+            for (ordinal, html) in extract_replacements(&original_blocks, &document.blocks) {
+                match replace_table_fragment(&artifact.markdown, ordinal, &html) {
+                    Some(updated) => artifact.markdown = updated,
+                    None => artifact
+                        .warnings
+                        .push("reread_markdown_fragment_missing".to_owned()),
+                }
+            }
+        }
+        stats = f1f5;
+        if stats.pairing_skipped || stats.replaced == 0 {
+            // Fall THROUGH to the partial arm — a non-replacing F1-F5 pass
+            // says nothing about the partial population.
+        }
     }
-    if stats.replaced == 0 {
-        return Ok(stats);
-    }
-    document.blocks = spliced;
-    artifact.page_json = document.to_json().map_err(|error| {
-        std::io::Error::other(format!("reread: page_json write failed: {error:?}"))
-    })?;
-    for (ordinal, html) in extract_replacements(&original_blocks, &document.blocks) {
-        match replace_table_fragment(&artifact.markdown, ordinal, &html) {
-            Some(updated) => artifact.markdown = updated,
-            None => artifact
-                .warnings
-                .push("reread_markdown_fragment_missing".to_owned()),
+    // M4.3 partial-missing-table arm (D-69): structure flag only; the
+    // candidates are the trailing unpaired det regions. Its outcomes ride
+    // the same per-region sidecar array (f6_detail); when BOTH arms ran,
+    // the F1-F5 table detail (stats.detail) wins the sidecar file — a
+    // both-flags page is an edge the benchmark never exercises.
+    if let Some(engine) = arms.structure.as_deref_mut() {
+        let (new_blocks, new_markdown, partial) = orchestrate_partial(
+            &document.blocks,
+            &artifact.markdown,
+            page_number,
+            rendered,
+            &mut scoped,
+            engine,
+        )?;
+        stats.f6_partial_triggered += partial.f6_partial_triggered;
+        stats.f6_partial_emitted += partial.f6_partial_emitted;
+        stats.f6_partial_rejected += partial.f6_partial_rejected;
+        stats.f6_partial_dup_rejected += partial.f6_partial_dup_rejected;
+        stats.f6_partial_dup_undecidable += partial.f6_partial_dup_undecidable;
+        let partial_detail_nonempty = !partial.f6_detail.is_empty();
+        stats.f6_detail.extend(partial.f6_detail);
+        if partial.f6_partial_emitted > 0 {
+            document.blocks = new_blocks;
+            artifact.page_json = document.to_json().map_err(|error| {
+                std::io::Error::other(format!("reread: page_json write failed: {error:?}"))
+            })?;
+            artifact.markdown = new_markdown;
+        }
+        if partial_detail_nonempty && stats.detail.is_empty() {
+            artifact.reread_detail_json =
+                serde_json::to_string(&stats.f6_detail).map_err(|error| {
+                    std::io::Error::other(format!("reread detail serialize: {error:?}"))
+                })?;
         }
     }
     Ok(stats)
@@ -1971,6 +2266,297 @@ mod tests {
         assert_eq!(new_blocks.len(), 1, "unchanged");
         assert_eq!(new_md, md, "markdown unchanged");
         assert!(engine.calls.borrow().is_empty(), "no decode ran");
+    }
+
+    // -------------------------------------------------------------------------
+    // M4.3 (generation 5): D-75 dedup-vs-emitted hand-computed fixtures.
+    // -------------------------------------------------------------------------
+
+    fn table_with_cells(cells: &[&str]) -> String {
+        // One row of th cells + one row of td cells — enough structure to
+        // clear the 2x2 structural gate for every non-degenerate case.
+        let header: String = cells
+            .iter()
+            .map(|c| format!("<th>{c}</th>"))
+            .collect::<String>();
+        let values: String = cells
+            .iter()
+            .map(|c| format!("<td>{c}</td>"))
+            .collect::<String>();
+        format!("<table><tr>{header}</tr><tr>{values}</tr></table>")
+    }
+
+    #[test]
+    fn d75_dedup_hand_computed_fixtures() {
+        let emitted = table_with_cells(&["资产负债表", "2021A", "2022E"]);
+        // 1) identical candidate -> Jaccard 1.0 -> Duplicate
+        assert_eq!(
+            dedup_vs_emitted(&emitted, &[emitted.as_str()]),
+            DedupVerdict::Duplicate
+        );
+        // 2) boundary: emitted B = {资产负债表,2021A,2022E,one,two} (5 cells,
+        //    both rows duplicate the same texts so the SET has 5 members);
+        //    candidate A = {资产负债表,2021A,2022E} ⊂ B -> |A∩B|=3, |A∪B|=5
+        //    -> exactly 0.60 -> Duplicate.
+        let superset = table_with_cells(&["资产负债表", "2021A", "2022E", "one", "two"]);
+        assert_eq!(
+            dedup_vs_emitted(&emitted, &[superset.as_str()]),
+            DedupVerdict::Duplicate
+        );
+        // 3) just below the boundary: A={资产负债表,现金流量表,利润表} vs
+        //    B={资产负债表,2021A,2022E}: |A∩B|=1, |A∪B|=5 -> 0.20 -> Pass.
+        let low_overlap = table_with_cells(&["资产负债表", "现金流量表", "利润表"]);
+        assert_eq!(
+            dedup_vs_emitted(&low_overlap, &[emitted.as_str()]),
+            DedupVerdict::Pass
+        );
+        // 4) zero overlap -> Pass
+        let disjoint = table_with_cells(&["甲子", "乙丑", "丙寅"]);
+        assert_eq!(
+            dedup_vs_emitted(&disjoint, &[emitted.as_str()]),
+            DedupVerdict::Pass
+        );
+        // 5) single-cell candidate (floor) -> DegenerateCandidate
+        let degenerate = "<table><tr><td>唯一单元格</td></tr></table>";
+        assert_eq!(
+            dedup_vs_emitted(degenerate, &[emitted.as_str()]),
+            DedupVerdict::DegenerateCandidate
+        );
+        // 6) emitted table below the floor leaves the domain; only
+        // comparable emitted tables count — empty domain -> Undecidable.
+        assert_eq!(
+            dedup_vs_emitted(
+                &table_with_cells(&["表头甲", "表头乙", "表头丙"]),
+                &["<table>not a table"],
+            ),
+            DedupVerdict::Undecidable
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // M4.3 (generation 5): partial-arm orchestration fixtures.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn partial_arm_rescues_trailing_candidate_and_inserts_after_last_table() {
+        // det 2 / block 1: one emitted table + one trailing candidate.
+        let emitted = table_with_cells(&["现有表", "年初值", "年末值"]);
+        let blocks: Vec<PageBlock> = vec![
+            md("page prose"),
+            PageBlock::HtmlTable {
+                html: emitted.clone(),
+            },
+        ];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 400.0, 200.0)),
+                f6_region(1, (0.0, 200.0, 400.0, 400.0)),
+            ],
+        };
+        let rescued = table_with_cells(&["缺失表", "季度值", "环比值"]);
+        let mut engine = F6Engine {
+            responses: vec![rescued.clone()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let md = format!("page prose\n\n{emitted}");
+        let (new_blocks, new_md, stats) =
+            orchestrate_partial(&blocks, &md, 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_partial_triggered, 1);
+        assert_eq!(stats.f6_partial_emitted, 1);
+        assert_eq!(stats.f6_partial_rejected, 0);
+        // page_json: prose, emitted table, RESCUED table (inserted after the
+        // last emitted table block), order preserved, zero deletion.
+        assert_eq!(new_blocks.len(), 3);
+        assert!(matches!(&new_blocks[1], PageBlock::HtmlTable { html } if html == &emitted));
+        assert!(matches!(&new_blocks[2], PageBlock::HtmlTable { html } if html == &rescued));
+        // md: inserted after the last </table> — emitted first, rescued second.
+        let emitted_pos = new_md.find(&emitted).expect("emitted table kept verbatim");
+        let rescued_pos = new_md.find(&rescued).expect("rescued table inserted");
+        assert!(emitted_pos < rescued_pos);
+        assert!(new_md.starts_with("page prose"), "zero deletion of prose");
+        // sidecar outcome: det ordinal 1, adopted, det_ordinal order.
+        assert_eq!(stats.f6_detail.len(), 1);
+        assert_eq!(stats.f6_detail[0].region_ordinal, 1);
+        assert!(stats.f6_detail[0].adopted);
+        assert_eq!(stats.f6_detail[0].order, "det_ordinal");
+    }
+
+    #[test]
+    fn partial_arm_rejects_duplicate_of_emitted_candidate() {
+        // The eastmoney self-correction case: a candidate whose cells
+        // duplicate an emitted table is rejected fail-closed (D-76: dedup
+        // prevents double insertion; it does NOT re-pair blocks).
+        let emitted = table_with_cells(&["利润表", "年份列", "金额列"]);
+        let blocks: Vec<PageBlock> = vec![PageBlock::HtmlTable {
+            html: emitted.clone(),
+        }];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 400.0, 100.0)),
+                f6_region(1, (0.0, 100.0, 400.0, 200.0)),
+                f6_region(2, (0.0, 200.0, 400.0, 300.0)),
+            ],
+        };
+        let duplicate = table_with_cells(&["利润表", "年份列", "金额列"]);
+        let novel = table_with_cells(&["新表", "季度列", "数值列"]);
+        let mut engine = F6Engine {
+            // first candidate decodes to the emitted table's content...
+            responses: vec![duplicate, novel.clone()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let md = emitted.clone();
+        let (new_blocks, _new_md, stats) =
+            orchestrate_partial(&blocks, &md, 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_partial_triggered, 2);
+        assert_eq!(stats.f6_partial_dup_rejected, 1, "duplicate candidate");
+        assert_eq!(stats.f6_partial_emitted, 1, "novel candidate adopted");
+        assert_eq!(
+            stats.f6_detail[0].reject_reason,
+            Some("duplicate_of_emitted")
+        );
+        // only the novel table inserted (no double insertion of the emitted one)
+        assert_eq!(new_blocks.len(), 2);
+        assert!(matches!(&new_blocks[1], PageBlock::HtmlTable { html } if html == &novel));
+    }
+
+    #[test]
+    fn partial_arm_empty_comparison_domain_is_fail_closed() {
+        // Emitted "table" unparsable (no cells) -> comparison domain empty ->
+        // a structurally valid candidate is REJECTED (dup_undecidable).
+        let blocks: Vec<PageBlock> = vec![PageBlock::HtmlTable {
+            html: "<table>not a table".to_owned(),
+        }];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 100.0, 100.0)),
+                f6_region(1, (0.0, 100.0, 400.0, 400.0)),
+            ],
+        };
+        let candidate = table_with_cells(&["表头甲", "表头乙", "表头丙"]);
+        let mut engine = F6Engine {
+            responses: vec![candidate],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, _new_md, stats) = orchestrate_partial(
+            &blocks,
+            "no table end in md",
+            0,
+            &page,
+            &mut provider,
+            &mut engine,
+        )
+        .unwrap();
+        assert_eq!(stats.f6_partial_dup_undecidable, 1);
+        assert_eq!(stats.f6_partial_emitted, 0);
+        assert_eq!(stats.f6_detail[0].reject_reason, Some("dup_undecidable"));
+        assert_eq!(new_blocks.len(), 1, "unchanged on fail-closed");
+    }
+
+    #[test]
+    fn partial_arm_engine_faults_are_per_region_keep_original() {
+        // empty_output / no_ruling_lines / engine_error dispositions keep the
+        // page byte-identical (D-63 (3); P0's honest no-table-found class).
+        let emitted = table_with_cells(&["已有表", "甲", "乙"]);
+        let blocks: Vec<PageBlock> = vec![PageBlock::HtmlTable {
+            html: emitted.clone(),
+        }];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 100.0, 100.0)),
+                f6_region(1, (0.0, 100.0, 100.0, 200.0)),
+                f6_region(2, (0.0, 200.0, 100.0, 300.0)),
+            ],
+        };
+        struct FaultEngine;
+        impl crate::structure_engine::StructureTableEngine for FaultEngine {
+            fn recognize(
+                &mut self,
+                _png: &[u8],
+                _page: u32,
+                _ordinal: usize,
+            ) -> Result<
+                crate::structure_engine::StructureOutcome,
+                crate::structure_engine::EngineErrorKind,
+            > {
+                Ok(crate::structure_engine::StructureOutcome::Reject(
+                    crate::structure_engine::StructureReject::EmptyOutput,
+                ))
+            }
+        }
+        let mut engine = FaultEngine;
+        let (new_blocks, new_md, stats) =
+            orchestrate_partial(&blocks, &emitted, 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_partial_triggered, 2);
+        assert_eq!(stats.f6_partial_rejected, 2);
+        assert_eq!(stats.f6_partial_emitted, 0);
+        assert!(
+            stats
+                .f6_detail
+                .iter()
+                .all(|o| o.reject_reason == Some("empty_output"))
+        );
+        assert_eq!(new_blocks.len(), 1, "page unchanged");
+        assert_eq!(new_md, emitted, "md unchanged");
+    }
+
+    #[test]
+    fn partial_arm_ignores_pages_without_trailing_candidates() {
+        // det 1 / block 1: not a partial page — silently unchanged, no call.
+        let emitted = table_with_cells(&["唯一表", "甲", "乙"]);
+        let blocks: Vec<PageBlock> = vec![PageBlock::HtmlTable {
+            html: emitted.clone(),
+        }];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![f6_region(0, (0.0, 0.0, 400.0, 400.0))],
+        };
+        let mut engine = F6Engine {
+            responses: vec![],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, new_md, stats) =
+            orchestrate_partial(&blocks, &emitted, 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_partial_triggered, 0);
+        assert!(engine.calls.borrow().is_empty(), "no decode ran");
+        assert_eq!(new_blocks.len(), 1);
+        assert_eq!(new_md, emitted);
+    }
+
+    #[test]
+    fn partial_arm_multi_candidate_inserts_in_det_ordinal_order() {
+        let emitted = table_with_cells(&["表一", "列甲列", "列乙列"]);
+        let blocks: Vec<PageBlock> = vec![PageBlock::HtmlTable {
+            html: emitted.clone(),
+        }];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 100.0, 100.0)),
+                f6_region(1, (0.0, 100.0, 100.0, 200.0)),
+                f6_region(2, (0.0, 200.0, 100.0, 300.0)),
+            ],
+        };
+        let first = table_with_cells(&["候选甲", "季度甲", "数值甲"]);
+        let second = table_with_cells(&["候选乙", "季度乙", "数值乙"]);
+        let mut engine = F6Engine {
+            responses: vec![first.clone(), second.clone()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, _new_md, stats) =
+            orchestrate_partial(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_partial_emitted, 2);
+        assert!(
+            matches!(&new_blocks[1], PageBlock::HtmlTable { html } if html == &first),
+            "det ordinal 1 first"
+        );
+        assert!(
+            matches!(&new_blocks[2], PageBlock::HtmlTable { html } if html == &second),
+            "det ordinal 2 second"
+        );
     }
 
     #[test]
