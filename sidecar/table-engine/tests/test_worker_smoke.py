@@ -22,7 +22,11 @@ if not (_t0_crops / "regions-manifest.json").exists():
 import worker  # noqa: E402
 
 CROPS = Path(r"D:/t/m42-t0-crops")
-PRED = Path(r"D:/t/slanet-det-predictions")
+# M4.3 G0 (D-79): the html reference is the GPU-era frozen snapshot — GPU
+# numerics differ from the CPU era at the byte level on a few crops
+# (g01-gpu-probe.json); the classification split is unchanged. Comparing
+# against this snapshot pins GPU run-to-run determinism.
+PRED = json.loads(Path(r"D:/t/m43/gpu-html-reference.json").read_text(encoding="utf-8"))
 FREEZE = (
     Path(__file__).resolve().parents[3]
     / "benchmarks/omnidocbench/reports/analysis/analysis-m42-t0-postgate-v1p2.json"
@@ -36,7 +40,7 @@ def test_hello_reports_frozen_versions_and_model_hashes():
     assert hello["protocol_revision"] == "proto3"
     assert hello["paddleocr"] == "3.7.0"
     assert hello["paddlex"] == "3.7.2"
-    assert hello["paddlepaddle"] == "3.4.0"
+    assert hello["paddlepaddle"] == "3.3.1"
     assert len(hello["models_sha256"]) == len(worker.TABLE_MODEL_DIRS)
 
 
@@ -102,10 +106,8 @@ def test_worker_serves_matches_t0_postgate_set():
     idx = 0
     ids = {}
     for page in manifest:
-        stem = page["img"].rsplit(".", 1)[0]
-        parts = (PRED / f"{stem}.md").read_text(encoding="utf-8").split("\n\n")
         for row in page["rows"]:
-            ids[idx] = (page, row, parts)
+            ids[idx] = (page, row)
             idx += 1
     assert len(results) == 27
 
@@ -124,7 +126,7 @@ def test_worker_serves_matches_t0_postgate_set():
         "jiaocaineedrop_jiaocai_needrop_en_3713",
         "yanbaor2_89c3718f",
     )
-    for rid, (page, row, parts) in ids.items():
+    for rid, (page, row) in ids.items():
         # EXTRA det regions carry gt_key=None (no GT pairing) — the
         # 0aa9 suffix probe needs a string (M4.3 P0 smoke run).
         gt_key = row["gt_key"] or ""
@@ -137,7 +139,7 @@ def test_worker_serves_matches_t0_postgate_set():
         expect_ok = gt_key in adopted_keys or gt_key.endswith("0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27.jpg_[0]")
         if expect_ok:
             assert rid in got_ok, f"{gt_key} expected adopted"
-            assert got_ok[rid] == parts[row["region"]], f"{gt_key} html drift"
+            assert got_ok[rid] == PRED[gt_key], f"{gt_key} html drift"
         elif expect_empty:
             assert rid in got_reject and got_reject[rid] == "empty_output", (
                 f"{gt_key} expected empty_output reject: rid={rid}"
