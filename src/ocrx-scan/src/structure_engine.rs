@@ -21,7 +21,11 @@ use std::time::Duration;
 /// Frozen supply-chain identity (sidecar/table-engine/requirements.txt must
 /// match; the handshake compares every field, D-63).
 pub const EXPECTED_ENGINE: &str = "slanet-plus";
-pub const EXPECTED_REVISION: &str = "bae6e5f8";
+/// M4.3 D-72: the M4.2 single `revision` split into two axes — the model-dir
+/// freeze (manifest-keyed) and the worker behavior generation (`proto2` =
+/// first bump: P0 no-table-found handling instead of the worker-side crash).
+pub const EXPECTED_MODELS_REVISION: &str = "bae6e5f8";
+pub const EXPECTED_PROTOCOL_REVISION: &str = "proto2";
 pub const EXPECTED_PADDLEOCR: &str = "3.7.0";
 pub const EXPECTED_PADDLEX: &str = "3.7.2";
 pub const EXPECTED_PADDLEPADDLE: &str = "3.4.0";
@@ -45,7 +49,8 @@ const FROZEN_MODELS_MANIFEST: &str =
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct EngineIdentity {
     pub engine: String,
-    pub revision: String,
+    pub models_revision: String,
+    pub protocol_revision: String,
     pub paddleocr: String,
     pub paddlex: String,
     pub paddlepaddle: String,
@@ -183,7 +188,8 @@ impl StructureEngineClient {
             reader: Some(BufReader::new(stdout)),
             identity: EngineIdentity {
                 engine: String::new(),
-                revision: String::new(),
+                models_revision: String::new(),
+                protocol_revision: String::new(),
                 paddleocr: String::new(),
                 paddlex: String::new(),
                 paddlepaddle: String::new(),
@@ -410,8 +416,32 @@ impl EngineIdentity {
         if self.engine != EXPECTED_ENGINE {
             out.push(format!("engine {} != {EXPECTED_ENGINE}", self.engine));
         }
-        if self.revision != EXPECTED_REVISION {
-            out.push(format!("revision {} != {EXPECTED_REVISION}", self.revision));
+        if self.models_revision != EXPECTED_MODELS_REVISION {
+            out.push(format!(
+                "models_revision {} != {EXPECTED_MODELS_REVISION}",
+                self.models_revision
+            ));
+        }
+        if self.protocol_revision != EXPECTED_PROTOCOL_REVISION {
+            out.push(format!(
+                "protocol_revision {} != {EXPECTED_PROTOCOL_REVISION}",
+                self.protocol_revision
+            ));
+        }
+        // D-72: the frozen manifest is the models_revision source of truth —
+        // a hello models_revision disagreeing with the embedded manifest is
+        // itself a mismatch (fail-closed on the split axes drifting apart).
+        if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(FROZEN_MODELS_MANIFEST) {
+            let manifest_revision = manifest
+                .get("revision")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if self.models_revision != manifest_revision {
+                out.push(format!(
+                    "models_revision {} != manifest revision {manifest_revision}",
+                    self.models_revision
+                ));
+            }
         }
         if self.paddleocr != EXPECTED_PADDLEOCR {
             out.push(format!(
@@ -516,18 +546,20 @@ mod tests {
     fn hello_identity_mismatch_lists_every_field() {
         let hello = EngineIdentity {
             engine: "other".to_owned(),
-            revision: "deadbeef".to_owned(),
+            models_revision: "deadbeef".to_owned(),
+            protocol_revision: "proto0".to_owned(),
             paddleocr: "1.0".to_owned(),
             paddlex: "1.0".to_owned(),
             paddlepaddle: "1.0".to_owned(),
             models_sha256: BTreeMap::new(),
         };
         let mismatches = hello.mismatches_against_frozen();
-        // 5 version fields + one entry per frozen model dir (empty models
-        // map = every frozen model missing).
+        // 6 version fields (engine + the D-72 revision split adds one) + the
+        // manifest-cross-check duplicate for models_revision + one entry per
+        // frozen model dir (empty models map = every frozen model missing).
         assert_eq!(
             mismatches.len(),
-            5 + 8,
+            6 + 1 + 8,
             "every frozen field must be compared"
         );
     }
@@ -542,7 +574,7 @@ mod tests {
             .and_then(serde_json::Value::as_object)
             .unwrap();
         let hello: EngineIdentity = serde_json::from_str(
-            r#"{"type":"hello","engine":"slanet-plus","revision":"bae6e5f8","paddleocr":"3.7.0",
+            r#"{"type":"hello","engine":"slanet-plus","models_revision":"bae6e5f8","protocol_revision":"proto2","paddleocr":"3.7.0",
                 "paddlex":"3.7.2","paddlepaddle":"3.4.0"}"#,
         )
         .unwrap();

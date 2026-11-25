@@ -48,7 +48,10 @@ pub struct PdfIdentity {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StructureRereadIdentity {
     pub engine: String,
-    pub revision: String,
+    /// D-72 split: model-dir freeze (manifest-keyed, `bae6e5f8`).
+    pub models_revision: String,
+    /// D-72 split: worker behavior generation (`proto2` = P0 no-table-found fix).
+    pub protocol_revision: String,
     pub paddleocr: String,
     pub paddlex: String,
     pub paddlepaddle: String,
@@ -685,9 +688,10 @@ mod tests {
         let current = identity("cpu", 8, "Q4_K_M");
         let statik = StaticInferenceIdentity::from_execution(&current);
         let (compat, matching) = reread_on(&current); // generation-2 stored/run
-        let engine = |revision: &str| StructureRereadIdentity {
+        let engine = |models_revision: &str| StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
-            revision: revision.to_owned(),
+            models_revision: models_revision.to_owned(),
+            protocol_revision: "proto2".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -766,7 +770,8 @@ mod tests {
         ocr.reread_rules_generation = 4;
         ocr.table_structure_reread = Some(StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
-            revision: "bae6e5f8".to_owned(),
+            models_revision: "bae6e5f8".to_owned(),
+            protocol_revision: "proto2".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -842,7 +847,8 @@ mod tests {
         let mut on = stored(&current);
         on.ocr.as_mut().unwrap().table_structure_reread = Some(StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
-            revision: "bae6e5f8".to_owned(),
+            models_revision: "bae6e5f8".to_owned(),
+            protocol_revision: "proto2".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),

@@ -63,7 +63,8 @@ def build_hello() -> str:
             models[name] = _hash_model_dir(model_dir)
     return proto.Hello(
         engine=proto.ENGINE_ID,
-        revision=proto.EXPECTED_REVISION,
+        models_revision=proto.EXPECTED_MODELS_REVISION,
+        protocol_revision=proto.EXPECTED_PROTOCOL_REVISION,
         paddleocr=_metadata_version("paddleocr"),
         paddlex=_metadata_version("paddlex"),
         paddlepaddle=_metadata_version("paddlepaddle"),
@@ -100,8 +101,15 @@ class TablePipeline:
         result = pipe.predict(image)
         res = result[0] if isinstance(result, list) else result
         res_json = (res.json if hasattr(res, "json") else {}).get("res", {})
-        table_res = res_json.get("table_res_list", [{}])[0]
-        return table_res.get("pred_html", "") or ""
+        # M4.3 P0 fix: the pipeline completes honestly with an EMPTY
+        # table_res_list when no table is found in the crop (diagnosis:
+        # analysis-m43-p0-throw-diagnosis.json) — the previous [0] index
+        # crashed worker-side and surfaced as engine_error. Empty list =
+        # no structure = the existing empty-output reject path.
+        table_res_list = res_json.get("table_res_list") or []
+        if not table_res_list:
+            return ""
+        return table_res_list[0].get("pred_html", "") or ""
 
 
 def serve(in_stream=None, out_stream=None) -> int:

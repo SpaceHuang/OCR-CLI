@@ -772,8 +772,8 @@ fn reread_result_identity(
                 reread.layout_assets_sha256,
                 ocrx_scan::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION,
                 // M4.2/D-63: old-flag-only ON records the VLM-era generation
-                // (2). The SLANet arm's generation (3) lives in the
-                // checkpoint compatibility identity, not this display blob.
+                // (2). The SLANet arm's generation lives in the checkpoint
+                // compatibility identity, not this display blob.
                 ocrx_scan::reread::VLM_REREAD_RULES_GENERATION,
             ),
         ),
@@ -2710,7 +2710,7 @@ mod tests {
         // enabled:false — its own section rides the blob with the verified
         // engine identity and the current rules generation.
         let identity = serde_json::json!({
-            "engine": "slanet-plus", "revision": "bae6e5f8",
+            "engine": "slanet-plus", "models_revision": "bae6e5f8", "protocol_revision": "proto2",
             "paddleocr": "3.7.0", "paddlex": "3.7.2",
             "paddlepaddle": "3.4.0", "models_sha256": {}
         });

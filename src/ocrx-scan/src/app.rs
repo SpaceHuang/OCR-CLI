@@ -374,7 +374,8 @@ impl ScanApplication {
                 let hello = client.identity();
                 ocrx_output::StructureRereadIdentity {
                     engine: hello.engine.clone(),
-                    revision: hello.revision.clone(),
+                    models_revision: hello.models_revision.clone(),
+                    protocol_revision: hello.protocol_revision.clone(),
                     paddleocr: hello.paddleocr.clone(),
                     paddlex: hello.paddlex.clone(),
                     paddlepaddle: hello.paddlepaddle.clone(),

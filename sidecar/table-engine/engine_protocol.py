@@ -14,7 +14,12 @@ from dataclasses import dataclass, field
 
 ENGINE_ID = "slanet-plus"
 # Frozen supply chain (plan D-59; requirements.txt must match).
-EXPECTED_REVISION = "bae6e5f8"
+# M4.3 D-72: the single `revision` split into two axes — the model-dir freeze
+# (manifest-keyed, changes only when model files change) and the worker
+# behavior generation (changes on any worker-side behavior change, e.g. the
+# P0 no-table-found handling).
+EXPECTED_MODELS_REVISION = "bae6e5f8"
+EXPECTED_PROTOCOL_REVISION = "proto2"
 EXPECTED_PADDLEOCR = "3.7.0"
 EXPECTED_PADDLEX = "3.7.2"
 EXPECTED_PADDLEPADDLE = "3.4.0"
@@ -26,7 +31,8 @@ REJECT_EMPTY_OUTPUT = "empty_output"
 @dataclass
 class Hello:
     engine: str
-    revision: str
+    models_revision: str
+    protocol_revision: str
     paddleocr: str
     paddlex: str
     paddlepaddle: str
@@ -37,7 +43,8 @@ class Hello:
             {
                 "type": "hello",
                 "engine": self.engine,
-                "revision": self.revision,
+                "models_revision": self.models_revision,
+                "protocol_revision": self.protocol_revision,
                 "paddleocr": self.paddleocr,
                 "paddlex": self.paddlex,
                 "paddlepaddle": self.paddlepaddle,

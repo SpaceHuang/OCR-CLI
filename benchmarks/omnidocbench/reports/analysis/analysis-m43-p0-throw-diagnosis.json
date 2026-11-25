@@ -1,0 +1,168 @@
+{
+ "artifact": "analysis-m43-p0-throw-diagnosis",
+ "date": "2026-11-25",
+ "root_cause": "worker-side extraction bug, NOT a Paddle internal fault: TableRecognitionPipelineV2.predict() completes and returns res_json with table_res_list present but EMPTY (pipeline found no table in the crop); worker.py:103 indexed [0] on the empty list -> IndexError surfaced as engine_error. Frozen by probe: keys include table_res_list (list, len=0) on both a 62px sliver and a 530x1159 matched crop.",
+ "consequence": "M4.2 G-B \"6 deterministic pipeline throws\" (dca64e05, 1417 r1/r2, 3713 r0-r2) are reclassified as no-table-found crops -> after the P0 fix they become clean empty_output rejects (keep-original, honest counters). GT key recovery potential (<=5 keys) does NOT materialize; P0 value = classification integrity + D-72 identity split.",
+ "smoke_throwing_crops": [
+  {
+   "crop": "p02_r0_match0_conf0.99.png",
+   "shape": [
+    263,
+    1262,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p03_r0_match0_conf0.98.png",
+   "shape": [
+    62,
+    546,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p04_r1_match2_conf0.98.png",
+   "shape": [
+    89,
+    623,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p04_r2_match1_conf0.97.png",
+   "shape": [
+    89,
+    624,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p06_r0_match0_conf0.98.png",
+   "shape": [
+    63,
+    556,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p07_r0_match0_conf0.98.png",
+   "shape": [
+    106,
+    1009,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p07_r1_EXTRA_conf0.88.png",
+   "shape": [
+    82,
+    235,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p07_r2_EXTRA_conf0.56.png",
+   "shape": [
+    82,
+    160,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p15_r0_match0_conf0.99.png",
+   "shape": [
+    530,
+    1159,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  }
+ ],
+ "probe": {
+  "p03_r0_match0_conf0.98.png": {
+   "json_keys": [
+    "input_path",
+    "layout_det_res",
+    "model_settings",
+    "overall_ocr_res",
+    "page_index",
+    "table_res_list"
+   ],
+   "table_res_list": []
+  },
+  "p15_r0_match0_conf0.99.png": {
+   "json_keys": [
+    "input_path",
+    "layout_det_res",
+    "model_settings",
+    "overall_ocr_res",
+    "page_index",
+    "table_res_list"
+   ],
+   "table_res_list": []
+  }
+ },
+ "production_replay_verification": "deferred to T-P0.4 (re-run 16-page domain with fixed binary; expect engine_error regions -> empty_output rejects, md unchanged)"
+}
