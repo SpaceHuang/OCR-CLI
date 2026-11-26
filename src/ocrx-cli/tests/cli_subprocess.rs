@@ -90,6 +90,56 @@ fn cli_version_and_doctor_report_the_same_workspace_version() {
 }
 
 #[test]
+fn cli_model_recommend_report_json_emits_the_install_plan() {
+    // C2/D-4: the machine-readable recommend face must be a single parseable
+    // plan object (schema_version 1) with the revision-directory target and
+    // both assets; other model subcommands keep rejecting --report.
+    let cache = std::env::temp_dir().join(format!("ocrx-plan-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&cache).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args(["model", "recommend", "--report", "json"])
+        .env("OCRX_MODEL_CACHE", &cache)
+        .env("OCRX_MEMORY_GB", "16")
+        .output()
+        .expect("CLI test binary should run");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1, "one plan object per call: {stdout}");
+    let plan: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|error| panic!("plan JSON must parse: {error}; stdout: {stdout}"));
+    assert_eq!(plan["schema_version"], 1);
+    assert_eq!(plan["action"], "recommend");
+    assert_eq!(plan["default_model"], "ovisocr3");
+    assert_eq!(plan["installed"], false);
+    let size = plan["size_bytes"].as_u64().expect("size_bytes is a number");
+    assert!(size > 0, "plan carries the byte total: {plan}");
+    let assets = plan["assets"].as_array().expect("assets array");
+    assert_eq!(assets.len(), 2, "model + mmproj: {plan}");
+    let target_dir = plan["target_dir"].as_str().expect("target_dir string");
+    let target = std::path::Path::new(target_dir);
+    for asset in assets {
+        let path = std::path::Path::new(asset["path"].as_str().expect("asset path"));
+        assert!(
+            path.starts_with(target),
+            "every asset lives under the revision dir: {} vs {}",
+            path.display(),
+            target.display()
+        );
+    }
+    // The other subcommands keep the frozen rejection.
+    for action in ["list", "info"] {
+        let rejected = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+            .args(["model", action, "--report", "json"])
+            .env("OCRX_MODEL_CACHE", &cache)
+            .output()
+            .expect("CLI test binary should run");
+        assert_eq!(rejected.status.code(), Some(2), "model {action}");
+        assert!(String::from_utf8_lossy(&rejected.stderr).contains("unsupported model flag"));
+    }
+    let _ = std::fs::remove_dir_all(&cache);
+}
+
+#[test]
 fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
     let output = run_cli(&["scan", "input.pdf", "--model", "other"]);
     assert_eq!(output.status.code(), Some(2));

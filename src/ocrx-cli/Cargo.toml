@@ -16,6 +16,7 @@ ocrx-models = { path = "../ocrx-models" }
 ocrx-scan = { path = "../ocrx-scan" }
 ocrx-output = { path = "../ocrx-output" }
 ocrx-skill = { path = "../ocrx-skill" }
+serde_json = { workspace = true }
 ctrlc = "3.5.2"
 vulkano = { version = "=0.35.2", optional = true }
 

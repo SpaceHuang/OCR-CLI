@@ -60,6 +60,8 @@ enum CliCommand {
         profile: Option<String>,
         offline: bool,
         non_interactive: bool,
+        /// C2/D-4: machine-readable face, accepted on recommend/install only.
+        report_json: bool,
     },
     Skill {
         action: String,
@@ -983,6 +985,7 @@ fn parse_command(args: &[&str]) -> Result<CliCommand, String> {
                 profile: None,
                 offline: false,
                 non_interactive: false,
+                report_json: false,
             })
         }
         ["model", action, rest @ ..]
@@ -1005,6 +1008,11 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
     let mut profile = None;
     let mut offline = false;
     let mut non_interactive = false;
+    // C2/D-4: `--report json` is the machine-readable face; exactly the
+    // recommend and install subcommands accept it (plan §6 阶段 2 — the
+    // list/info/verify and --progress/--model-profile bans stay frozen).
+    let report_allowed = matches!(action, "recommend" | "install");
+    let mut report_json = false;
     let mut index = 0;
     while index < args.len() {
         match args[index] {
@@ -1018,6 +1026,17 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
                     return Err(format!("unsupported model: {value}"));
                 }
                 model = Some(value.to_owned());
+            }
+            "--report" => {
+                index += 1;
+                let value = required_value(args, index, "--report")?;
+                if !report_allowed {
+                    return Err("unsupported model flag: --report".to_owned());
+                }
+                if value != "json" {
+                    return Err(format!("unsupported model report format: {value}"));
+                }
+                report_json = true;
             }
             "--offline" => offline = true,
             "--non-interactive" => non_interactive = true,
@@ -1043,6 +1062,7 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
         profile,
         offline,
         non_interactive,
+        report_json,
     })
 }
 
@@ -1145,6 +1165,7 @@ fn main() {
             profile,
             offline: _,
             non_interactive: _,
+            report_json,
         } if action == "list" || action == "info" || action == "recommend" => {
             // T071: everything flows through the production ModelManager
             // (compose root); the default output strings stay byte-identical
@@ -1177,6 +1198,41 @@ fn main() {
             };
             let model = ocrx_inference_api::ModelId::new(&selected)
                 .unwrap_or_else(|_| unreachable!("model id validated by the CLI parser"));
+            // C2/D-4 machine-readable plan face: the plan must match the
+            // text recommend face exactly — the implicit-default pair rides
+            // in as an explicit profile override; an explicit --model keeps
+            // the per-model memory ladder (resolve inside the plan).
+            if action == "recommend" && report_json {
+                let cache_root_for_plan = std::env::var_os("OCRX_MODEL_CACHE")
+                    .filter(|value| !value.is_empty())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(ocrx_inference::default_cache_root);
+                let plan = ocrx_models::plan::InstallPlan::resolve(ocrx_models::plan::PlanRequest {
+                    model: &model,
+                    memory_gb: snapshot.memory_gb,
+                    default_model: DEFAULT_MODEL,
+                    cache_root: &cache_root_for_plan,
+                    profile: implicit_profile
+                        .as_deref()
+                        .map(|name| ocrx_inference_api::ProfileId::new(name))
+                        .transpose()
+                        .unwrap_or_else(|_| unreachable!("implicit profile is a ladder name")).as_ref(),
+                });
+                match plan {
+                    Ok(plan) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string(&plan)
+                                .unwrap_or_else(|_| unreachable!("plan serializes"))
+                        );
+                    }
+                    Err(error) => {
+                        eprintln!("model recommend failed: {error:?}");
+                        std::process::exit(6);
+                    }
+                }
+                return;
+            }
             if action == "list" {
                 if narrowed {
                     // Explicit selector: list exactly that model's line
@@ -1247,6 +1303,7 @@ fn main() {
             profile,
             offline,
             non_interactive,
+            report_json: _report_json,
         } => {
             let Some(profile) = profile else {
                 eprintln!("model {action} requires a profile");
@@ -3914,6 +3971,44 @@ mod tests {
     }
 
     #[test]
+    fn model_command_parser_accepts_report_json_only_on_recommend_and_install() {
+        // C2/D-4 (dsh-plugin-v0.1 stage 2): `--report json` is a machine-
+        // readable face for EXACTLY recommend and install; every other model
+        // subcommand keeps the historical unsupported-flag rejection.
+        match parse_command(&["model", "recommend", "--report", "json"]).unwrap() {
+            CliCommand::Model { action, report_json, .. } => {
+                assert_eq!(action, "recommend");
+                assert!(report_json);
+            }
+            other => panic!("{other:?}"),
+        }
+        match parse_command(&["model", "install", "--report", "json", "quality"]).unwrap() {
+            CliCommand::Model { action, report_json, .. } => {
+                assert_eq!(action, "install");
+                assert!(report_json);
+            }
+            other => panic!("{other:?}"),
+        }
+        // Plain recommend/install stay report_json=false.
+        match parse_command(&["model", "recommend"]).unwrap() {
+            CliCommand::Model { report_json, .. } => assert!(!report_json),
+            other => panic!("{other:?}"),
+        }
+        // Every other subcommand rejects --report.
+        for action in ["list", "info", "verify", "remove"] {
+            let arguments: Vec<&str> = match action {
+                "verify" | "remove" => vec!["model", action, "quality", "--report", "json"],
+                _ => vec!["model", action, "--report", "json"],
+            };
+            let error = parse_command(&arguments).unwrap_err();
+            assert_eq!(error, "unsupported model flag: --report", "action {action}");
+        }
+        // The value is pinned to `json` (no text face on model commands).
+        let error = parse_command(&["model", "recommend", "--report", "text"]).unwrap_err();
+        assert_eq!(error, "unsupported model report format: text");
+    }
+
+    #[test]
     fn cli_model_list_default_lists_both_models_and_the_selector_narrows() {
         // C6: (a) the no-flag list gains the ovisocr3 line in declaration
         // order; (b) the first line keeps the historical bytes;
@@ -5077,6 +5172,7 @@ model=ovisocr3
                 profile: None,
                 offline: false,
                 non_interactive: false,
+                report_json: false,
             })
         );
         assert_eq!(
