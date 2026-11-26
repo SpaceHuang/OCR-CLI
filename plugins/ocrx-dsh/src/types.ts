@@ -1,30 +1,17 @@
 // Shared types: normalized result schema (requirement §7.4), reason
 // enumeration (§7.6) and the DSH seam value faces.
 
-import type { PluginContext } from './dsh-seams.js';
+import type { PluginContext, SpawnHandle, SpawnOptions } from './dsh-seams.js';
 
 export type { PluginContext };
 
+/** The real subprocess seam face (stage-0 spike: spec object in, handle out). */
 export interface SubprocessSeam {
-  spawn(options: {
-    command: string;
-    args: string[];
-    cwd: string;
-    env?: Record<string, string>;
-    signal?: AbortSignal;
-  }): SpawnOutcome | Promise<SpawnOutcome>;
-}
-
-export interface SpawnOutcome {
-  stdout?: string;
-  stderr?: string;
-  code?: number | null;
-  killed?: boolean;
-  error?: unknown;
+  spawn(spec: SpawnOptions): SpawnHandle;
 }
 
 export interface WorkingDirectorySeam {
-  ensure(path?: string, options?: { agent?: unknown }): string;
+  ensure(agent?: unknown, signal?: AbortSignal): Promise<string>;
 }
 
 export interface ApprovalOutcome {
