@@ -1,0 +1,35 @@
+{
+  "name": "@ocrx/ocrx-darwin-arm64",
+  "version": "__VERSION__",
+  "description": "ocrx CLI (macOS arm64 Metal build): PDF -> Markdown engine binary + bundled PDFium dylib. Installed as an optional platform package of @ocrx/dsh.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ocrx/OCR-CLI.git"
+  },
+  "homepage": "https://github.com/ocrx/OCR-CLI#readme",
+  "bugs": "https://github.com/ocrx/OCR-CLI/issues",
+  "keywords": [
+    "ocrx",
+    "ocr",
+    "pdf-to-markdown",
+    "dsh-plugin"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/",
+    "lib/",
+    "licenses/",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "SHA256SUMS"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

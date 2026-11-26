@@ -126,4 +126,97 @@ for candidate in python3 python; do
 done
 [[ -n "$PY" ]] || { echo "python is required to validate SKILL.md" >&2; exit 1; }
 "$PY" "$ROOT_DIR/scripts/validate-skill.py" "$ROOT_DIR/assets/skills/ocrx/SKILL.md"
+# --- dsh-plugin-v0.1 stage 8: C4 npm pipeline + workflow structure --------
+node --version >/dev/null 2>&1 || { echo "node is required for the npm pipeline checks" >&2; exit 1; }
+
+# macOS archive must carry the full license set (C4, requirement §5.1: the
+# npm platform package is same-source with the Release archive).
+MACOS_PKG="$ROOT_DIR/scripts/package-macos-arm64.sh"
+grep -q 'THIRD_PARTY_NOTICES.md' "$MACOS_PKG" || { echo "macos packager: third-party notices missing" >&2; exit 1; }
+grep -q 'licenses/llama.cpp' "$MACOS_PKG" || { echo "macos packager: llama.cpp license missing" >&2; exit 1; }
+grep -q 'licenses/pdfium' "$MACOS_PKG" || { echo "macos packager: pdfium license set missing" >&2; exit 1; }
+
+# Platform-package builder: syntax + fixture self-test (exact file set,
+# SHA256SUMS same-source proof, size cap, real npm pack, no build scripts).
+NPM_BUILDER="$ROOT_DIR/plugins/npm/build-platform-packages.mjs"
+[[ -f "$NPM_BUILDER" ]] || { echo "npm platform builder missing" >&2; exit 1; }
+node --check "$NPM_BUILDER"
+# Node children cannot resolve bash's POSIX temp paths on Windows; create
+# the fixture root through node so every handed-out path is a real one.
+PACK_FIXTURE=$(node -e "console.log(require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'ocrx-pack-')))")
+cleanup_trap() { rm -rf "$PACK_FIXTURE"; }
+trap cleanup_trap EXIT
+mkdir -p "$PACK_FIXTURE/stage/bin" "$PACK_FIXTURE/stage/licenses/pdfium" \
+  "$PACK_FIXTURE/stage/licenses/llama.cpp" "$PACK_FIXTURE/stage/licenses/ms-vc-runtime"
+printf 'fake ocrx binary' > "$PACK_FIXTURE/stage/bin/ocrx.exe"
+printf 'pdfium' > "$PACK_FIXTURE/stage/bin/pdfium.dll"
+printf 'crt1' > "$PACK_FIXTURE/stage/bin/msvcp140.dll"
+printf 'crt2' > "$PACK_FIXTURE/stage/bin/vcruntime140.dll"
+printf 'crt3' > "$PACK_FIXTURE/stage/bin/vcruntime140_1.dll"
+printf 'license' > "$PACK_FIXTURE/stage/LICENSE"
+printf 'notices' > "$PACK_FIXTURE/stage/THIRD_PARTY_NOTICES.md"
+printf 'pdfium license' > "$PACK_FIXTURE/stage/licenses/pdfium/pdfium.txt"
+printf 'llama license' > "$PACK_FIXTURE/stage/licenses/llama.cpp/LICENSE"
+printf 'vc notice' > "$PACK_FIXTURE/stage/licenses/ms-vc-runtime/README.txt"
+( cd "$PACK_FIXTURE/stage" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS )
+TGZ=$(node "$NPM_BUILDER" --platform win32-x64 --stage "$PACK_FIXTURE/stage" \
+  --version 0.0.0-test --out-dir "$PACK_FIXTURE/out" | tail -1)
+[[ -f "$TGZ" ]] || { echo "npm pack self-test produced no tarball" >&2; exit 1; }
+# GNU tar reads `C:` as a remote host; hand it a POSIX spelling when one is
+# available (Git Bash / MSYS), otherwise the native path is already fine.
+TGZ_POSIX=$(cygpath -u "$TGZ" 2>/dev/null || echo "$TGZ")
+[[ -f "$TGZ_POSIX" ]] || TGZ_POSIX="$TGZ"
+tar -tzf "$TGZ_POSIX" | grep -q 'package/bin/ocrx.exe' || { echo "tarball misses the binary" >&2; exit 1; }
+tar -tzf "$TGZ_POSIX" | grep -q 'package/bin/msvcp140.dll' || { echo "tarball misses a CRT dll" >&2; exit 1; }
+tar -tzf "$TGZ_POSIX" | grep -q 'package/licenses/ms-vc-runtime/README.txt' || { echo "tarball misses the vc license" >&2; exit 1; }
+tar -xOf "$TGZ_POSIX" package/package.json | grep -q '"access": "public"' || { echo "platform package must publish public" >&2; exit 1; }
+if tar -xOf "$TGZ_POSIX" package/package.json | grep -qE 'postinstall|preinstall|"prepare"'; then
+  echo "platform package must not declare build scripts" >&2; exit 1
+fi
+# Negative face: a tampered stage file must break the same-source proof.
+printf 'tampered' >> "$PACK_FIXTURE/stage/LICENSE"
+if node "$NPM_BUILDER" --platform win32-x64 --stage "$PACK_FIXTURE/stage" \
+     --version 0.0.0-test --out-dir "$PACK_FIXTURE/out2" >/dev/null 2>&1; then
+  echo "builder accepted a tampered stage (SHA256SUMS proof broken)" >&2; exit 1
+fi
+trap - EXIT
+cleanup_trap || true
+
+# Templates: exact package names (D-1) with public access.
+grep -q '"@ocrx/ocrx-win32-x64"' "$ROOT_DIR/plugins/npm/package-win32-x64.json"
+grep -q '"@ocrx/ocrx-darwin-arm64"' "$ROOT_DIR/plugins/npm/package-darwin-arm64.json"
+grep -q '"access": "public"' "$ROOT_DIR/plugins/npm/package-win32-x64.json"
+grep -q '"access": "public"' "$ROOT_DIR/plugins/npm/package-darwin-arm64.json"
+
+# release.yml structure: per-platform npm artifacts (no runner claims the
+# other platform's package), publish-npm shape, auth config, preflights
+# before any publish, and BOTH first-run and re-run branches.
+WF="$ROOT_DIR/.github/workflows/release.yml"
+grep -q 'name: npm-ocrx-win32-x64' "$WF" || { echo "release.yml: windows npm artifact name missing" >&2; exit 1; }
+grep -q 'name: npm-ocrx-darwin-arm64' "$WF" || { echo "release.yml: macos npm artifact name missing" >&2; exit 1; }
+grep -q 'publish-npm:' "$WF" || { echo "release.yml: publish-npm job missing" >&2; exit 1; }
+grep -q 'needs: \[package, release\]' "$WF" || { echo "release.yml: publish-npm must need both legs" >&2; exit 1; }
+grep -q 'environment: npm' "$WF" || { echo "release.yml: npm environment gate missing" >&2; exit 1; }
+grep -q 'registry-url: https://registry.npmjs.org' "$WF" || { echo "release.yml: registry-url auth config missing" >&2; exit 1; }
+grep -q 'NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}' "$WF" || { echo "release.yml: NODE_AUTH_TOKEN mapping missing" >&2; exit 1; }
+grep -q 'npm whoami' "$WF" || { echo "release.yml: authentication preflight missing" >&2; exit 1; }
+grep -q 'does not point at the built commit' "$WF" || { echo "release.yml: tag presence/commit assert missing" >&2; exit 1; }
+grep -q 'optionalDependencies do not pin' "$WF" || { echo "release.yml: plugin exact-pin assert missing" >&2; exit 1; }
+grep -q 'already published; local tarball sha256' "$WF" || { echo "release.yml: re-run skip-published branch missing" >&2; exit 1; }
+grep -q 'all three versions already published' "$WF" || { echo "release.yml: idempotent re-run branch missing" >&2; exit 1; }
+# Order: preflights must precede the publish step in file order.
+PUBLISH_LINE=$(grep -n 'publish complete for' "$WF" | cut -d: -f1)
+WHOAMI_LINE=$(grep -n 'npm whoami' "$WF" | cut -d: -f1)
+[[ -n "$PUBLISH_LINE" && -n "$WHOAMI_LINE" ]] || { echo "release.yml: preflight/publish markers missing" >&2; exit 1; }
+[[ "$WHOAMI_LINE" -lt "$PUBLISH_LINE" ]] || { echo "release.yml: preflight must precede npm publish" >&2; exit 1; }
+
+# Plugin manifest: engines window, bundle patch structure (nested dsh key),
+# platforms, exact optionalDependencies pins, public access, no build scripts.
+node "$ROOT_DIR/plugins/npm/check-plugin-manifest.mjs" "$ROOT_DIR/plugins/ocrx-dsh/package.json"
+
+# Runbook exists and documents the first-run/re-run promotion split.
+RUNBOOK="$ROOT_DIR/docs/develop/dsh-plugin-release-runbook.md"
+[[ -f "$RUNBOOK" ]] || { echo "release runbook missing" >&2; exit 1; }
+grep -q '首跑/重跑' "$RUNBOOK" || { echo "runbook: first-run/re-run split missing" >&2; exit 1; }
+grep -q 'platform 包先于插件包\|平台包先于插件包' "$RUNBOOK" || { echo "runbook: publish order missing" >&2; exit 1; }
 echo "release scripts syntax/privacy checks passed"

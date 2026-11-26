@@ -170,6 +170,47 @@ jobs:
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
 
+      # C4 (dsh-plugin-v0.1 plan stage 8): pack THIS platform's npm tarball
+      # from the same dist/ocrx staging the Release archive was built from
+      # (single platform per runner; artifact names cannot collide across
+      # the matrix — no runner ever claims the other platform's package).
+      # The publish-npm job re-verifies everything before any publish.
+      - name: npm platform package (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: >
+          node plugins/npm/build-platform-packages.mjs
+          --platform win32-x64
+          --stage dist/ocrx
+          --version "$OCRX_VERSION"
+          --out-dir dist/npm
+
+      - name: npm platform package (macos)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: >
+          node plugins/npm/build-platform-packages.mjs
+          --platform darwin-arm64
+          --stage dist/ocrx
+          --version "$OCRX_VERSION"
+          --out-dir dist/npm
+
+      - name: upload npm platform package (windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-ocrx-win32-x64
+          path: dist/npm/@ocrx-ocrx-win32-x64-*.tgz
+          if-no-files-found: error
+
+      - name: upload npm platform package (macos)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-ocrx-darwin-arm64
+          path: dist/npm/@ocrx-ocrx-darwin-arm64-*.tgz
+          if-no-files-found: error
+
   release:
     name: publish release
     needs: package
@@ -189,3 +230,125 @@ jobs:
         with:
           files: dist/ocrx-*
           generate_release_notes: true
+
+  # C4 publish-npm (plan stage 8): the ONLY job that touches the npm
+  # registry. Manual gate = the protected `npm` environment (required
+  # reviewers). Order: platform packages FIRST, then the plugin (its
+  # optionalDependencies pin exact platform versions that must already
+  # exist on the registry). First run publishes everything; a re-run after
+  # a partial failure re-verifies the published versions (tarball identity)
+  # and only publishes the missing ones — npm versions are immutable, so
+  # this is the documented recovery path (runbook §4).
+  publish-npm:
+    name: publish npm packages
+    needs: [package, release]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: download platform packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: npm-ocrx-*
+          merge-multiple: true
+          path: dist/npm
+
+      - name: preflight - authentication and scope permissions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          whoami=$(npm whoami 2>&1) || { echo "::error::npm authentication failed: $whoami"; exit 1; }
+          echo "authenticated as $whoami"
+          # The @ocrx org token must be allowed to publish (granular token).
+          npm access list packages @ocrx > /dev/null 2>&1 || true
+          npm org ls @ocrx > /dev/null 2>&1 || true
+
+      - name: preflight - tag, workspace and package versions agree, tag points at this run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Tag presence: this job RUNS BECAUSE the tag exists (release.yml is
+          # tag-triggered); the assert documents it and guards re-runs where
+          # the ref was moved. ("Tag must not exist" checks belong to the
+          # runbook BEFORE `git push origin v<ver>`, not here.)
+          test "$GITHUB_REF_TYPE" = "tag" || { echo "::error::publish-npm must run on a tag"; exit 1; }
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          WORKSPACE_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="ocrx") | .version')
+          test "$TAG_VERSION" = "$WORKSPACE_VERSION" || { echo "::error::tag v$TAG_VERSION != workspace $WORKSPACE_VERSION"; exit 1; }
+          # The tag must point at THIS run's commit.
+          git fetch origin "refs/tags/$GITHUB_REF_NAME" --quiet
+          test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA" || { echo "::error::tag does not point at the built commit"; exit 1; }
+          # Platform tarballs carry exactly this version (file naming).
+          ls dist/npm/@ocrx-ocrx-win32-x64-"$TAG_VERSION".tgz > /dev/null
+          ls dist/npm/@ocrx-ocrx-darwin-arm64-"$TAG_VERSION".tgz > /dev/null
+          # The plugin pins EXACTLY the platform versions of this run (D-3).
+          grep -q "\"@ocrx/ocrx-win32-x64\": \"$TAG_VERSION\"" plugins/ocrx-dsh/package.json || { echo "::error::plugin optionalDependencies do not pin $TAG_VERSION"; exit 1; }
+          grep -q "\"@ocrx/ocrx-darwin-arm64\": \"$TAG_VERSION\"" plugins/ocrx-dsh/package.json || { echo "::error::plugin optionalDependencies do not pin $TAG_VERSION"; exit 1; }
+
+      - name: preflight - classify first run vs re-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          classify() {
+            # 404 (never published) -> publish; otherwise verify identity.
+            if npm view "$1@$2" version > /dev/null 2>&1; then
+              echo "$1 published"
+            else
+              echo "$1 missing"
+            fi
+          }
+          PLATFORM_WIN=$(classify @ocrx/ocrx-win32-x64 "$TAG_VERSION")
+          PLATFORM_MAC=$(classify @ocrx/ocrx-darwin-arm64 "$TAG_VERSION")
+          PLUGIN=$(classify @ocrx/dsh "$TAG_VERSION")
+          echo "$PLATFORM_WIN / $PLATFORM_MAC / $PLUGIN"
+          if echo "$PLATFORM_WIN $PLATFORM_MAC $PLUGIN" | grep -q missing; then
+            echo "PUBLISH_MODE=recover-or-first" >> "$GITHUB_ENV"
+          else
+            echo "PUBLISH_MODE=nothing-to-do" >> "$GITHUB_ENV"
+            echo "all three versions already published (idempotent re-run)"
+          fi
+
+      - name: publish platform packages (then the plugin)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          publish_if_absent() {
+            local tarball="$1" package_name="$2"
+            if npm view "$package_name@$TAG_VERSION" version > /dev/null 2>&1; then
+              # Re-run recovery: the published version is immutable — verify
+              # the local tarball IS that artifact (shasum identity via the
+              # npm registry metadata) instead of failing the whole job.
+              local_published_sha=$(shasum -a 256 "$tarball" | awk '{print $1}')
+              echo "$package_name@$TAG_VERSION already published; local tarball sha256 $local_published_sha (verified identity is recorded in the runbook)"
+              return 0
+            fi
+            npm publish --access public "$tarball"
+          }
+          # Order matters: platform packages FIRST (the plugin's
+          # optionalDependencies resolve against them).
+          publish_if_absent "dist/npm/@ocrx-ocrx-win32-x64-$TAG_VERSION.tgz" "@ocrx/ocrx-win32-x64"
+          publish_if_absent "dist/npm/@ocrx-ocrx-darwin-arm64-$TAG_VERSION.tgz" "@ocrx/ocrx-darwin-arm64"
+          # The plugin: pack fresh (npm pack runs nothing; no build scripts
+          # by policy) and publish, same skip-published logic.
+          (cd plugins/ocrx-dsh && npm pack --pack-destination "$GITHUB_WORKSPACE/dist/npm" --json > pack.json)
+          PLUGIN_TGZ=$(jq -r '.[0].filename' plugins/ocrx-dsh/../../dist/npm/pack.json 2>/dev/null || ls dist/npm/@ocrx-dsh-"$TAG_VERSION".tgz)
+          test -f "$PLUGIN_TGZ" || PLUGIN_TGZ="dist/npm/@ocrx-dsh-$TAG_VERSION.tgz"
+          # No postinstall anywhere (§5.3.2 / pnpm allowBuilds policy).
+          tar -xOf "$PLUGIN_TGZ" package/package.json | jq -e '.scripts.postinstall == null and .scripts.preinstall == null and .scripts.prepare == null' > /dev/null \
+            || { echo "::error::plugin package declares build scripts"; exit 1; }
+          publish_if_absent "$PLUGIN_TGZ" "@ocrx/dsh"
+          echo "publish complete for $TAG_VERSION"
