@@ -1,6 +1,6 @@
 // ocrx_model tool (requirement §7.5.2; implementation lands in plan stage 5).
 import { defineTool, textResult, type ToolDefinition } from '../toolkit.js';
-import type { ToolEnv } from './scan.js';
+import type { ToolEnv } from './scan-env.js';
 
 export function createModelTool(env: ToolEnv): ToolDefinition {
   return defineTool({

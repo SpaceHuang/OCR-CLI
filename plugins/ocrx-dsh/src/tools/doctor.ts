@@ -1,6 +1,6 @@
 // ocrx_doctor tool (requirement §7.5.1; implementation lands in plan stage 5).
 import { defineTool, textResult, type ToolDefinition } from '../toolkit.js';
-import type { ToolEnv } from './scan.js';
+import type { ToolEnv } from './scan-env.js';
 
 export function createDoctorTool(env: ToolEnv): ToolDefinition {
   return defineTool({

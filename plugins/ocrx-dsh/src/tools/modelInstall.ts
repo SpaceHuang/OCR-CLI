@@ -2,7 +2,7 @@
 // plan stage 6). This is the ONLY download entry point and it carries its own
 // consent gate implemented via ctx.get('approval').
 import { defineTool, textResult, type ToolDefinition } from '../toolkit.js';
-import type { ToolEnv } from './scan.js';
+import type { ToolEnv } from './scan-env.js';
 
 export function createModelInstallTool(env: ToolEnv): ToolDefinition {
   return defineTool({

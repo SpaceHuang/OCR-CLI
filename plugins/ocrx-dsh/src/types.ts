@@ -81,6 +81,9 @@ export interface NormalizedDocument {
   pages?: number;
   markdown?: string;
   result_json?: string;
+  /** Additive faces: artifact paths (bodies are never inlined, §7.4.1). */
+  markdown_path?: string;
+  images_dir?: string;
   warnings_count?: number;
   duration_ms?: number;
   error: DocumentError | null;
@@ -104,6 +107,8 @@ export interface ScanToolResult {
   partial: boolean;
   documents: NormalizedDocument[];
   scan_summary?: string;
+  /** Bounded stderr tail preserved for degraded attribution (§7.3.2). */
+  stderr_tail?: string;
   error: NormalizedError | null;
   readiness?: ReadinessInfo;
   /** Human-facing compact summary + artifact paths (§7.7.1). */

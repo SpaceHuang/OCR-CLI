@@ -1,7 +1,7 @@
 // /ocrx slash command (requirement §8.3; implementation lands in plan stage 7).
 // Commands execute outside turns: NO confirmation channel exists here, so
 // this command intentionally offers no model-install action.
-import type { ToolEnv } from './tools/scan.js';
+import type { ToolEnv } from './tools/scan-env.js';
 
 export interface CommandDefinition {
   name: string;

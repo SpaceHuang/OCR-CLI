@@ -8,7 +8,8 @@ import { createSkillProvider } from './skill.js';
 import { createDoctorTool } from './tools/doctor.js';
 import { createModelTool } from './tools/model.js';
 import { createModelInstallTool } from './tools/modelInstall.js';
-import { createScanTool, type ToolEnv } from './tools/scan.js';
+import { createScanTool } from './tools/scan.js';
+import type { ToolEnv } from './tools/scan-env.js';
 import type { PluginContext } from './types.js';
 
 export const name = 'ocrx-dsh';

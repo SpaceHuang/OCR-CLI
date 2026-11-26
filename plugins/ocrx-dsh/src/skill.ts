@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { ToolEnv } from './tools/scan.js';
+import type { ToolEnv } from './tools/scan-env.js';
 
 export interface SkillDefinition {
   name: string;
