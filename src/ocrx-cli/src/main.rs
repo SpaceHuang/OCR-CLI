@@ -1087,7 +1087,7 @@ fn main() {
         std::process::exit(2);
     });
     match command {
-        CliCommand::Version => println!("ocrx 0.1.0"),
+        CliCommand::Version => println!("ocrx {}", env!("CARGO_PKG_VERSION")),
         CliCommand::Help(topic) => print_help(topic.as_deref()),
         CliCommand::Doctor { json, model } => {
             // T073/T077: doctor flows through the composed DeviceManager;
@@ -2700,7 +2700,8 @@ fn doctor_json_report_with_paths(
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"{model}\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[{profiles_json}]}}",
+        "{{\"schema_version\":2,\"version\":\"{}\",\"platform\":\"{platform}\",\"model\":\"{model}\",\"backend\":\"{backend}\",\"image_token_limit\":{},\"memory_gb\":{},\"metal_available\":{},\"cpu_available\":{},\"cache_root\":\"{}\",\"installed_profiles\":[{}],\"recommended_profile\":\"{profile}\",\"recommended_device\":\"{device}\",\"skill_installed\":{},\"profiles\":[{profiles_json}]}}",
+        env!("CARGO_PKG_VERSION"),
         diagnostics.image_token_limit,
         diagnostics.memory_gb,
         diagnostics.metal_available,
@@ -4705,13 +4706,15 @@ model=ovisocr3
         let _ = std::fs::remove_dir_all(&empty);
         // The platform field follows the running OS (macos/windows; other
         // targets report "unsupported"); keep the rest of the golden fixed so
-        // the JSON shape stays stable (m28).
+        // the JSON shape stays stable (m28). C3 adds the workspace `version`
+        // face for the DSH plugin (env!, so it moves with the workspace).
         let platform = super::current_platform();
         let escaped_cache_root = super::json_escape_path(&empty);
         assert_eq!(
             report,
             format!(
-                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Metal\",\"image_token_limit\":2048,\"memory_gb\":16,\"metal_available\":true,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}"
+                "{{\"schema_version\":2,\"version\":\"{}\",\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Metal\",\"image_token_limit\":2048,\"memory_gb\":16,\"metal_available\":true,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"metal\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}",
+                env!("CARGO_PKG_VERSION")
             )
         );
         // Golden text alone cannot catch an unescaped backslash (the fixture
@@ -4807,7 +4810,8 @@ model=ovisocr3
         assert_eq!(
             ovisocr3,
             format!(
-                "{{\"schema_version\":2,\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Cpu\",\"image_token_limit\":2048,\"memory_gb\":16,\"metal_available\":false,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"cpu\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}"
+                "{{\"schema_version\":2,\"version\":\"{}\",\"platform\":\"{platform}\",\"model\":\"ovisocr3\",\"backend\":\"Cpu\",\"image_token_limit\":2048,\"memory_gb\":16,\"metal_available\":false,\"cpu_available\":true,\"cache_root\":\"{escaped_cache_root}\",\"installed_profiles\":[],\"recommended_profile\":\"quality\",\"recommended_device\":\"cpu\",\"skill_installed\":false,\"profiles\":[\"quality\"]}}",
+                env!("CARGO_PKG_VERSION")
             )
         );
         assert!(ocrx_core::is_valid_json(&ovisocr3));

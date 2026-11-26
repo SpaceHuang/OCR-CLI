@@ -55,6 +55,41 @@ fn cli_doctor_json_report_parses_with_backslash_cache_root() {
 }
 
 #[test]
+fn cli_version_and_doctor_report_the_same_workspace_version() {
+    // C3 (dsh-plugin-v0.1 plan stage 1): `ocrx version` must print the real
+    // workspace version (never a hardcoded literal) and the doctor JSON must
+    // expose the SAME value in its `version` field — the DSH plugin consumes
+    // both faces and reports the divergence when they disagree.
+    let version = run_cli(&["version"]);
+    assert!(version.status.success());
+    let version_stdout = String::from_utf8(version.stdout).unwrap();
+    assert_eq!(
+        version_stdout,
+        format!("ocrx {}\n", env!("CARGO_PKG_VERSION")),
+        "version output must be the workspace version"
+    );
+
+    let cache = std::env::temp_dir().join(format!("ocrx-doctor-version-{}", std::process::id()));
+    std::fs::create_dir_all(&cache).unwrap();
+    let doctor = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args(["doctor", "--report", "json"])
+        .env("OCRX_MODEL_CACHE", &cache)
+        .output()
+        .expect("CLI test binary should run");
+    assert!(doctor.status.success());
+    let stdout = String::from_utf8(doctor.stdout).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|error| panic!("doctor JSON must parse: {error}; stdout: {stdout}"));
+    assert_eq!(
+        parsed.get("version").and_then(|value| value.as_str()),
+        Some(env!("CARGO_PKG_VERSION")),
+        "doctor JSON version field must equal the workspace version: {stdout}"
+    );
+    assert_eq!(parsed.get("schema_version").and_then(|value| value.as_u64()), Some(2));
+    let _ = std::fs::remove_dir_all(&cache);
+}
+
+#[test]
 fn cli_parameter_error_has_no_stdout_and_stable_exit_code() {
     let output = run_cli(&["scan", "input.pdf", "--model", "other"]);
     assert_eq!(output.status.code(), Some(2));
