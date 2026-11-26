@@ -539,6 +539,82 @@ impl EngineIdentity {
 // orchestration tests; macOS CI runs these without python/paddle).
 // ---------------------------------------------------------------------------
 
+/// M4.3 P2b-2 (D-71): lazy spawn wrapper for the best-effort (default)
+/// mode — the engine process starts at the FIRST trigger region, so
+/// zero-trigger documents pay no SLANet startup/handshake cost. A spawn
+/// failure is sticky (no re-spawn attempts) and surfaces as per-region
+/// engine_error keep-original dispositions.
+pub struct LazyStructureEngine {
+    inner: Option<StructureEngineClient>,
+    spawn_error: Option<String>,
+}
+
+impl LazyStructureEngine {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: None,
+            spawn_error: None,
+        }
+    }
+
+    /// True once the engine process has actually spawned (the doc-level
+    /// identity is only meaningful after this).
+    #[must_use]
+    pub fn is_spawned(&self) -> bool {
+        self.inner.is_some()
+    }
+
+    /// The sticky spawn failure, if any (the degrade marker).
+    #[must_use]
+    pub fn spawn_error(&self) -> Option<&str> {
+        self.spawn_error.as_deref()
+    }
+
+    /// The verified identity — only after a successful spawn.
+    #[must_use]
+    pub fn identity(&self) -> Option<&EngineIdentity> {
+        self.inner.as_ref().map(StructureEngineClient::identity)
+    }
+
+    fn ensure_spawned(&mut self) -> Result<(), crate::structure_engine::EngineErrorKind> {
+        if self.inner.is_none() && self.spawn_error.is_none() {
+            match StructureEngineClient::spawn_from_env() {
+                Ok(client) => self.inner = Some(client),
+                Err(error) => self.spawn_error = Some(error),
+            }
+        }
+        match (self.inner.as_mut(), self.spawn_error.as_deref()) {
+            (Some(_client), _) => Ok(()),
+            (_, Some(error)) => Err(crate::structure_engine::EngineErrorKind::EngineError(
+                error.to_owned(),
+            )),
+            (None, None) => unreachable!("spawn state must be settled"),
+        }
+    }
+}
+
+impl Default for LazyStructureEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StructureTableEngine for LazyStructureEngine {
+    fn recognize(
+        &mut self,
+        png: &[u8],
+        page: u32,
+        ordinal: usize,
+    ) -> Result<StructureOutcome, EngineErrorKind> {
+        self.ensure_spawned()?;
+        self.inner
+            .as_mut()
+            .expect("spawned by ensure_spawned")
+            .recognize(png, page, ordinal)
+    }
+}
+
 /// Scripted verdicts in region order; an empty script answers further
 /// regions with [`EngineErrorKind::EngineDown`].
 #[derive(Debug, Clone, Default)]

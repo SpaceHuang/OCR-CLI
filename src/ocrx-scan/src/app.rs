@@ -70,6 +70,42 @@ pub trait PdfDocumentAccess {
 }
 
 /// One document's per-scan options (frozen defaults resolved by the CLI).
+/// M4.3 P2b-2 (D-71): the armed structure engine. Explicit `on` is EAGER
+/// (startup failure = D-63 (2) hard error); the default best-effort mode is
+/// LAZY (spawn at the first trigger region; zero-trigger documents never
+/// start the engine process).
+enum StructureEngineHandle {
+    Eager(crate::structure_engine::StructureEngineClient),
+    Lazy(crate::structure_engine::LazyStructureEngine),
+}
+
+impl StructureEngineHandle {
+    /// The hello identity — always present for the eager arm, only AFTER
+    /// the first trigger for the lazy arm (None = unprobed).
+    fn hello_identity(&self) -> Option<&crate::structure_engine::EngineIdentity> {
+        match self {
+            StructureEngineHandle::Eager(client) => Some(client.identity()),
+            StructureEngineHandle::Lazy(lazy) => lazy.identity(),
+        }
+    }
+}
+
+impl crate::structure_engine::StructureTableEngine for StructureEngineHandle {
+    fn recognize(
+        &mut self,
+        png: &[u8],
+        page: u32,
+        ordinal: usize,
+    ) -> Result<crate::structure_engine::StructureOutcome, crate::structure_engine::EngineErrorKind>
+    {
+        match self {
+            StructureEngineHandle::Eager(client) => client.recognize(png, page, ordinal),
+            StructureEngineHandle::Lazy(lazy) => lazy.recognize(png, page, ordinal),
+        }
+    }
+}
+
+/// One document's per-scan options (frozen defaults resolved by the CLI).
 #[derive(Debug, Clone)]
 // M4.3/D-71 added the 4th bool (structure_strict) — the switch matrix here
 // mirrors the CLI surface 1:1; a state-machine refactor is out of scope.
@@ -351,21 +387,16 @@ impl ScanApplication {
         // M4.2/D-59/D-63: the structure engine spawns at document start —
         // BEFORE any identity write, resume classification or page product.
         // Every startup-class failure is a HARD error (no products).
-        let mut structure_engine = if options.structure_reread.is_some() {
-            match crate::structure_engine::StructureEngineClient::spawn_from_env() {
-                Ok(client) => Some(client),
-                Err(error) => {
-                    if options.structure_strict {
-                        // explicit `on`: D-63 (2) hard error, no products.
-                        return Err(std::io::Error::other(error));
-                    }
-                    // best-effort (default flip, D-71): degrade the document
-                    // to off with a warning; products keep the OFF shape.
-                    eprintln!(
-                        "warn: table-structure reread degraded to off (default best-effort): {error}"
-                    );
-                    None
-                }
+        let mut structure_engine_handle = if options.structure_reread.is_some() {
+            if options.structure_strict {
+                Some(StructureEngineHandle::Eager(
+                    crate::structure_engine::StructureEngineClient::spawn_from_env()
+                        .map_err(std::io::Error::other)?,
+                ))
+            } else {
+                Some(StructureEngineHandle::Lazy(
+                    crate::structure_engine::LazyStructureEngine::new(),
+                ))
             }
         } else {
             None
@@ -388,10 +419,11 @@ impl ScanApplication {
                 )
             })
             .unwrap_or_default();
-        let structure_identity: Option<ocrx_output::StructureRereadIdentity> =
-            structure_engine.as_ref().map(|client| {
-                let hello = client.identity();
-                ocrx_output::StructureRereadIdentity {
+        let mut structure_identity: Option<ocrx_output::StructureRereadIdentity> =
+            structure_engine_handle
+                .as_ref()
+                .and_then(|handle| handle.hello_identity())
+                .map(|hello| ocrx_output::StructureRereadIdentity {
                     engine: hello.engine.clone(),
                     models_revision: hello.models_revision.clone(),
                     protocol_revision: hello.protocol_revision.clone(),
@@ -404,8 +436,7 @@ impl ScanApplication {
                         .iter()
                         .map(|(name, hash)| (name.clone(), hash.sha256.clone()))
                         .collect(),
-                }
-            });
+                });
         let failure =
             |code: u8, kind: &str, message: &str, cause: Option<String>| DocumentOutcome {
                 input: input.to_path_buf(),
@@ -1089,7 +1120,7 @@ impl ScanApplication {
                     &mut **provider as &mut dyn crate::region_provider::RegionProvider
                 }),
                 vlm_armed: options.reread.is_some(),
-                structure: structure_engine
+                structure: structure_engine_handle
                     .as_mut()
                     .map(|engine| engine as &mut dyn crate::structure_engine::StructureTableEngine),
             };
@@ -1232,6 +1263,36 @@ impl ScanApplication {
         // resumed (the ocr phase never runs, so ocr_summary carries nothing).
         // Without this, a fully-resumed structure run would omit
         // table_structure_reread from result.json.
+        // M4.3 P2b-2: the LAZY arm finalizes here — a doc whose engine
+        // spawned carries the verified identity; unprobed/degraded docs
+        // keep the OFF-shaped identity (None, conservative resume).
+        if let Some(StructureEngineHandle::Lazy(lazy)) = structure_engine_handle.as_ref() {
+            match lazy.identity() {
+                Some(hello) => {
+                    structure_identity = Some(ocrx_output::StructureRereadIdentity {
+                        engine: hello.engine.clone(),
+                        models_revision: hello.models_revision.clone(),
+                        protocol_revision: hello.protocol_revision.clone(),
+                        device: hello.device.clone(),
+                        paddleocr: hello.paddleocr.clone(),
+                        paddlex: hello.paddlex.clone(),
+                        paddlepaddle: hello.paddlepaddle.clone(),
+                        models_sha256: hello
+                            .models_sha256
+                            .iter()
+                            .map(|(name, hash)| (name.clone(), hash.sha256.clone()))
+                            .collect(),
+                    });
+                }
+                None => {
+                    if let Some(error) = lazy.spawn_error() {
+                        summary.warnings.push(format!(
+                            "table-structure reread degraded to off (default best-effort): {error}"
+                        ));
+                    }
+                }
+            }
+        }
         summary.structure_reread_json = structure_identity
             .as_ref()
             .map(|identity| serde_json::to_string(identity).unwrap_or_default())
