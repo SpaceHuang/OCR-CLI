@@ -71,6 +71,9 @@ pub trait PdfDocumentAccess {
 
 /// One document's per-scan options (frozen defaults resolved by the CLI).
 #[derive(Debug, Clone)]
+// M4.3/D-71 added the 4th bool (structure_strict) — the switch matrix here
+// mirrors the CLI surface 1:1; a state-machine refactor is out of scope.
+#[allow(clippy::struct_excessive_bools)]
 pub struct DocumentOptions {
     pub pdf_mode: String,
     pub quality_tier: String,
@@ -100,6 +103,10 @@ pub struct DocumentOptions {
     /// (D-59, before any page product) and its verified handshake identity
     /// enters the compatibility.
     pub structure_reread: Option<crate::compatibility::RereadOptions>,
+    /// M4.3/D-71: explicit `on` = strict (spawn failure = hard error,
+    /// D-63 (2)); best-effort (default flip) degrades the document to off
+    /// with a warning instead.
+    pub structure_strict: bool,
 }
 
 impl Default for DocumentOptions {
@@ -121,6 +128,7 @@ impl Default for DocumentOptions {
             install: InstallPolicy::offline(),
             reread: None,
             structure_reread: None,
+            structure_strict: false,
         }
     }
 }
@@ -344,10 +352,21 @@ impl ScanApplication {
         // BEFORE any identity write, resume classification or page product.
         // Every startup-class failure is a HARD error (no products).
         let mut structure_engine = if options.structure_reread.is_some() {
-            Some(
-                crate::structure_engine::StructureEngineClient::spawn_from_env()
-                    .map_err(std::io::Error::other)?,
-            )
+            match crate::structure_engine::StructureEngineClient::spawn_from_env() {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    if options.structure_strict {
+                        // explicit `on`: D-63 (2) hard error, no products.
+                        return Err(std::io::Error::other(error));
+                    }
+                    // best-effort (default flip, D-71): degrade the document
+                    // to off with a warning; products keep the OFF shape.
+                    eprintln!(
+                        "warn: table-structure reread degraded to off (default best-effort): {error}"
+                    );
+                    None
+                }
+            }
         } else {
             None
         };

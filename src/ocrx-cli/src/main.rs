@@ -1915,6 +1915,7 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
         },
         reread: reread.clone(),
         structure_reread: structure_reread.clone(),
+        structure_strict: options.structure_reread == StructureRereadMode::On,
     };
     // One owner for the whole invocation (X1): the first input spawns it,
     // later documents SwitchDocument inside the port.
