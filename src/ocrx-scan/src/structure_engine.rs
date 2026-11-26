@@ -32,7 +32,11 @@ pub const EXPECTED_PADDLEPADDLE: &str = "3.3.1";
 
 /// Handshake deadline (D-63 (2); the hello precedes any model load, so 30s
 /// only covers interpreter boot + model-dir hashing).
-pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+/// 30s -> 90s (M4.3 G0/robustness): GPU-era startup adds CUDA context +
+/// device transfer, and under concurrent GPU load (campaign scans sharing
+/// the device) paddle import + init can exceed 30s. Operational patience
+/// only — no reread-rule semantics change (D-63 (2) behavior identical).
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 /// Per-recognize deadline (D-63 (3); CPU measured 186.3s/table + margin).
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
