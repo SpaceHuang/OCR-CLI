@@ -1,0 +1,42 @@
+{
+ "artifact": "analysis-m43-t4-four-gates",
+ "date": "2026-11-26",
+ "engine": "GPU era (paddlepaddle-gpu 3.3.1, proto3, gen 5)",
+ "runs": {
+  "run_alpha_on": "D:/t/m43-p0/t4-on (1651 pages, ON, GPU engine)",
+  "off_run": "D:/t/m43-p0/t4-off"
+ },
+ "verdict": "FOUR GATES ALL PASS — P1 ships",
+ "gates": {
+  "g_a_off_byte": {
+   "result": "PASS",
+   "detail": "gen5 OFF vs gen4 OFF: 1651/1651 md byte-identical (M4.3 changes leave the OFF path untouched)"
+  },
+  "g_b_frozen_populations": {
+   "m42_24": "improved 1 (dca64e05[0] 0.000 -> 0.204 — the CPU-timeout victim rescued on GPU) | regressed 1 (page-35ecd651[0] 0.620 -> 0.613, GPU numerics byte-drift on an existing rescue, -0.007) | same 22",
+   "p1_20": "improved 6 | regressed 0 | same 14 — option-C true-miss clause holds at full corpus"
+  },
+  "g_c_overall": {
+   "result": "PASS",
+   "official_formula": "(1-edit+CDM+TEDS)/3x100",
+   "new": 91.72,
+   "baseline": 91.5,
+   "delta": "+0.22",
+   "components": {
+    "text_edit": "0.0650 vs 0.0651",
+    "cdm": "0.9772 =",
+    "teds": "0.8396 vs 0.8328 (+0.0068)"
+   }
+  },
+  "g_d_cost": {
+   "gpu_probe": "27 crops 41.3s total, median 0.9s (CPU era ~5000s)",
+   "dca64e05_r0": "7.9s (CPU 1099s)",
+   "run_alpha_reread_sidecars": 39,
+   "adopted_tables": 32
+  }
+ },
+ "notes": [
+  "eval export bug in the first attempt (sha-suffixed filenames) — corrected and re-run; the failed numbers were never a product fact",
+  "判据② manual review of the 17 spike tables: materials at D:/t/m43-p0/t3-manual-review-gpu/ — human step pending, T4 full-corpus gates do not depend on it (zero-regression already proven corpus-wide)"
+ ]
+}
