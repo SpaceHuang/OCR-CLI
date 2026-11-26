@@ -69,9 +69,9 @@ impl Transport for CurlTransport {
                 InferenceError::Transport(format!("unable to create destination: {error}"))
             })?;
         }
-        let destination_str = destination.to_str().ok_or_else(|| {
-            InferenceError::Transport("destination path is not UTF-8".into())
-        })?;
+        let destination_str = destination
+            .to_str()
+            .ok_or_else(|| InferenceError::Transport("destination path is not UTF-8".into()))?;
         let output = curl_download_command(url, destination_str)
             .output()
             .map_err(|error| InferenceError::Transport(error.to_string()))?;

@@ -38,7 +38,9 @@ pub const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_mil
 /// statistics ride the final [`InstallRunReport`], not this stream.
 #[derive(Debug, Clone)]
 pub enum InstallEvent<'a> {
-    LockAcquired { pid: u32 },
+    LockAcquired {
+        pid: u32,
+    },
     DownloadStart {
         role: &'a str,
         url: &'a str,
@@ -214,11 +216,14 @@ fn verify_report_for(
     let mut per_asset = Vec::new();
     for (role, path) in manifest_asset_paths(cache_root, manifest)? {
         let (stat, _) = verify_asset(manifest, &role, &path);
-        emit(observer, InstallEvent::Verify {
-            role: stat.role.as_str(),
-            sha256_ok: stat.sha256_ok,
-            size_ok: stat.size_ok,
-        });
+        emit(
+            observer,
+            InstallEvent::Verify {
+                role: stat.role.as_str(),
+                sha256_ok: stat.sha256_ok,
+                size_ok: stat.size_ok,
+            },
+        );
         per_asset.push(stat);
     }
     Ok(VerifyReport { per_asset })
@@ -246,7 +251,9 @@ pub fn install(context: InstallContext<'_>) -> Result<InstallReceipt, InferenceE
 /// Offline/license/disk/transport/hash categories; a failed transaction
 /// never exposes half a valid asset set (reverse-order rollback restores
 /// the previous bytes, `.part` files are cleaned).
-pub fn install_with_report(context: InstallContext<'_>) -> Result<InstallRunReport, InferenceError> {
+pub fn install_with_report(
+    context: InstallContext<'_>,
+) -> Result<InstallRunReport, InferenceError> {
     let started = std::time::Instant::now();
     let manifest = context.manifest;
     manifest.validate()?;
@@ -327,7 +334,12 @@ pub fn install_with_report(context: InstallContext<'_>) -> Result<InstallRunRepo
     std::fs::create_dir_all(&revision_dir)
         .map_err(|error| InferenceError::InsufficientDisk(error.to_string()))?;
     let _lock = InstallLock::acquire(&revision_dir)?;
-    emit(observer, InstallEvent::LockAcquired { pid: std::process::id() });
+    emit(
+        observer,
+        InstallEvent::LockAcquired {
+            pid: std::process::id(),
+        },
+    );
     // D-7: stale transaction residue sweep over BOTH scopes (this profile's
     // dir + the revision dir), pattern-matched to the ACTUAL staging names.
     // Only the lock holder reaches here, so nobody's LIVE transaction files
@@ -376,11 +388,14 @@ pub fn install_with_report(context: InstallContext<'_>) -> Result<InstallRunRepo
             let (stat, ok) = verify_asset(manifest, role, path);
             if ok {
                 // Already correct on disk: verified, counted, no transfer.
-                emit(observer, InstallEvent::Verify {
-                    role: stat.role.as_str(),
-                    sha256_ok: stat.sha256_ok,
-                    size_ok: stat.size_ok,
-                });
+                emit(
+                    observer,
+                    InstallEvent::Verify {
+                        role: stat.role.as_str(),
+                        sha256_ok: stat.sha256_ok,
+                        size_ok: stat.size_ok,
+                    },
+                );
                 verify_report.per_asset.push(stat);
                 continue;
             }
@@ -389,17 +404,27 @@ pub fn install_with_report(context: InstallContext<'_>) -> Result<InstallRunRepo
                 .ok_or_else(|| InferenceError::InvalidManifest(format!("role {role} vanished")))?;
             let mut last_error: Option<InferenceError> = None;
             for attempt in 1..=MAX_DOWNLOAD_ATTEMPTS {
-                emit(observer, InstallEvent::DownloadStart {
-                    role: role.as_str(),
-                    url: &descriptor.source_url,
-                    byte_len: descriptor.byte_len,
-                    attempt,
-                });
+                emit(
+                    observer,
+                    InstallEvent::DownloadStart {
+                        role: role.as_str(),
+                        url: &descriptor.source_url,
+                        byte_len: descriptor.byte_len,
+                        attempt,
+                    },
+                );
                 let download_started = std::time::Instant::now();
                 let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let ticker_stop = std::sync::Arc::clone(&stop);
                 let ticker = scope.spawn(move || {
-                    ticker_loop(part, descriptor.byte_len, role.as_str(), interval, observer, ticker_stop);
+                    ticker_loop(
+                        part,
+                        descriptor.byte_len,
+                        role.as_str(),
+                        interval,
+                        observer,
+                        ticker_stop,
+                    );
                 });
                 let outcome = transport.download(&descriptor.source_url, part);
                 stop.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -431,11 +456,14 @@ pub fn install_with_report(context: InstallContext<'_>) -> Result<InstallRunRepo
                 return Err(error);
             }
             let (stat, ok) = verify_asset(manifest, role, part);
-            emit(observer, InstallEvent::Verify {
-                role: stat.role.as_str(),
-                sha256_ok: stat.sha256_ok,
-                size_ok: stat.size_ok,
-            });
+            emit(
+                observer,
+                InstallEvent::Verify {
+                    role: stat.role.as_str(),
+                    sha256_ok: stat.sha256_ok,
+                    size_ok: stat.size_ok,
+                },
+            );
             verify_report.per_asset.push(stat);
             if !ok {
                 // Hash and size gate (same categories as before the split).
@@ -499,7 +527,10 @@ fn ticker_loop(
         };
         let bytes = metadata.len();
         let now = std::time::Instant::now();
-        let window = now.duration_since(last_tick).as_secs_f64().max(f64::EPSILON);
+        let window = now
+            .duration_since(last_tick)
+            .as_secs_f64()
+            .max(f64::EPSILON);
         let rate = if bytes > last_bytes {
             (bytes - last_bytes) as f64 / window
         } else {
@@ -507,12 +538,15 @@ fn ticker_loop(
         };
         last_bytes = bytes;
         last_tick = now;
-        emit(observer, InstallEvent::DownloadProgress {
-            role,
-            bytes,
-            total_bytes,
-            rate_bps: rate,
-        });
+        emit(
+            observer,
+            InstallEvent::DownloadProgress {
+                role,
+                bytes,
+                total_bytes,
+                rate_bps: rate,
+            },
+        );
     }
 }
 
@@ -575,7 +609,10 @@ impl InstallLock {
                 // C2 stage-2 item 6: the rejection message exposes the holder
                 // PID so the plugin guidance can name the competing process.
                 return Err(InferenceError::InstallLocked(match holder {
-                    Some(pid) => format!("another install holds {} (holder pid {pid})", path.display()),
+                    Some(pid) => format!(
+                        "another install holds {} (holder pid {pid})",
+                        path.display()
+                    ),
                     None => format!("another install holds {}", path.display()),
                 }));
             }
@@ -743,6 +780,7 @@ fn commit_group(
 
 /// True when the file name matches a leftover transaction artifact
 /// (plan D-7: pattern-matched to the ACTUAL staging names, not a guess).
+#[allow(clippy::case_sensitive_file_extension_comparisons)] // crate-generated lowercase names
 fn is_stale_transaction_file(name: &str) -> bool {
     // Actual staging shapes (install.rs transaction_id + role suffix):
     //   model.gguf.install-<pid>-<hex>.part-model
@@ -1390,15 +1428,16 @@ mod tests {
         assert_eq!(download.total_bytes, 23);
         assert!(download.avg_rate_bps > 0.0, "fresh transfer has a rate");
         assert_eq!(download.per_asset.len(), 2);
-        let model_stat = download.per_asset.iter().find(|a| a.role == "model").unwrap();
+        let model_stat = download
+            .per_asset
+            .iter()
+            .find(|a| a.role == "model")
+            .unwrap();
         assert_eq!(model_stat.bytes, 11);
         assert!(model_stat.avg_rate_bps > 0.0);
         let verify = &report.verify;
         assert_eq!(verify.per_asset.len(), 2);
-        assert!(verify
-            .per_asset
-            .iter()
-            .all(|a| a.sha256_ok && a.size_ok));
+        assert!(verify.per_asset.iter().all(|a| a.sha256_ok && a.size_ok));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1432,14 +1471,20 @@ mod tests {
         .unwrap();
         assert!(!report.download.downloaded, "已就绪，未发生下载");
         assert_eq!(report.download.total_bytes, 0);
-        assert_eq!(report.download.avg_rate_bps, 0.0);
+        assert!(report.download.avg_rate_bps.abs() < f64::EPSILON);
         assert!(report.download.per_asset.iter().all(|a| a.bytes == 0));
         assert_eq!(
             report.verify.per_asset.len(),
             2,
             "idempotent installs still verify every asset"
         );
-        assert!(report.verify.per_asset.iter().all(|a| a.sha256_ok && a.size_ok));
+        assert!(
+            report
+                .verify
+                .per_asset
+                .iter()
+                .all(|a| a.sha256_ok && a.size_ok)
+        );
         assert!(transport.requested_urls().is_empty(), "no network");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1463,14 +1508,23 @@ mod tests {
                 &transport,
                 &mut interaction,
                 &|event| {
-                    events_ref.lock().unwrap().push(event.stage_name().to_owned());
+                    events_ref
+                        .lock()
+                        .unwrap()
+                        .push(event.stage_name().to_owned());
                 },
             ))
             .unwrap()
         };
         assert_eq!(report.stage, "done");
         let stages = events.lock().unwrap().clone();
-        for expected in ["lock-acquired", "download-start", "verify", "commit", "done"] {
+        for expected in [
+            "lock-acquired",
+            "download-start",
+            "verify",
+            "commit",
+            "done",
+        ] {
             assert!(
                 stages.iter().any(|stage| stage == expected),
                 "stage {expected} missing from {stages:?}"
@@ -1487,8 +1541,7 @@ mod tests {
     fn download_progress_ticks_arrive_while_a_transfer_is_in_flight() {
         // The ~500ms ticker stats the .part file; a slow transfer must produce
         // at least one download-progress event with byte counts.
-        let root =
-            std::env::temp_dir().join(format!("ocrx-install-tick-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("ocrx-install-tick-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let manifest = tiny_manifest();
         let transport = SlowTransport {
@@ -1515,8 +1568,7 @@ mod tests {
                     .push(((*role).to_owned(), *bytes, *total_bytes));
             }
         };
-        let mut context =
-            reporting_ctx(&manifest, &root, &transport, &mut interaction, &observer);
+        let mut context = reporting_ctx(&manifest, &root, &transport, &mut interaction, &observer);
         context.progress_interval = Some(std::time::Duration::from_millis(20));
         install_with_report(context).unwrap();
         let ticks = progress_events.lock().unwrap().clone();
@@ -1524,8 +1576,10 @@ mod tests {
         // Both slow transfers tick; each tick's total is that asset's pinned
         // byte length (11 model / 12 mmproj).
         assert!(
-            ticks.iter().all(|(role, _, total)| (*total == 11 && role == "model")
-                || (*total == 12 && role == "mmproj"))
+            ticks
+                .iter()
+                .all(|(role, _, total)| (*total == 11 && role == "model")
+                    || (*total == 12 && role == "mmproj"))
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1547,7 +1601,10 @@ mod tests {
             &|_| {},
         ))
         .unwrap_err();
-        assert!(matches!(error, InferenceError::Transport(_)), "got {error:?}");
+        assert!(
+            matches!(error, InferenceError::Transport(_)),
+            "got {error:?}"
+        );
         assert_eq!(
             transport.attempts.load(std::sync::atomic::Ordering::SeqCst),
             3,
@@ -1566,7 +1623,11 @@ mod tests {
         let manifest = tiny_manifest();
         let transport = FakeTransport::new();
         serve_both_assets(&transport);
-        let revision_dir = root.join("ocrx").join("models").join("ovisocr2").join("rev-test-1");
+        let revision_dir = root
+            .join("ocrx")
+            .join("models")
+            .join("ovisocr2")
+            .join("rev-test-1");
         let profile_dir = revision_dir.join("compact");
         std::fs::create_dir_all(&profile_dir).unwrap();
         let stale = [
@@ -1593,7 +1654,11 @@ mod tests {
         ))
         .unwrap();
         for path in &stale {
-            assert!(!path.exists(), "stale residue must be swept: {}", path.display());
+            assert!(
+                !path.exists(),
+                "stale residue must be swept: {}",
+                path.display()
+            );
         }
         assert!(survivor.exists(), "non-transaction files survive the sweep");
         let _ = std::fs::remove_dir_all(&root);
@@ -1609,7 +1674,7 @@ mod tests {
         let other = dir.join("user-file.txt");
         std::fs::write(&own, b"part").unwrap();
         std::fs::write(&other, b"keep").unwrap();
-        purge_paths(&[own.clone()]);
+        purge_paths(std::slice::from_ref(&own));
         assert!(!own.exists());
         assert!(other.exists());
         let _ = std::fs::remove_dir_all(&dir);
@@ -1619,11 +1684,16 @@ mod tests {
     fn lock_contention_message_carries_the_holder_pid() {
         // Plan stage 2 item 6: the lock failure message exposes the holder
         // PID for the plugin's guidance text.
-        let root = std::env::temp_dir().join(format!("ocrx-install-lockpid-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ocrx-install-lockpid-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let manifest = tiny_manifest();
         let transport = FakeTransport::new();
-        let revision_dir = root.join("ocrx").join("models").join("ovisocr2").join("rev-test-1");
+        let revision_dir = root
+            .join("ocrx")
+            .join("models")
+            .join("ovisocr2")
+            .join("rev-test-1");
         std::fs::create_dir_all(&revision_dir).unwrap();
         let holder = std::process::id();
         std::fs::write(revision_dir.join(".install.lock"), holder.to_string()).unwrap();

@@ -71,8 +71,10 @@ impl InstallPlan {
             Some(explicit) => explicit.clone(),
             None => {
                 let profiles = catalog.profiles(request.model)?;
-                let names: Vec<&str> =
-                    profiles.iter().map(ocrx_inference_api::ProfileId::as_str).collect();
+                let names: Vec<&str> = profiles
+                    .iter()
+                    .map(ocrx_inference_api::ProfileId::as_str)
+                    .collect();
                 recommend_profile(&names, request.memory_gb)?
             }
         };
@@ -187,8 +189,18 @@ mod tests {
         // model asset path is what differs.
         assert_eq!(balanced.target_dir, compact.target_dir);
         assert_ne!(
-            balanced.assets.iter().find(|a| a.role == "model").unwrap().path,
-            compact.assets.iter().find(|a| a.role == "model").unwrap().path
+            balanced
+                .assets
+                .iter()
+                .find(|a| a.role == "model")
+                .unwrap()
+                .path,
+            compact
+                .assets
+                .iter()
+                .find(|a| a.role == "model")
+                .unwrap()
+                .path
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -204,7 +216,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let plan = plan_for("ovisocr2", 8, &root);
         let manifest = crate::builtin::ovisocr2::ovisocr2_manifest("compact").unwrap();
-        assert_eq!(plan.installed, verify::verify_content(&root, &manifest).is_ok());
+        assert_eq!(
+            plan.installed,
+            verify::verify_content(&root, &manifest).is_ok()
+        );
         for asset in &manifest.assets {
             let path = crate::cache::asset_cache_path(&root, &manifest, &asset.role).unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -215,7 +230,10 @@ mod tests {
             !wrong.installed,
             "wrong bytes must not count as installed (sha256 face)"
         );
-        assert_eq!(wrong.installed, verify::verify_content(&root, &manifest).is_ok());
+        assert_eq!(
+            wrong.installed,
+            verify::verify_content(&root, &manifest).is_ok()
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

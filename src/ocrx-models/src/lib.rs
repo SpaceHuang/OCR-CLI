@@ -8,8 +8,8 @@ pub mod builtin;
 pub mod cache;
 pub mod catalog;
 pub mod install;
-pub mod plan;
 pub mod layout;
+pub mod plan;
 pub mod recommend;
 pub mod remove;
 pub mod transport;
@@ -122,6 +122,44 @@ impl ModelManagerImpl {
         profile: &ocrx_inference_api::ProfileId,
     ) -> Result<ocrx_inference_api::ModelManifest, ocrx_inference_api::InferenceError> {
         self.catalog.manifest(model, profile)
+    }
+
+    /// C2 face (plan D-5/D-7): install with the full run report. The observer
+    /// receives the stage/progress events (CLI stderr lines); the report
+    /// carries the machine-readable statistics. Signal handling is enabled
+    /// (best-effort `.part` purge on termination).
+    ///
+    /// # Errors
+    ///
+    /// Offline/license/disk/transport/hash/lock categories.
+    #[allow(clippy::too_many_arguments)] // trait install + observer (C2 face)
+    pub fn install_reported(
+        &mut self,
+        model: &ocrx_inference_api::ModelId,
+        profile: &ocrx_inference_api::ProfileId,
+        offline: bool,
+        non_interactive: bool,
+        license_accepted: bool,
+        interaction: &mut dyn ocrx_inference_api::InstallInteraction,
+        observer: Option<install::InstallObserver<'_>>,
+    ) -> Result<install::InstallRunReport, ocrx_inference_api::InferenceError> {
+        let manifest = self.manifest(model, profile)?;
+        let policy = ocrx_inference_api::InstallPolicy {
+            offline,
+            non_interactive,
+            license_accepted,
+        };
+        install::install_with_report(install::InstallContext {
+            manifest: &manifest,
+            cache_root: &self.cache_root,
+            policy,
+            transport: self.transport.as_ref(),
+            interaction,
+            available_bytes: self.available_bytes,
+            observer,
+            progress_interval: None,
+            handle_signals: true,
+        })
     }
 }
 
@@ -283,23 +321,16 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
         license_accepted: bool,
         interaction: &mut dyn ocrx_inference_api::InstallInteraction,
     ) -> Result<ocrx_inference_api::InstallReceipt, ocrx_inference_api::InferenceError> {
-        let manifest = self.manifest(model, profile)?;
-        let policy = ocrx_inference_api::InstallPolicy {
+        self.install_reported(
+            model,
+            profile,
             offline,
             non_interactive,
             license_accepted,
-        };
-        install::install(install::InstallContext {
-            manifest: &manifest,
-            cache_root: &self.cache_root,
-            policy,
-            transport: self.transport.as_ref(),
             interaction,
-            available_bytes: self.available_bytes,
-            observer: None,
-            progress_interval: None,
-            handle_signals: false,
-        })
+            None,
+        )
+        .map(|report| report.receipt)
     }
 
     fn verify(

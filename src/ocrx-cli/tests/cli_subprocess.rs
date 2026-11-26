@@ -85,7 +85,12 @@ fn cli_version_and_doctor_report_the_same_workspace_version() {
         Some(env!("CARGO_PKG_VERSION")),
         "doctor JSON version field must equal the workspace version: {stdout}"
     );
-    assert_eq!(parsed.get("schema_version").and_then(|value| value.as_u64()), Some(2));
+    assert_eq!(
+        parsed
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64),
+        Some(2)
+    );
     let _ = std::fs::remove_dir_all(&cache);
 }
 
@@ -104,7 +109,11 @@ fn cli_model_recommend_report_json_emits_the_install_plan() {
         .expect("CLI test binary should run");
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(stdout.lines().count(), 1, "one plan object per call: {stdout}");
+    assert_eq!(
+        stdout.lines().count(),
+        1,
+        "one plan object per call: {stdout}"
+    );
     let plan: serde_json::Value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|error| panic!("plan JSON must parse: {error}; stdout: {stdout}"));
     assert_eq!(plan["schema_version"], 1);
@@ -136,6 +145,54 @@ fn cli_model_recommend_report_json_emits_the_install_plan() {
         assert_eq!(rejected.status.code(), Some(2), "model {action}");
         assert!(String::from_utf8_lossy(&rejected.stderr).contains("unsupported model flag"));
     }
+    let _ = std::fs::remove_dir_all(&cache);
+}
+
+#[test]
+fn cli_model_install_report_json_failure_is_a_single_stdout_object() {
+    // C2/D-5: `model install --report json` failures print ONE schema v1
+    // failure object on stdout (aligned with the single-doc scan contract)
+    // and KEEP the historical exit code (offline = 5). The plain face keeps
+    // the historical stderr line and empty stdout.
+    let cache = std::env::temp_dir().join(format!("ocrx-install-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&cache).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args([
+            "model",
+            "install",
+            "--offline",
+            "--report",
+            "json",
+            "quality",
+        ])
+        .env("OCRX_MODEL_CACHE", &cache)
+        .output()
+        .expect("CLI test binary should run");
+    assert_eq!(output.status.code(), Some(5), "exit codes are unchanged");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1, "one failure object: {stdout}");
+    let object: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|error| panic!("failure object must parse: {error}; stdout: {stdout}"));
+    assert_eq!(object["schema_version"], 1);
+    assert_eq!(object["code"], 5);
+    assert_eq!(object["kind"], "offline");
+    assert!(
+        object["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty()),
+        "message present: {object}"
+    );
+
+    // Plain face (no --report): unchanged behavior.
+    let plain = Command::new(env!("CARGO_BIN_EXE_ocrx"))
+        .args(["model", "install", "--offline", "quality"])
+        .env("OCRX_MODEL_CACHE", &cache)
+        .output()
+        .expect("CLI test binary should run");
+    assert_eq!(plain.status.code(), Some(5));
+    assert!(plain.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&plain.stderr);
+    assert!(stderr.contains("blocked: offline mode"), "stderr: {stderr}");
     let _ = std::fs::remove_dir_all(&cache);
 }
 

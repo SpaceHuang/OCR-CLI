@@ -1066,6 +1066,70 @@ fn parse_model_command(action: &str, args: &[&str]) -> Result<CliCommand, String
     })
 }
 
+/// C2/D-5: maps install errors onto (exit code, failure-object kind, human
+/// message). Exit codes are frozen (offline/disk = 5, everything else = 4);
+/// the kind vocabulary is transport/hash/lock/offline/disk (+ license for
+/// the policy gate the trusted-install path cannot normally reach).
+fn classify_install_error(
+    error: &ocrx_inference_api::InferenceError,
+) -> (u8, &'static str, String) {
+    use ocrx_inference_api::InferenceError as E;
+    match error {
+        E::Offline => (
+            5,
+            "offline",
+            "model install blocked: offline mode".to_owned(),
+        ),
+        E::InsufficientDisk(_) => (
+            5,
+            "disk",
+            "model install blocked: insufficient disk".to_owned(),
+        ),
+        E::LicenseRequired => (
+            4,
+            "license",
+            "model install blocked: license acceptance required".to_owned(),
+        ),
+        E::InstallLocked(_) => (4, "lock", format!("model install failed: {error}")),
+        E::HashMismatch(_) => (4, "hash", format!("model install failed: {error}")),
+        E::Transport(_) => (4, "transport", format!("model install failed: {error}")),
+        other => (4, "install", format!("model install failed: {other:?}")),
+    }
+}
+
+/// C2/D-5: renders install events as human-readable stderr progress lines
+/// (process visibility only — the machine-readable statistics ride the
+/// final run report, never these lines).
+fn eprint_install_progress(event: &ocrx_models::install::InstallEvent<'_>) {
+    use ocrx_models::install::InstallEvent as E;
+    match event {
+        E::LockAcquired { pid } => eprintln!("install lock-acquired pid={pid}"),
+        E::DownloadStart {
+            role,
+            url,
+            byte_len,
+            attempt,
+        } => eprintln!(
+            "install download-start role={role} url={url} bytes={byte_len} attempt={attempt}"
+        ),
+        E::DownloadProgress {
+            role,
+            bytes,
+            total_bytes,
+            rate_bps,
+        } => eprintln!(
+            "install download-progress role={role} bytes={bytes}/{total_bytes} rate_bps={rate_bps:.0}"
+        ),
+        E::Verify {
+            role,
+            sha256_ok,
+            size_ok,
+        } => eprintln!("install verify role={role} sha256_ok={sha256_ok} size_ok={size_ok}"),
+        E::Commit => eprintln!("install commit"),
+        E::Done => eprintln!("install done"),
+    }
+}
+
 fn parse_page_selection(expression: &str) -> Result<Vec<usize>, String> {
     let mut pages = Vec::new();
     for part in expression.split(',') {
@@ -1207,17 +1271,19 @@ fn main() {
                     .filter(|value| !value.is_empty())
                     .map(PathBuf::from)
                     .unwrap_or_else(ocrx_inference::default_cache_root);
-                let plan = ocrx_models::plan::InstallPlan::resolve(ocrx_models::plan::PlanRequest {
-                    model: &model,
-                    memory_gb: snapshot.memory_gb,
-                    default_model: DEFAULT_MODEL,
-                    cache_root: &cache_root_for_plan,
-                    profile: implicit_profile
-                        .as_deref()
-                        .map(|name| ocrx_inference_api::ProfileId::new(name))
-                        .transpose()
-                        .unwrap_or_else(|_| unreachable!("implicit profile is a ladder name")).as_ref(),
-                });
+                let plan =
+                    ocrx_models::plan::InstallPlan::resolve(ocrx_models::plan::PlanRequest {
+                        model: &model,
+                        memory_gb: snapshot.memory_gb,
+                        default_model: DEFAULT_MODEL,
+                        cache_root: &cache_root_for_plan,
+                        profile: implicit_profile
+                            .as_deref()
+                            .map(ocrx_inference_api::ProfileId::new)
+                            .transpose()
+                            .unwrap_or_else(|_| unreachable!("implicit profile is a ladder name"))
+                            .as_ref(),
+                    });
                 match plan {
                     Ok(plan) => {
                         println!(
@@ -1303,7 +1369,7 @@ fn main() {
             profile,
             offline,
             non_interactive,
-            report_json: _report_json,
+            report_json,
         } => {
             let Some(profile) = profile else {
                 eprintln!("model {action} requires a profile");
@@ -1344,37 +1410,67 @@ fn main() {
                     // T072: install via the manager (revision-scoped group
                     // transaction; trusted apache-2.0 community assets may
                     // install non-interactively, so the interaction accepts).
+                    // C2/D-5: `--report json` switches the output face — the
+                    // stderr stage/progress lines stay human-readable process
+                    // visibility; the final summary (success) or failure
+                    // object (schema v1, stdout) is the machine-readable
+                    // contract. Exit codes are unchanged in both faces.
                     let model = ocrx_inference_api::ModelId::new(&selected)
                         .unwrap_or_else(|_| unreachable!("pinned model id"));
                     let profile_id = ocrx_inference_api::ProfileId::new(&profile)
                         .unwrap_or_else(|_| unreachable!("profile parsed by CLI"));
                     let mut interaction = TrustedInstallInteraction;
-                    match composed.inference.manager_mut().install(
+                    let progress_closure = |event: &ocrx_models::install::InstallEvent<'_>| {
+                        eprint_install_progress(event);
+                    };
+                    let observer: Option<ocrx_models::install::InstallObserver<'_>> =
+                        if report_json {
+                            let observer: &(
+                                 dyn Fn(&ocrx_models::install::InstallEvent<'_>) + Send + Sync
+                             ) = &progress_closure;
+                            Some(observer)
+                        } else {
+                            None
+                        };
+                    match composed.inference.manager_mut().install_reported(
                         &model,
                         &profile_id,
                         offline,
                         non_interactive,
                         true,
                         &mut interaction,
+                        observer,
                     ) {
-                        Ok(_receipt) => println!(
-                            "model={selected} profile={profile} revision={revision} status=installed"
-                        ),
-                        Err(ocrx_inference_api::InferenceError::Offline) => {
-                            eprintln!("model install blocked: offline mode");
-                            std::process::exit(5);
-                        }
-                        Err(ocrx_inference_api::InferenceError::LicenseRequired) => {
-                            eprintln!("model install blocked: license acceptance required");
-                            std::process::exit(4);
-                        }
-                        Err(ocrx_inference_api::InferenceError::InsufficientDisk(_)) => {
-                            eprintln!("model install blocked: insufficient disk");
-                            std::process::exit(5);
+                        Ok(report) => {
+                            println!(
+                                "model={selected} profile={profile} revision={revision} status=installed"
+                            );
+                            if report_json {
+                                println!(
+                                    "{}",
+                                    serde_json::to_string(&report)
+                                        .unwrap_or_else(|_| unreachable!("run report serializes"))
+                                );
+                            }
                         }
                         Err(error) => {
-                            eprintln!("model install failed: {error:?}");
-                            std::process::exit(4);
+                            let (code, kind, message) = classify_install_error(&error);
+                            if report_json {
+                                println!(
+                                    "{}",
+                                    ErrorReport {
+                                        code,
+                                        kind: kind.to_owned(),
+                                        message,
+                                        cause: Some(error.to_string()),
+                                        suggestion: None,
+                                    }
+                                    .to_json()
+                                );
+                            } else {
+                                eprintln!("{message}");
+                            }
+                            std::process::exit(i32::from(code));
                         }
                     }
                 }
@@ -2781,10 +2877,10 @@ mod tests {
     use super::{
         CliCommand, ConfigSource, DEFAULT_MODEL, ResolvedConfig, RoutingCounts, ScanOptions,
         ScanResultFields, ScanSummaryDocument, StructureRereadMode, aggregate_scan_exit,
-        current_platform, doctor_json_report, document_exit_code, final_scan_exit,
-        injected_failure, output_dir_for_doc, parse_command, parse_injected_failure_page,
-        parse_page_selection, parse_scan_args, planned_ocr_pages, resolve_config,
-        resolve_scan_inputs, scan_summary_json,
+        classify_install_error, current_platform, doctor_json_report, document_exit_code,
+        final_scan_exit, injected_failure, output_dir_for_doc, parse_command,
+        parse_injected_failure_page, parse_page_selection, parse_scan_args, planned_ocr_pages,
+        resolve_config, resolve_scan_inputs, scan_summary_json,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
@@ -3971,19 +4067,55 @@ mod tests {
     }
 
     #[test]
+    fn install_error_classification_covers_the_kind_vocabulary() {
+        // C2/D-5: exit codes frozen (offline/disk = 5, else 4); kinds are the
+        // plugin contract (transport/hash/lock/offline/disk; license rides
+        // the policy gate). The catch-all keeps code 4.
+        use ocrx_inference_api::InferenceError as E;
+        let table: [(E, u8, &str); 6] = [
+            (E::Offline, 5, "offline"),
+            (E::InsufficientDisk("no space".into()), 5, "disk"),
+            (E::LicenseRequired, 4, "license"),
+            (E::InstallLocked("locked".into()), 4, "lock"),
+            (E::HashMismatch("bad hash".into()), 4, "hash"),
+            (E::Transport("curl died".into()), 4, "transport"),
+        ];
+        for (error, code, kind) in table {
+            let (got_code, got_kind, message) = classify_install_error(&error);
+            assert_eq!(got_code, code, "code for {kind}");
+            assert_eq!(got_kind, kind, "kind mapping");
+            assert!(!message.is_empty(), "message present for {kind}");
+        }
+        // Unknown categories keep exit code 4 with the catch-all kind.
+        let (code, kind, _) = classify_install_error(&E::MissingAsset("/gone".to_owned()));
+        assert_eq!((code, kind), (4, "install"));
+        // Offline message keeps the historical spelling (plain face).
+        let (_, _, message) = classify_install_error(&E::Offline);
+        assert_eq!(message, "model install blocked: offline mode");
+    }
+
+    #[test]
     fn model_command_parser_accepts_report_json_only_on_recommend_and_install() {
         // C2/D-4 (dsh-plugin-v0.1 stage 2): `--report json` is a machine-
         // readable face for EXACTLY recommend and install; every other model
         // subcommand keeps the historical unsupported-flag rejection.
         match parse_command(&["model", "recommend", "--report", "json"]).unwrap() {
-            CliCommand::Model { action, report_json, .. } => {
+            CliCommand::Model {
+                action,
+                report_json,
+                ..
+            } => {
                 assert_eq!(action, "recommend");
                 assert!(report_json);
             }
             other => panic!("{other:?}"),
         }
         match parse_command(&["model", "install", "--report", "json", "quality"]).unwrap() {
-            CliCommand::Model { action, report_json, .. } => {
+            CliCommand::Model {
+                action,
+                report_json,
+                ..
+            } => {
                 assert_eq!(action, "install");
                 assert!(report_json);
             }
