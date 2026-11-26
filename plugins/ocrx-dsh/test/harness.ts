@@ -243,16 +243,23 @@ export class FakeApproval {
     | { kind: 'resolve'; value: string }
     | { kind: 'reject'; error: Error }
     | { kind: 'never' };
+  /** Mirrors the real request contract: reason (title) + displayReason (body). */
   requests: Array<{ title: string; body: string; toolName?: string }> = [];
   constructor(behavior: FakeApproval['behavior']) {
     this.behavior = behavior;
   }
   readonly request = async (input: {
-    title: string;
-    body: string;
+    reason?: string;
+    displayReason?: string;
+    title?: string;
+    body?: string;
     toolName?: string;
   }): Promise<unknown> => {
-    this.requests.push({ title: input.title, body: input.body, toolName: input.toolName });
+    this.requests.push({
+      title: input.title ?? input.reason ?? '',
+      body: input.body ?? input.displayReason ?? '',
+      toolName: input.toolName,
+    });
     if (this.behavior.kind === 'resolve') return this.behavior.value;
     if (this.behavior.kind === 'reject') throw this.behavior.error;
     return 'rejected';

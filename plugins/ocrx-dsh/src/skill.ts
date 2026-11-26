@@ -1,7 +1,7 @@
 // Skill provider (requirement §10.1; content finalized in plan stage 7).
 // The provider serves skills/ocrx/SKILL.md from the installed package —
 // nothing is written to user directories.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { ToolEnv } from './tools/scan-env.js';
@@ -17,10 +17,22 @@ export interface SkillDefinition {
   content?: string;
 }
 
-const SKILL_DIR = path.join(__dirname, '..', 'skills', 'ocrx');
+undefined
+
+/** Package-root discovery (works from lib/ AND from compiled test-dist/). */
+function packageRoot(): string {
+  let dir = __dirname;
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (existsSync(path.join(dir, 'package.json'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.join(__dirname, '..', '..');
+}
 
 function skillFile(): string {
-  return path.join(SKILL_DIR, 'SKILL.md');
+  return path.join(packageRoot(), 'skills', 'ocrx', 'SKILL.md');
 }
 
 function readSkill(): { name: string; description: string; body: string } {
