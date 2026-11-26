@@ -2,6 +2,7 @@
  "artifact": "analysis-m43-p3-weak-table-freeze",
  "date": "2026-11-27",
  "baseline": "m43-t4-on (Run alpha, P1-era explicit-ON products — byte-identical to shipped beta per beta==alpha gate)",
+ "match_rule": "EXACT eval key prefix (image_path + \"_[\") — v1 used a 60-char prefix that cross-contaminated sibling pages",
  "pool_b0b": {
   "worst": 36,
   "mid": 89,
@@ -10,16 +11,16 @@
  "with_teds": 222,
  "buckets": {
   "zero(<0.01)": 12,
-  "weak(0.01-0.5)": 19,
-  "mid(0.5-0.8)": 72,
-  "good(>=0.8)": 119
+  "weak(0.01-0.5)": 20,
+  "mid(0.5-0.8)": 73,
+  "good(>=0.8)": 117
  },
  "worst_bad_zero_denominator": 12,
  "rows": [
   {
    "band": "worst",
    "img": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语下册_课本_人教新起点英语5B电子课本_page_011.png",
-   "current_teds": 1.0
+   "current_teds": 0.98985727029438
   },
   {
    "band": "worst",
@@ -644,12 +645,12 @@
   {
    "band": "bad-low",
    "img": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010.png",
-   "current_teds": 0.9763090980200405
+   "current_teds": 0.54909288671116
   },
   {
    "band": "bad-low",
    "img": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006.png",
-   "current_teds": 0.9812271062271062
+   "current_teds": 0.2689393939393938
   },
   {
    "band": "bad-low",
