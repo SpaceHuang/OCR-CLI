@@ -38,10 +38,14 @@ TABLE_MODEL_DIRS = (
 
 
 def _metadata_version(dist: str) -> str:
-    try:
-        return importlib.metadata.version(dist)
-    except importlib.metadata.PackageNotFoundError:
-        return "missing"
+    # D-79: the GPU wheel's distribution name is `paddlepaddle-gpu` — probe
+    # both names so the hello reports the real runtime version either way.
+    for name in (dist, f"{dist}-gpu"):
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "missing"
 
 
 def _hash_model_dir(root: Path) -> dict:

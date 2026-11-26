@@ -306,7 +306,7 @@ impl StructureEngineClient {
             .map_err(|error| format!("regions reply failed: {error}"))?;
         let value: serde_json::Value = serde_json::from_str(&line)
             .map_err(|error| format!("regions reply malformed: {error}"))?;
-        if value.get("id").and_then(serde_json::Value::as_u64) != Some(u64::from(id)) {
+        if value.get("id").and_then(serde_json::Value::as_u64) != Some(id) {
             return Err(format!("regions reply id mismatch: {line:.80}"));
         }
         if value.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
