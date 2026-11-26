@@ -296,6 +296,9 @@ impl ocrx_inference_api::ModelManager for ModelManagerImpl {
             transport: self.transport.as_ref(),
             interaction,
             available_bytes: self.available_bytes,
+            observer: None,
+            progress_interval: None,
+            handle_signals: false,
         })
     }
 

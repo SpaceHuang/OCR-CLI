@@ -793,6 +793,7 @@ dependencies = [
 name = "ocrx-models"
 version = "0.1.0"
 dependencies = [
+ "ctrlc",
  "ocrx-core",
  "ocrx-inference-api",
  "ocrx-primitives",

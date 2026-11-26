@@ -203,7 +203,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ocrx-plan-inst-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let plan = plan_for("ovisocr2", 8, &root);
-        let manifest = ovisocr2_manifest("compact").unwrap();
+        let manifest = crate::builtin::ovisocr2::ovisocr2_manifest("compact").unwrap();
         assert_eq!(plan.installed, verify::verify_content(&root, &manifest).is_ok());
         for asset in &manifest.assets {
             let path = crate::cache::asset_cache_path(&root, &manifest, &asset.role).unwrap();

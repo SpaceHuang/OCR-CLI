@@ -20,8 +20,39 @@ pub trait Transport {
 
 /// HTTPS-only curl production transport (same frozen flags as the legacy
 /// `download_asset`: unconditional GET, no ETag, proto downgrade blocked).
+/// D-6 adds the connect-timeout and stall-detection flags.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CurlTransport;
+
+/// Builds the hardened curl command (D-6): unconditional GET, proto
+/// downgrade blocked, 30s connect timeout, and the 60s/10KiB stall
+/// tripwire. Exposed for tests and shared by the transport impl.
+#[must_use]
+pub fn curl_download_command(url: &str, destination: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("curl");
+    command.args([
+        "--fail",
+        "--location",
+        "--proto-default",
+        "https",
+        "--proto-redir",
+        "https",
+        "--silent",
+        "--show-error",
+        "--retry",
+        "2",
+        "--connect-timeout",
+        "30",
+        "--speed-time",
+        "60",
+        "--speed-limit",
+        "10240",
+        "--output",
+        destination,
+        url,
+    ]);
+    command
+}
 
 impl Transport for CurlTransport {
     fn download(&self, url: &str, destination: &Path) -> Result<(), InferenceError> {
@@ -38,24 +69,10 @@ impl Transport for CurlTransport {
                 InferenceError::Transport(format!("unable to create destination: {error}"))
             })?;
         }
-        let output = std::process::Command::new("curl")
-            .args([
-                "--fail",
-                "--location",
-                "--proto-default",
-                "https",
-                "--proto-redir",
-                "https",
-                "--silent",
-                "--show-error",
-                "--retry",
-                "2",
-                "--output",
-                destination.to_str().ok_or_else(|| {
-                    InferenceError::Transport("destination path is not UTF-8".into())
-                })?,
-                url,
-            ])
+        let destination_str = destination.to_str().ok_or_else(|| {
+            InferenceError::Transport("destination path is not UTF-8".into())
+        })?;
+        let output = curl_download_command(url, destination_str)
             .output()
             .map_err(|error| InferenceError::Transport(error.to_string()))?;
         if output.status.success() {
