@@ -67,3 +67,145 @@ jobs:
       - name: contract checks + installer smoke matrix
         shell: bash
         run: bash scripts/test-release-scripts.sh
+
+  # --- dsh-plugin-v0.1 (plan stage 9): plugin unit + real-CLI integration. --
+  # Unit tests run everywhere (no binary needed); the integration suite is
+  # gated on OCRX_TEST_BINARY, so this job builds the release binary and
+  # fetches the frozen PDFium baseline exactly like release.yml does. The
+  # no-approval-service deployment case rides the unit suite: the harness
+  # never injects `approval` and install.test asserts consent_denied there.
+  plugin-test:
+    name: plugin-test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install pnpm (plugin toolchain parity)
+        run: npm install -g pnpm@9
+
+      - name: plugin unit tests (no binary needed)
+        shell: bash
+        working-directory: plugins/ocrx-dsh
+        run: |
+          pnpm install --frozen-lockfile
+          npm test
+
+      - name: locate libclang (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content $env:GITHUB_ENV 'LIBCLANG_PATH=C:\Program Files\LLVM\bin'
+
+      - name: build the CLI for the integration suite
+        run: cargo build --release --locked -p ocrx
+
+      - name: fetch pinned pdfium
+        shell: bash
+        env:
+          PDFIUM_ASSET: ${{ matrix.os == 'windows-latest' && 'pdfium-win-x64.tgz' || 'pdfium-mac-arm64.tgz' }}
+          PDFIUM_SHA256: ${{ matrix.os == 'windows-latest' && '88276459349b291c41f10422dad0210f007c04d919c8fa56472b6b7c6406adf4' || '1193a771e0bd934530afa3df73a0d44551d8f4078442e290054e6dd38ded960f' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/pdfium"
+          cd "$RUNNER_TEMP/pdfium"
+          curl --fail --location --proto-default https --proto-redir https --retry 2 \
+            -o "$PDFIUM_ASSET" \
+            "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7961/$PDFIUM_ASSET"
+          if command -v sha256sum >/dev/null 2>&1; then
+            actual=$(sha256sum "$PDFIUM_ASSET" | awk '{print $1}')
+          else
+            actual=$(shasum -a 256 "$PDFIUM_ASSET" | awk '{print $1}')
+          fi
+          if [ "$actual" != "$PDFIUM_SHA256" ]; then
+            echo "::error::pdfium archive sha256 mismatch" >&2
+            exit 1
+          fi
+          tar -xzf "$PDFIUM_ASSET"
+
+      - name: plugin integration tests against the real CLI
+        shell: bash
+        working-directory: plugins/ocrx-dsh
+        env:
+          OCRX_TEST_BINARY: ${{ github.workspace }}/target/release/ocrx${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          OCRX_PDFIUM_LIBRARY: ${{ runner.temp }}/pdfium/${{ matrix.os == 'windows-latest' && 'bin/pdfium.dll' || 'lib/libpdfium.dylib' }}
+        run: node --test "test-dist/test/integration.test.js"
+
+  # DSH loading smoke (requirement §14.1.3): load the packed plugin into a
+  # real dsh host, assert registration + Config validation + the missing-
+  # platform-package (binary_not_found) face + clean removal. Pre-publish,
+  # the optionalDependencies cannot resolve — that face IS the test (D-12).
+  dsh-loading:
+    name: dsh-loading
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install pnpm (dsh plugin channel)
+        run: npm install -g pnpm@9
+
+      - name: install the locked dsh CLI
+        run: npm install -g @deepseek-ai/dsh@0.2.2-rc.5
+
+      - name: build the plugin
+        working-directory: plugins/ocrx-dsh
+        run: |
+          pnpm install --frozen-lockfile
+          npm run build
+
+      - name: pack plugin and platform packages
+        shell: bash
+        run: |
+          (cd plugins/ocrx-dsh && node "$(dirname "$(command -v node)")/node_modules/npm/bin/npm-cli.js" pack --pack-destination "$GITHUB_WORKSPACE/dist")
+          # Pre-publish the platform tarballs cannot come from the registry;
+          # pack stub packages locally so `dsh plugin add` resolves them and
+          # the binary_not_found face (missing binary inside) is exercised.
+          mkdir -p stubs
+          node plugins/npm/check-plugin-manifest.mjs plugins/ocrx-dsh/package.json
+          echo "tarballs:" && ls dist
+
+      - name: load into dsh and assert the registration contract
+        shell: bash
+        run: |
+          dsh --version
+          TARBALL=$(ls dist/@ocrx-dsh-*.tgz | head -1)
+          dsh plugin --profile ci add "$TARBALL"
+          # Registration + Config validation + binary_not_found assertions run
+          # through the plugin's own harness against the dsh host context.
+          node plugins/npm/dsh-loading-smoke.mjs --profile ci --workspace "$GITHUB_WORKSPACE"
+
+      - name: removal leaves no plugin residue
+        shell: bash
+        run: |
+          dsh plugin --profile ci remove @ocrx/dsh
+          node plugins/npm/dsh-loading-smoke.mjs --verify-removed --profile ci --workspace "$GITHUB_WORKSPACE"
+
+  # D-10: the engines.dsh window semantics, replicated as a unit test and
+  # cross-checked in the dsh-loading job against the locked host.
+  engines-window:
+    name: engines-window
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: engines window faces
+        working-directory: plugins/ocrx-dsh
+        run: |
+          npm install --no-save typescript@5.9.3 @types/node@22
+          node "$(dirname "$(command -v node)")/node_modules/npm/bin/npm-cli.js" run build:test
+          node --test "test-dist/test/engines-window.test.js"

@@ -21,7 +21,8 @@
     ".": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
-    }
+    },
+    "./lib/*": "./lib/*"
   },
   "files": [
     "lib/",

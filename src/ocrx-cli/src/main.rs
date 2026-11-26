@@ -1423,15 +1423,15 @@ fn main() {
                     let progress_closure = |event: &ocrx_models::install::InstallEvent<'_>| {
                         eprint_install_progress(event);
                     };
-                    let observer: Option<ocrx_models::install::InstallObserver<'_>> =
-                        if report_json {
-                            let observer: &(
-                                 dyn Fn(&ocrx_models::install::InstallEvent<'_>) + Send + Sync
-                             ) = &progress_closure;
-                            Some(observer)
-                        } else {
-                            None
-                        };
+                    let observer: Option<ocrx_models::install::InstallObserver<'_>> = if report_json
+                    {
+                        let observer: &(
+                             dyn Fn(&ocrx_models::install::InstallEvent<'_>) + Send + Sync
+                         ) = &progress_closure;
+                        Some(observer)
+                    } else {
+                        None
+                    };
                     match composed.inference.manager_mut().install_reported(
                         &model,
                         &profile_id,
