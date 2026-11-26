@@ -280,6 +280,55 @@ impl StructureEngineClient {
         &self.identity
     }
 
+    /// M4.3 P2b (D-71): request the route-A regions payload for one PDF and
+    /// write it to `out_path` (`<regions-root>/<stem>.regions.json`). One
+    /// RegionsGenerator serves a whole batch (the worker persists across
+    /// requests); the table-structure pipeline is NOT loaded by this mode.
+    pub fn generate_regions(
+        &mut self,
+        pdf_path: &std::path::Path,
+        model_dir: &std::path::Path,
+        out_path: &std::path::Path,
+    ) -> Result<(), String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let frame = serde_json::json!({
+            "type": "regions",
+            "id": id,
+            "pdf_path": pdf_path.to_string_lossy(),
+            "model_dir": model_dir.to_string_lossy(),
+        })
+        .to_string();
+        self.send(frame)
+            .map_err(|kind| format!("regions request failed: {kind:?}"))?;
+        let line = self
+            .read_line_deadline(REQUEST_TIMEOUT)
+            .map_err(|error| format!("regions reply failed: {error}"))?;
+        let value: serde_json::Value = serde_json::from_str(&line)
+            .map_err(|error| format!("regions reply malformed: {error}"))?;
+        if value.get("id").and_then(serde_json::Value::as_u64) != Some(u64::from(id)) {
+            return Err(format!("regions reply id mismatch: {line:.80}"));
+        }
+        if value.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+            let message = value
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown regions failure");
+            return Err(format!("regions generation failed: {message}"));
+        }
+        let payload = value
+            .get("regions_json")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "regions reply missing regions_json".to_owned())?;
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("regions root mkdir failed: {error}"))?;
+        }
+        std::fs::write(out_path, payload)
+            .map_err(|error| format!("regions file write failed: {error}"))?;
+        Ok(())
+    }
+
     /// True once the worker is known-dead (D-63 (4): no auto-restart).
     #[must_use]
     pub fn is_dead(&self) -> bool {
