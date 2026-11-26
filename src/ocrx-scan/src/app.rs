@@ -387,6 +387,12 @@ impl ScanApplication {
         // M4.2/D-59/D-63: the structure engine spawns at document start —
         // BEFORE any identity write, resume classification or page product.
         // Every startup-class failure is a HARD error (no products).
+        // M4.3 P2b-3: the live identity slot — the lazy engine writes the
+        // verified identity here at spawn; committed pages pin it so
+        // engine-era products carry the engine-era pin.
+        let structure_identity_slot: std::rc::Rc<
+            std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>,
+        > = std::rc::Rc::default();
         let mut structure_engine_handle = if options.structure_reread.is_some() {
             if options.structure_strict {
                 Some(StructureEngineHandle::Eager(
@@ -394,9 +400,9 @@ impl ScanApplication {
                         .map_err(std::io::Error::other)?,
                 ))
             } else {
-                Some(StructureEngineHandle::Lazy(
-                    crate::structure_engine::LazyStructureEngine::new(),
-                ))
+                let mut lazy = crate::structure_engine::LazyStructureEngine::new();
+                lazy.set_identity_slot(structure_identity_slot.clone());
+                Some(StructureEngineHandle::Lazy(lazy))
             }
         } else {
             None
@@ -428,6 +434,7 @@ impl ScanApplication {
                     models_revision: hello.models_revision.clone(),
                     protocol_revision: hello.protocol_revision.clone(),
                     device: hello.device.clone(),
+                    availability: "engine".to_owned(),
                     paddleocr: hello.paddleocr.clone(),
                     paddlex: hello.paddlex.clone(),
                     paddlepaddle: hello.paddlepaddle.clone(),
@@ -1042,6 +1049,7 @@ impl ScanApplication {
                 .with_regions_identity(&regions_identity),
             );
             let config = WindowConfig {
+                structure_identity_slot: Some(structure_identity_slot.clone()),
                 compatibility: &compatibility,
                 resume: false,
                 keep_pages: options.keep_pages,
@@ -1266,29 +1274,21 @@ impl ScanApplication {
         // M4.3 P2b-2: the LAZY arm finalizes here — a doc whose engine
         // spawned carries the verified identity; unprobed/degraded docs
         // keep the OFF-shaped identity (None, conservative resume).
-        if let Some(StructureEngineHandle::Lazy(lazy)) = structure_engine_handle.as_ref() {
-            match lazy.identity() {
-                Some(hello) => {
-                    structure_identity = Some(ocrx_output::StructureRereadIdentity {
-                        engine: hello.engine.clone(),
-                        models_revision: hello.models_revision.clone(),
-                        protocol_revision: hello.protocol_revision.clone(),
-                        device: hello.device.clone(),
-                        paddleocr: hello.paddleocr.clone(),
-                        paddlex: hello.paddlex.clone(),
-                        paddlepaddle: hello.paddlepaddle.clone(),
-                        models_sha256: hello
-                            .models_sha256
-                            .iter()
-                            .map(|(name, hash)| (name.clone(), hash.sha256.clone()))
-                            .collect(),
-                    });
-                }
+        if let Some(StructureEngineHandle::Lazy(_)) = structure_engine_handle.as_ref() {
+            // P2b-3: the slot carries the verified identity iff the engine
+            // spawned; unprobed/degraded docs keep the OFF-shaped identity.
+            let slot_value = structure_identity_slot.borrow().clone();
+            match slot_value {
+                Some(identity) => structure_identity = Some(identity),
                 None => {
-                    if let Some(error) = lazy.spawn_error() {
-                        summary.warnings.push(format!(
-                            "table-structure reread degraded to off (default best-effort): {error}"
-                        ));
+                    if let Some(StructureEngineHandle::Lazy(lazy)) =
+                        structure_engine_handle.as_ref()
+                    {
+                        if let Some(error) = lazy.spawn_error() {
+                            summary.warnings.push(format!(
+                                "table-structure reread degraded to off (default best-effort): {error}"
+                            ));
+                        }
                     }
                 }
             }

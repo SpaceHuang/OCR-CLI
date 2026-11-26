@@ -126,6 +126,12 @@ enum SerialOutcome {
 /// and one config; windows stay per-document).
 pub struct WindowConfig<'a> {
     pub compatibility: &'a ScanCompatibility,
+    /// M4.3 P2b-3 (D-71): live identity slot — the LAZY engine writes the
+    /// verified identity here on spawn; committed pages pin it so
+    /// engine-era products never reuse under another era. None = the
+    /// eager/strict arm (the doc compat already carries the identity).
+    pub structure_identity_slot:
+        Option<std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>>,
     pub resume: bool,
     pub keep_pages: bool,
     /// Ladder rung 3 gate (`--column-split-retry`, default on).
@@ -276,6 +282,7 @@ pub fn run_pages_with_session(
                 &terminal,
                 root,
                 config.compatibility,
+                config.structure_identity_slot.as_ref(),
                 commit_recorder,
                 cancellation,
                 &mut completed,
@@ -347,6 +354,7 @@ pub fn run_pages_with_session(
                 &terminal,
                 root,
                 config.compatibility,
+                config.structure_identity_slot.as_ref(),
                 commit_recorder,
                 cancellation,
                 &mut completed,
@@ -592,6 +600,7 @@ pub fn run_pages_with_session(
             &terminal,
             root,
             config.compatibility,
+            config.structure_identity_slot.as_ref(),
             commit_recorder,
             cancellation,
             &mut completed,
@@ -865,6 +874,9 @@ pub(crate) fn commit_terminal(
     terminal: &[TerminalPage],
     root: &Path,
     compatibility: &ScanCompatibility,
+    structure_identity_slot: Option<
+        &std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>,
+    >,
     commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     cancellation: &CancellationToken,
     completed: &mut u32,
@@ -928,10 +940,21 @@ pub(crate) fn commit_terminal(
                 } else {
                     None
                 };
+                // M4.3 P2b-3: LAZY-era pages pin the LIVE identity once the
+                // engine spawned — engine-era products never reuse under
+                // another era (D-71 availability separation).
+                let mut page_compatibility = compatibility.clone();
+                if let Some(slot) = structure_identity_slot {
+                    if let Some(identity) = slot.borrow().as_ref() {
+                        if let Some(ocr) = page_compatibility.ocr.as_mut() {
+                            ocr.table_structure_reread = Some(identity.clone());
+                        }
+                    }
+                }
                 let checkpoint = V6Checkpoint {
                     page_number: page,
                     status: V6Status::Complete,
-                    compatibility: compatibility.clone(),
+                    compatibility: page_compatibility,
                     output_sha256: String::new(),
                     truncated: artifact.truncated,
                     degenerated: artifact.degenerated,

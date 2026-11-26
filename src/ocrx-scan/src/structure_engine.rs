@@ -280,6 +280,29 @@ impl StructureEngineClient {
         &self.identity
     }
 
+    /// M4.3 P2b-3: the product-side identity built from the verified hello,
+    /// pinned to the engine availability era (used by the identity slot on
+    /// lazy spawns).
+    #[must_use]
+    pub fn structure_reread_identity(&self) -> ocrx_output::StructureRereadIdentity {
+        let hello = self.identity();
+        ocrx_output::StructureRereadIdentity {
+            engine: hello.engine.clone(),
+            models_revision: hello.models_revision.clone(),
+            protocol_revision: hello.protocol_revision.clone(),
+            device: hello.device.clone(),
+            availability: "engine".to_owned(),
+            paddleocr: hello.paddleocr.clone(),
+            paddlex: hello.paddlex.clone(),
+            paddlepaddle: hello.paddlepaddle.clone(),
+            models_sha256: hello
+                .models_sha256
+                .iter()
+                .map(|(name, hash)| (name.clone(), hash.sha256.clone()))
+                .collect(),
+        }
+    }
+
     /// M4.3 P2b (D-71): request the route-A regions payload for one PDF and
     /// write it to `out_path` (`<regions-root>/<stem>.regions.json`). One
     /// RegionsGenerator serves a whole batch (the worker persists across
@@ -547,6 +570,8 @@ impl EngineIdentity {
 pub struct LazyStructureEngine {
     inner: Option<StructureEngineClient>,
     spawn_error: Option<String>,
+    identity_slot:
+        Option<std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>>,
 }
 
 impl LazyStructureEngine {
@@ -555,7 +580,17 @@ impl LazyStructureEngine {
         Self {
             inner: None,
             spawn_error: None,
+            identity_slot: None,
         }
+    }
+
+    /// M4.3 P2b-3: the live identity slot — written at spawn so committed
+    /// pages pin the engine-era identity (D-71 availability separation).
+    pub fn set_identity_slot(
+        &mut self,
+        slot: std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>,
+    ) {
+        self.identity_slot = Some(slot);
     }
 
     /// True once the engine process has actually spawned (the doc-level
@@ -580,7 +615,12 @@ impl LazyStructureEngine {
     fn ensure_spawned(&mut self) -> Result<(), crate::structure_engine::EngineErrorKind> {
         if self.inner.is_none() && self.spawn_error.is_none() {
             match StructureEngineClient::spawn_from_env() {
-                Ok(client) => self.inner = Some(client),
+                Ok(client) => {
+                    if let Some(slot) = self.identity_slot.as_ref() {
+                        *slot.borrow_mut() = Some(client.structure_reread_identity());
+                    }
+                    self.inner = Some(client);
+                }
                 Err(error) => self.spawn_error = Some(error),
             }
         }

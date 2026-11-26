@@ -45,6 +45,10 @@ pub struct PdfIdentity {
 /// `None` serializes as an OMITTED field (OFF products stay byte-identical),
 /// `Some` carries the full supply-chain identity (exact-equality compare on
 /// resume).
+fn default_availability() -> String {
+    "engine".to_owned()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StructureRereadIdentity {
     pub engine: String,
@@ -55,6 +59,11 @@ pub struct StructureRereadIdentity {
     /// D-79: inference device (gpu | cpu) — era separation on resume.
     #[serde(default)]
     pub device: String,
+    /// M4.3 P2b-3/D-71: availability era — "engine" (handshake verified;
+    /// the default for pre-P2b products), "unprobed" (lazy doc that never
+    /// reached a trigger), "degraded" (spawn failed; OFF-shaped content).
+    #[serde(default = "default_availability")]
+    pub availability: String,
     pub paddleocr: String,
     pub paddlex: String,
     pub paddlepaddle: String,
@@ -696,6 +705,7 @@ mod tests {
             models_revision: models_revision.to_owned(),
             protocol_revision: "proto3".to_owned(),
             device: "gpu".to_owned(),
+            availability: "engine".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -806,6 +816,7 @@ mod tests {
             models_revision: "bae6e5f8".to_owned(),
             protocol_revision: "proto3".to_owned(),
             device: "gpu".to_owned(),
+            availability: "engine".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -884,6 +895,7 @@ mod tests {
             models_revision: "bae6e5f8".to_owned(),
             protocol_revision: "proto3".to_owned(),
             device: "gpu".to_owned(),
+            availability: "engine".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),

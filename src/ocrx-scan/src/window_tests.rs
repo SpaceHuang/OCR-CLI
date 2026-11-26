@@ -245,6 +245,7 @@ fn compatibility() -> ScanCompatibility {
 fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
     WindowConfig {
         compatibility,
+        structure_identity_slot: None,
         resume: false,
         keep_pages: false,
         column_split_enabled: true,
@@ -263,6 +264,7 @@ fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
 
 fn config_with_ladder<'a>(compatibility: &'a ScanCompatibility, model: &str) -> WindowConfig<'a> {
     WindowConfig {
+        structure_identity_slot: None,
         ladder: crate::ladder_for_model(
             &ocrx_inference_api::ModelId::new(model).expect("built-in id is valid"),
         ),
@@ -1338,6 +1340,7 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
         &terminal,
         &root,
         &compatibility(),
+        None,
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut completed,
