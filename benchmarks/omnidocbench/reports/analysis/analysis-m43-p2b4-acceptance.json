@@ -1,0 +1,52 @@
+{
+ "artifact": "analysis-m43-p2b4-acceptance",
+ "date": "2026-11-27",
+ "binary": "P2b final (three-state CLI + lazy spawn + slot + trigger_state, proto3, gen 5)",
+ "verdict": "P2b ACCEPTANCE PASS — the default flip ships",
+ "gates": {
+  "beta_eq_alpha": {
+   "result": "PASS",
+   "detail": "Run beta (final binary, explicit ON, resume of 619 checkpoints) md == Run alpha md: 1651/1651 byte-identical — all P2b code changes leave explicit-ON reread semantics untouched"
+  },
+  "gamma_eq_beta": {
+   "regions_equivalence": {
+    "byte": "201/458 identical; 257 differ",
+    "root_cause": "D-79 runtime migration numerics: the frozen regions-458-bound sidecars are paddlepaddle 3.4.0-CPU-era detections; gamma auto-generates with the 3.3.1-gpu wheel (CPU execution) — cross-version float drift at bbox ~1e-4px / conf ~1e-7",
+    "determinism": "PROVEN: same-venv regeneration byte-identical to gamma auto files",
+    "resolution": "outcome-level equivalence is the binding guarantee: gamma==beta md 1651/1651; a GPU-era regions re-freeze is optional bookkeeping"
+   },
+   "md": "PASS 1651/1651 byte-identical vs beta (missing 1 = scan-summary dir)",
+   "fields": "spawned docs 6: all engine fields + generation match; unprobed docs 394: no identity by lazy design (expected expression); mismatched 0"
+  },
+  "overall_confirmation": "gamma official eval Overall 91.72 / TEDS 0.8396 — identical to beta (byte-identical inputs)",
+  "degradation_fixtures": {
+   "default_bad_engine": "degrade warning + OFF-shaped products (no sidecar, no rescue tables) — verified",
+   "explicit_on_bad_engine": "hard error (D-63 (2)) — verified"
+  },
+  "off_full_and_sample": "1651/1651 + 34/34 byte-identical vs gen-4-era OFF runs (the OFF path untouched by P0..P2b)",
+  "resume": "same-mode re-run reuses fully (e2e verified); checkpoint pins engine identity (proto3/gpu/3.3.1)"
+ },
+ "timing_ledger_g_d": {
+  "off_decode_1651_pages": {
+   "mean_s": 6.4,
+   "median_s": 3.9,
+   "p90_s": 11.7,
+   "p99_s": 48.1,
+   "max_s": 230.1
+  },
+  "gpu_engine_per_crop": {
+   "median_s": 0.9,
+   "max_s": 10.2,
+   "cpu_era_median_s": 186
+  },
+  "dca64e05_r0": {
+   "cpu": "1099s (timeout, keep-original)",
+   "gpu": "7.9s, rescued, TEDS 0.204"
+  }
+ },
+ "incident_record": {
+  "what": "the repo checkout silently moved to main between commit 0243878 (P2b-3 core) and 7314b22 (timeout fix) — the timeout commit landed on main without the P0..P2b foundation, and one release rebuild used the main tree",
+  "impact": "none on shipped evidence: all substantive commits verified intact on feat/m43-table-rescue; the misplaced timeout commit cherry-picked onto the feature branch (5642655); main reset to origin/main (2d24fb2)",
+  "lesson": "verify git branch --show-current before every commit/build in this workspace"
+ }
+}
