@@ -927,6 +927,16 @@ pub(crate) fn commit_terminal(
                         artifact.reread_detail_json.as_bytes(),
                     )?;
                 }
+                // M4.3 P2b-3 (D-71): the pre-reread trigger qualification
+                // summary — the resume state machine's availability-flip
+                // classifier consumes this instead of inferring from the
+                // post-rescue products.
+                if !artifact.trigger_state_json.is_empty() {
+                    atomic_write(
+                        root.join(format!("page-{page:04}.trigger.json")),
+                        artifact.trigger_state_json.as_bytes(),
+                    )?;
+                }
                 // Raw-output sidecar: preserved whenever the page
                 // degenerated or lost text to repetition cleaning.
                 let raw_pointer = if artifact.degenerated

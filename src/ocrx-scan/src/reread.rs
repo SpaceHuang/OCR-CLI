@@ -1483,6 +1483,11 @@ pub fn apply_table_reread(
         .iter()
         .filter(|b| block_class(b) == Some(RegionClass::Table))
         .count();
+    // M4.3 P2b-3 (D-71): persist the PRE-reread trigger qualification — the
+    // resume state machine classifies availability flips from THIS summary
+    // (never from the post-rescue products, whose block counts the rescue
+    // itself changed). Det count arrives below via the provider; recorded
+    // post-provider-fetch inside each arm.
     if table_block_count == 0 {
         // M4.2 F6: zero-table-block pages — the missing-table branch, run
         // ONLY when the structure engine is armed (D-64: old-flag-only runs
@@ -1520,6 +1525,15 @@ pub fn apply_table_reread(
             .filter(|outcome| outcome.decoded)
             .count();
         artifact.reread_replaced = f6_stats.f6_emitted;
+        // M4.3 P2b-3 (D-71): the pre-reread qualification summary — the
+        // resume state machine's availability-flip classifier consumes it.
+        artifact.trigger_state_json = serde_json::json!({
+            "qualified": !f6_stats.f6_skipped_shape,
+            "arm": "whole",
+            "base_block_n": 0,
+            "shape": if f6_stats.f6_skipped_shape { "ineligible" } else { "eligible" },
+        })
+        .to_string();
         if f6_stats.f6_emitted > 0 {
             document.blocks = new_blocks;
             artifact.page_json = document.to_json().map_err(|error| {
@@ -1600,6 +1614,14 @@ pub fn apply_table_reread(
                     std::io::Error::other(format!("reread detail serialize: {error:?}"))
                 })?;
         }
+        // M4.3 P2b-3 (D-71): the partial arm's pre-reread qualification.
+        artifact.trigger_state_json = serde_json::json!({
+            "qualified": stats.f6_partial_triggered > 0,
+            "arm": if stats.f6_partial_triggered > 0 { "partial" } else { "none" },
+            "base_block_n": table_block_count,
+            "shape": "partial",
+        })
+        .to_string();
     }
     Ok(stats)
 }
@@ -2679,6 +2701,7 @@ mod tests {
             warnings: vec![],
         };
         let mut artifact = crate::state::PageArtifactResult {
+            trigger_state_json: String::new(),
             png: None,
             markdown: String::new(),
             page_json: document.to_json().unwrap(),

@@ -1301,6 +1301,7 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
     let mut good_image = RenderedPage::new(1, 1, vec![200; 3]).unwrap();
     good_image.generation = 2;
     let artifact = |page: u32, body: &str| PageArtifactResult {
+        trigger_state_json: String::new(),
         png: None,
         markdown: body.to_owned(),
         page_json: format!(r#"{{"schema_version":1,"page_number":{page},"blocks":[]}}"#),

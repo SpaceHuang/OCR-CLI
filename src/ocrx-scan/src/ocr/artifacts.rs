@@ -145,6 +145,7 @@ fn assemble(
         warnings.push("empty_ocr_output".to_owned());
     }
     Ok(PageArtifactResult {
+        trigger_state_json: String::new(),
         png: None,
         markdown,
         page_json: document
@@ -472,6 +473,7 @@ impl<'s> SessionRecognizer<'s> {
             warnings.push("invalid_image_link_dropped".to_owned());
         }
         Ok(PageArtifactResult {
+            trigger_state_json: String::new(),
             png: None,
             markdown,
             page_json: document

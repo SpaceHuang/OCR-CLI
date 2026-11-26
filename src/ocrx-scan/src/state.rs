@@ -529,6 +529,12 @@ pub struct PageArtifactResult {
     /// commit_terminal persists it as `page-NNNN.reread.json` so the B2
     /// adjudicator can attribute multi-table pages per ordinal.
     pub reread_detail_json: String,
+    /// M4.3 P2b-3 (D-71): the PRE-reread trigger qualification summary —
+    /// `{"qualified":bool,"arm":"whole"|"partial"|"none","base_block_n":u32,
+    /// "shape":"..."}`. Persisted as `page-NNNN.trigger.json` so the resume
+    /// state machine can classify availability flips WITHOUT inferring from
+    /// post-rescue products. Empty when the structure arm is disarmed.
+    pub trigger_state_json: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
