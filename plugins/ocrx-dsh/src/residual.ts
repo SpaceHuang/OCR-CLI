@@ -17,11 +17,18 @@ function isPartFile(name: string): boolean {
   return name.includes('.part-') || name.endsWith('.part');
 }
 
-/** Scans the given directories (best-effort; missing dirs are fine). */
+/** Scans the given directories (best-effort; missing dirs are fine).
+ * Overlapping scopes are deduped so nothing is counted twice. */
 export function scanResidual(dirs: Array<string | undefined | null>): ResidualReport {
   const locations: ResidualLocation[] = [];
+  const seenFiles = new Set<string>();
+  const seenDirs = new Set<string>();
   for (const dir of dirs) {
-    if (!dir || !existsSync(dir)) continue;
+    if (!dir) continue;
+    const normalizedDir = dir.replace(/[\\/]+$/, '');
+    if (seenDirs.has(normalizedDir)) continue;
+    seenDirs.add(normalizedDir);
+    if (!existsSync(dir)) continue;
     let entries;
     try {
       entries = readdirSync(dir);
@@ -32,6 +39,9 @@ export function scanResidual(dirs: Array<string | undefined | null>): ResidualRe
       if (!isPartFile(name)) continue;
       const separator = dir.endsWith('/') || dir.endsWith('\\') ? '' : '/';
       const full = `${dir}${separator}${name}`;
+      const normalized = full.replace(/[\\/]+$/, '');
+      if (seenFiles.has(normalized)) continue;
+      seenFiles.add(normalized);
       try {
         locations.push({ path: full, bytes: statSync(full).size });
       } catch {

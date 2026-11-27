@@ -254,6 +254,33 @@ mod tests {
     }
 
     #[test]
+    fn explicit_profile_override_plans_the_requested_manifest_not_the_ladder() {
+        // BLOCK-7: `model recommend --report json <profile>` must plan the
+        // REQUESTED rung - a non-ladder profile (32 GiB ladder = quality,
+        // request = compact) gets compact's exact manifest bytes, so the
+        // consent copy carries the real size for the requested target.
+        let root = std::env::temp_dir().join(format!("ocrx-plan-pin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ladder = plan_for("ovisocr2", 32, &root);
+        assert_eq!(ladder.profile, "quality", "ladder face at 32 GiB");
+        let pinned = InstallPlan::resolve(PlanRequest {
+            model: &ModelId::new("ovisocr2").unwrap(),
+            memory_gb: 32,
+            default_model: "ovisocr3",
+            cache_root: &root,
+            profile: Some(&ProfileId::new("compact").unwrap()),
+        })
+        .unwrap();
+        assert_eq!(pinned.profile, "compact");
+        assert_ne!(pinned.profile, ladder.profile);
+        let manifest = crate::builtin::ovisocr2::ovisocr2_manifest("compact").unwrap();
+        let expected: u64 = manifest.assets.iter().map(|asset| asset.byte_len).sum();
+        assert_eq!(pinned.size_bytes, expected);
+        assert_ne!(pinned.size_bytes, ladder.size_bytes, "non-ladder rung differs");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn plan_profiles_never_escape_the_catalog() {
         // The implicit-default plan face and `ProfileId` spelling agree.
         let root = std::env::temp_dir().join(format!("ocrx-plan-prof-{}", std::process::id()));

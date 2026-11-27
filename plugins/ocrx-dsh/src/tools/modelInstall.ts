@@ -48,24 +48,35 @@ export function createModelInstallTool(env: ToolEnv): ToolDefinition {
       if ('error' in face) {
         return installError(face.error.message, face.error);
       }
-      const runRecommend = async (model?: string) =>
-        fetchRecommend(face.subprocess, face.binaryPath, face.cwd, runEnv(env), model, exec.signal);
-      // 1. 计划面（单次预取：目标解析与同意文案共用同一份计划）。
-      const firstOutcome = await runRecommend(args.model);
+      const runRecommend = async (model?: string, profile?: string) =>
+        fetchRecommend(face.subprocess, face.binaryPath, face.cwd, runEnv(env), model, exec.signal, profile);
+      // 1. 计划面（单次预取：目标解析与同意文案共用同一份计划）。BLOCK-7:
+      // 显式 profile 时按该目标取计划，同意体积来自目标 manifest 而非统一估算。
+      const profileExplicit =
+        typeof args.modelProfile === 'string' &&
+        args.modelProfile.length > 0 &&
+        args.modelProfile !== 'auto';
+      const firstOutcome = await runRecommend(args.model, profileExplicit ? args.modelProfile : undefined);
       // 2. 目标解析（四组合矩阵复用 readiness 的解析器）。
       const argvResult = await buildInstallArgv(args, {
         offline: env.config.offline,
-        fetchPlan: async () => firstOutcome.plan,
-        fallbackText: async () => firstOutcome.text,
+        reportJson: true,
+        fetchPlan: async (model, profile) => {
+          if (model === args.model && profile === (profileExplicit ? args.modelProfile : undefined)) {
+            return firstOutcome.plan;
+          }
+          return (await runRecommend(model, profile)).plan;
+        },
+        fallbackText: async (model) => (model === args.model ? firstOutcome.text : (await runRecommend(model)).text),
       });
       if ('error' in argvResult) {
         return installError(argvResult.error.message, argvResult.error);
       }
-      const { argv, target } = argvResult;
+      const { target } = argvResult;
       // 3. 同意文案：真实体积 + 目标目录 + 不可续传提示（C2 计划面）。
       const plan = firstOutcome.plan;
       const consentBody = buildConsentBody(target, plan, env.config.offline);
-      // 3. 同意门（execute 内经 ctx.get('approval')）。
+      // 4. 同意门（execute 内经 ctx.get('approval')）。
       const consent = await requestConsent(env.ctx, {
         title: `Install ocrx model ${target.model} / ${target.profile}`,
         body: consentBody,
@@ -97,20 +108,53 @@ export function createModelInstallTool(env: ToolEnv): ToolDefinition {
           text: `Model install blocked: no consent (${consent.detail}).`,
         };
       }
-      // 4. 执行安装（缺省不设超时；Config.installTimeoutMs 可选上限）。
-      const spec = {
-        argv: [face.binaryPath, ...argv],
-        cwd: face.cwd,
-        env: runEnv(env),
-        signal: exec.signal,
-        stdoutMaxBytes: LIMITS.stdout,
-        stderrMaxBytes: LIMITS.stderr,
+      // 5. 执行安装（缺省不设超时；Config.installTimeoutMs 可选上限）。
+      // BLOCK-6: an old binary rejects `--report json` at argv parsing
+      // (code 2, no side effects) — retry ONCE without the flag inside this
+      // same consented execute; no re-consent is requested.
+      const runInstall = async (reportJson: boolean) => {
+        const built = await buildInstallArgv(args, {
+          offline: env.config.offline,
+          reportJson,
+          fetchPlan: async () => plan,
+          fallbackText: async () => firstOutcome.text,
+        });
+        if ('error' in built) {
+          return { outcome: null as InstallOutcomeLike | null, error: built.error };
+        }
+        const spec = {
+          argv: [face.binaryPath, ...built.argv],
+          cwd: face.cwd,
+          env: runEnv(env),
+          signal: exec.signal,
+          stdoutMaxBytes: LIMITS.stdout,
+          stderrMaxBytes: LIMITS.stderr,
+        };
+        const outcome =
+          env.config.installTimeoutMs === undefined
+            ? { ...(await runBinary(face.subprocess, spec)), timedOut: false as const }
+            : await runBinaryWithTimeout(face.subprocess, spec, env.config.installTimeoutMs);
+        return { outcome: outcome as InstallOutcomeLike, error: null };
       };
-      const outcome =
-        env.config.installTimeoutMs === undefined
-          ? { ...(await runBinary(face.subprocess, spec)), timedOut: false as const }
-          : await runBinaryWithTimeout(face.subprocess, spec, env.config.installTimeoutMs);
-      return finishInstall(env, outcome, target, plan);
+      const first = await runInstall(true);
+      if (first.error) {
+        return installError(first.error.message, first.error);
+      }
+      let outcome = first.outcome;
+      let oldBinaryFace = false;
+      if (
+        outcome.code === 2 &&
+        /unsupported model flag/i.test(outcome.stderr)
+      ) {
+        // D-11 retry: same consented execute, flag dropped.
+        const retry = await runInstall(false);
+        if (retry.error) {
+          return installError(retry.error.message, retry.error);
+        }
+        outcome = retry.outcome;
+        oldBinaryFace = true;
+      }
+      return finishInstall(env, outcome, target, plan, oldBinaryFace);
     },
   });
 }
@@ -129,12 +173,15 @@ function buildConsentBody(
   plan: InstallPlan | null,
   offlineConfig: boolean,
 ): string {
+  // BLOCK-7: the size comes from the TARGET's manifest plan. When no plan
+  // matches the target profile, say honestly that the size is unconfirmed —
+  // never pass a one-size-fits-all estimate off as the target's size.
   const size =
     target.size_bytes !== undefined
       ? formatBytes(target.size_bytes)
       : plan && plan.profile === target.profile
         ? formatBytes(plan.size_bytes)
-        : 'about 1.0 GB (size unconfirmed for this profile; see the official docs)';
+        : 'an unconfirmed size (the CLI could not plan this exact model/profile; typical OvisOCR3 quality is about 1.0 GB, other rungs differ — see the official docs)';
   const dir = target.target_dir ?? plan?.target_dir ?? '(the CLI default cache location)';
   return (
     `Download and install the OCR model ${target.model} (${target.profile}), about ${size}, ` +
@@ -159,15 +206,45 @@ interface InstallOutcomeLike {
   cancelledByCaller?: boolean;
 }
 
+/**
+ * BLOCK-5: the residual scopes derive from the plan — the REVISION dir AND
+ * the profile dir under it (the model asset lives in `<rev>/<profile>/`,
+ * the shared mmproj in `<rev>/`). Deduped, so nothing is counted twice.
+ */
+function residualScopes(
+  target: { profile: string; target_dir?: string },
+  plan: InstallPlan | null,
+): string[] {
+  const seen = new Set<string>();
+  const scopes: string[] = [];
+  const add = (dir: string | undefined): void => {
+    if (!dir) return;
+    const normalized = dir.replace(/[\\/]+$/, '');
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    scopes.push(dir);
+  };
+  const base = target.target_dir ?? plan?.target_dir;
+  add(base);
+  if (base) add(joinDir(base, target.profile));
+  return scopes;
+}
+
+function joinDir(left: string, right: string): string {
+  return /[\\/]$/.test(left) ? `${left}${right}` : `${left}/${right}`;
+}
+
 function finishInstall(
   env: ToolEnv,
   outcome: InstallOutcomeLike,
   target: { model: string; profile: string; target_dir?: string },
   plan: InstallPlan | null,
+  oldBinaryFace: boolean,
 ): unknown {
+  const scopes = residualScopes(target, plan);
   // 取消/超时（§9.2）：如实报告残留 + 提示。
   if (outcome.timedOut === true || outcome.cancelledByCaller === true || outcome.killed) {
-    const report = scanResidual([target.target_dir, plan?.target_dir]);
+    const report = scanResidual(scopes);
     return {
       ok: false,
       error: {
@@ -192,30 +269,49 @@ function finishInstall(
       guidance: 'Reinstall the plugin or point the ocrx command config at a working binary.',
     });
   }
-  // 成功：stdout 末行为安装摘要 JSON（含 §9.2 进度统计）。
+  // 成功：stdout 末行为安装摘要 JSON（含 §9.2 进度统计）。BLOCK-6: an old
+  // binary prints only the text line — success WITHOUT stats is the D-11
+  // degrade face, reported honestly with the stats field absent.
   const summary = extractSummary(outcome.stdout);
-  if (outcome.code === 0 && summary) {
-    const note =
-      summary.download.downloaded === false
-        ? 'The model was already in place: no download happened this run, but verification ran.'
-        : 'The model is installed and verified; a retry of the failed scan (same arguments plus resume: true) can proceed.';
-    return {
-      ok: true,
-      installed: { model: summary.model ?? target.model, profile: summary.profile ?? target.profile },
-      revision: summary.revision,
-      stats: {
-        download: summary.download,
-        verify: summary.verify,
-        stage: summary.stage,
-        elapsed_ms: summary.elapsed_ms,
-      },
-      note,
-      text: buildInstallText(summary, note),
-    };
+  if (outcome.code === 0) {
+    if (summary) {
+      const note =
+        summary.download.downloaded === false
+          ? 'The model was already in place: no download happened this run, but verification ran.'
+          : 'The model is installed and verified; a retry of the failed scan (same arguments plus resume: true) can proceed.';
+      return {
+        ok: true,
+        installed: { model: summary.model ?? target.model, profile: summary.profile ?? target.profile },
+        revision: summary.revision,
+        stats: {
+          download: summary.download,
+          verify: summary.verify,
+          stage: summary.stage,
+          elapsed_ms: summary.elapsed_ms,
+        },
+        note,
+        text: buildInstallText(summary, note),
+      };
+    }
+    if (outcome.code === 0) {
+      return {
+        ok: true,
+        installed: { model: target.model, profile: target.profile },
+        stats: undefined,
+        note: oldBinaryFace
+          ? 'The configured ocrx binary predates the machine-readable install summary (C2): ' +
+            'no download/verify statistics are available. The install itself reported success — ' +
+            'run "ocrx model verify" or retry the failed scan (same arguments plus resume: true).'
+          : 'The CLI reported success without a parseable summary.',
+        text:
+          `Model ${target.model}/${target.profile} installed (legacy CLI face; no statistics). ` +
+          'You can now retry the scan with the same arguments plus resume: true.',
+      };
+    }
   }
   // 失败：schema v1 失败对象在 stdout（C2 后）；纯文本为 C2 前过渡。
   const mapped = mapInstallFailure(outcome);
-  const report = scanResidual([target.target_dir, plan?.target_dir]);
+  const report = scanResidual(scopes);
   const error = {
     ...mapped,
     ...(report.locations.length > 0

@@ -14,8 +14,11 @@ export function buildModelArgv(args: ModelArgs): string[] {
   const argv: string[] = ['model', args.action];
   if (args.model !== undefined) argv.push('--model', args.model);
   if (args.action === 'verify' && args.profile !== undefined) argv.push(args.profile);
-  if (args.action === 'recommend' && args.reportJson === true) {
-    argv.push('--report', 'json');
+  if (args.action === 'recommend') {
+    // BLOCK-7: a positional profile on the recommend PLAN face pins the
+    // planned target (that manifest's exact bytes), beyond the ladder pick.
+    if (args.reportJson === true && args.profile !== undefined) argv.push(args.profile);
+    if (args.reportJson === true) argv.push('--report', 'json');
   }
   // list/info/recommend/verify 全部无条件带 --non-interactive。
   argv.push('--non-interactive');
@@ -23,10 +26,15 @@ export function buildModelArgv(args: ModelArgs): string[] {
 }
 
 /** recommend 专用（fetchRecommend / D-11 重试用）。 */
-export function buildRecommendArgv(options: { model?: string; reportJson: boolean }): string[] {
+export function buildRecommendArgv(options: {
+  model?: string;
+  profile?: string;
+  reportJson: boolean;
+}): string[] {
   return buildModelArgv({
     action: 'recommend',
     model: options.model as ModelArgs['model'],
+    profile: options.profile as ModelArgs['profile'],
     reportJson: options.reportJson,
   });
 }

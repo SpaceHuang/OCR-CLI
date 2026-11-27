@@ -18,7 +18,9 @@ export interface RecommendOutcome {
 /**
  * Fetches the install plan. Returns the plan on success; on an old binary
  * retries ONCE without the flag and returns the text face (D-11: the first
- * call fails at argv parsing, so the retry has no side effects).
+ * call fails at argv parsing, so the retry has no side effects). An explicit
+ * `profile` pins the planned target so non-ladder rungs report their real
+ * size (BLOCK-7); the D-11 text retry drops it (the old face cannot honor it).
  */
 export async function fetchRecommend(
   subprocess: SubprocessSeam,
@@ -27,8 +29,9 @@ export async function fetchRecommend(
   extraEnv: Record<string, string>,
   model?: string,
   signal?: AbortSignal,
+  profile?: string,
 ): Promise<RecommendOutcome> {
-  const withFlag = buildRecommendArgv({ model, reportJson: true });
+  const withFlag = buildRecommendArgv({ model, profile, reportJson: true });
   const first = await runBinary(subprocess, {
     argv: [binaryPath, ...withFlag],
     cwd,

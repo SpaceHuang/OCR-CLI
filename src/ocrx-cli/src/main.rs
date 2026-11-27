@@ -1266,23 +1266,35 @@ fn main() {
             // text recommend face exactly — the implicit-default pair rides
             // in as an explicit profile override; an explicit --model keeps
             // the per-model memory ladder (resolve inside the plan).
+            // BLOCK-7: a POSITIONAL profile on the recommend face pins the
+            // planned target (plan for THAT manifest), so a non-ladder rung
+            // gets its real download size for the consent copy.
             if action == "recommend" && report_json {
                 let cache_root_for_plan = std::env::var_os("OCRX_MODEL_CACHE")
                     .filter(|value| !value.is_empty())
                     .map(PathBuf::from)
                     .unwrap_or_else(ocrx_inference::default_cache_root);
+                let requested_profile = profile
+                    .as_deref()
+                    .map(ocrx_inference_api::ProfileId::new)
+                    .transpose()
+                    .map_err(|_| unreachable!("positional profile validated by the CLI parser"))
+                    .ok()
+                    .flatten()
+                    .or_else(|| {
+                        implicit_profile
+                            .as_deref()
+                            .map(ocrx_inference_api::ProfileId::new)
+                            .transpose()
+                            .unwrap_or_else(|_| unreachable!("implicit profile is a ladder name"))
+                    });
                 let plan =
                     ocrx_models::plan::InstallPlan::resolve(ocrx_models::plan::PlanRequest {
                         model: &model,
                         memory_gb: snapshot.memory_gb,
                         default_model: DEFAULT_MODEL,
                         cache_root: &cache_root_for_plan,
-                        profile: implicit_profile
-                            .as_deref()
-                            .map(ocrx_inference_api::ProfileId::new)
-                            .transpose()
-                            .unwrap_or_else(|_| unreachable!("implicit profile is a ladder name"))
-                            .as_ref(),
+                        profile: requested_profile.as_ref(),
                     });
                 match plan {
                     Ok(plan) => {

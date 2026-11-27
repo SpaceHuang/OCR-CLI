@@ -80,13 +80,14 @@ export function normalizeScanRun(outcome: RunOutcome, context: NormalizeContext)
       text: `ocrx launcher failure (exit ${outcome.code}). ${error.guidance}`,
     };
   }
-  // 3. Parse both streams.
+  // 3. Parse both streams. BLOCK-8: a truncated stderr means a lost PREFIX —
+  // FIFO pairing is forbidden, so the flag rides into the batch normalizer.
   const stdout = parseStdout(outcome.stdout);
   const stderr = parseStderr(outcome.stderr);
   const exitCode = outcome.code ?? -1;
   const multi = context.multi;
   if (multi) {
-    return normalizeAggregate(stdout, stderr, exitCode, outcome);
+    return normalizeAggregate(stdout, stderr, exitCode, outcome, outcome.stderrTruncated === true);
   }
   return normalizeSingle(stdout, stderr, exitCode, outcome);
 }
@@ -176,6 +177,7 @@ function normalizeAggregate(
   stderr: { objects: CliFailureObject[]; tail: string },
   exitCode: number,
   outcome: RunOutcome,
+  stderrTruncated: boolean,
 ): ScanToolResult {
   if (stdout.kind !== 'aggregate') {
     // 批量 stdout 聚合缺失：整次失败按 code 兜底（不可逐文档归因）。
@@ -210,6 +212,44 @@ function normalizeAggregate(
   const N = candidates.length;
   const M = objects.length;
   const attributionDegraded: string[] = [];
+
+  // BLOCK-8: a truncated stderr lost its PREFIX — the surviving objects may
+  // belong to EARLIER documents than their FIFO positions suggest, and the
+  // per-pair code check cannot detect that when codes repeat. Never pair a
+  // stream whose head is gone; fall back to code defaults everywhere.
+  if (stderrTruncated && objects.length > 0) {
+    attributionDegraded.push(
+      `stderr was truncated (prefix lost): ${M} failure objects cannot be positioned — FIFO pairing forbidden.`,
+    );
+    for (const document of candidates) {
+      attachCodeDefault(document);
+    }
+    const ok = exitCode === 0 || exitCode === 10;
+    const partial = exitCode === 10;
+    const topError = candidates[0]?.error ?? null;
+    const scanSummary = existsScanSummary(aggregate.output_root)
+      ? joinPath(aggregate.output_root, 'scan-summary.json')
+      : undefined;
+    const degradedResult: ScanToolResult = {
+      ok,
+      exit_code: exitCode,
+      partial,
+      documents,
+      scan_summary: scanSummary,
+      error: topError
+        ? { ...topError, attribution_degraded: true }
+        : {
+            reason: 'cli_error',
+            message: 'Batch failure attribution degraded: the failure-object stream was truncated.',
+            guidance:
+              'See per-document exit-code defaults and the stderr tail; re-run smaller batches if you need exact reasons.',
+            attribution_degraded: true,
+          },
+      stderr_tail: stderr.tail.length > 0 ? stderr.tail : undefined,
+    };
+    degradedResult.text = buildBatchText(degradedResult, attributionDegraded, stderr);
+    return degradedResult;
+  }
 
   if (cancelled.length === 0) {
     // 无 130 候选：FIFO 一一配对 + 逐对 code 相容校验。

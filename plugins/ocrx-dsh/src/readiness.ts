@@ -10,8 +10,10 @@ export interface ScanArgsLike {
   modelProfile?: string;
 }
 
-/** Fetches the C2 install plan (machine-readable recommend face). */
-export type PlanFetcher = (model?: string) => Promise<InstallPlan | null>;
+/** Fetches the C2 install plan (machine-readable recommend face). An
+ * explicit profile pins the planned target (plan for THAT manifest, not the
+ * ladder pick) so consent sizes are real for non-recommended rungs. */
+export type PlanFetcher = (model?: string, profile?: string) => Promise<InstallPlan | null>;
 
 /** D-11 fallback: parse the plain-text recommend face of an old binary. */
 export type TextRecommendFetcher = (model?: string) => Promise<{ model: string; profile: string } | null>;
@@ -43,9 +45,10 @@ export async function resolveBootstrapTarget(
     typeof args.modelProfile === 'string' &&
     args.modelProfile.length > 0 &&
     args.modelProfile !== 'auto';
-  // 双显式：直接沿用（体积按该 model 的 plan，仅当 plan profile 相符）。
-  if (typeof args.model === 'string' && typeof args.modelProfile === 'string') {
-    const plan = await fetchPlan(args.model);
+  // 双显式：直接沿用。BLOCK-4: `auto` means UNSET (§7.5.3) — the branch is
+  // gated on the normalized booleans, never on the raw strings.
+  if (typeof args.model === 'string' && profileExplicit && typeof args.modelProfile === 'string') {
+    const plan = await fetchPlan(args.model, args.modelProfile);
     return finalizeTarget({ model: args.model, profile: args.modelProfile, source: 'explicit' }, plan);
   }
   // 仅 model 显式：recommend --model（保留该 model，不用无参数 recommend）。
@@ -66,14 +69,16 @@ export async function resolveBootstrapTarget(
     return { model: args.model, profile: 'unknown', size_unconfirmed: true, source: 'model-recommend' };
   }
   // 仅 profile 显式：CLI 默认模型（来自 plan 的 default_model，不硬编码）
-  // + 该 profile；不经无参数 recommend。
+  // + 该 profile；不经无参数 recommend。第二次取默认模型 × 显式 profile 的
+  // 目标计划，让同意文案拿到真实体积（BLOCK-7）。
   if (profileExplicit && typeof args.modelProfile === 'string') {
-    const plan = await fetchPlan(undefined);
-    const defaultModel = plan?.default_model;
+    const defaultPlan = await fetchPlan(undefined);
+    const defaultModel = defaultPlan?.default_model;
     if (defaultModel) {
+      const targetPlan = await fetchPlan(defaultModel, args.modelProfile);
       return finalizeTarget(
         { model: defaultModel, profile: args.modelProfile, source: 'profile-explicit' },
-        plan,
+        targetPlan ?? defaultPlan,
       );
     }
     return { model: 'unknown', profile: args.modelProfile, size_unconfirmed: true, source: 'profile-explicit' };

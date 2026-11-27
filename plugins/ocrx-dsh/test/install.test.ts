@@ -231,6 +231,7 @@ test('install argv: explicit model+profile verbatim, offline per config', async 
   const subprocess = new FakeSubprocess();
   const result = await buildInstallArgv({ model: 'ovisocr2', modelProfile: 'balanced' }, {
     offline: true,
+    reportJson: true,
     fetchPlan: async () => null,
   });
   if (!('argv' in result)) throw new Error('expected argv');
@@ -246,6 +247,7 @@ test('install argv: only model explicit → recommend --model face (no crossing)
   });
   const result = await buildInstallArgv({ model: 'ovisocr2' }, {
     offline: false,
+    reportJson: true,
     fetchPlan: async () => null,
     fallbackText: async (model) => {
       // Simulate the D-11 text face for the SAME model.
@@ -262,6 +264,7 @@ test('install argv: only model explicit → recommend --model face (no crossing)
 test('install argv: only profile explicit → CLI default model + that profile', async () => {
   const result = await buildInstallArgv({ modelProfile: 'balanced' }, {
     offline: false,
+    reportJson: true,
     fetchPlan: async () => ({
       schema_version: 1,
       action: 'recommend',
@@ -284,6 +287,7 @@ test('install argv: only profile explicit → CLI default model + that profile',
 test('install argv: no source at all → structured usage error, NO argv', async () => {
   const result = await buildInstallArgv({}, {
     offline: false,
+    reportJson: true,
     fetchPlan: async () => null,
     fallbackText: async () => null,
   });
@@ -472,4 +476,149 @@ test('residual scan totals .part files across both scopes', () => {
 test('formatBytes keeps human units', () => {
   assert.equal(formatBytes(1016830848), '1.02 GB');
   assert.equal(formatBytes(2048), '2048 B');
+});
+
+// --- BLOCK-5: residual scopes derive from the plan (profile + revision) ----
+
+test('install cancel reports BOTH scopes once each with exact totals', async () => {
+  const cacheDir = mkdtempSync(path.join(tmpdir(), 'ocrx-resid-scopes-'));
+  try {
+    const revisionDir = path.join(cacheDir, 'rev');
+    const profileDir = path.join(revisionDir, 'quality');
+    mkdirSync(profileDir, { recursive: true });
+    // model.gguf lives in <rev>/<profile>/, mmproj in <rev>/ — both must be
+    // counted exactly once (BLOCK-5: no double count, no missing profile file).
+    writeFileSync(path.join(profileDir, 'model.gguf.install-1-x.part-model'), 'x'.repeat(100));
+    writeFileSync(path.join(revisionDir, 'mmproj.gguf.install-2-y.part-mmproj'), 'y'.repeat(50));
+    const { subprocess, env } = rig({
+      command: 'ocrx',
+      approval: new FakeApproval({ kind: 'resolve', value: 'allowed-once' }),
+    });
+    subprocess.enqueue({
+      stdout: `${JSON.stringify({
+        schema_version: 1,
+        action: 'recommend',
+        model: 'ovisocr3',
+        profile: 'quality',
+        default_model: 'ovisocr3',
+        revision: 'rev1',
+        size_bytes: 1016830848,
+        target_dir: revisionDir,
+        assets: [],
+        installed: false,
+        cache_root: cacheDir,
+      })}\n`,
+      code: 0,
+    });
+    subprocess.enqueue({ code: 0, delayMs: 5000 });
+    const tool = createModelInstallTool(env);
+    const controller = new AbortController();
+    const run = tool.execute(
+      { model: 'ovisocr3', modelProfile: 'quality' },
+      { agent: {}, signal: controller.signal },
+    );
+    await new Promise((resolve) => {
+      setTimeout(resolve, 30);
+    });
+    controller.abort();
+    const result = (await run) as {
+      error: { reason: string; guidance: string };
+      residual?: { locations: Array<{ path: string }>; total_bytes: number };
+    };
+    assert.equal(result.error.reason, 'interrupted');
+    assert.ok(result.residual, 'residual report present');
+    assert.equal(result.residual.locations.length, 2, 'model + mmproj, each exactly once');
+    assert.equal(result.residual.total_bytes, 150, 'exact byte total (100 + 50)');
+    assert.ok(
+      result.residual.locations.some((location) => location.path.includes('model.gguf')),
+      'the profile-scoped model part is NOT missed',
+    );
+    assert.match(result.error.guidance, /150 B/);
+  } finally {
+    rmSync(cacheDir, { recursive: true, force: true });
+  }
+});
+
+// --- BLOCK-6: old-CLI three-sequence degrade (recommend + install) ---------
+
+test('old CLI: recommend and install each degrade with one flag-drop retry, consent requested once', async () => {
+  const { subprocess, env, approval } = rig({
+    command: 'ocrx',
+    approval: new FakeApproval({ kind: 'resolve', value: 'allowed-once' }),
+  });
+  // 1: recommend + flag → unsupported model flag (exit 2).
+  subprocess.enqueueWith((spec) => {
+    assert.ok(spec.argv.includes('recommend') && spec.argv.includes('--report'));
+    return { code: 2, stderr: 'error: unsupported model flag: --report\n' };
+  });
+  // 2: recommend without flag → text success.
+  subprocess.enqueueWith((spec) => {
+    assert.ok(spec.argv.includes('recommend') && !spec.argv.includes('--report'));
+    return { stdout: 'model=ovisocr3 profile=quality memory_gb=16 device=cpu\n', code: 0 };
+  });
+  // 3: install + flag → unsupported model flag (exit 2, parse-time, no effects).
+  subprocess.enqueueWith((spec) => {
+    assert.ok(spec.argv.includes('install') && spec.argv.includes('--report'));
+    return { code: 2, stderr: 'error: unsupported model flag: --report\n' };
+  });
+  // 4: install without flag → legacy text success (no summary JSON).
+  subprocess.enqueueWith((spec) => {
+    assert.ok(spec.argv.includes('install') && !spec.argv.includes('--report'));
+    assert.ok(!spec.argv.includes('--offline'));
+    return { stdout: 'model=ovisocr3 profile=quality revision=rev1 status=installed\n', code: 0 };
+  });
+  const tool = createModelInstallTool(env);
+  const result = (await tool.execute({ model: 'ovisocr3', modelProfile: 'quality' }, { agent: {} })) as {
+    ok: boolean;
+    installed?: { model: string; profile: string };
+    stats?: unknown;
+    note?: string;
+  };
+  assert.equal(result.ok, true, 'legacy install success must surface as success');
+  assert.deepEqual(result.installed, { model: 'ovisocr3', profile: 'quality' });
+  assert.equal(result.stats, undefined, '旧 CLI 无统计——stats 如实缺省');
+  assert.match(result.note ?? '', /predate|legacy|no.*statistic/i);
+  assert.equal(subprocess.requests.length, 4, '三进程序列完整');
+  assert.equal(approval.requests.length, 1, '重试不再次发起同意');
+});
+
+// --- BLOCK-7: consent size from the TARGET manifest -------------------------
+
+test('explicit non-ladder profile gets real planned size in the consent body', async () => {
+  const { subprocess, env, approval } = rig({
+    command: 'ocrx',
+    approval: new FakeApproval({ kind: 'resolve', value: 'allowed-once' }),
+  });
+  // The plan is fetched FOR THE REQUESTED profile (ovisocr2/compact on this
+  // fake = 540 MB), NOT the ladder pick — the consent body must show it.
+  subprocess.enqueueWith((spec) => {
+    assert.ok(spec.argv.includes('recommend'));
+    assert.ok(spec.argv.includes('compact'), '按目标 profile 取计划');
+    return {
+      stdout: `${JSON.stringify({
+        schema_version: 1,
+        action: 'recommend',
+        model: 'ovisocr2',
+        profile: 'compact',
+        default_model: 'ovisocr3',
+        revision: 'rev1',
+        size_bytes: 540000000,
+        target_dir: 'C:/cache/ocrx/models/ovisocr2/rev1',
+        assets: [],
+        installed: false,
+        cache_root: 'C:/cache',
+      })}\n`,
+      code: 0,
+    };
+  });
+  subprocess.enqueue({ stdout: 'model=ovisocr2 profile=compact revision=rev1 status=installed\n', code: 0 });
+  const tool = createModelInstallTool(env);
+  const result = (await tool.execute({ model: 'ovisocr2', modelProfile: 'compact' }, { agent: {} })) as {
+    ok: boolean;
+  };
+  assert.equal(result.ok, true);
+  assert.equal(approval.requests.length, 1);
+  assert.match(approval.requests[0]?.body ?? '', /540\.0 MB/);
+  assert.match(approval.requests[0]?.body ?? '', /\(compact\)/);
+  assert.doesNotMatch(approval.requests[0]?.body ?? '', /unconfirmed/);
 });

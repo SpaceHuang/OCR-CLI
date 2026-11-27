@@ -26,11 +26,13 @@ export interface InstallArgvError {
  * Resolves the (model, profile) target through the §7.5.3 matrix, then
  * builds the argv. The profile is ALWAYS present in the returned argv —
  * the CLI rejects a profile-less install and we never emit one.
+ * `reportJson: false` builds the D-11 retry face (no machine-readable flag).
  */
 export async function buildInstallArgv(
   args: InstallArgs,
   options: {
     offline: boolean;
+    reportJson: boolean;
     fetchPlan: PlanFetcher;
     fallbackText?: TextRecommendFetcher;
   },
@@ -51,6 +53,8 @@ export async function buildInstallArgv(
   const argv: string[] = ['model', 'install'];
   if (target.model !== 'unknown') argv.push('--model', target.model);
   if (options.offline) argv.push('--offline');
-  argv.push('--non-interactive', '--report', 'json', target.profile);
+  argv.push('--non-interactive');
+  if (options.reportJson) argv.push('--report', 'json');
+  argv.push(target.profile);
   return { argv, target };
 }

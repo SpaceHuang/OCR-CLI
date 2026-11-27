@@ -4,6 +4,7 @@
 // 解析计划 JSON 并给出体积/revision/目录（C2），同时保留人类可读摘要；
 // 旧二进制（退出码 2 unsupported flag）按 D-11 去旗标重试并降级。
 import { buildModelArgv, type ModelAction } from '../argv/model.js';
+import { fetchRecommend } from '../recommend.js';
 import { LIMITS, runBinary } from '../run.js';
 import { defineTool, textResult, type ToolDefinition } from '../toolkit.js';
 import type { InstallPlan } from '../types.js';
@@ -61,6 +62,20 @@ export function createModelTool(env: ToolEnv): ToolDefinition {
         // D-4: the machine-readable plan face rides ONLY recommend.
         reportJson: args.action === 'recommend',
       });
+      // BLOCK-6: recommend routes through fetchRecommend so the D-11
+      // degrade (one flag-drop retry on `unsupported model flag`) applies to
+      // the model query too — not just to the install tool.
+      if (args.action === 'recommend') {
+        const recommend = await fetchRecommend(
+          face.subprocess,
+          face.binaryPath,
+          face.cwd,
+          runEnv(env),
+          args.model,
+          exec.signal,
+        );
+        return recommendResult(recommend);
+      }
       const outcome = await runBinary(face.subprocess, {
         argv: [face.binaryPath, ...argv],
         cwd: face.cwd,
@@ -79,9 +94,6 @@ export function createModelTool(env: ToolEnv): ToolDefinition {
           },
           text: 'ocrx binary could not be started.',
         };
-      }
-      if (args.action === 'recommend') {
-        return recommendResult(args, outcome);
       }
       // list / info / verify：文本透传（退出码非 0 → 结构化错误 + 原文）。
       if (outcome.code !== 0) {
@@ -116,61 +128,63 @@ interface RunOutcomeLike {
   spawnFailed: boolean;
 }
 
-function recommendResult(args: { model?: string }, outcome: RunOutcomeLike): unknown {
-  if (outcome.code === 0) {
-    try {
-      const plan = JSON.parse(outcome.stdout.trim()) as InstallPlan;
-      if (plan.schema_version === 1 && plan.action === 'recommend') {
-        const size = plan.installed
-          ? 'already installed'
-          : `${(plan.size_bytes / 1_000_000_000).toFixed(2)} GB`;
-        return {
-          ok: true,
-          action: 'recommend',
-          plan,
-          text:
-            `Recommendation: model=${plan.model} profile=${plan.profile} — ${size}` +
-            (plan.installed ? '' : ` → ${plan.target_dir}`) +
-            `. Default model on this CLI: ${plan.default_model}.`,
-        };
-      }
-    } catch {
-      // fall through to the text face below
-    }
-    const text = outcome.stdout.trim();
+/** BLOCK-6: the recommend face consumes the fetchRecommend outcome (plan,
+ * D-11 text degrade, or a structured failure). */
+function recommendResult(recommend: {
+  plan: InstallPlan | null;
+  text: { model: string; profile: string } | null;
+  oldBinary: boolean;
+  unusable?: string;
+}): unknown {
+  if (recommend.plan) {
+    const plan = recommend.plan;
+    const size = plan.installed
+      ? 'already installed'
+      : `${(plan.size_bytes / 1_000_000_000).toFixed(2)} GB`;
+    return {
+      ok: true,
+      action: 'recommend',
+      plan,
+      text:
+        `Recommendation: model=${plan.model} profile=${plan.profile} — ${size}` +
+        (plan.installed ? '' : ` → ${plan.target_dir}`) +
+        `. Default model on this CLI: ${plan.default_model}.`,
+    };
+  }
+  if (recommend.text) {
+    // D-11 degrade: the old binary's text face, with the honest size note.
     return {
       ok: true,
       action: 'recommend',
       plan: null,
-      plan_note: 'plan JSON unparseable; raw output preserved',
-      output: text,
-      text: text || 'recommend produced no output.',
+      old_binary: true,
+      output: `model=${recommend.text.model} profile=${recommend.text.profile}`,
+      note:
+        'The configured ocrx binary predates the machine-readable recommend face (C2): exact ' +
+        'download sizes are unavailable (default OvisOCR3 quality ≈ 1.0 GB; other rungs differ). ' +
+        'Upgrade ocrx for exact sizes; the install tool still works.',
+      text: `model=${recommend.text.model} profile=${recommend.text.profile}`,
     };
   }
-  if (outcome.code === 2 && /unsupported model flag/i.test(outcome.stderr)) {
+  if (recommend.unusable) {
     return {
       ok: false,
-      exit_code: outcome.code,
       error: {
         reason: 'cli_error' as const,
-        message: 'The configured ocrx binary predates the machine-readable recommend face (C2).',
-        guidance:
-          'Install size: ~1.0 GB for the default OvisOCR3 quality profile (see the official docs). ' +
-          'Upgrade ocrx to get exact sizes; the install tool still works.',
+        message: `ocrx model recommend produced no usable output (${recommend.unusable}).`,
+        guidance: 'Check memory constraints (the profile floor is 6 GiB), then retry.',
       },
-      text: 'ocrx recommend --report json unsupported by this binary (pre-C2).',
+      text: 'model recommend failed.',
     };
   }
   return {
     ok: false,
-    exit_code: outcome.code,
     error: {
       reason: 'cli_error' as const,
-      message: `ocrx model recommend exited ${outcome.code}.`,
+      message: 'ocrx model recommend failed.',
       guidance: 'Check memory constraints (the profile floor is 6 GiB), then retry.',
       details_unavailable: true,
-      cause: outcome.stderr.slice(-2000) || outcome.stdout.slice(-2000) || null,
     },
-    text: outcome.stderr.trim() || 'model recommend failed.',
+    text: 'model recommend failed.',
   };
 }

@@ -432,6 +432,10 @@ pub fn install_with_report(
                 match outcome {
                     Ok(()) => {
                         transferred_any_asset = true;
+                        // A later successful attempt clears the stale error —
+                        // the retry exists precisely to recover, so the run
+                        // must NOT surface the earlier failure.
+                        last_error = None;
                         let elapsed = download_started.elapsed();
                         let bytes = std::fs::metadata(part)
                             .map(|meta| meta.len())
@@ -1745,6 +1749,80 @@ mod tests {
 
     /// Transport that writes its (correct) bytes slowly so the ticker can
     /// observe the in-flight .part file.
+    /// Transport that fails the first N requests per URL, then serves correct
+    /// bytes (BLOCK-3 regression: the retry must actually recover).
+    struct FlakyTransport {
+        failures_before_success: usize,
+        failures_by_url: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+        responses: [(&'static str, Vec<u8>); 2],
+    }
+
+    impl FlakyTransport {
+        fn new(failures_before_success: usize) -> Self {
+            Self {
+                failures_before_success,
+                failures_by_url: std::sync::Mutex::new(std::collections::HashMap::new()),
+                responses: [
+                    ("https://example.invalid/model", b"model-bytes".to_vec()),
+                    ("https://example.invalid/mmproj", b"mmproj-bytes".to_vec()),
+                ],
+            }
+        }
+    }
+
+    impl Transport for FlakyTransport {
+        fn download(&self, url: &str, destination: &Path) -> Result<(), InferenceError> {
+            let Some((_, payload)) = self
+                .responses
+                .iter()
+                .find(|(prefix, _)| url.starts_with(prefix))
+            else {
+                return Err(InferenceError::Transport(format!(
+                    "flaky transport has no route for {url}"
+                )));
+            };
+            // Serve the failure budget PER URL so a recovered asset never
+            // re-arms failures for its siblings.
+            let key = url.to_owned();
+            let mut state = self
+                .failures_by_url
+                .lock()
+                .expect("flaky transport lock");
+            let remaining = state.entry(key).or_insert(self.failures_before_success);
+            if *remaining == 0 {
+                std::fs::write(destination, payload)
+                    .map_err(|error| InferenceError::Transport(error.to_string()))?;
+                return Ok(());
+            }
+            *remaining -= 1;
+            Err(InferenceError::Transport("transient outage".into()))
+        }
+    }
+
+    #[test]
+    fn a_retry_that_succeeds_clears_the_stale_error_and_commits() {
+        // BLOCK-3: attempt 1 fails, attempt 2 serves correct bytes — the
+        // install must COMMIT the good bytes, not return the stale error.
+        let root = std::env::temp_dir().join(format!("ocrx-install-flaky-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let manifest = tiny_manifest();
+        let transport = FlakyTransport::new(1);
+        let mut interaction = RecordingInteraction::accepting();
+        let report = install_with_report(reporting_ctx(
+            &manifest,
+            &root,
+            &transport,
+            &mut interaction,
+            &|_| {},
+        ))
+        .expect("retry recovery must succeed");
+        assert!(report.receipt.downloaded);
+        assert_eq!(verify_content(&root, &manifest), Ok(()), "good bytes committed");
+        assert_eq!(report.download.total_bytes, 23, "both assets transferred");
+        assert_eq!(verify_content(&root, &manifest), Ok(()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     struct SlowTransport {
         delay: std::time::Duration,
         responses: [(&'static str, Vec<u8>); 2],

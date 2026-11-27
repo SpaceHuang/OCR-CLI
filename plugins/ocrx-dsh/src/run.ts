@@ -14,11 +14,15 @@ export interface RunSpec {
   stdoutMaxBytes: number;
   /** stderr collect limit. */
   stderrMaxBytes: number;
+  /** stderr spill cap (§7.3.2: the failure-object stream is full-fidelity). */
+  stderrSpillMaxBytes?: number;
 }
 
 export interface RunOutcome {
   stdout: string;
   stderr: string;
+  /** True when stderr overflowed even with spill (prefix lost). */
+  stderrTruncated: boolean;
   code: number | null;
   killed: boolean;
   /** True when the seam refused the spawn outright (service missing). */
@@ -50,16 +54,25 @@ export async function runBinary(
       stdio: {
         stdin: 'ignore',
         stdout: { maxBytes: spec.stdoutMaxBytes },
-        stderr: { maxBytes: spec.stderrMaxBytes },
+        // §7.3.2: stderr is a FULL-STREAM face — batch failure objects are
+        // parsed from it line by line, so the collect spec carries a spill
+        // file and the reader must report truncation honestly (BLOCK-8:
+        // a lost PREFIX forbids FIFO pairing, no tail-only guessing).
+        stderr: {
+          maxBytes: spec.stderrMaxBytes,
+          spill: { maxBytes: spec.stderrSpillMaxBytes ?? spec.stderrMaxBytes * 8 },
+        },
       },
       graceMs: DEFAULT_GRACE_MS,
     });
     const done = await handle.done;
     const stdout = handle.collected.stdout?.readFrom(0)?.text ?? '';
-    const stderr = handle.collected.stderr?.readFrom(0)?.text ?? '';
+    const stderrRead = handle.collected.stderr?.readFrom(0);
+    const stderr = stderrRead?.text ?? '';
     return {
       stdout,
       stderr,
+      stderrTruncated: stderrRead?.truncated === true,
       code: done.exitCode,
       killed: done.signal !== null && done.signal !== undefined,
       spawnFailed: false,
@@ -68,6 +81,7 @@ export async function runBinary(
     return {
       stdout: '',
       stderr: '',
+      stderrTruncated: false,
       code: null,
       killed: false,
       spawnFailed: true,

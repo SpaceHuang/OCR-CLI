@@ -47,6 +47,7 @@ const aggregate = (documents: Array<Record<string, unknown>>, outputRoot = 'C:/o
 const runOutcome = (overrides: Partial<Parameters<typeof normalizeScanRun>[0]> = {}) => ({
   stdout: '',
   stderr: '',
+  stderrTruncated: false,
   code: 0,
   killed: false,
   spawnFailed: false,
@@ -379,18 +380,56 @@ test('readiness matrix: only model explicit uses recommend --model (never no-arg
   assert.equal(target.size_bytes, planFixture.size_bytes, 'profile 相符 → 体积可信');
 });
 
+test('BLOCK-4: model + modelProfile "auto" behaves EXACTLY like model-only', async () => {
+  // §7.5.3: 显式 modelProfile: "auto" 等同于未显式指定。
+  const calls: Array<[string | undefined, string | undefined]> = [];
+  const fetchPlan: PlanFetcher = async (model, profile) => {
+    calls.push([model, profile]);
+    return { ...planFixture, model: model ?? planFixture.model, profile: 'quality' };
+  };
+  const auto = await resolveBootstrapTarget({ model: 'ovisocr2', modelProfile: 'auto' }, fetchPlan);
+  assert.deepEqual(calls, [['ovisocr2', undefined]], '不带 auto 作 profile 查询');
+  assert.deepEqual([auto.model, auto.profile], ['ovisocr2', 'quality']);
+  assert.equal(auto.source, 'model-recommend', '不是 explicit（auto ≠ 显式档位）');
+  const onlyModel = await resolveBootstrapTarget({ model: 'ovisocr2' }, async (model, profile) => {
+    calls.push([model, profile]);
+    return { ...planFixture, model: model ?? planFixture.model, profile: 'quality' };
+  });
+  assert.deepEqual(auto, onlyModel, '与仅 model 显式逐字段一致');
+});
+
+test('BLOCK-7: dual explicit pins the plan to the requested profile (real size)', async () => {
+  const calls: Array<[string | undefined, string | undefined]> = [];
+  const fetchPlan: PlanFetcher = async (model, profile) => {
+    calls.push([model, profile]);
+    return {
+      ...planFixture,
+      model: model ?? planFixture.model,
+      profile: profile ?? 'quality',
+      size_bytes: profile === 'compact' ? 333_000_000 : planFixture.size_bytes,
+    };
+  };
+  const target = await resolveBootstrapTarget({ model: 'ovisocr2', modelProfile: 'compact' }, fetchPlan);
+  assert.deepEqual(calls, [['ovisocr2', 'compact']], '按目标 (model, profile) 取计划');
+  assert.equal(target.size_bytes, 333_000_000, '同意体积来自目标 manifest');
+  assert.equal(target.size_unconfirmed, undefined, '非 ladder 档位也有真实体积');
+});
+
 test('readiness matrix: only profile explicit uses the CLI default model (not no-arg recommend)', async () => {
-  const calls: Array<string | undefined> = [];
-  const fetchPlan: PlanFetcher = async (model) => {
-    calls.push(model);
+  const calls: Array<[string | undefined, string | undefined]> = [];
+  const fetchPlan: PlanFetcher = async (model, profile) => {
+    calls.push([model, profile]);
     // 无参数 recommend 在低内存下跨到另一模型档位（受控场景）。
-    return model === undefined
-      ? { ...planFixture, model: 'ovisocr2', profile: 'balanced', default_model: 'ovisocr3' }
-      : planFixture;
+    if (model === undefined) {
+      return { ...planFixture, model: 'ovisocr2', profile: 'balanced', default_model: 'ovisocr3', size_bytes: 111 };
+    }
+    // 第二次取「默认模型 × 显式 profile」的目标计划——体积来自目标 manifest。
+    return { ...planFixture, model: 'ovisocr3', profile: profile ?? 'quality', size_bytes: 222 };
   };
   const target = await resolveBootstrapTarget({ modelProfile: 'quality' }, fetchPlan);
-  assert.deepEqual(calls, [undefined], '只查默认模型面');
+  assert.deepEqual(calls, [[undefined, undefined], ['ovisocr3', 'quality']], '先默认面，再默认模型×显式 profile 的目标面');
   assert.deepEqual([target.model, target.profile], ['ovisocr3', 'quality'], 'CLI 默认模型 + 该 profile，不随 recommend 跨模型');
+  assert.equal(target.size_bytes, 222, 'BLOCK-7: 体积来自目标 manifest，非统一估算');
 });
 
 test('readiness matrix: neither explicit rides the no-arg recommend return', async () => {
@@ -450,3 +489,30 @@ test('parseTextRecommend extracts model/profile from the historical line', () =>
 // FakeCtx referenced to keep the import honest for tool-level tests later.
 void FakeCtx;
 export type { ScanToolResult };
+
+test('BLOCK-8: truncated stderr (prefix lost) forbids FIFO pairing entirely', () => {
+  // Two same-code failures; the tail-truncated stream only retains the LAST
+  // object — pairing it with the first document would mis-attribute the
+  // cause, and the code-compat check cannot catch that (codes equal).
+  const retainedObject = failure(4, 'model', 'init failed', 'runtime_initialization');
+  const stdout = aggregate([
+    { input: 'a.pdf', output_dir: 'o/a', status: 'failed', exit_code: 4 },
+    { input: 'b.pdf', output_dir: 'o/b', status: 'failed', exit_code: 4 },
+  ]);
+  const result = normalizeScanRun(
+    runOutcome({ stdout: `${JSON.stringify(stdout)}\n`, stderr: `${JSON.stringify(retainedObject)}\n`, stderrTruncated: true, code: 3 }),
+    { multi: true },
+  );
+  assert.equal(result.error?.attribution_degraded, true);
+  for (const document of result.documents) {
+    assert.equal(
+      document.error?.reason,
+      'model',
+      'code-default fallback, never the tail object mis-attributed',
+    );
+    assert.equal(document.error?.details_unavailable, true);
+    const withCause = document.error as { cause?: string } | null;
+    assert.equal(withCause?.cause, undefined, 'no object cause attached to any document');
+  }
+  assert.ok((result.stderr_tail ?? '').includes('runtime_initialization'), 'object text preserved in the tail');
+});

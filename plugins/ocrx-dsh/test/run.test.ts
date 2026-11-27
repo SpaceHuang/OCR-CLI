@@ -88,3 +88,13 @@ test('env is forwarded to the spec for extraEnv injection', async () => {
 
 // Silence unused-import lint face for the handle type (contract reference).
 export type { FakeHandle };
+
+test('BLOCK-8: stderr collect spec carries a spill file (full-stream face)', async () => {
+  const subprocess = new FakeSubprocess();
+  subprocess.enqueue({ code: 0 });
+  await runBinary(subprocess, base);
+  const stderrMode = subprocess.requests[0]?.stdio?.stderr as { maxBytes: number; spill?: { maxBytes: number } };
+  assert.ok(stderrMode, 'stderr is a collect spec');
+  assert.ok(stderrMode.spill, '§7.3.2: stderr must enable spill (failure objects are full-fidelity)');
+  assert.ok(stderrMode.spill.maxBytes >= stderrMode.maxBytes);
+});
