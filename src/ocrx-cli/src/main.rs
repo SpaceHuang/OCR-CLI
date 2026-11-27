@@ -715,6 +715,17 @@ fn validate_reread(options: &ScanOptions) -> Result<(), String> {
                 ));
             }
         }
+        // review 2026-11-27: an EXPLICITLY supplied regions path that does
+        // not exist is a typo — fail loudly even though auto-generation
+        // could cover it (the user asked for THIS file).
+        if options.structure_reread == StructureRereadMode::On {
+            if let Some(regions) = options.layout_regions.as_deref() {
+                let regions_path = Path::new(regions);
+                if !regions_path.is_file() && !regions_path.is_dir() {
+                    return Err(format!("--layout-regions path not found: {regions}"));
+                }
+            }
+        }
     }
     if options.table_reread || options.structure_reread != StructureRereadMode::Off {
         // layout flags are consumed by an armed arm — fine. Only an all-off
@@ -1726,6 +1737,22 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
         } else {
             output_for(resolved_inputs.first().expect("single doc input")).join("regions")
         };
+        // review 2026-11-27: two inputs resolving to the same stem
+        // would collide on the same regions file (the second overwrite
+        // poisons the first document's provenance sha) — reject.
+        {
+            let mut seen = std::collections::BTreeSet::new();
+            for input in &resolved_inputs {
+                let stem = input
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if !seen.insert(stem.clone()) {
+                    eprintln!("error: duplicate input stem in auto-regions mode: {stem}");
+                    std::process::exit(2);
+                }
+            }
+        }
         let generation = (|| -> Result<(), String> {
             let mut generator =
                 ocrx_scan::structure_engine::StructureEngineClient::spawn_from_env()?;
