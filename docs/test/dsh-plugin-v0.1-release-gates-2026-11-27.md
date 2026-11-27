@@ -61,3 +61,16 @@ CI 无法本地执行的作业（`dsh-loading`、双平台 `plugin-test` 矩阵�
 | 9 | 发布逻辑抽为 `plugins/npm/publish-npm.sh`：重跑时经 fake registry 下载已发布 tarball 与本地字节比对，不一致即 FAIL；`npm view` 网络/认证错误不再视为 missing | fake npm 行为测试四场景：首跑全发（平台先于插件）、同字节重跑幂等跳过、字节不一致 FAIL、registry 错误 FAIL |
 
 修复后门禁：Rust fmt/clippy -D warnings/workspace tests 全绿；插件 `npm test` 102 项（95 过 + 7 集成跳过；真实二进制集成 7/7 单独复跑绿）；`test-release-scripts.sh` 全绿（新增 BLOCK-1 名契约探针、BLOCK-2 pack-plugin 行为自测、BLOCK-9 fake-npm 四场景行为测试——不再仅 grep workflow 文本）。
+
+## 6. 重审修复记录（2026-11-27，re-review 剩余 BLOCK-8 闭环）
+
+对照 `docs/review/dsh-plugin-v0.1-code-review-2026-11-27-re-review.md`（基线 `6ab66b1`）：锁定宿主 `@deepseek-ai/dsh-subprocess@0.2.2-rc.5` 的 `readFrom()` 真实契约为 `{ text, nextOffset, lossy, spillPath? }`（已重新下载发布包核对 `src/types.ts:124-133`），此前插件读取不存在的 `truncated` 字段且忽略 `spillPath`，导致真实宿主上截断保护不可达、spill 全流未消费。
+
+修复与测试：
+
+1. `dsh-seams.d.ts` 类型按 rc.5 修正为 `CollectedRead { text, nextOffset, lossy, spillPath? }`。
+2. `run.ts`：`lossy` 且 spillPath 可读 → `readFileSync(spillPath)` 恢复全流（stderr 与 stdout 两侧，stdout 聚合 JSON 大于内存窗口同样受益）；`lossy` 无可用 spill → `stderrTruncated: true`。该标志进入 `normalizeAggregate` 的"截断禁止 FIFO 配对"保护分支。
+3. fake harness 的 readFrom 改为真实字段（`stderrLossy`/`stderrTail`/`stderrSpillPath`/`stdoutSpillPath` 脚本面），不再用自定义 `truncated` 模拟。
+4. 行为测试三项（重审建议清单）：①内存 tail + 有效 spill → 从 spill 恢复全部失败对象并正确 FIFO 配对（run.test + scan.test 组合测试，正是重审的同 code/不同 cause 复现场景——每个文档拿到自己的 message，无 attribution_degraded）；②`lossy` 无 spill → 全部禁配对 + attribution_degraded；③stdout lossy + spill → 聚合 JSON 恢复。
+
+修复后：插件 `npm test` 106 项全绿（99 过 + 7 集成跳过）；真实二进制集成 7/7；Rust workspace 全测 0 failed；`test-release-scripts.sh` EXIT=0。

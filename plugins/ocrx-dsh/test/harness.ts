@@ -96,10 +96,14 @@ export interface SpawnSpec {
   graceMs?: number;
 }
 
+/** Mirrors the LOCKED host read face (@deepseek-ai/dsh-subprocess@0.2.2-rc.5
+ * SubprocessOutputRead): `lossy` means the in-memory tail slid past the
+ * requested offset; `spillPath` points at the full-stream file. */
 export interface CollectedText {
   text: string;
-  offset: number;
-  truncated: boolean;
+  nextOffset: number;
+  lossy: boolean;
+  spillPath?: string;
 }
 
 export interface FakeHandle {
@@ -122,6 +126,17 @@ export interface FakeSpawnResult {
   killed?: boolean;
   /** Delay before the process finishes (ms) — for timeout races. */
   delayMs?: number;
+  /** Scripted stderr lossy face: readFrom returns `lossy: true` with only
+   * `stderrTail` as text (the in-memory retained tail). */
+  stderrLossy?: boolean;
+  /** Retained-tail text for the stderrLossy face (defaults to `stderr`). */
+  stderrTail?: string;
+  /** Scripted spill file: when set (with stderrLossy), readFrom reports
+   * spillPath — run.ts must read the FULL stream from this file. */
+  stderrSpillPath?: string;
+  /** Scripted stdout lossy face with a spill file (aggregate recovery). */
+  stdoutLossy?: boolean;
+  stdoutSpillPath?: string;
 }
 
 /** Deterministic subprocess stub: replays scripted results in order. */
@@ -162,20 +177,33 @@ export function makeFakeHandle(
   terminatedRegistry: FakeHandle[] = [],
 ): FakeHandle {
   const stdout = result.stdout ?? '';
-  const stderr = result.stderr ?? '';
+  const stderr = result.stderrLossy === true ? (result.stderrTail ?? '') : (result.stderr ?? '');
+  const stderrLossy = result.stderrLossy === true;
+  const stdoutLossy = result.stdoutLossy === true;
+  const stdoutText = stdoutLossy ? (result.stdout ?? '') : stdout;
   const handle = {
     spec,
     collected: {
       stdout: {
         readFrom(offset: number): CollectedText {
-          const text = stdout.slice(offset);
-          return { text, offset, truncated: false };
+          const text = stdoutText.slice(offset);
+          return {
+            text,
+            nextOffset: offset + text.length,
+            lossy: stdoutLossy,
+            ...(result.stdoutSpillPath !== undefined ? { spillPath: result.stdoutSpillPath } : {}),
+          };
         },
       },
       stderr: {
         readFrom(offset: number): CollectedText {
           const text = stderr.slice(offset);
-          return { text, offset, truncated: false };
+          return {
+            text,
+            nextOffset: offset + text.length,
+            lossy: stderrLossy,
+            ...(result.stderrSpillPath !== undefined ? { spillPath: result.stderrSpillPath } : {}),
+          };
         },
       },
     },

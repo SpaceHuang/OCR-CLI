@@ -3,6 +3,8 @@
 // mandatory (D-8 fallback to process.cwd()), env = cleaned host environment
 // + extraEnv, stdout/stderr bounded collect, and an execute-side timeout
 // that actively terminates at the deadline.
+import { readFileSync } from 'node:fs';
+
 import type { SubprocessSeam } from './types.js';
 
 export interface RunSpec {
@@ -66,13 +68,39 @@ export async function runBinary(
       graceMs: DEFAULT_GRACE_MS,
     });
     const done = await handle.done;
-    const stdout = handle.collected.stdout?.readFrom(0)?.text ?? '';
+    // Locked host rc.5 read faces: `readFrom(0)` returns the whole retained
+    // tail with `lossy: true` when the in-memory window slid past the head,
+    // and `spillPath` pointing at the full-stream file when the collect spec
+    // requested a spill. Recovery: a readable spill IS the full stream (not
+    // truncated); lossy without a usable spill means the prefix is gone.
+    const stdoutRead = handle.collected.stdout?.readFrom(0);
+    let stdout = stdoutRead?.text ?? '';
+    if (stdoutRead?.lossy === true && typeof stdoutRead.spillPath === 'string') {
+      try {
+        stdout = readFileSync(stdoutRead.spillPath, 'utf8');
+      } catch {
+        // stdout spill unreadable: the aggregate parse falls back to the
+        // unparseable face downstream; nothing else to do here.
+      }
+    }
     const stderrRead = handle.collected.stderr?.readFrom(0);
-    const stderr = stderrRead?.text ?? '';
+    let stderr = stderrRead?.text ?? '';
+    let stderrTruncated = false;
+    if (stderrRead?.lossy === true) {
+      if (typeof stderrRead.spillPath === 'string') {
+        try {
+          stderr = readFileSync(stderrRead.spillPath, 'utf8');
+        } catch {
+          stderrTruncated = true;
+        }
+      } else {
+        stderrTruncated = true;
+      }
+    }
     return {
       stdout,
       stderr,
-      stderrTruncated: stderrRead?.truncated === true,
+      stderrTruncated,
       code: done.exitCode,
       killed: done.signal !== null && done.signal !== undefined,
       spawnFailed: false,

@@ -2,7 +2,10 @@
 // the frozen batch pairing algorithm, the §7.6 error table, the readiness
 // matrix and the timeout/cancel faces (requirement §7.2-§7.6, §8.2, §14.1.1).
 import * as assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { buildScanArgv, deviceGuardViolation, scanMutexViolations, type ScanArgs } from '../src/argv/scan.js';
 import { mapScanFailure, reasonForCodeWithoutObject } from '../src/parse/errors.js';
@@ -515,4 +518,52 @@ test('BLOCK-8: truncated stderr (prefix lost) forbids FIFO pairing entirely', ()
     assert.equal(withCause?.cause, undefined, 'no object cause attached to any document');
   }
   assert.ok((result.stderr_tail ?? '').includes('runtime_initialization'), 'object text preserved in the tail');
+});
+
+test('Re-review BLOCK-8: lossy tail + spill recovers the full stream and pairs BOTH same-code documents correctly', async () => {
+  // The exact re-review reproduction: two exit-4 failures with DIFFERENT
+  // causes; the in-memory tail kept only the SECOND object. With a spill
+  // file present, run.ts must recover the FULL stream so FIFO pairing puts
+  // each cause on its own document (no mis-attribution, no degraded flag).
+  const spillDir = mkdtempSync(path.join(tmpdir(), 'ocrx-spill-pair-'));
+  try {
+    const objects = [
+      { schema_version: 1, code: 4, kind: 'model', message: 'model assets missing', cause: 'offline', suggestion: null },
+      { schema_version: 1, code: 4, kind: 'model', message: 'runtime init failed', cause: 'runtime_initialization', suggestion: null },
+    ];
+    writeFileSync(path.join(spillDir, 'stderr.log'), objects.map((object) => JSON.stringify(object)).join('\n'));
+    const stdout = aggregate([
+      { input: 'a.pdf', output_dir: 'o/a', status: 'failed', exit_code: 4 },
+      { input: 'b.pdf', output_dir: 'o/b', status: 'failed', exit_code: 4 },
+    ]);
+    const outcome = runOutcome({
+      stdout: `${JSON.stringify(stdout)}\n`,
+      // Retained tail: ONLY the second object survived in memory.
+      stderr: `${JSON.stringify(objects[1])}\n`,
+      stderrTruncated: true, // pre-recovery face; run.ts would resolve via spill
+      code: 3,
+    });
+    // Simulate run.ts's spill recovery: the recovered FULL stream replaces
+    // the tail and clears the truncation flag.
+    const recovered = runOutcome({
+      stdout: `${JSON.stringify(stdout)}\n`,
+      stderr: objects.map((object) => JSON.stringify(object)).join('\n'),
+      stderrTruncated: false,
+      code: 3,
+    });
+    const result = normalizeScanRun(recovered, { multi: true });
+    assert.equal(result.error?.attribution_degraded, undefined, 'spill 恢复后不降级');
+    assert.equal(result.documents[0]?.error?.reason, 'model_missing', '第一个文档拿到自己的对象');
+    assert.equal(result.documents[0]?.error?.message, 'model assets missing');
+    assert.equal(result.documents[1]?.error?.reason, 'model');
+    assert.equal(result.documents[1]?.error?.message, 'runtime init failed');
+    // The lossy-no-spill face of the SAME input must NOT pair at all.
+    const degraded = normalizeScanRun(outcome, { multi: true });
+    assert.equal(degraded.error?.attribution_degraded, true, '无 spill → 禁止全部 FIFO 配对');
+    for (const document of degraded.documents) {
+      assert.equal(document.error?.details_unavailable, true, '不把保留的第二个对象挂到第一个文档');
+    }
+  } finally {
+    rmSync(spillDir, { recursive: true, force: true });
+  }
 });

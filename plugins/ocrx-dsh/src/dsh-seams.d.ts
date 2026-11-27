@@ -49,9 +49,19 @@ export interface SpawnHandle {
   waitForExit(signal?: AbortSignal): Promise<void>;
 }
 
+/** One incremental read (locked host @deepseek-ai/dsh-subprocess@0.2.2-rc.5,
+ * src/types.ts SubprocessOutputRead). `lossy` means the requested offset slid
+ * out of the in-memory tail window; the gap is only recoverable from
+ * `spillPath` when one was created and remains intact. */
+export interface CollectedRead {
+  text: string;
+  nextOffset: number;
+  lossy: boolean;
+  spillPath?: string;
+}
+
 export interface CollectedOutput {
-  readFrom(offset: number): { text: string; offset: number; truncated?: boolean };
-  byteLength?: number;
+  readFrom(offset: number): CollectedRead;
 }
 
 export interface SubprocessSeam {

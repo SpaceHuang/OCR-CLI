@@ -98,3 +98,61 @@ test('BLOCK-8: stderr collect spec carries a spill file (full-stream face)', asy
   assert.ok(stderrMode.spill, '§7.3.2: stderr must enable spill (failure objects are full-fidelity)');
   assert.ok(stderrMode.spill.maxBytes >= stderrMode.maxBytes);
 });
+
+// --- Re-review BLOCK-8: real rc.5 read faces (lossy / spillPath) -----------
+
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+test('lossy read with a spill file: run.ts recovers the FULL stream (not truncated)', async () => {
+  const subprocess = new FakeSubprocess();
+  const spillDir = mkdtempSync(path.join(tmpdir(), 'ocrx-spill-'));
+  const spillPath = path.join(spillDir, 'stderr-spill.log');
+  // Full stream in the spill file: two failure objects (the FULL history).
+  const fullStream = ['{"schema_version":1,"code":4,"kind":"model","message":"first","cause":"offline","suggestion":null}', '{"schema_version":1,"code":3,"kind":"input","message":"second","cause":null,"suggestion":null}'].join('\n');
+  writeFileSync(spillPath, fullStream);
+  // In-memory tail kept only the SECOND object (prefix slid out).
+  subprocess.enqueue({
+    stdout: '',
+    stderr: '{"schema_version":1,"code":3,"kind":"input","message":"second","cause":null,"suggestion":null}\n',
+    stderrLossy: true,
+    stderrSpillPath: spillPath,
+    code: 3,
+  });
+  const outcome = await runBinary(subprocess, base);
+  assert.equal(outcome.stderrTruncated, false, 'readable spill = full stream, NOT truncated');
+  assert.equal(outcome.stderr, fullStream, 'stderr text recovered from spillPath');
+  assert.ok(outcome.stderr.includes('"first"'), 'the lost prefix is recovered');
+  rmSync(spillDir, { recursive: true, force: true });
+});
+
+test('lossy read WITHOUT a spill file: stderrTruncated=true, tail kept', async () => {
+  const subprocess = new FakeSubprocess();
+  const tail = '{"schema_version":1,"code":3,"kind":"input","message":"second","cause":null,"suggestion":null}\n';
+  subprocess.enqueue({ stderrTail: tail, stderrLossy: true, code: 3 });
+  const outcome = await runBinary(subprocess, base);
+  assert.equal(outcome.stderrTruncated, true, 'lossy without spill = prefix lost');
+  assert.equal(outcome.stderr, tail, 'tail text preserved');
+});
+
+test('stdout lossy with a spill file: aggregate JSON recovered from spill', async () => {
+  const subprocess = new FakeSubprocess();
+  const spillDir = mkdtempSync(path.join(tmpdir(), 'ocrx-spill-out-'));
+  const spillPath = path.join(spillDir, 'stdout-spill.log');
+  const aggregate = JSON.stringify({
+    schema_version: 1, mode: 'multi', inputs: ['a.pdf'],
+    output_root: 'C:/out',
+    documents: [{ input: 'a.pdf', output_dir: 'C:/out/a', status: 'success', exit_code: 0 }],
+    elapsed_ms: 1,
+  });
+  writeFileSync(spillPath, `${aggregate}\n`);
+  subprocess.enqueue({ stdoutLossy: true, stdoutSpillPath: spillPath, stderr: '', code: 0 });
+  const outcome = await runBinary(subprocess, base);
+  assert.ok(outcome.stdout.includes('"mode":"multi"'), 'stdout recovered from spill');
+  rmSync(spillDir, { recursive: true, force: true });
+});
+
+// Silence unused imports kept for the harness contract reference.
+void readFileSync;
+void path;
