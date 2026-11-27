@@ -51,6 +51,7 @@ const runOutcome = (overrides: Partial<Parameters<typeof normalizeScanRun>[0]> =
   stdout: '',
   stderr: '',
   stderrTruncated: false,
+  stdoutTruncated: false,
   code: 0,
   killed: false,
   spawnFailed: false,
@@ -566,4 +567,33 @@ test('Re-review BLOCK-8: lossy tail + spill recovers the full stream and pairs B
   } finally {
     rmSync(spillDir, { recursive: true, force: true });
   }
+});
+
+// --- Re-review-2 BLOCK-10: stdout prefix loss faces --------------------------
+
+test('BLOCK-10: stdout lossy WITHOUT usable spill on a successful batch is a collection error, never launcher_failed', () => {
+  // The re-review reproduction: aggregate JSON prefix lost (lossy, no
+  // spillPath), exit 0 — the honest result is a plugin collection-limit
+  // error naming the exit code, NOT launcher_failed and NOT a code default
+  // that mislabels the run.
+  const stdoutTail = 'uccess","exit_code":0}]}';
+  const result = normalizeScanRun(
+    runOutcome({ stdout: stdoutTail, stdoutTruncated: true, code: 0 }),
+    { multi: true },
+  );
+  assert.equal(result.ok, false);
+  assert.notEqual(result.error?.reason, 'launcher_failed', 'exit 0 前缀丢失 ≠ 启动器损坏');
+  assert.equal(result.error?.reason, 'cli_error');
+  assert.match(result.error?.message ?? '', /spill file was not recoverable|collection window/);
+  assert.match(result.error?.guidance ?? '', /exit code 0/);
+  assert.match(result.error?.guidance ?? '', /smaller batch|fewer documents/);
+});
+
+test('BLOCK-10: single-doc face with a lost stdout prefix stays cli_error with the honest note', () => {
+  const result = normalizeScanRun(
+    runOutcome({ stdout: 'nx":{}', stdoutTruncated: true, code: 0 }),
+    { multi: false },
+  );
+  assert.equal(result.error?.reason, 'cli_error');
+  assert.match(result.error?.guidance ?? '', /collection limit|collection window/);
 });

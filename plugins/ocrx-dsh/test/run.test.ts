@@ -156,3 +156,30 @@ test('stdout lossy with a spill file: aggregate JSON recovered from spill', asyn
 // Silence unused imports kept for the harness contract reference.
 void readFileSync;
 void path;
+
+// --- Re-review-2 BLOCK-10: stdout collect must REQUEST spill ----------------
+
+test('BLOCK-10: stdout collect spec requests a spill (full-fidelity aggregate face)', async () => {
+  const subprocess = new FakeSubprocess();
+  subprocess.enqueue({ code: 0 });
+  await runBinary(subprocess, base);
+  const stdoutMode = subprocess.requests[0]?.stdio?.stdout as {
+    maxBytes: number;
+    spill?: { maxBytes: number };
+  };
+  assert.ok(stdoutMode, 'stdout is a collect spec');
+  assert.ok(stdoutMode.spill, '§7.3.2: stdout must request spill — the host only creates spillPath for specs that ask for it');
+  assert.ok(stdoutMode.spill.maxBytes >= stdoutMode.maxBytes);
+});
+
+test('BLOCK-10: fake harness refuses a scripted spill without the spec request', () => {
+  const subprocess = new FakeSubprocess();
+  subprocess.enqueue({ stdout: 'tail', stdoutLossy: true, stdoutSpillPath: 'C:/x/spill.log', code: 0 });
+  // The harness guard throws inside spawn — runBinary reports it as a
+  // spawnFailed face; assert the guard fired by calling the fake directly.
+  assert.throws(
+    () => subprocess.spawn({ ...base, stdio: { stdout: { maxBytes: base.stdoutMaxBytes } } }),
+    /stdoutSpillPath scripted but the stdout collect spec requests no spill/,
+    'no test may inject a capability the real host never produces',
+  );
+});

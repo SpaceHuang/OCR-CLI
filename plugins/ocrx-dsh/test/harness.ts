@@ -181,6 +181,22 @@ export function makeFakeHandle(
   const stderrLossy = result.stderrLossy === true;
   const stdoutLossy = result.stdoutLossy === true;
   const stdoutText = stdoutLossy ? (result.stdout ?? '') : stdout;
+  // The REAL host only creates spillPath for collect specs that request a
+  // spill — a scripted spill without the matching spec request would inject
+  // a capability the host never produces (review BLOCK-10). Assert loudly
+  // instead of silently faking it.
+  const stdoutCollect = spec.stdio?.stdout;
+  const stdoutSpillRequested =
+    typeof stdoutCollect === 'object' && stdoutCollect !== null && stdoutCollect.spill !== undefined;
+  const stderrCollect = spec.stdio?.stderr;
+  const stderrSpillRequested =
+    typeof stderrCollect === 'object' && stderrCollect !== null && stderrCollect.spill !== undefined;
+  if (result.stdoutSpillPath !== undefined && !stdoutSpillRequested) {
+    throw new Error('fake harness: stdoutSpillPath scripted but the stdout collect spec requests no spill');
+  }
+  if (result.stderrSpillPath !== undefined && !stderrSpillRequested) {
+    throw new Error('fake harness: stderrSpillPath scripted but the stderr collect spec requests no spill');
+  }
   const handle = {
     spec,
     collected: {

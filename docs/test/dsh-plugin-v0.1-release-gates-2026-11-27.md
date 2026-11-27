@@ -74,3 +74,16 @@ CI 无法本地执行的作业（`dsh-loading`、双平台 `plugin-test` 矩阵�
 4. 行为测试三项（重审建议清单）：①内存 tail + 有效 spill → 从 spill 恢复全部失败对象并正确 FIFO 配对（run.test + scan.test 组合测试，正是重审的同 code/不同 cause 复现场景——每个文档拿到自己的 message，无 attribution_degraded）；②`lossy` 无 spill → 全部禁配对 + attribution_degraded；③stdout lossy + spill → 聚合 JSON 恢复。
 
 修复后：插件 `npm test` 106 项全绿（99 过 + 7 集成跳过）；真实二进制集成 7/7；Rust workspace 全测 0 failed；`test-release-scripts.sh` EXIT=0。
+
+## 7. 三审修复记录（2026-11-28，BLOCK-10 闭环）
+
+对照 `docs/review/dsh-plugin-v0.1-code-review-2026-11-28-re-review-2.md`（基线 `dc7e445`）：stdout collect 此前未请求 spill，真实宿主不会为聚合 JSON 提供 spillPath，恢复逻辑不可达；exit 0 前缀丢失被误报为 launcher_failed。
+
+修复与测试：
+
+1. `run.ts`：stdout collect 规格启用 `spill`（新增 `stdoutSpillMaxBytes`，缺省 = maxBytes × 8）；`stdoutTruncated` 推导与 stderr 对称（lossy + 可读 spill → 全流恢复；lossy 无 spill → truncated）。
+2. `parse/result.ts`：批量 stdout 前缀丢失（lossy 无可用 spill）且无法解析聚合时——**不再落入 code 默认兜底**（exit 0 曾被误报为 launcher_failed）——返回专门的 collection-limit `cli_error`：如实指出是插件采集上限、exit code 为多少、指引拆小批次重跑；单文档 face 的 unparseable 分支同样区分截断（collection limit）与契约异常（retry/report）。
+3. fake harness 守卫：脚本化 spillPath 而对应 collect 规格未请求 spill 时**直接抛错**——测试无法再注入真实宿主不会产生的能力（正是上轮全绿漏掉该问题的根因）。
+4. 行为测试四项：stdout collect 规格断言（必须请求 spill 且 cap ≥ maxBytes）；harness 守卫负例；lossy 无 spill 批量 → collection 错误（非 launcher_failed，指引含 exit code 与拆批）；单文档 face 同场景 → cli_error + collection limit 说明。
+
+修复后：插件 `npm test` 110 项全绿（103 过 + 7 集成跳过）；真实二进制集成 7/7；Rust workspace 0 failed；fmt 干净；`test-release-scripts.sh` EXIT=0。

@@ -126,6 +126,12 @@ function normalizeSingle(
   // 无失败对象：表内 code 走 code 默认 + details_unavailable；表外兜底。
   if (exitCode === 0) {
     // stdout 形态异常但退出码 0——unparseable 兜底（保守：cli_error）。
+    // BLOCK-10: a lost stdout PREFIX (lossy, no usable spill) is a
+    // collection-limit error, never a launcher/contract failure.
+    const truncatedNote =
+      outcome.stdoutTruncated === true
+        ? 'The output exceeded the collection window and its spill file was not recoverable (plugin collection limit, not a corrupted binary).'
+        : 'Retry once; if it persists this is a CLI/plugin contract bug — report it with the output below.';
     return {
       ok: false,
       exit_code: exitCode,
@@ -134,7 +140,7 @@ function normalizeSingle(
       error: {
         reason: 'cli_error',
         message: 'ocrx exited 0 but produced no parseable result payload.',
-        guidance: 'Retry once; if it persists this is a CLI/plugin contract bug — report it with the output below.',
+        guidance: truncatedNote,
         code: 0,
         details_unavailable: true,
         cause: outcome.stdout.slice(-2000) || outcome.stderr.slice(-2000) || null,
@@ -190,6 +196,32 @@ function normalizeAggregate(
         documents: [],
         error,
         text: `Scan failed before batch execution: ${error.message}`,
+      };
+    }
+    // BLOCK-10: a lost stdout PREFIX (lossy, no usable spill) on a
+    // successful batch is an OUTPUT-STREAM problem, never a launcher
+    // failure — the process ran and exited (exit 0 proves it). Report the
+    // honest contract error with the retained tail; do NOT invent a
+    // code-default that could mislabel the whole run.
+    if (outcome.stdoutTruncated === true) {
+      return {
+        ok: false,
+        exit_code: exitCode,
+        partial: false,
+        documents: [],
+        error: {
+          reason: 'cli_error',
+          message:
+            'The scan output exceeded the collection window and its spill file was not recoverable, so the aggregate result could not be parsed.',
+          guidance:
+            'The scan itself likely succeeded (exit code ' +
+            `${exitCode === 0 ? '0' : String(exitCode)}); re-run with fewer documents (split the batch) ` +
+            'to get per-document results. This is a plugin collection-limit error, not a corrupted binary.',
+          code: exitCode,
+          details_unavailable: true,
+          cause: outcome.stdout.slice(-2000) || null,
+        },
+        text: `Scan output too large to collect (exit ${exitCode}); re-run with a smaller batch.`,
       };
     }
     const error = reasonForCodeWithoutObject(exitCode, outcome.stderr || stderr.tail);

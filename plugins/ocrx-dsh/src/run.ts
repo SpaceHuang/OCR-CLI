@@ -16,6 +16,8 @@ export interface RunSpec {
   stdoutMaxBytes: number;
   /** stderr collect limit. */
   stderrMaxBytes: number;
+  /** stdout spill cap (§7.3.2: the aggregate JSON is a full-stream face). */
+  stdoutSpillMaxBytes?: number;
   /** stderr spill cap (§7.3.2: the failure-object stream is full-fidelity). */
   stderrSpillMaxBytes?: number;
 }
@@ -25,6 +27,8 @@ export interface RunOutcome {
   stderr: string;
   /** True when stderr overflowed even with spill (prefix lost). */
   stderrTruncated: boolean;
+  /** True when stdout overflowed even with spill (prefix lost). */
+  stdoutTruncated: boolean;
   code: number | null;
   killed: boolean;
   /** True when the seam refused the spawn outright (service missing). */
@@ -55,11 +59,15 @@ export async function runBinary(
       signal: abort,
       stdio: {
         stdin: 'ignore',
-        stdout: { maxBytes: spec.stdoutMaxBytes },
-        // §7.3.2: stderr is a FULL-STREAM face — batch failure objects are
-        // parsed from it line by line, so the collect spec carries a spill
-        // file and the reader must report truncation honestly (BLOCK-8:
-        // a lost PREFIX forbids FIFO pairing, no tail-only guessing).
+        // §7.3.2: BOTH streams are full-fidelity faces — stdout carries the
+        // batch aggregate JSON, stderr the per-document failure objects. The
+        // collect specs request spill files so a lost prefix is recoverable
+        // (BLOCK-10: recovery is unreachable unless the spec ASKS for spill —
+        // the host only creates spillPath for collect specs that request it).
+        stdout: {
+          maxBytes: spec.stdoutMaxBytes,
+          spill: { maxBytes: spec.stdoutSpillMaxBytes ?? spec.stdoutMaxBytes * 8 },
+        },
         stderr: {
           maxBytes: spec.stderrMaxBytes,
           spill: { maxBytes: spec.stderrSpillMaxBytes ?? spec.stderrMaxBytes * 8 },
@@ -75,12 +83,16 @@ export async function runBinary(
     // truncated); lossy without a usable spill means the prefix is gone.
     const stdoutRead = handle.collected.stdout?.readFrom(0);
     let stdout = stdoutRead?.text ?? '';
-    if (stdoutRead?.lossy === true && typeof stdoutRead.spillPath === 'string') {
-      try {
-        stdout = readFileSync(stdoutRead.spillPath, 'utf8');
-      } catch {
-        // stdout spill unreadable: the aggregate parse falls back to the
-        // unparseable face downstream; nothing else to do here.
+    let stdoutTruncated = false;
+    if (stdoutRead?.lossy === true) {
+      if (typeof stdoutRead.spillPath === 'string') {
+        try {
+          stdout = readFileSync(stdoutRead.spillPath, 'utf8');
+        } catch {
+          stdoutTruncated = true;
+        }
+      } else {
+        stdoutTruncated = true;
       }
     }
     const stderrRead = handle.collected.stderr?.readFrom(0);
@@ -101,6 +113,7 @@ export async function runBinary(
       stdout,
       stderr,
       stderrTruncated,
+      stdoutTruncated,
       code: done.exitCode,
       killed: done.signal !== null && done.signal !== undefined,
       spawnFailed: false,
@@ -110,6 +123,7 @@ export async function runBinary(
       stdout: '',
       stderr: '',
       stderrTruncated: false,
+      stdoutTruncated: false,
       code: null,
       killed: false,
       spawnFailed: true,
