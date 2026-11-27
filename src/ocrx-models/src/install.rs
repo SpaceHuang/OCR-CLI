@@ -1784,10 +1784,7 @@ mod tests {
             // Serve the failure budget PER URL so a recovered asset never
             // re-arms failures for its siblings.
             let key = url.to_owned();
-            let mut state = self
-                .failures_by_url
-                .lock()
-                .expect("flaky transport lock");
+            let mut state = self.failures_by_url.lock().expect("flaky transport lock");
             let remaining = state.entry(key).or_insert(self.failures_before_success);
             if *remaining == 0 {
                 std::fs::write(destination, payload)
@@ -1817,7 +1814,11 @@ mod tests {
         ))
         .expect("retry recovery must succeed");
         assert!(report.receipt.downloaded);
-        assert_eq!(verify_content(&root, &manifest), Ok(()), "good bytes committed");
+        assert_eq!(
+            verify_content(&root, &manifest),
+            Ok(()),
+            "good bytes committed"
+        );
         assert_eq!(report.download.total_bytes, 23, "both assets transferred");
         assert_eq!(verify_content(&root, &manifest), Ok(()));
         let _ = std::fs::remove_dir_all(&root);

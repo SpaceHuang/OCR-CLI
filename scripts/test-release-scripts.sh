@@ -166,11 +166,13 @@ TGZ=$(node "$NPM_BUILDER" --platform win32-x64 --stage "$PACK_FIXTURE/stage" \
 # available (Git Bash / MSYS), otherwise the native path is already fine.
 TGZ_POSIX=$(cygpath -u "$TGZ" 2>/dev/null || echo "$TGZ")
 [[ -f "$TGZ_POSIX" ]] || TGZ_POSIX="$TGZ"
-tar -tzf "$TGZ_POSIX" | grep -q 'package/bin/ocrx.exe' || { echo "tarball misses the binary" >&2; exit 1; }
-tar -tzf "$TGZ_POSIX" | grep -q 'package/bin/msvcp140.dll' || { echo "tarball misses a CRT dll" >&2; exit 1; }
-tar -tzf "$TGZ_POSIX" | grep -q 'package/licenses/ms-vc-runtime/README.txt' || { echo "tarball misses the vc license" >&2; exit 1; }
-tar -xOf "$TGZ_POSIX" package/package.json | grep -q '"access": "public"' || { echo "platform package must publish public" >&2; exit 1; }
-if tar -xOf "$TGZ_POSIX" package/package.json | grep -qE 'postinstall|preinstall|"prepare"'; then
+PLATFORM_ENTRIES=$(tar -tzf "$TGZ_POSIX")
+echo "$PLATFORM_ENTRIES" | grep -q 'package/bin/ocrx.exe' || { echo "tarball misses the binary" >&2; exit 1; }
+echo "$PLATFORM_ENTRIES" | grep -q 'package/bin/msvcp140.dll' || { echo "tarball misses a CRT dll" >&2; exit 1; }
+echo "$PLATFORM_ENTRIES" | grep -q 'package/licenses/ms-vc-runtime/README.txt' || { echo "tarball misses the vc license" >&2; exit 1; }
+tar -xOf "$TGZ_POSIX" package/package.json > "$PACK_FIXTURE/pkgmanifest.json"
+grep -q '"access": "public"' "$PACK_FIXTURE/pkgmanifest.json" || { echo "platform package must publish public" >&2; exit 1; }
+if grep -qE 'postinstall|preinstall|"prepare"' "$PACK_FIXTURE/pkgmanifest.json"; then
   echo "platform package must not declare build scripts" >&2; exit 1
 fi
 # Negative face: a tampered stage file must break the same-source proof.
@@ -202,13 +204,64 @@ grep -q 'NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}' "$WF" || { echo "release.yml
 grep -q 'npm whoami' "$WF" || { echo "release.yml: authentication preflight missing" >&2; exit 1; }
 grep -q 'does not point at the built commit' "$WF" || { echo "release.yml: tag presence/commit assert missing" >&2; exit 1; }
 grep -q 'optionalDependencies do not pin' "$WF" || { echo "release.yml: plugin exact-pin assert missing" >&2; exit 1; }
-grep -q 'already published; local tarball sha256' "$WF" || { echo "release.yml: re-run skip-published branch missing" >&2; exit 1; }
-grep -q 'all three versions already published' "$WF" || { echo "release.yml: idempotent re-run branch missing" >&2; exit 1; }
-# Order: preflights must precede the publish step in file order.
-PUBLISH_LINE=$(grep -n 'publish complete for' "$WF" | cut -d: -f1)
-WHOAMI_LINE=$(grep -n 'npm whoami' "$WF" | cut -d: -f1)
-[[ -n "$PUBLISH_LINE" && -n "$WHOAMI_LINE" ]] || { echo "release.yml: preflight/publish markers missing" >&2; exit 1; }
-[[ "$WHOAMI_LINE" -lt "$PUBLISH_LINE" ]] || { echo "release.yml: preflight must precede npm publish" >&2; exit 1; }
+# BLOCK-1: scoped tarball names carry NO '@' — pin the contract with a real
+# npm pack probe and require the workflow globs to spell it exactly.
+NAME_PROBE=$(mktemp -d)
+mkdir -p "$NAME_PROBE/pkg"
+printf '{"name":"@ocrx/dsh","version":"9.9.9-probe"}' > "$NAME_PROBE/pkg/package.json"
+NPM_CLI="$(dirname "$(command -v node)")/node_modules/npm/bin/npm-cli.js"
+PACKED_NAME=$(cd "$NAME_PROBE/pkg" && node "$NPM_CLI" pack --dry-run --json |
+  grep -m1 -o '"filename": *"[^"]*"' | sed 's/.*: *"//; s/"$//')
+[[ "$PACKED_NAME" == "ocrx-dsh-9.9.9-probe.tgz" ]] || { echo "npm pack name contract changed: got $PACKED_NAME" >&2; exit 1; }
+rm -rf "$NAME_PROBE"
+grep -q 'path: dist/npm/ocrx-ocrx-win32-x64-\*.tgz' "$WF" || { echo "release.yml: windows upload glob must drop the '@' (scoped tarball spelling)" >&2; exit 1; }
+grep -q 'path: dist/npm/ocrx-ocrx-darwin-arm64-\*.tgz' "$WF" || { echo "release.yml: macos upload glob must drop the '@'" >&2; exit 1; }
+if grep -q 'dist/npm/@ocrx-' "$WF"; then
+  echo "release.yml still uses the wrong scoped glob spelling (@ocrx-)" >&2; exit 1
+fi
+grep -q 'ocrx-ocrx-win32-x64-"$TAG_VERSION".tgz' "$WF" || { echo "release.yml: preflight tarball path spelling wrong" >&2; exit 1; }
+# BLOCK-2: publish-npm packs via pack-plugin.mjs after a frozen-lockfile install.
+grep -q 'pnpm install --frozen-lockfile' "$WF" || { echo "release.yml: publish-npm must install the toolchain before packing" >&2; exit 1; }
+grep -q 'pack-plugin.mjs' "$WF" || { echo "release.yml: publish-npm must pack via pack-plugin.mjs (content assertions)" >&2; exit 1; }
+# BLOCK-9: publishing goes through the behavioral script (identity checks).
+grep -q 'publish-npm.sh' "$WF" || { echo "release.yml: publish must run via plugins/npm/publish-npm.sh" >&2; exit 1; }
+PUB="$ROOT_DIR/plugins/npm/publish-npm.sh"
+bash -n "$PUB" || { echo "publish-npm.sh syntax error" >&2; exit 1; }
+grep -q 'IDENTITY MISMATCH' "$PUB" || { echo "publish-npm.sh: registry identity check missing" >&2; exit 1; }
+grep -q 'must not be treated as missing' "$PUB" || { echo "publish-npm.sh: registry-error classification missing" >&2; exit 1; }
+grep -q 'all three versions already published and identical' "$PUB" || { echo "publish-npm.sh: idempotent re-run branch missing" >&2; exit 1; }
+# Order: the workflow's auth preflight precedes the pack/publish steps.
+WHOAMI_LINE=$(grep -n 'npm whoami' "$WF" | head -1 | cut -d: -f1)
+PACK_LINE=$(grep -n 'pack-plugin.mjs' "$WF" | head -1 | cut -d: -f1)
+[[ -n "$WHOAMI_LINE" && -n "$PACK_LINE" ]] || { echo "release.yml: preflight/publish markers missing" >&2; exit 1; }
+[[ "$WHOAMI_LINE" -lt "$PACK_LINE" ]] || { echo "release.yml: auth preflight must precede packing" >&2; exit 1; }
+
+# BLOCK-2 behavioral: pack-plugin.mjs on THIS checkout (a dirty one, but the
+# script stages and compiles itself — the tarball must carry lib + LICENSE).
+# Node cannot resolve MSYS `/d/...` spellings; hand it Windows mixed paths.
+ROOT_WIN=$(cygpath -m "$ROOT_DIR" 2>/dev/null || echo "$ROOT_DIR")
+PLUGIN_TGZ_TEST=$(node "$ROOT_DIR/plugins/npm/pack-plugin.mjs"   --plugin-dir "$ROOT_WIN/plugins/ocrx-dsh"   --repo-root "$ROOT_WIN"   --version 0.0.0-test   --out-dir "$ROOT_WIN/plugins/npm/pack-probe" | tail -1)
+[[ -f "$PLUGIN_TGZ_TEST" ]] || { echo "pack-plugin self-test produced no tarball" >&2; exit 1; }
+# GNU tar reads `C:` as a remote host — same POSIX spelling as above.
+PLUGIN_TGZ_POSIX=$(cygpath -u "$PLUGIN_TGZ_TEST" 2>/dev/null || echo "$PLUGIN_TGZ_TEST")
+[[ -f "$PLUGIN_TGZ_POSIX" ]] || PLUGIN_TGZ_POSIX="$PLUGIN_TGZ_TEST"
+# tar | grep -q under pipefail kills tar via SIGPIPE (exit 141 = silent
+# set -e failure even when the entry EXISTS); capture the listing instead.
+PLUGIN_ENTRIES=$(tar -tzf "$PLUGIN_TGZ_POSIX")
+echo "$PLUGIN_ENTRIES" | grep -q 'package/lib/index.js' || { echo "plugin tarball misses the entry point; entries:" >&2; echo "$PLUGIN_ENTRIES" | head -20 >&2; exit 1; }
+echo "$PLUGIN_ENTRIES" | grep -q 'package/lib/tools/scan.js' || { echo "plugin tarball misses compiled tool modules" >&2; exit 1; }
+echo "$PLUGIN_ENTRIES" | grep -q 'package/LICENSE' || { echo "plugin tarball misses the repo LICENSE" >&2; exit 1; }
+echo "$PLUGIN_ENTRIES" | grep -q 'package/skills/ocrx/SKILL.md' || { echo "plugin tarball misses the skill" >&2; exit 1; }
+if echo "$PLUGIN_ENTRIES" | grep -q 'package/lib/index.d.ts'; then
+  : # declarations are fine to ship
+fi
+PLUGIN_MANIFEST=$(tar -xOf "$PLUGIN_TGZ_POSIX" package/package.json)
+if echo "$PLUGIN_MANIFEST" | grep -qE 'postinstall|preinstall|"prepare"'; then
+  echo "plugin tarball declares build scripts" >&2; exit 1
+fi
+PROBE_DIR=$(dirname "$PLUGIN_TGZ_TEST")
+rm -rf "$PROBE_DIR"
+rm -rf "$ROOT_DIR/plugins/npm/pack-probe" 2>/dev/null || true
 
 # Plugin manifest: engines window, bundle patch structure (nested dsh key),
 # platforms, exact optionalDependencies pins, public access, no build scripts.
@@ -220,3 +273,123 @@ RUNBOOK="$ROOT_DIR/docs/develop/dsh-plugin-release-runbook.md"
 grep -q '首跑/重跑' "$RUNBOOK" || { echo "runbook: first-run/re-run split missing" >&2; exit 1; }
 grep -q 'platform 包先于插件包\|平台包先于插件包' "$RUNBOOK" || { echo "runbook: publish order missing" >&2; exit 1; }
 echo "release scripts syntax/privacy checks passed"
+
+# BLOCK-9 behavioral: publish-npm.sh against a FAKE npm — covers first-run
+# (all E404 → publish all, platforms before plugin), identical re-run (skip
+# everything), identity mismatch (FAIL), and registry error (FAIL).
+PUB_PROBE=$(mktemp -d)
+PUB_BIN="$PUB_PROBE/bin"
+mkdir -p "$PUB_BIN"
+# The fake npm: scripted via $FAKE_STATE file (a JSON-ish list of versions).
+cat > "$PUB_BIN/npm" << 'FAKE_NPM'
+#!/usr/bin/env bash
+STATE_FILE="${FAKE_STATE:?fake state file required}"
+LOG_FILE="${FAKE_LOG:?fake log file required}"
+echo "npm $*" >> "$LOG_FILE"
+case "$1" in
+  view)
+    pkg_spec="$2"
+    version="${pkg_spec##*@}"
+    name="${pkg_spec%@*}"
+    if grep -q "\"$name@$version\"" "$STATE_FILE"; then
+      echo "$version"
+      exit 0
+    fi
+    echo "npm error code E404" >&2
+    exit 1
+    ;;
+  pack)
+    # Download face: copy the LOCAL tarball of the same package name from
+    # $FAKE_LOCAL_DIR (the identity check compares bytes). Scoped names map
+    # to tarball names by dropping `@` and joining scope/name with `-`
+    # (exactly npm's own spelling).
+    pkg_spec="$2"
+    name="${pkg_spec%@*}"
+    local_name="${name#@}"
+    local_name="${local_name//\//-}"
+    local_match=$(ls "$FAKE_LOCAL_DIR" | grep "^${local_name}-" | head -1)
+    cp "$FAKE_LOCAL_DIR/$local_match" "$PWD/${local_match}"
+    exit 0
+    ;;
+  publish)
+    # `npm publish --access public <tarball>`: the tarball is the LAST arg.
+    tarball="${*: -1}"
+    base=$(basename "$tarball")
+    version="${base##*-}"; version="${version%.tgz}"
+    name_part="${base%-$version.tgz}"
+    # @ocrx/dsh packs as ocrx-dsh; store the scoped spelling for grep.
+    case "$name_part" in
+      ocrx-dsh) scoped="@ocrx/dsh" ;;
+      ocrx-ocrx-win32-x64) scoped="@ocrx/ocrx-win32-x64" ;;
+      ocrx-ocrx-darwin-arm64) scoped="@ocrx/ocrx-darwin-arm64" ;;
+    esac
+    echo "\"$scoped@$version\"" >> "$STATE_FILE"
+    cp "$tarball" "$FAKE_PUBLISHED_DIR/$base"
+    exit 0
+    ;;
+esac
+echo "fake npm: unsupported call $*" >&2
+exit 1
+FAKE_NPM
+chmod +x "$PUB_BIN/npm"
+make_tarballs() {
+  local dir="$1"
+  mkdir -p "$dir"
+  for pkg in ocrx-dsh ocrx-ocrx-win32-x64 ocrx-ocrx-darwin-arm64; do
+    printf 'tarball %s v1' "$pkg" > "$dir/$pkg-1.2.3.tgz"
+  done
+}
+run_publish() {
+  local state="$1" local_dir="$2" published_dir="$3" local_tarballs="$4"
+  mkdir -p "$published_dir"
+  FAKE_STATE="$state" FAKE_LOG="$PUB_PROBE/calls.log" \
+    FAKE_LOCAL_DIR="$local_tarballs" FAKE_PUBLISHED_DIR="$published_dir" \
+    PATH="$PUB_BIN:$PATH" bash "$PUB" "1.2.3" \
+    "$local_tarballs/ocrx-dsh-1.2.3.tgz" \
+    "$local_tarballs/ocrx-ocrx-win32-x64-1.2.3.tgz" \
+    "$local_tarballs/ocrx-ocrx-darwin-arm64-1.2.3.tgz"
+}
+
+# a) First run: registry empty → publish all three, platforms before plugin.
+LOCAL_A="$PUB_PROBE/local-a"; make_tarballs "$LOCAL_A"
+PUBLISHED_A="$PUB_PROBE/published-a"
+: > "$PUB_PROBE/state-a"
+run_publish "$PUB_PROBE/state-a" "$LOCAL_A" "$PUBLISHED_A" "$LOCAL_A" > /dev/null
+test -f "$PUBLISHED_A/ocrx-ocrx-win32-x64-1.2.3.tgz" || { echo "fake publish: win tarball missing" >&2; exit 1; }
+ORDER=$(grep -n 'publish' "$PUB_PROBE/calls.log" | grep -v view | cut -d: -f1 | tr '\n' ' ')
+WIN_POS=$(grep -n 'publish --access public .*win32' "$PUB_PROBE/calls.log" | cut -d: -f1)
+PLUGIN_POS=$(grep -n 'publish --access public .*ocrx-dsh-1.2.3' "$PUB_PROBE/calls.log" | cut -d: -f1)
+[[ -n "$WIN_POS" && -n "$PLUGIN_POS" && "$WIN_POS" -lt "$PLUGIN_POS" ]] || { echo "publish order violated (platforms must precede the plugin)" >&2; exit 1; }
+
+# b) Identical re-run → skip everything, no publish calls.
+: > "$PUB_PROBE/calls.log"
+RE_RUN_OUTPUT=$(run_publish "$PUB_PROBE/state-a" "$LOCAL_A" "$PUB_PROBE/published-b" "$LOCAL_A")
+echo "$RE_RUN_OUTPUT" | grep -q 'already published and identical' || { echo "identical re-run must be idempotent; got:" >&2; echo "$RE_RUN_OUTPUT" >&2; exit 1; }
+if grep -q 'publish --access' "$PUB_PROBE/calls.log"; then
+  echo "identical re-run must not publish" >&2; exit 1
+fi
+
+# c) Identity mismatch → FAIL: the registry serves the ORIGINAL bytes
+# (PUBLISHED_A) while the local tarball was tampered with.
+LOCAL_C="$PUB_PROBE/local-c"; make_tarballs "$LOCAL_C"
+printf 'TAMPERED' > "$LOCAL_C/ocrx-dsh-1.2.3.tgz"
+if PATH="$PUB_BIN:$PATH" FAKE_STATE="$PUB_PROBE/state-a" FAKE_LOG="$PUB_PROBE/calls-c.log"     FAKE_LOCAL_DIR="$PUBLISHED_A" FAKE_PUBLISHED_DIR="$PUB_PROBE/published-c"     bash "$PUB" "1.2.3"     "$LOCAL_C/ocrx-dsh-1.2.3.tgz"     "$LOCAL_C/ocrx-ocrx-win32-x64-1.2.3.tgz"     "$LOCAL_C/ocrx-ocrx-darwin-arm64-1.2.3.tgz" > /dev/null 2>&1; then
+  echo "identity mismatch must fail the run" >&2; exit 1
+fi
+
+# d) Registry error (non-E404) → FAIL, never "missing".
+cat > "$PUB_BIN/npm" << 'FAKE_NPM_ERR'
+#!/usr/bin/env bash
+echo "npm error code ECONNRESET" >&2
+exit 1
+FAKE_NPM_ERR
+chmod +x "$PUB_BIN/npm"
+LOCAL_D="$PUB_PROBE/local-d"; make_tarballs "$LOCAL_D"
+if PATH="$PUB_BIN:$PATH" bash "$PUB" "1.2.3" \
+    "$LOCAL_D/ocrx-dsh-1.2.3.tgz" \
+    "$LOCAL_D/ocrx-ocrx-win32-x64-1.2.3.tgz" \
+    "$LOCAL_D/ocrx-ocrx-darwin-arm64-1.2.3.tgz" > /dev/null 2>&1; then
+  echo "registry errors must fail, never count as missing" >&2; exit 1
+fi
+rm -rf "$PUB_PROBE"
+echo "dsh-plugin pipeline checks passed"

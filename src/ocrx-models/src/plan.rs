@@ -276,7 +276,10 @@ mod tests {
         let manifest = crate::builtin::ovisocr2::ovisocr2_manifest("compact").unwrap();
         let expected: u64 = manifest.assets.iter().map(|asset| asset.byte_len).sum();
         assert_eq!(pinned.size_bytes, expected);
-        assert_ne!(pinned.size_bytes, ladder.size_bytes, "non-ladder rung differs");
+        assert_ne!(
+            pinned.size_bytes, ladder.size_bytes,
+            "non-ladder rung differs"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

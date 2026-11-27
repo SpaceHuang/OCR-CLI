@@ -43,3 +43,21 @@ CI 无法本地执行的作业（`dsh-loading`、双平台 `plugin-test` 矩阵�
 ## 4. 结论
 
 自动化可覆盖的门槛全部通过；真机双平台漏斗、真实下载自举与零网络门槛等待真机窗口按 runbook §7 执行后归档补充。
+
+## 5. 代码评审修复记录（2026-11-27，review BLOCK×9 全部闭环）
+
+对照 `docs/review/dsh-plugin-v0.1-code-review-2026-11-27.md`（评审基线 `3526472`）：
+
+| BLOCK | 修复 | 回归测试 |
+| --- | --- | --- |
+| 1 | workflow 改用 npm 真实 scoped tarball 名（无 `@`：`ocrx-ocrx-<plat>-<v>.tgz`）；上传 glob/预检 ls/发布路径全部对齐；pack.json 路径废弃（tarball 路径显式传递） | `test-release-scripts.sh`：真实 `npm pack --dry-run --json` 名契约探针 + workflow glob 断言（禁止 `dist/npm/@ocrx-` 拼写） |
+| 2 | `publish-npm` 增 pnpm frozen-lockfile 安装 + `pack-plugin.mjs`（编译、拷根 LICENSE、tar 内容断言 lib/index.js + LICENSE + patch + skill、无构建脚本）后才发布 | pack-plugin 本机行为自测（tar 内容断言）+ workflow 结构断言 |
+| 3 | `install.rs` 传输成功路径 `last_error = None`（重试真正恢复） | `FlakyTransport`（首败后成）断言提交成功、total_bytes=23 |
+| 4 | `resolveBootstrapTarget` 双显式分支改用归一化布尔（`auto` = 未显式） | `model+auto ≡ 仅 model` 逐字段一致测试（含 recommend 查询参数） |
+| 5 | 残留 scope 从 plan 派生（revision + `<rev>/<profile>` 两目录，去重） | 安装工具级取消测试：100B+50B 两文件各计一次、总量 150B、model 不再漏报 |
+| 6 | install 同意后检测 code 2/unsupported flag → 同一 execute 去旗标重试一次（不再同意）；`ocrx_model` recommend 走 `fetchRecommend` 降级 | 三进程序列测试（recommend±旗标、install±旗标、单次同意、stats 如实缺省） |
+| 7 | `model recommend --report json <profile>` 接受位置档位（计划按目标 manifest）；插件 `fetchRecommend`/`fetchPlan` 携带 profile；同意体积来自目标 manifest，不可得时如实标注 unconfirmed（不再统一 1.0 GB） | `plan.rs` explicit_profile 测试（尺寸=该 manifest 之和）+ 插件双显式/仅 profile 组合体积断言 + 同意文案 540.0 MB 断言 |
+| 8 | stderr collect 启用 `spill`；`readFrom().truncated` 透传；截断（前缀丢失）时禁止 FIFO 配对（全部 code 默认 + attribution_degraded） | run spec spill 断言 + 截断批量回归测试（同 code 双文档不误挂） |
+| 9 | 发布逻辑抽为 `plugins/npm/publish-npm.sh`：重跑时经 fake registry 下载已发布 tarball 与本地字节比对，不一致即 FAIL；`npm view` 网络/认证错误不再视为 missing | fake npm 行为测试四场景：首跑全发（平台先于插件）、同字节重跑幂等跳过、字节不一致 FAIL、registry 错误 FAIL |
+
+修复后门禁：Rust fmt/clippy -D warnings/workspace tests 全绿；插件 `npm test` 102 项（95 过 + 7 集成跳过；真实二进制集成 7/7 单独复跑绿）；`test-release-scripts.sh` 全绿（新增 BLOCK-1 名契约探针、BLOCK-2 pack-plugin 行为自测、BLOCK-9 fake-npm 四场景行为测试——不再仅 grep workflow 文本）。
