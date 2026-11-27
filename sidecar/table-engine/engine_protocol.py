@@ -20,9 +20,12 @@ ENGINE_ID = "slanet-plus"
 # P0 no-table-found handling).
 EXPECTED_MODELS_REVISION = "bae6e5f8"
 EXPECTED_PROTOCOL_REVISION = "proto3"
+# D-79 ship configuration: the GPU wheel with device="gpu". The cpu channel
+# remains a legal runtime fallback (the device rides the hello for audit).
+EXPECTED_DEVICE = "gpu"
 EXPECTED_PADDLEOCR = "3.7.0"
 EXPECTED_PADDLEX = "3.7.2"
-EXPECTED_PADDLEPADDLE = "3.4.0"
+EXPECTED_PADDLEPADDLE = "3.3.1"
 
 REJECT_NO_RULING_LINES = "no_ruling_lines"
 REJECT_EMPTY_OUTPUT = "empty_output"

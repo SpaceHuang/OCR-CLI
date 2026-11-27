@@ -15,6 +15,7 @@ class TestHello:
             engine=proto.ENGINE_ID,
             models_revision=proto.EXPECTED_MODELS_REVISION,
             protocol_revision=proto.EXPECTED_PROTOCOL_REVISION,
+            device=proto.EXPECTED_DEVICE,
             paddleocr=proto.EXPECTED_PADDLEOCR,
             paddlex=proto.EXPECTED_PADDLEX,
             paddlepaddle=proto.EXPECTED_PADDLEPADDLE,
@@ -24,19 +25,21 @@ class TestHello:
         assert obj["type"] == "hello"
         assert obj["engine"] == "slanet-plus"
         assert obj["models_revision"] == "bae6e5f8"
-        assert obj["protocol_revision"] == "proto2"
+        assert obj["protocol_revision"] == "proto3"
+        assert obj["device"] == "gpu"
         assert obj["paddleocr"] == "3.7.0"
         assert obj["paddlex"] == "3.7.2"
-        assert obj["paddlepaddle"] == "3.4.0"
+        assert obj["paddlepaddle"] == "3.3.1"
         assert obj["models_sha256"] == {"m": {"files": 3, "sha256": "abc"}}
 
     def test_supply_chain_constants_do_not_drift(self):
         assert proto.ENGINE_ID == "slanet-plus"
         assert proto.EXPECTED_MODELS_REVISION == "bae6e5f8"
-        assert proto.EXPECTED_PROTOCOL_REVISION == "proto2"
+        assert proto.EXPECTED_PROTOCOL_REVISION == "proto3"
+        assert proto.EXPECTED_DEVICE == "gpu"
         assert proto.EXPECTED_PADDLEOCR == "3.7.0"
         assert proto.EXPECTED_PADDLEX == "3.7.2"
-        assert proto.EXPECTED_PADDLEPADDLE == "3.4.0"
+        assert proto.EXPECTED_PADDLEPADDLE == "3.3.1"
 
 
 class TestRecognize:

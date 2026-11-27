@@ -44,5 +44,10 @@
   "emitted_blocks_kept": "17/17",
   "identical_to_cpu_dry_run": true
  },
- "pending": "G0.5 formal spike adjudication (GPU eval running) + user gate decision (frozen 20% FAIL vs true-miss 44% vs outcome-based option C)"
+ "pending": "G0.5 formal spike adjudication (GPU eval running) + user gate decision (frozen 20% FAIL vs true-miss 44% vs outcome-based option C)",
+ "environment_caveat": {
+  "finding": "paddle 3.3.1-gpu wheel compiled with CUDNN 9.9; machine has CUDNN 9.5 — paddle emits a serious-incompatibility warning at every GPU init",
+  "observed": "all GPU inference (probe, T4 campaign, beta/gamma, dual-arm spike) completed with sane outputs and zero crashes across ~2000+ inferences",
+  "disposition": "recorded as environment risk; follow-ups: (1) upgrade machine CUDNN to 9.9 or switch to the cu118 wheel, (2) add CUDNN version to the engine identity so runtime changes pin products"
+ }
 }
