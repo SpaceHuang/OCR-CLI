@@ -173,14 +173,14 @@ jobs:
           pnpm install --no-frozen-lockfile
           npm run build
 
-      - name: pack plugin and platform packages
+      - name: pack the plugin tarball
         shell: bash
         run: |
-          (cd plugins/ocrx-dsh && node "$(dirname "$(command -v node)")/node_modules/npm/bin/npm-cli.js" pack --pack-destination "$GITHUB_WORKSPACE/dist")
-          # Pre-publish the platform tarballs cannot come from the registry;
-          # pack stub packages locally so `dsh plugin add` resolves them and
-          # the binary_not_found face (missing binary inside) is exercised.
-          mkdir -p stubs
+          mkdir -p dist
+          (cd plugins/ocrx-dsh && npm pack --pack-destination "$GITHUB_WORKSPACE/dist")
+          # Pre-publish the platform tarballs cannot come from the registry:
+          # pnpm skips the 404'd optionalDependencies, so the binary_not_found
+          # face (no platform binary anywhere) is exactly what gets exercised.
           node plugins/npm/check-plugin-manifest.mjs plugins/ocrx-dsh/package.json
           echo "tarballs:" && ls dist
 
@@ -188,7 +188,9 @@ jobs:
         shell: bash
         run: |
           dsh --version
-          TARBALL=$(ls dist/@ocrx-dsh-*.tgz | head -1)
+          # npm strips `@` from scoped tarball names: @ocrx/dsh packs as
+          # ocrx-dsh-<version>.tgz (BLOCK-1 spelling).
+          TARBALL=$(ls dist/ocrx-dsh-*.tgz | head -1)
           dsh plugin --profile ci add "$TARBALL"
           # Registration + Config validation + binary_not_found assertions run
           # through the plugin's own harness against the dsh host context.
