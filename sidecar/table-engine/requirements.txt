@@ -1,3 +1,6 @@
+# M4.3 D-79 frozen supply chain (ship configuration = GPU).
+# Windows GPU wheel comes from Paddle's own index (3.4.0 has no Windows GPU build):
+#   pip install paddlepaddle-gpu==3.3.1 --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+paddlepaddle-gpu==3.3.1
 paddleocr==3.7.0
-paddlex[ocr]==3.7.2
-paddlepaddle==3.4.0
+paddlex==3.7.2

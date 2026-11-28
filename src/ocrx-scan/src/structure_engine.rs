@@ -21,14 +21,22 @@ use std::time::Duration;
 /// Frozen supply-chain identity (sidecar/table-engine/requirements.txt must
 /// match; the handshake compares every field, D-63).
 pub const EXPECTED_ENGINE: &str = "slanet-plus";
-pub const EXPECTED_REVISION: &str = "bae6e5f8";
+/// M4.3 D-72: the M4.2 single `revision` split into two axes — the model-dir
+/// freeze (manifest-keyed) and the worker behavior generation (`proto3` =
+/// first bump: P0 no-table-found handling instead of the worker-side crash).
+pub const EXPECTED_MODELS_REVISION: &str = "bae6e5f8";
+pub const EXPECTED_PROTOCOL_REVISION: &str = "proto3";
 pub const EXPECTED_PADDLEOCR: &str = "3.7.0";
 pub const EXPECTED_PADDLEX: &str = "3.7.2";
-pub const EXPECTED_PADDLEPADDLE: &str = "3.4.0";
+pub const EXPECTED_PADDLEPADDLE: &str = "3.3.1";
 
 /// Handshake deadline (D-63 (2); the hello precedes any model load, so 30s
 /// only covers interpreter boot + model-dir hashing).
-pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+/// 30s -> 90s (M4.3 G0/robustness): GPU-era startup adds CUDA context +
+/// device transfer, and under concurrent GPU load (campaign scans sharing
+/// the device) paddle import + init can exceed 30s. Operational patience
+/// only — no reread-rule semantics change (D-63 (2) behavior identical).
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 /// Per-recognize deadline (D-63 (3); CPU measured 186.3s/table + margin).
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -45,7 +53,12 @@ const FROZEN_MODELS_MANIFEST: &str =
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct EngineIdentity {
     pub engine: String,
-    pub revision: String,
+    pub models_revision: String,
+    pub protocol_revision: String,
+    /// M4.3 D-79: inference device (gpu | cpu) — recorded for audit and
+    /// compared on resume so cpu-era and gpu-era products never cross-reuse.
+    #[serde(default)]
+    pub device: String,
     pub paddleocr: String,
     pub paddlex: String,
     pub paddlepaddle: String,
@@ -183,7 +196,9 @@ impl StructureEngineClient {
             reader: Some(BufReader::new(stdout)),
             identity: EngineIdentity {
                 engine: String::new(),
-                revision: String::new(),
+                models_revision: String::new(),
+                protocol_revision: String::new(),
+                device: String::new(),
                 paddleocr: String::new(),
                 paddlex: String::new(),
                 paddlepaddle: String::new(),
@@ -267,6 +282,78 @@ impl StructureEngineClient {
     #[must_use]
     pub fn identity(&self) -> &EngineIdentity {
         &self.identity
+    }
+
+    /// M4.3 P2b-3: the product-side identity built from the verified hello,
+    /// pinned to the engine availability era (used by the identity slot on
+    /// lazy spawns).
+    #[must_use]
+    pub fn structure_reread_identity(&self) -> ocrx_output::StructureRereadIdentity {
+        let hello = self.identity();
+        ocrx_output::StructureRereadIdentity {
+            engine: hello.engine.clone(),
+            models_revision: hello.models_revision.clone(),
+            protocol_revision: hello.protocol_revision.clone(),
+            device: hello.device.clone(),
+            availability: "engine".to_owned(),
+            paddleocr: hello.paddleocr.clone(),
+            paddlex: hello.paddlex.clone(),
+            paddlepaddle: hello.paddlepaddle.clone(),
+            models_sha256: hello
+                .models_sha256
+                .iter()
+                .map(|(name, hash)| (name.clone(), hash.sha256.clone()))
+                .collect(),
+        }
+    }
+
+    /// M4.3 P2b (D-71): request the route-A regions payload for one PDF and
+    /// write it to `out_path` (`<regions-root>/<stem>.regions.json`). One
+    /// RegionsGenerator serves a whole batch (the worker persists across
+    /// requests); the table-structure pipeline is NOT loaded by this mode.
+    pub fn generate_regions(
+        &mut self,
+        pdf_path: &std::path::Path,
+        model_dir: &std::path::Path,
+        out_path: &std::path::Path,
+    ) -> Result<(), String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let frame = serde_json::json!({
+            "type": "regions",
+            "id": id,
+            "pdf_path": pdf_path.to_string_lossy(),
+            "model_dir": model_dir.to_string_lossy(),
+        })
+        .to_string();
+        self.send(frame)
+            .map_err(|kind| format!("regions request failed: {kind:?}"))?;
+        let line = self
+            .read_line_deadline(REQUEST_TIMEOUT)
+            .map_err(|error| format!("regions reply failed: {error}"))?;
+        let value: serde_json::Value = serde_json::from_str(&line)
+            .map_err(|error| format!("regions reply malformed: {error}"))?;
+        if value.get("id").and_then(serde_json::Value::as_u64) != Some(id) {
+            return Err(format!("regions reply id mismatch: {line:.80}"));
+        }
+        if value.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+            let message = value
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown regions failure");
+            return Err(format!("regions generation failed: {message}"));
+        }
+        let payload = value
+            .get("regions_json")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "regions reply missing regions_json".to_owned())?;
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("regions root mkdir failed: {error}"))?;
+        }
+        std::fs::write(out_path, payload)
+            .map_err(|error| format!("regions file write failed: {error}"))?;
+        Ok(())
     }
 
     /// True once the worker is known-dead (D-63 (4): no auto-restart).
@@ -410,8 +497,32 @@ impl EngineIdentity {
         if self.engine != EXPECTED_ENGINE {
             out.push(format!("engine {} != {EXPECTED_ENGINE}", self.engine));
         }
-        if self.revision != EXPECTED_REVISION {
-            out.push(format!("revision {} != {EXPECTED_REVISION}", self.revision));
+        if self.models_revision != EXPECTED_MODELS_REVISION {
+            out.push(format!(
+                "models_revision {} != {EXPECTED_MODELS_REVISION}",
+                self.models_revision
+            ));
+        }
+        if self.protocol_revision != EXPECTED_PROTOCOL_REVISION {
+            out.push(format!(
+                "protocol_revision {} != {EXPECTED_PROTOCOL_REVISION}",
+                self.protocol_revision
+            ));
+        }
+        // D-72: the frozen manifest is the models_revision source of truth —
+        // a hello models_revision disagreeing with the embedded manifest is
+        // itself a mismatch (fail-closed on the split axes drifting apart).
+        if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(FROZEN_MODELS_MANIFEST) {
+            let manifest_revision = manifest
+                .get("revision")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if self.models_revision != manifest_revision {
+                out.push(format!(
+                    "models_revision {} != manifest revision {manifest_revision}",
+                    self.models_revision
+                ));
+            }
         }
         if self.paddleocr != EXPECTED_PADDLEOCR {
             out.push(format!(
@@ -454,6 +565,99 @@ impl EngineIdentity {
 // Test fake: in-memory engine with a scripted verdict sequence (drives all
 // orchestration tests; macOS CI runs these without python/paddle).
 // ---------------------------------------------------------------------------
+
+/// M4.3 P2b-2 (D-71): lazy spawn wrapper for the best-effort (default)
+/// mode — the engine process starts at the FIRST trigger region, so
+/// zero-trigger documents pay no SLANet startup/handshake cost. A spawn
+/// failure is sticky (no re-spawn attempts) and surfaces as per-region
+/// engine_error keep-original dispositions.
+pub struct LazyStructureEngine {
+    inner: Option<StructureEngineClient>,
+    spawn_error: Option<String>,
+    identity_slot:
+        Option<std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>>,
+}
+
+impl LazyStructureEngine {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: None,
+            spawn_error: None,
+            identity_slot: None,
+        }
+    }
+
+    /// M4.3 P2b-3: the live identity slot — written at spawn so committed
+    /// pages pin the engine-era identity (D-71 availability separation).
+    pub fn set_identity_slot(
+        &mut self,
+        slot: std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>,
+    ) {
+        self.identity_slot = Some(slot);
+    }
+
+    /// True once the engine process has actually spawned (the doc-level
+    /// identity is only meaningful after this).
+    #[must_use]
+    pub fn is_spawned(&self) -> bool {
+        self.inner.is_some()
+    }
+
+    /// The sticky spawn failure, if any (the degrade marker).
+    #[must_use]
+    pub fn spawn_error(&self) -> Option<&str> {
+        self.spawn_error.as_deref()
+    }
+
+    /// The verified identity — only after a successful spawn.
+    #[must_use]
+    pub fn identity(&self) -> Option<&EngineIdentity> {
+        self.inner.as_ref().map(StructureEngineClient::identity)
+    }
+
+    fn ensure_spawned(&mut self) -> Result<(), crate::structure_engine::EngineErrorKind> {
+        if self.inner.is_none() && self.spawn_error.is_none() {
+            match StructureEngineClient::spawn_from_env() {
+                Ok(client) => {
+                    if let Some(slot) = self.identity_slot.as_ref() {
+                        *slot.borrow_mut() = Some(client.structure_reread_identity());
+                    }
+                    self.inner = Some(client);
+                }
+                Err(error) => self.spawn_error = Some(error),
+            }
+        }
+        match (self.inner.as_mut(), self.spawn_error.as_deref()) {
+            (Some(_client), _) => Ok(()),
+            (_, Some(error)) => Err(crate::structure_engine::EngineErrorKind::EngineError(
+                error.to_owned(),
+            )),
+            (None, None) => unreachable!("spawn state must be settled"),
+        }
+    }
+}
+
+impl Default for LazyStructureEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StructureTableEngine for LazyStructureEngine {
+    fn recognize(
+        &mut self,
+        png: &[u8],
+        page: u32,
+        ordinal: usize,
+    ) -> Result<StructureOutcome, EngineErrorKind> {
+        self.ensure_spawned()?;
+        self.inner
+            .as_mut()
+            .expect("spawned by ensure_spawned")
+            .recognize(png, page, ordinal)
+    }
+}
 
 /// Scripted verdicts in region order; an empty script answers further
 /// regions with [`EngineErrorKind::EngineDown`].
@@ -516,18 +720,21 @@ mod tests {
     fn hello_identity_mismatch_lists_every_field() {
         let hello = EngineIdentity {
             engine: "other".to_owned(),
-            revision: "deadbeef".to_owned(),
+            models_revision: "deadbeef".to_owned(),
+            protocol_revision: "proto0".to_owned(),
+            device: String::new(),
             paddleocr: "1.0".to_owned(),
             paddlex: "1.0".to_owned(),
             paddlepaddle: "1.0".to_owned(),
             models_sha256: BTreeMap::new(),
         };
         let mismatches = hello.mismatches_against_frozen();
-        // 5 version fields + one entry per frozen model dir (empty models
-        // map = every frozen model missing).
+        // 6 version fields (engine + the D-72 revision split adds one) + the
+        // manifest-cross-check duplicate for models_revision + one entry per
+        // frozen model dir (empty models map = every frozen model missing).
         assert_eq!(
             mismatches.len(),
-            5 + 8,
+            6 + 1 + 8,
             "every frozen field must be compared"
         );
     }
@@ -542,8 +749,8 @@ mod tests {
             .and_then(serde_json::Value::as_object)
             .unwrap();
         let hello: EngineIdentity = serde_json::from_str(
-            r#"{"type":"hello","engine":"slanet-plus","revision":"bae6e5f8","paddleocr":"3.7.0",
-                "paddlex":"3.7.2","paddlepaddle":"3.4.0"}"#,
+            r#"{"type":"hello","engine":"slanet-plus","models_revision":"bae6e5f8","protocol_revision":"proto3","device":"gpu","paddleocr":"3.7.0",
+                "paddlex":"3.7.2","paddlepaddle":"3.3.1"}"#,
         )
         .unwrap();
         assert!(

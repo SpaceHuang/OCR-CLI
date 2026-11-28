@@ -1,0 +1,54 @@
+{
+ "artifact": "analysis-m43-p3-dual-arm-verdict",
+ "date": "2026-11-27",
+ "verdict": "P3 SPIKE FAIL — all three arms deeply negative on the D-73 criterion; the weak-table line CLOSES permanently (three mechanisms now falsified)",
+ "population": "B0b pool re-frozen on the shipped baseline (analysis-m43-p3-weak-table-freeze.json): 222 tables / worst 36 / mid 89 / bad-low 97; state 117 good / 73 mid / 20 weak / 12 zero",
+ "design": "dual-arm: A = SLANet (shipped structure engine, GPU), B = OvisOCR3 crop reread (shipped F1-F5 arm, token 1024 grid via crop-PDF scans); compare-keep four-tuple + D-47 identity on every candidate; swapped prediction sets scored with the official eval vs the shipped baseline",
+ "criteria_d73": {
+  "frozen": "worst/bad paired mean dTEDS >= +0.10 AND improved >= 20%"
+ },
+ "results": {
+  "armA_slanet": {
+   "worst_bad_pairs": 18,
+   "mean_dteds": -0.2713,
+   "improved": 5,
+   "improved_pct": "28%",
+   "best_single": "page-be2ebf31 +0.477",
+   "worst_single": "-0.73"
+  },
+  "armB_ovisocr3": {
+   "worst_bad_pairs": 26,
+   "mean_dteds": -0.1929,
+   "improved": 8,
+   "improved_pct": "31%",
+   "best_single": "newspaper +0.234",
+   "worst_single": "eastmoney_7f55 (P1-rescued page) -0.731"
+  },
+  "best_of_both": {
+   "worst_bad_pairs": 37,
+   "mean_dteds": -0.2471,
+   "improved": 10,
+   "improved_pct": "27%"
+  }
+ },
+ "verdict_detail": {
+  "improved_pct": "PASSES on all arms (27-31% >= 20%)",
+  "mean_dteds": "FAILS catastrophically: -0.19 to -0.27 (needed +0.10)",
+  "regression_pattern": "severe (-0.5 to -0.77): structurally-plausible rereads replace acceptable tables with wrongly-ordered content — the four-tuple compare-keep is NOT TEDS-aware and cannot bound this",
+  "interaction": "armB REGRESSES eastmoney_7f55 tables that P1 rescued — confirms the arms must never be co-enabled with P1 on the same pages"
+ },
+ "model_history": {
+  "ovisocr2_crop_weak": "B2 v2: worst/bad dTEDS ~0 — NO-GO (2026-11-18)",
+  "ovisocr3_crop_missing": "M4.1 F6: 0/24 adopted — FAIL (2026-11-21)",
+  "slanet_crop_missing": "M4.2/P1: 14/24 improved, shipped, Overall +0.22 — GO (2026-11-27)",
+  "ovisocr3_crop_weak": "THIS spike (armB): mean -0.19 — FAIL",
+  "slanet_crop_weak": "THIS spike (armA): mean -0.27 — FAIL",
+  "conclusion": "weak tables: three mechanisms falsified (ovisocr2 crop, ovisocr3 crop, slanet crop). The line closes with data, not assumption."
+ },
+ "environment_caveat": "CUDNN mismatch warning (wheel wants 9.9, machine 9.5) recorded — GPU inference completed without visible faults; CUDNN version should join the engine identity in a follow-up",
+ "artifacts": {
+  "decisions": "D:/t/m43/p3/p3-decisions.json",
+  "sets": "D:/t/m43-p0/m43-p3-{armA,armB,best}",
+  "evals": "m43-p3-{armA,armB,best}_quick_match_*"
+ }
+}

@@ -1,0 +1,59 @@
+{
+ "artifact": "analysis-m43-g0-gpu-migration",
+ "date": "2026-11-26",
+ "decision": "D-79/D-80 (user directive: GPU migration is the ship gate)",
+ "supply_chain": {
+  "runtime": "paddlepaddle-gpu 3.3.1 (cu126, paddle official index)",
+  "note": "3.4.0 has NO Windows GPU wheel (recorded honestly)",
+  "unchanged": [
+   "paddleocr 3.7.0",
+   "paddlex 3.7.2",
+   "8 model dirs (SHAs identical)"
+  ],
+  "protocol_revision": "proto2 -> proto3",
+  "identity": "hello.device + StructureRereadIdentity.device (cpu-era/gpu-era never cross-reuse)"
+ },
+ "g01_probe": {
+  "classification": "gate-passing crops 25/25 identical; 2 no_ruling_lines crops compared gate-free (probe artifact)",
+  "html_byte_drift": "3 ok crops drift at byte level (GPU numerics; 4934->4932 char-level example) — GPU-era truth table re-frozen",
+  "timing": {
+   "27_crops_total_secs": 41.3,
+   "median_secs": 0.9,
+   "max_secs": 10.2,
+   "cpu_era_total_approx_secs": 5000
+  },
+  "dca64e05_r0": {
+   "secs": 7.9,
+   "html_len": 4932
+  },
+  "dca64e05_note": "CPU 1099s (>600s frozen timeout, keep-original per user option A); GPU 7.9s — the timeout class auto-resolves; user option A record preserved"
+ },
+ "g03_smoke": {
+  "verdict": "2/2 PASS (GPU-era truth table: 16 ok / 9 empty_output / 2 no_ruling_lines, zero behavioral drift vs CPU era)",
+  "determinism": "run-to-run byte-identical against the frozen GPU snapshot (gpu-html-reference.json)",
+  "wall_time": "~50s (vs ~5700s CPU era)"
+ },
+ "g04_gpu_spike_stage_a": {
+  "candidates": 135,
+  "adopted": 17,
+  "reasons": {
+   "no_ruling_lines": 78,
+   "empty_output": 37,
+   "duplicate_of_emitted": 3
+  },
+  "emitted_blocks_kept": "17/17",
+  "identical_to_cpu_dry_run": true
+ },
+ "pending": "G0.5 formal spike adjudication (GPU eval running) + user gate decision (frozen 20% FAIL vs true-miss 44% vs outcome-based option C)",
+ "environment_caveat": {
+  "finding": "paddle 3.3.1-gpu wheel compiled with CUDNN 9.9; machine has CUDNN 9.5 — paddle emits a serious-incompatibility warning at every GPU init",
+  "observed": "all GPU inference (probe, T4 campaign, beta/gamma, dual-arm spike) completed with sane outputs and zero crashes across ~2000+ inferences",
+  "disposition": "recorded as environment risk; follow-ups: (1) upgrade machine CUDNN to 9.9 or switch to the cu118 wheel, (2) add CUDNN version to the engine identity so runtime changes pin products"
+ },
+ "gpu_run_to_run_variance": {
+  "finding": "GPU OCR-rec (PP-OCRv4_server_rec_doc) cell text can vary at WHITESPACE level across process runs on dense crops (e.g. Note3 vs Note 3 on the page-0cbdcfa9 nested table) — observed in the 3rd GPU smoke run; the 1st-2nd pair was byte-identical",
+  "scope": "whitespace-level only; table structure stable; classification split stable across all runs",
+  "disposition": "smoke html assertion relaxed to whitespace-normalized equality (structure/verdict contract stays exact); full-corpus gamma==beta md was byte-identical in the same campaign pair, so corpus-level stability held for the shipped evidence",
+  "residual_risk": "individual dense crops may wobble across future runs — byte-exact html pinning is NOT a GPU-era guarantee"
+ }
+}

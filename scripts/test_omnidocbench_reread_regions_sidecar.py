@@ -6,13 +6,19 @@ by the B0'/pairing probe runs)."""
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
+# M4.3 P2a: the implementation moved to the sidecar package (single source
+# of truth shared with the worker's regions frame mode); this batch CLI is a
+# thin shell over it.
 spec = importlib.util.spec_from_file_location(
     "sidecar",
-    Path(__file__).with_name("omnidocbench-reread-regions-sidecar.py"),
+    Path(__file__).resolve().parents[1] / "sidecar" / "table-engine" / "layout_regions.py",
 )
 sidecar = importlib.util.module_from_spec(spec)
+sys.modules["sidecar"] = sidecar
+spec.loader.exec_module(sidecar)
 
 
 def test_scan_render_size_matches_the_rust_pipeline():

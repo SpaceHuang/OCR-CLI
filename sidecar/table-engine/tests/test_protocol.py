@@ -13,7 +13,9 @@ class TestHello:
     def test_hello_frame_shape_is_frozen(self):
         hello = proto.Hello(
             engine=proto.ENGINE_ID,
-            revision=proto.EXPECTED_REVISION,
+            models_revision=proto.EXPECTED_MODELS_REVISION,
+            protocol_revision=proto.EXPECTED_PROTOCOL_REVISION,
+            device=proto.EXPECTED_DEVICE,
             paddleocr=proto.EXPECTED_PADDLEOCR,
             paddlex=proto.EXPECTED_PADDLEX,
             paddlepaddle=proto.EXPECTED_PADDLEPADDLE,
@@ -22,18 +24,22 @@ class TestHello:
         obj = json.loads(hello.to_json())
         assert obj["type"] == "hello"
         assert obj["engine"] == "slanet-plus"
-        assert obj["revision"] == "bae6e5f8"
+        assert obj["models_revision"] == "bae6e5f8"
+        assert obj["protocol_revision"] == "proto3"
+        assert obj["device"] == "gpu"
         assert obj["paddleocr"] == "3.7.0"
         assert obj["paddlex"] == "3.7.2"
-        assert obj["paddlepaddle"] == "3.4.0"
+        assert obj["paddlepaddle"] == "3.3.1"
         assert obj["models_sha256"] == {"m": {"files": 3, "sha256": "abc"}}
 
     def test_supply_chain_constants_do_not_drift(self):
         assert proto.ENGINE_ID == "slanet-plus"
-        assert proto.EXPECTED_REVISION == "bae6e5f8"
+        assert proto.EXPECTED_MODELS_REVISION == "bae6e5f8"
+        assert proto.EXPECTED_PROTOCOL_REVISION == "proto3"
+        assert proto.EXPECTED_DEVICE == "gpu"
         assert proto.EXPECTED_PADDLEOCR == "3.7.0"
         assert proto.EXPECTED_PADDLEX == "3.7.2"
-        assert proto.EXPECTED_PADDLEPADDLE == "3.4.0"
+        assert proto.EXPECTED_PADDLEPADDLE == "3.3.1"
 
 
 class TestRecognize:
@@ -60,6 +66,35 @@ class TestRecognize:
             raise AssertionError("expected ProtocolError")
         except proto.ProtocolError:
             pass
+
+
+class TestRegions:
+    def test_roundtrip_parses_request(self):
+        frame = json.dumps(
+            {"type": "regions", "id": 9, "pdf_path": "D:/docs/a.pdf", "model_dir": "M"}
+        )
+        request = proto.RegionsRequest.from_json(frame)
+        assert request.id == 9
+        assert request.pdf_path == "D:/docs/a.pdf"
+        assert request.model_dir == "M"
+
+    def test_wrong_type_raises(self):
+        try:
+            proto.RegionsRequest.from_json('{"type":"recognize","id":1}')
+            raise AssertionError("expected ProtocolError")
+        except proto.ProtocolError:
+            pass
+
+    def test_missing_field_raises(self):
+        try:
+            proto.RegionsRequest.from_json('{"type":"regions","id":1,"pdf_path":"p"}')
+            raise AssertionError("expected ProtocolError")
+        except proto.ProtocolError:
+            pass
+
+    def test_regions_ok_shape(self):
+        obj = json.loads(proto.regions_ok(9, '{"pages":[]}'))
+        assert obj == {"type": "result", "id": 9, "ok": True, "regions_json": '{"pages":[]}'}
 
 
 class TestResults:

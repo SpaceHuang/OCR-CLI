@@ -1,0 +1,18 @@
+{
+ "artifact": "analysis-m43-review-reverify",
+ "date": "2026-11-28",
+ "context": "code review 2026-11-27 BLOCK-1/2 + non-blocking x4 — fixes landed in 356770a/47b8d48; this artifact is the D-78 (3) checkpoint field-level diff the review flagged as the acceptance gap",
+ "binary": "fixed (post-356770a): slot pins generation 5 alongside identity; resume-path lazy resolves eagerly",
+ "block1": {
+  "fix": "test_protocol.py proto3/device/3.3.1 + EXPECTED_DEVICE/EXPECTED_PADDLEPADDLE",
+  "verified": "16/16 protocol tests PASS on HEAD (41e84dd)"
+ },
+ "block2_checkpoint_diff": {
+  "setup": "same spawned document (jiaocaineedrop_jiaocai_needrop_en_2884), two modes on the FIXED binary: default best-effort (auto regions) vs explicit ON (auto regions — same source)",
+  "result": "checkpoint field-level diff: NONE — generation 5 both sides, full identity (proto3/gpu/3.3.1/availability=engine) equal, all other fields equal; md byte-identical",
+  "cross_source_note": "default vs an explicit-ON run given a DIFFERENT regions file differs only in regions_sha256 — input difference by construction, not a defect",
+  "resume": "default->default resume REUSED (md not rewritten, 99s old at check)"
+ },
+ "d71_4_scope": "spawned-doc on<->default reuse: proven. unprobed-doc cross-mode: conservative reprocess (no identity exists pre-spawn) — recorded in plan v0.10 as the known pre-refinement scope",
+ "gap_closed": "the review noted p2b4_gamma_adjudicate.py diffed result.json instead of checkpoints (D-78 (3)); the checkpoint-level diff is now executed and archived on the fixed binary"
+}

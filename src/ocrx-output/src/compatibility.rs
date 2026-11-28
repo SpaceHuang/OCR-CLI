@@ -45,10 +45,25 @@ pub struct PdfIdentity {
 /// `None` serializes as an OMITTED field (OFF products stay byte-identical),
 /// `Some` carries the full supply-chain identity (exact-equality compare on
 /// resume).
+fn default_availability() -> String {
+    "engine".to_owned()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StructureRereadIdentity {
     pub engine: String,
-    pub revision: String,
+    /// D-72 split: model-dir freeze (manifest-keyed, `bae6e5f8`).
+    pub models_revision: String,
+    /// D-72 split: worker behavior generation (`proto3` = GPU migration).
+    pub protocol_revision: String,
+    /// D-79: inference device (gpu | cpu) — era separation on resume.
+    #[serde(default)]
+    pub device: String,
+    /// M4.3 P2b-3/D-71: availability era — "engine" (handshake verified;
+    /// the default for pre-P2b products), "unprobed" (lazy doc that never
+    /// reached a trigger), "degraded" (spawn failed; OFF-shaped content).
+    #[serde(default = "default_availability")]
+    pub availability: String,
     pub paddleocr: String,
     pub paddlex: String,
     pub paddlepaddle: String,
@@ -685,9 +700,12 @@ mod tests {
         let current = identity("cpu", 8, "Q4_K_M");
         let statik = StaticInferenceIdentity::from_execution(&current);
         let (compat, matching) = reread_on(&current); // generation-2 stored/run
-        let engine = |revision: &str| StructureRereadIdentity {
+        let engine = |models_revision: &str| StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
-            revision: revision.to_owned(),
+            models_revision: models_revision.to_owned(),
+            protocol_revision: "proto3".to_owned(),
+            device: "gpu".to_owned(),
+            availability: "engine".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -737,6 +755,35 @@ mod tests {
             &matching
         ));
 
+        // --- 4 <-> 5 (M4.3 partial arm): SAME engine identity, ONLY the
+        // generation differs (D-69/D-75/D-76 rule change) — bidirectional
+        // non-reuse, mirroring the 3 <-> 4 boundary.
+        let mut gen4_stored_for_5 = compat.clone();
+        gen4_stored_for_5
+            .ocr
+            .as_mut()
+            .unwrap()
+            .reread_rules_generation = 4;
+        gen4_stored_for_5
+            .ocr
+            .as_mut()
+            .unwrap()
+            .table_structure_reread = Some(engine("bae6e5f8"));
+        let mut gen5_run = matching.clone();
+        gen5_run.reread_rules_generation = 5;
+        gen5_run.table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(
+            !ocr_pre_compare(&gen4_stored_for_5, &statik, &gen5_run),
+            "gen-4 products must NEVER reuse under the gen-5 run"
+        );
+        let mut stored_gen5 = compat.clone();
+        stored_gen5.ocr.as_mut().unwrap().reread_rules_generation = 5;
+        stored_gen5.ocr.as_mut().unwrap().table_structure_reread = Some(engine("bae6e5f8"));
+        assert!(
+            !ocr_pre_compare(&stored_gen5, &statik, &gen4_run),
+            "gen-5 products must never reuse under a gen-4 run"
+        );
+
         // Engine-identity mismatch at the SAME generation: no reuse either.
         let mut stored_diff_engine = compat.clone();
         stored_diff_engine
@@ -766,7 +813,10 @@ mod tests {
         ocr.reread_rules_generation = 4;
         ocr.table_structure_reread = Some(StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
-            revision: "bae6e5f8".to_owned(),
+            models_revision: "bae6e5f8".to_owned(),
+            protocol_revision: "proto3".to_owned(),
+            device: "gpu".to_owned(),
+            availability: "engine".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),
@@ -842,7 +892,10 @@ mod tests {
         let mut on = stored(&current);
         on.ocr.as_mut().unwrap().table_structure_reread = Some(StructureRereadIdentity {
             engine: "slanet-plus".to_owned(),
-            revision: "bae6e5f8".to_owned(),
+            models_revision: "bae6e5f8".to_owned(),
+            protocol_revision: "proto3".to_owned(),
+            device: "gpu".to_owned(),
+            availability: "engine".to_owned(),
             paddleocr: "3.7.0".to_owned(),
             paddlex: "3.7.2".to_owned(),
             paddlepaddle: "3.4.0".to_owned(),

@@ -126,6 +126,12 @@ enum SerialOutcome {
 /// and one config; windows stay per-document).
 pub struct WindowConfig<'a> {
     pub compatibility: &'a ScanCompatibility,
+    /// M4.3 P2b-3 (D-71): live identity slot — the LAZY engine writes the
+    /// verified identity here on spawn; committed pages pin it so
+    /// engine-era products never reuse under another era. None = the
+    /// eager/strict arm (the doc compat already carries the identity).
+    pub structure_identity_slot:
+        Option<std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>>,
     pub resume: bool,
     pub keep_pages: bool,
     /// Ladder rung 3 gate (`--column-split-retry`, default on).
@@ -276,6 +282,7 @@ pub fn run_pages_with_session(
                 &terminal,
                 root,
                 config.compatibility,
+                config.structure_identity_slot.as_ref(),
                 commit_recorder,
                 cancellation,
                 &mut completed,
@@ -347,6 +354,7 @@ pub fn run_pages_with_session(
                 &terminal,
                 root,
                 config.compatibility,
+                config.structure_identity_slot.as_ref(),
                 commit_recorder,
                 cancellation,
                 &mut completed,
@@ -592,6 +600,7 @@ pub fn run_pages_with_session(
             &terminal,
             root,
             config.compatibility,
+            config.structure_identity_slot.as_ref(),
             commit_recorder,
             cancellation,
             &mut completed,
@@ -865,6 +874,9 @@ pub(crate) fn commit_terminal(
     terminal: &[TerminalPage],
     root: &Path,
     compatibility: &ScanCompatibility,
+    structure_identity_slot: Option<
+        &std::rc::Rc<std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>>,
+    >,
     commit_recorder: &ocrx_output::commit_profile::CommitRecorder,
     cancellation: &CancellationToken,
     completed: &mut u32,
@@ -915,6 +927,16 @@ pub(crate) fn commit_terminal(
                         artifact.reread_detail_json.as_bytes(),
                     )?;
                 }
+                // M4.3 P2b-3 (D-71): the pre-reread trigger qualification
+                // summary — the resume state machine's availability-flip
+                // classifier consumes this instead of inferring from the
+                // post-rescue products.
+                if !artifact.trigger_state_json.is_empty() {
+                    atomic_write(
+                        root.join(format!("page-{page:04}.trigger.json")),
+                        artifact.trigger_state_json.as_bytes(),
+                    )?;
+                }
                 // Raw-output sidecar: preserved whenever the page
                 // degenerated or lost text to repetition cleaning.
                 let raw_pointer = if artifact.degenerated
@@ -928,10 +950,26 @@ pub(crate) fn commit_terminal(
                 } else {
                     None
                 };
+                // M4.3 P2b-3: LAZY-era pages pin the LIVE identity once the
+                // engine spawned — engine-era products never reuse under
+                // another era (D-71 availability separation).
+                let mut page_compatibility = compatibility.clone();
+                if let Some(slot) = structure_identity_slot {
+                    if let Some(identity) = slot.borrow().as_ref() {
+                        if let Some(ocr) = page_compatibility.ocr.as_mut() {
+                            ocr.table_structure_reread = Some(identity.clone());
+                            // P2b-3 BLOCK-2 fix: pin the generation alongside
+                            // the identity — without it lazy-doc checkpoints
+                            // carry gen 0 while the resume side expects 5,
+                            // forcing full reprocess of rescued documents.
+                            ocr.reread_rules_generation = crate::reread::REREAD_RULES_GENERATION;
+                        }
+                    }
+                }
                 let checkpoint = V6Checkpoint {
                     page_number: page,
                     status: V6Status::Complete,
-                    compatibility: compatibility.clone(),
+                    compatibility: page_compatibility,
                     output_sha256: String::new(),
                     truncated: artifact.truncated,
                     degenerated: artifact.degenerated,

@@ -1,0 +1,187 @@
+{
+ "artifact": "analysis-m43-p0-throw-diagnosis",
+ "date": "2026-11-25",
+ "root_cause": "worker-side extraction bug, NOT a Paddle internal fault: TableRecognitionPipelineV2.predict() completes and returns res_json with table_res_list present but EMPTY (pipeline found no table in the crop); worker.py:103 indexed [0] on the empty list -> IndexError surfaced as engine_error. Frozen by probe: keys include table_res_list (list, len=0) on both a 62px sliver and a 530x1159 matched crop.",
+ "consequence": "M4.2 G-B \"6 deterministic pipeline throws\" (dca64e05, 1417 r1/r2, 3713 r0-r2) are reclassified as no-table-found crops -> after the P0 fix they become clean empty_output rejects (keep-original, honest counters). GT key recovery potential (<=5 keys) does NOT materialize; P0 value = classification integrity + D-72 identity split.",
+ "smoke_throwing_crops": [
+  {
+   "crop": "p02_r0_match0_conf0.99.png",
+   "shape": [
+    263,
+    1262,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p03_r0_match0_conf0.98.png",
+   "shape": [
+    62,
+    546,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p04_r1_match2_conf0.98.png",
+   "shape": [
+    89,
+    623,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p04_r2_match1_conf0.97.png",
+   "shape": [
+    89,
+    624,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p06_r0_match0_conf0.98.png",
+   "shape": [
+    63,
+    556,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p07_r0_match0_conf0.98.png",
+   "shape": [
+    106,
+    1009,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p07_r1_EXTRA_conf0.88.png",
+   "shape": [
+    82,
+    235,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p07_r2_EXTRA_conf0.56.png",
+   "shape": [
+    82,
+    160,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  },
+  {
+   "crop": "p15_r0_match0_conf0.99.png",
+   "shape": [
+    530,
+    1159,
+    3
+   ],
+   "outcome": "throw",
+   "error": "IndexError: list index out of range",
+   "tb_tail": [
+    "    table_res = res_json.get(\"table_res_list\", [{}])[0]",
+    "                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^",
+    "IndexError: list index out of range"
+   ]
+  }
+ ],
+ "probe": {
+  "p03_r0_match0_conf0.98.png": {
+   "json_keys": [
+    "input_path",
+    "layout_det_res",
+    "model_settings",
+    "overall_ocr_res",
+    "page_index",
+    "table_res_list"
+   ],
+   "table_res_list": []
+  },
+  "p15_r0_match0_conf0.99.png": {
+   "json_keys": [
+    "input_path",
+    "layout_det_res",
+    "model_settings",
+    "overall_ocr_res",
+    "page_index",
+    "table_res_list"
+   ],
+   "table_res_list": []
+  }
+ },
+ "production_replay_verification": {
+  "status": "PASS (2026-11-26)",
+  "setup": "regenerated 16-page bound regions sidecars (legacy D:/t/r3/regions sidecars lack the RBLK-1 source_pdf_sha256 binding and are correctly rejected by the current binary; regenerated detections byte-identical to legacy)",
+  "results": {
+   "md_byte_identical": "16/16 vs the pre-P0 t4c ON runs",
+   "engine_error_to_empty_output_flips": 9,
+   "flips_detail": "2017 r0, 1349 r0, 1417 r1/r2, 2211 r0, 3713 r0/r1/r2, yanbaor2_89c3 r0 — exactly the 9-crop set from the smoke; zero other sidecar deltas",
+   "non_flipping_engine_error": "dca64e05 r0 stays engine_error in old AND new runs — NOT the empty-table crash; hypothesis: genuine >600s inference hitting the frozen D-63(3) per-request timeout deterministically (probe running to confirm)"
+  },
+  "correction_vs_gb_record": "the M4.2 G-B adjudication text recorded the throw set as 6 regions (dca64e05, 1417 r1/r2, 3713 r0-r2); the authoritative production set is the 9 above (dca64e05 belongs to a distinct timeout class)",
+  "compare_artifact": "D:/t/m43-p0/p04-replay-compare.json"
+ },
+ "gt_key_recovery_consequence": "the <=5 GT key recovery projected in the plan will not materialize: 9 regions are no-table-found (pipeline honestly finds no structure), and dca64e05 r0 is a timeout-class engine_error — keep-original everywhere, P0 value = classification integrity + D-72 identity split",
+ "non_flipping_engine_error": {
+  "region": "dca64e05 r0 (1848x664 tall table, conf 0.958)",
+  "class": "timeout — the third failure class (crash fixed in P0; no-table-found = the 9 flips; this one)",
+  "evidence": "probe inference completed with pred_html 4934 chars but took 1099s (under concurrent smoke load; uncapped), vs the frozen D-63(3) 600s per-request timeout -> product times out deterministically -> engine_error keep-original in both old and new runs",
+  "disposition": "keep-original under the frozen contract; OPEN DECISION for the user: (a) keep 600s (zero contract change, forfeit 1 GT key potential), or (b) amend D-63(3) timeout (contract change + re-validation, recovers 1 GT key if the HTML passes gates)",
+  "probe_artifacts": "D:/t/m43/dca64e05-r0.png, D:/t/m43/dca64e05-r0-timing.json"
+ }
+}

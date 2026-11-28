@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import importlib.metadata
+import os
 import sys
 from pathlib import Path
 
@@ -37,10 +38,14 @@ TABLE_MODEL_DIRS = (
 
 
 def _metadata_version(dist: str) -> str:
-    try:
-        return importlib.metadata.version(dist)
-    except importlib.metadata.PackageNotFoundError:
-        return "missing"
+    # D-79: the GPU wheel's distribution name is `paddlepaddle-gpu` — probe
+    # both names so the hello reports the real runtime version either way.
+    for name in (dist, f"{dist}-gpu"):
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "missing"
 
 
 def _hash_model_dir(root: Path) -> dict:
@@ -63,7 +68,9 @@ def build_hello() -> str:
             models[name] = _hash_model_dir(model_dir)
     return proto.Hello(
         engine=proto.ENGINE_ID,
-        revision=proto.EXPECTED_REVISION,
+        models_revision=proto.EXPECTED_MODELS_REVISION,
+        protocol_revision=proto.EXPECTED_PROTOCOL_REVISION,
+        device=engine_device(),
         paddleocr=_metadata_version("paddleocr"),
         paddlex=_metadata_version("paddlex"),
         paddlepaddle=_metadata_version("paddlepaddle"),
@@ -71,10 +78,23 @@ def build_hello() -> str:
     ).to_json()
 
 
-class TablePipeline:
-    """Lazy TableRecognitionPipelineV2 wrapper — the spike-frozen config."""
+# M4.3 D-79: the inference device. "gpu" = paddlepaddle-gpu era (the ship
+# configuration); "cpu" stays available as the fallback channel. The device
+# rides the hello frame and the product identity — cpu-era and gpu-era
+# products never cross-resume.
+DEVICE_ENV = "OCRX_TABLE_ENGINE_DEVICE"
 
-    def __init__(self) -> None:
+
+def engine_device() -> str:
+    return os.environ.get(DEVICE_ENV, "cpu").strip().lower() or "cpu"
+
+
+class TablePipeline:
+    """Lazy TableRecognitionPipelineV2 wrapper — the spike-frozen config,
+    on the configured device."""
+
+    def __init__(self, device: str) -> None:
+        self._device = device
         self._pipe = None
 
     def _ensure_loaded(self):
@@ -82,7 +102,7 @@ class TablePipeline:
             from paddleocr import TableRecognitionPipelineV2  # heavy import
 
             self._pipe = TableRecognitionPipelineV2(
-                device="cpu",
+                device=self._device,
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 enable_mkldnn=False,
@@ -100,14 +120,22 @@ class TablePipeline:
         result = pipe.predict(image)
         res = result[0] if isinstance(result, list) else result
         res_json = (res.json if hasattr(res, "json") else {}).get("res", {})
-        table_res = res_json.get("table_res_list", [{}])[0]
-        return table_res.get("pred_html", "") or ""
+        # M4.3 P0 fix: the pipeline completes honestly with an EMPTY
+        # table_res_list when no table is found in the crop (diagnosis:
+        # analysis-m43-p0-throw-diagnosis.json) — the previous [0] index
+        # crashed worker-side and surfaced as engine_error. Empty list =
+        # no structure = the existing empty-output reject path.
+        table_res_list = res_json.get("table_res_list") or []
+        if not table_res_list:
+            return ""
+        return table_res_list[0].get("pred_html", "") or ""
 
 
 def serve(in_stream=None, out_stream=None) -> int:
     in_stream = in_stream if in_stream is not None else sys.stdin.buffer
     out_stream = out_stream if out_stream is not None else sys.stdout.buffer
-    pipeline = TablePipeline()
+    pipeline = TablePipeline(engine_device())
+    regions = None  # M4.3 P2a: the layout detector loads lazily per model dir
     proto.write_frame(out_stream, build_hello())
     while True:
         line = proto.read_frame(in_stream)
@@ -117,11 +145,31 @@ def serve(in_stream=None, out_stream=None) -> int:
             request = proto.Recognize.from_json(line)
         except proto.ProtocolError:
             try:
-                ping = proto.Ping.from_json(line)
-            except proto.ProtocolError as error:
-                proto.write_frame(out_stream, proto.error_frame(-1, str(error)))
-                return 2  # unusable connection
-            proto.write_frame(out_stream, proto.result_ok(ping.id, "pong"))
+                regions_request = proto.RegionsRequest.from_json(line)
+            except proto.ProtocolError:
+                try:
+                    ping = proto.Ping.from_json(line)
+                except proto.ProtocolError as error:
+                    proto.write_frame(out_stream, proto.error_frame(-1, str(error)))
+                    return 2  # unusable connection
+                proto.write_frame(out_stream, proto.result_ok(ping.id, "pong"))
+                continue
+            # M4.3 P2a: per-request fault = error frame, keep serving
+            # (D-63 (3) semantics; the CLI decides degrade vs hard error).
+            try:
+                import layout_regions
+
+                if regions is None:
+                    regions = layout_regions.LayoutRegions()
+                payload = regions.regions_for_pdf(
+                    regions_request.pdf_path, regions_request.model_dir
+                )
+                proto.write_frame(out_stream, proto.regions_ok(regions_request.id, payload))
+            except Exception as error:  # noqa: BLE001
+                proto.write_frame(
+                    out_stream,
+                    proto.error_frame(regions_request.id, f"{type(error).__name__}: {error}"),
+                )
             continue
         try:
             png_bytes = request.png_bytes

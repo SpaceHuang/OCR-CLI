@@ -1,0 +1,1131 @@
+{
+ "artifact": "analysis-m43-p3-weak-table-freeze",
+ "date": "2026-11-27",
+ "baseline": "m43-t4-on (Run alpha, P1-era explicit-ON products — byte-identical to shipped beta per beta==alpha gate)",
+ "match_rule": "EXACT eval key prefix (image_path + \"_[\") — v1 used a 60-char prefix that cross-contaminated sibling pages",
+ "pool_b0b": {
+  "worst": 36,
+  "mid": 89,
+  "bad-low": 97
+ },
+ "with_teds": 222,
+ "buckets": {
+  "zero(<0.01)": 12,
+  "weak(0.01-0.5)": 20,
+  "mid(0.5-0.8)": 73,
+  "good(>=0.8)": 117
+ },
+ "worst_bad_zero_denominator": 12,
+ "rows": [
+  {
+   "band": "worst",
+   "img": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语下册_课本_人教新起点英语5B电子课本_page_011.png",
+   "current_teds": 0.98985727029438
+  },
+  {
+   "band": "worst",
+   "img": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11.jpg",
+   "current_teds": 0.9071257771401243
+  },
+  {
+   "band": "worst",
+   "img": "docstructbench_llm-raw-scihub-o.O-s00374-006-0103-8.pdf_11.jpg",
+   "current_teds": 0.9071257771401243
+  },
+  {
+   "band": "worst",
+   "img": "docstructbench_llm-raw-scihub-o.O-s0167-8655%2801%2900019-8.pdf_10.jpg",
+   "current_teds": 0.9833333333333333
+  },
+  {
+   "band": "worst",
+   "img": "docstructbench_llm-raw-the-eye-o.O-1995_2418.pdf_1.jpg",
+   "current_teds": 0.9774165806673547
+  },
+  {
+   "band": "worst",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_397.jpg",
+   "current_teds": 0.9810153329610002
+  },
+  {
+   "band": "worst",
+   "img": "magazine_TheEconomist.2024.02.24_page_076.png",
+   "current_teds": 0.9861111111111112
+  },
+  {
+   "band": "worst",
+   "img": "magazine_TheEconomist.2024.02.24_page_076.png",
+   "current_teds": 0.9861111111111112
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_2a6b4fa088699701a6fa9ccecfb5c25d_1.jpg",
+   "current_teds": 0.9324509664045668
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png",
+   "current_teds": 0.8823529411764706
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png",
+   "current_teds": 0.8823529411764706
+  },
+  {
+   "band": "worst",
+   "img": "newspaper_The Guardian UK_0801@magazinesclubnew_page_052.png",
+   "current_teds": 0.15555555555555556
+  },
+  {
+   "band": "worst",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_79.jpg",
+   "current_teds": 0.604665071770335
+  },
+  {
+   "band": "worst",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_98.jpg",
+   "current_teds": 0.31818181818181823
+  },
+  {
+   "band": "worst",
+   "img": "notes_f7f010b78016aeebd76e56d9283eb67f_50.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "worst",
+   "img": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46.png",
+   "current_teds": 0.21565934065934067
+  },
+  {
+   "band": "worst",
+   "img": "page-b23ec9d4-e4aa-458f-8e65-c2c7f8e9dd46.png",
+   "current_teds": 0.21565934065934067
+  },
+  {
+   "band": "worst",
+   "img": "page-c7771a62-5b6b-48f0-b591-6b657d26e125.png",
+   "current_teds": 0.9434979520163839
+  },
+  {
+   "band": "worst",
+   "img": "page-c7771a62-5b6b-48f0-b591-6b657d26e125.png",
+   "current_teds": 0.9434979520163839
+  },
+  {
+   "band": "worst",
+   "img": "page-d29fe4d2-832a-4ad6-ac80-dc01cf8b0e16.png",
+   "current_teds": 0.7781576382898849
+  },
+  {
+   "band": "worst",
+   "img": "page-d2cdac80-318c-4157-ac6e-bdab333f66bd.png",
+   "current_teds": 0.9840571875426796
+  },
+  {
+   "band": "worst",
+   "img": "page-dbed9c07-e155-4ba1-92f9-a2962dc9a8f9.png",
+   "current_teds": 0.41384278469618296
+  },
+  {
+   "band": "worst",
+   "img": "scihub_AEM.01420-09.pdf_3.jpg",
+   "current_teds": 0.6323345069695827
+  },
+  {
+   "band": "worst",
+   "img": "scihub_jneurosci.16-15-04625.1996.pdf_2.jpg",
+   "current_teds": 0.4813904095904096
+  },
+  {
+   "band": "worst",
+   "img": "yanbaopptmerge_5473246b8da789b9bfdeef53a70c4d72afd480415d5cbcedb83d105856710328.pdf_8.jpg",
+   "current_teds": 0.9752965416936005
+  },
+  {
+   "band": "worst",
+   "img": "yanbaopptmerge_70a45bf10fb90ae0c91d44a11e0a97a8f9515d85626b54eb50a80b6146e5c2bf.pdf_10.jpg",
+   "current_teds": 0.9873511904761905
+  },
+  {
+   "band": "mid",
+   "img": "PPT_Catalysis.ppt_page_016.png",
+   "current_teds": 0.9543661035672313
+  },
+  {
+   "band": "mid",
+   "img": "book_zh_GB14536.11998_extracted_page_145.png",
+   "current_teds": 0.6228260869565216
+  },
+  {
+   "band": "mid",
+   "img": "color_textbook_教材全解1+1二年级上册英语上海牛津版_page_058.png",
+   "current_teds": 0.9768518518518519
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-60403612.pdf_179.jpg",
+   "current_teds": 0.9225152162652163
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-60403612.pdf_179.jpg",
+   "current_teds": 0.9225152162652163
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-61523162.pdf_276.jpg",
+   "current_teds": 0.5011904761904762
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-ceat.200407001.pdf_3.jpg",
+   "current_teds": 0.8987516681313674
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-chem.200700285.pdf_4.jpg",
+   "current_teds": 0.8397073636808035
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-hup.908.pdf_5.jpg",
+   "current_teds": 0.969849537037037
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-j.1444-2906.2002.00466.x.pdf_4.jpg",
+   "current_teds": 0.792854605766789
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-j.chroma.2005.05.085.pdf_4.jpg",
+   "current_teds": 0.8875744306778789
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-s00128-010-0006-0.pdf_5.jpg",
+   "current_teds": 0.810663549166223
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-s001280000131.pdf_5.jpg",
+   "current_teds": 0.7782455349552606
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-scihub-o.O-s00374-003-0589-2.pdf_6.jpg",
+   "current_teds": 0.9117501022255973
+  },
+  {
+   "band": "mid",
+   "img": "docstructbench_llm-raw-the-eye-o.O-Player%27s%20Options%20-%20Halflings.pdf_11.jpg",
+   "current_teds": 0.9777333333333333
+  },
+  {
+   "band": "mid",
+   "img": "eastmoney_1885ca41425d245551f3482457304f78b48186bff625fa91e675eaf6bba5229f.pdf_0.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "mid",
+   "img": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "mid",
+   "img": "eastmoney_6e1cdb75430fe7d7a7757754d163d1a4a8a1c2a3fca38b74a8a2e8df009f2ce0.pdf_2.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "mid",
+   "img": "eastmoney_bdbfdb8a6ab56be3ab1b40009ee648b6d250013ce653c146f2d2023bd8d14772.pdf_26.jpg",
+   "current_teds": 0.8975812693498452
+  },
+  {
+   "band": "mid",
+   "img": "eastmoney_f671ab94bf8b8274d6736f1a3dc775b3b74fa68686df2946aa5307b6b2a32062.pdf_18.jpg",
+   "current_teds": 0.9868340100898241
+  },
+  {
+   "band": "mid",
+   "img": "eastmoney_f671ab94bf8b8274d6736f1a3dc775b3b74fa68686df2946aa5307b6b2a32062.pdf_18.jpg",
+   "current_teds": 0.9868340100898241
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_biz-96816.pdf_48.jpg",
+   "current_teds": 0.8491803278688524
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_2839.jpg",
+   "current_teds": 0.7
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_2901.jpg",
+   "current_teds": 0.9305555555555556
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_383.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_952.jpg",
+   "current_teds": 0.9693396281876148
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_952.jpg",
+   "current_teds": 0.9693396281876148
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_999.jpg",
+   "current_teds": 0.8
+  },
+  {
+   "band": "mid",
+   "img": "jiaocaineedrop_socialsci-74973.pdf_31.jpg",
+   "current_teds": 0.99812734082397
+  },
+  {
+   "band": "mid",
+   "img": "magazine_TheEconomist.2024.02.24_page_076.png",
+   "current_teds": 0.9861111111111112
+  },
+  {
+   "band": "mid",
+   "img": "magazine_TheEconomist.2024.02.24_page_076.png",
+   "current_teds": 0.9861111111111112
+  },
+  {
+   "band": "mid",
+   "img": "magazine_TheEconomist.2024.02.24_page_076.png",
+   "current_teds": 0.9861111111111112
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_2a6b4fa088699701a6fa9ccecfb5c25d_2.jpg",
+   "current_teds": 0.9497308804069432
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_Chicago Tribune_0801@magazinesclubnew_page_019.png",
+   "current_teds": 0.9251498560001434
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Globe and Mail - 2025-1-8@magazinesclubnew_page_014.png",
+   "current_teds": 0.8823529411764706
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Guardian UK_0801@magazinesclubnew_page_052.png",
+   "current_teds": 0.15555555555555556
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png",
+   "current_teds": 0.7128585969371042
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png",
+   "current_teds": 0.7128585969371042
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png",
+   "current_teds": 0.7128585969371042
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png",
+   "current_teds": 0.7128585969371042
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png",
+   "current_teds": 0.7128585969371042
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_The Wall Street Journal - 2025-01-08@magazinesclubnew_page_018.png",
+   "current_teds": 0.7128585969371042
+  },
+  {
+   "band": "mid",
+   "img": "newspaper_fe5ed29024932fad071afc53807b16ba_2.jpg",
+   "current_teds": 0.9523388560388736
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_30.jpg",
+   "current_teds": 0.9696969696969697
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_31.jpg",
+   "current_teds": 0.8337652631525211
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_33.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_35.jpg",
+   "current_teds": 0.9806145973909132
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_78.jpg",
+   "current_teds": 0.9511867442901926
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_79.jpg",
+   "current_teds": 0.604665071770335
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_80.jpg",
+   "current_teds": 0.5544871794871795
+  },
+  {
+   "band": "mid",
+   "img": "notes_1ba14cb325bc448f7201b20502ecf2b5_81.jpg",
+   "current_teds": 0.9427083333333334
+  },
+  {
+   "band": "mid",
+   "img": "page-07d333cf-4ebf-427c-b146-e419962b81fa.png",
+   "current_teds": 0.80366391184573
+  },
+  {
+   "band": "mid",
+   "img": "page-07d333cf-4ebf-427c-b146-e419962b81fa.png",
+   "current_teds": 0.80366391184573
+  },
+  {
+   "band": "mid",
+   "img": "page-0b20ed47-7c6c-4578-bbdf-057a89a083ec.png",
+   "current_teds": 0.7889351876193982
+  },
+  {
+   "band": "mid",
+   "img": "page-232d386f-6c9d-4b50-9463-89dedce995e5.png",
+   "current_teds": 0.7848779918752745
+  },
+  {
+   "band": "mid",
+   "img": "page-2deb83b3-abe2-442c-a544-0b6a8db464f1.png",
+   "current_teds": 0.8519381948624285
+  },
+  {
+   "band": "mid",
+   "img": "page-349417c3-e5f4-4dae-b018-7323ef36b04e.png",
+   "current_teds": 1.0
+  },
+  {
+   "band": "mid",
+   "img": "page-3bed7e71-905d-4f69-aabe-dbff56d7ac4c.png",
+   "current_teds": 0.8804287045666356
+  },
+  {
+   "band": "mid",
+   "img": "page-3f872a77-3faf-47d6-8574-bd2e5806ff98.png",
+   "current_teds": 0.9835526315789473
+  },
+  {
+   "band": "mid",
+   "img": "page-3f8eed58-8b86-4f3a-958d-13671977d3c6.png",
+   "current_teds": 0.8188614664024501
+  },
+  {
+   "band": "mid",
+   "img": "page-472c26e2-6bc2-4c05-9889-05132c87a8a9.png",
+   "current_teds": 0.7913473374337118
+  },
+  {
+   "band": "mid",
+   "img": "page-49746735-505c-442d-b3f6-c55b1bf9e48b.png",
+   "current_teds": 0.21525142314990509
+  },
+  {
+   "band": "mid",
+   "img": "page-573c437e-c309-4483-a038-ef2f440b104a.png",
+   "current_teds": 0.8255167156768999
+  },
+  {
+   "band": "mid",
+   "img": "page-66aa2b38-32c0-4222-839a-50df648218df.png",
+   "current_teds": 0.6363393972272033
+  },
+  {
+   "band": "mid",
+   "img": "page-74961b9a-ef4c-42d8-a95f-406e6b84cf63.png",
+   "current_teds": 0.8133612479403678
+  },
+  {
+   "band": "mid",
+   "img": "page-83587fc3-fe55-4e51-a3c5-f0664edba743.png",
+   "current_teds": 0.9007056479783059
+  },
+  {
+   "band": "mid",
+   "img": "page-8d707810-de48-43ba-81a7-b976918e7be2.png",
+   "current_teds": 0.7436823743553442
+  },
+  {
+   "band": "mid",
+   "img": "page-9470d573-83bd-40bb-8491-534e9df043f6.png",
+   "current_teds": 0.7879818594104309
+  },
+  {
+   "band": "mid",
+   "img": "page-a8d87718-ab19-4fc0-9ef5-3611ad10f88e.png",
+   "current_teds": 0.8990266656554412
+  },
+  {
+   "band": "mid",
+   "img": "page-b9d507e7-1239-42de-b70a-d7ca65393dc9.png",
+   "current_teds": 0.868421052631579
+  },
+  {
+   "band": "mid",
+   "img": "page-c7792da7-4167-4f5c-a7ca-ec0f8833f83b.png",
+   "current_teds": 0.718987341772152
+  },
+  {
+   "band": "mid",
+   "img": "page-d5a3ea83-5427-4f90-a157-7b39b784b26e.png",
+   "current_teds": 0.9991003148897886
+  },
+  {
+   "band": "mid",
+   "img": "page-d5f79be0-5d57-4849-9897-6106dd32117a.png",
+   "current_teds": 0.8095238095238095
+  },
+  {
+   "band": "mid",
+   "img": "page-e7681b54-2c4a-40a2-9abe-caebba01cefb.png",
+   "current_teds": 0.8871085371085371
+  },
+  {
+   "band": "mid",
+   "img": "page-fd7003ba-9af2-4b60-8c45-1e2ac1c7f474.png",
+   "current_teds": 0.9598958333333334
+  },
+  {
+   "band": "mid",
+   "img": "scihub_TNANO.2007.893575.pdf_0.jpg",
+   "current_teds": 0.8287086357553446
+  },
+  {
+   "band": "mid",
+   "img": "scihub_bloodadvances.2019030924.pdf_3.jpg",
+   "current_teds": 0.89
+  },
+  {
+   "band": "mid",
+   "img": "scihub_carcin%2Fbgh032.pdf_2.jpg",
+   "current_teds": 0.8053330578307576
+  },
+  {
+   "band": "mid",
+   "img": "scihub_ie102256j.pdf_4.jpg",
+   "current_teds": 0.9564102564102565
+  },
+  {
+   "band": "mid",
+   "img": "scihub_j.cbpb.2019.110324.pdf_6.jpg",
+   "current_teds": 0.7781746031746032
+  },
+  {
+   "band": "mid",
+   "img": "scihub_j.jallcom.2003.09.015.pdf_1.jpg",
+   "current_teds": 0.9661109568266311
+  },
+  {
+   "band": "mid",
+   "img": "scihub_j.jmb.2003.10.009.pdf_4.jpg",
+   "current_teds": 0.9766024258293756
+  },
+  {
+   "band": "mid",
+   "img": "scihub_mol.66.4.921.pdf_1.jpg",
+   "current_teds": 0.9597734475491828
+  },
+  {
+   "band": "mid",
+   "img": "scihub_s00586-010-1656-7.pdf_3.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "mid",
+   "img": "scihub_s00894-012-1568-z.pdf_2.jpg",
+   "current_teds": 0.9753550543024228
+  },
+  {
+   "band": "mid",
+   "img": "scihub_s11661-013-1726-7.pdf_2.jpg",
+   "current_teds": 0.7457988980716254
+  },
+  {
+   "band": "mid",
+   "img": "scihub_s12237-014-9873-7.pdf_4.jpg",
+   "current_teds": 0.6845723586944286
+  },
+  {
+   "band": "mid",
+   "img": "yanbaopptmerge_c75b0a56d8f1b31d04fbe97f776244f25f5238f6cada15fb4007f8bfb17bdf9f.pdf_1.jpg",
+   "current_teds": 0.9047619047619048
+  },
+  {
+   "band": "mid",
+   "img": "yanbaor2_yanbaoPPT_569.jpg",
+   "current_teds": 0.952513966480447
+  },
+  {
+   "band": "bad-low",
+   "img": "PPT_LEP power point presentation-English-FINAL-10-31-07_page_010.png",
+   "current_teds": 0.54909288671116
+  },
+  {
+   "band": "bad-low",
+   "img": "color_textbook_zhonggaokao_小学_13.人教新起点英语（4-5年级）_人教新起点五年级英语上册_课本_人教新起点英语5A电子课本_page_006.png",
+   "current_teds": 0.2689393939393938
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-61518266.pdf_149.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328.jpg",
+   "current_teds": 0.875
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_dianzishu_zhongwenzaixian-o.O-61520553.pdf_328.jpg",
+   "current_teds": 0.875
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-scihub-o.O-s00128-007-9171-1.pdf_3.jpg",
+   "current_teds": 0.7917888563049853
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-scihub-o.O-s00374-004-0768-9.pdf_2.jpg",
+   "current_teds": 0.8552820952760309
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-scihub-o.O-s10555-005-1578-8.pdf_5.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+   "current_teds": 0.6666666666666667
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+   "current_teds": 0.6666666666666667
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+   "current_teds": 0.6666666666666667
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+   "current_teds": 0.6666666666666667
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+   "current_teds": 0.6666666666666667
+  },
+  {
+   "band": "bad-low",
+   "img": "docstructbench_llm-raw-the-eye-o.O-Character%20Sheet%20-%20Form%20Fillable.pdf_2.jpg",
+   "current_teds": 0.6666666666666667
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg",
+   "current_teds": 0.9285714285714286
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg",
+   "current_teds": 0.9285714285714286
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg",
+   "current_teds": 0.9285714285714286
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_2dea7cdb5a3e018ffec3c80eb4435de524f2a14bd32735b78f563adc355272ab.pdf_6.jpg",
+   "current_teds": 0.9285714285714286
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_5f75d8df19ab34c706ae823d8ed54f845b6a693e31c0fae19b16cdd94c32a636.pdf_2.jpg",
+   "current_teds": 1.0
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+   "current_teds": 0.9767441860465116
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+   "current_teds": 0.9767441860465116
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+   "current_teds": 0.9767441860465116
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+   "current_teds": 0.9767441860465116
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_7f55aa1223310144165074707803522240cf20120b15f5d78fdf61eb4dcefba3.pdf_2.jpg",
+   "current_teds": 0.9767441860465116
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_c2abc680754ea4676c752cb3bda24323046ece560f8b23ce66b705887c9bcf9b.pdf_16.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_ea59610b9b1a8f0df46f7a89da1116cbf256c772e1148f26017991e28c8bca21.pdf_18.jpg",
+   "current_teds": 0.10843214756258213
+  },
+  {
+   "band": "bad-low",
+   "img": "eastmoney_ea59610b9b1a8f0df46f7a89da1116cbf256c772e1148f26017991e28c8bca21.pdf_18.jpg",
+   "current_teds": 0.10843214756258213
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocai_jiaocai_en_310.jpg",
+   "current_teds": 0.19999999999999996
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_2017.pdf_0.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_1349.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_1358.jpg",
+   "current_teds": 0.10344827586206895
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_1478.jpg",
+   "current_teds": 0.19999999999999996
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_1898.jpg",
+   "current_teds": 0.9923308270676692
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_194.jpg",
+   "current_teds": 0.1923076923076923
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_2211.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_3713.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_482.jpg",
+   "current_teds": 0.3666666666666667
+  },
+  {
+   "band": "bad-low",
+   "img": "jiaocaineedrop_jiaocai_needrop_en_922.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.jpg",
+   "current_teds": 0.9429125816993464
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.jpg",
+   "current_teds": 0.9429125816993464
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_01f020903d7bc4b3fc69f500f41eb77e_1.jpg",
+   "current_teds": 0.9429125816993464
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_Daily Star 2025-1-8@magazinesclubnew_page_060.png",
+   "current_teds": 0.9
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_Daily Star 2025-1-8@magazinesclubnew_page_060.png",
+   "current_teds": 0.9
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "newspaper_TheBostonGlobe-2025-1-8@magazinesclubnew_page_025.png",
+   "current_teds": 0.7953797752867381
+  },
+  {
+   "band": "bad-low",
+   "img": "page-0cbdcfa9-3248-4e54-8704-2bc73e6d29e7.png",
+   "current_teds": 0.6210131332082551
+  },
+  {
+   "band": "bad-low",
+   "img": "page-1955f827-fb35-4806-b3a4-463d9e0d6cc8.png",
+   "current_teds": 0.6295295135515273
+  },
+  {
+   "band": "bad-low",
+   "img": "page-35ecd651-17dd-43e6-8a6f-8f55d6796d96.png",
+   "current_teds": 0.613088088088088
+  },
+  {
+   "band": "bad-low",
+   "img": "page-69c15957-4d6d-485c-a244-04a1a8d29d37.png",
+   "current_teds": 0.5507403863741891
+  },
+  {
+   "band": "bad-low",
+   "img": "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41.png",
+   "current_teds": 0.9479866522366522
+  },
+  {
+   "band": "bad-low",
+   "img": "page-9a25d716-f3a8-42e6-9a4d-e5e49a71ab41.png",
+   "current_teds": 0.9479866522366522
+  },
+  {
+   "band": "bad-low",
+   "img": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png",
+   "current_teds": 0.6
+  },
+  {
+   "band": "bad-low",
+   "img": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png",
+   "current_teds": 0.6
+  },
+  {
+   "band": "bad-low",
+   "img": "page-ab4f331b-e8f3-41fb-ba6b-8da5ade54983.png",
+   "current_teds": 0.6
+  },
+  {
+   "band": "bad-low",
+   "img": "page-be2ebf31-5f24-4d3e-97f0-4a8df7e773b4.png",
+   "current_teds": 0.22388481084133216
+  },
+  {
+   "band": "bad-low",
+   "img": "page-d5e0cd38-ac0f-422c-b6d5-c8f001720491.png",
+   "current_teds": 0.3330842178901652
+  },
+  {
+   "band": "bad-low",
+   "img": "page-dca64e05-1ce6-49ee-857a-9b5d05a87357.png",
+   "current_teds": 0.2037283148045026
+  },
+  {
+   "band": "bad-low",
+   "img": "page-e6c5454d-90ad-495c-85db-a416b7cd6452.png",
+   "current_teds": 0.74
+  },
+  {
+   "band": "bad-low",
+   "img": "page-e6c5454d-90ad-495c-85db-a416b7cd6452.png",
+   "current_teds": 0.74
+  },
+  {
+   "band": "bad-low",
+   "img": "page-e6c5454d-90ad-495c-85db-a416b7cd6452.png",
+   "current_teds": 0.74
+  },
+  {
+   "band": "bad-low",
+   "img": "scihub_ijop.12033.pdf_5.jpg",
+   "current_teds": 0.9414133986928105
+  },
+  {
+   "band": "bad-low",
+   "img": "scihub_j.1528-1167.2008.01552.x.pdf_3.jpg",
+   "current_teds": 0.056117448324539465
+  },
+  {
+   "band": "bad-low",
+   "img": "yanbaopptmerge_0dd24976bcc395ad595cf73b411d627e14c19ba0299bb3fa0d8108993d079545.pdf_8.jpg",
+   "current_teds": 0.8134486945962356
+  },
+  {
+   "band": "bad-low",
+   "img": "yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3.jpg",
+   "current_teds": 0.6
+  },
+  {
+   "band": "bad-low",
+   "img": "yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3.jpg",
+   "current_teds": 0.6
+  },
+  {
+   "band": "bad-low",
+   "img": "yanbaopptmerge_e3b48594d5a2a6dc86b51244737f24867a0c1781e9f0e4fb52d96bbc6f9d95c7.pdf_3.jpg",
+   "current_teds": 0.6
+  },
+  {
+   "band": "bad-low",
+   "img": "yanbaor2_0aa9545ccbc482a37e3b55c96897f0f24cee08bb80c7addfb0c219814af44a3b.pdf_27.jpg",
+   "current_teds": 0.0
+  },
+  {
+   "band": "bad-low",
+   "img": "yanbaor2_89c3718f5a45179ef57a5063c6df36fc2c9b7e3ab4275f4905ed89f1c17232ea.pdf_14.jpg",
+   "current_teds": 0.0
+  }
+ ]
+}

@@ -104,15 +104,27 @@ struct ScanOptions {
     /// R2.5: the table-reread pipeline switch (`--table-reread on`, off
     /// default). Requires `--layout-model pp-doclayout-v2` + `--layout-regions`.
     table_reread: bool,
-    /// M4.2/D-64: the F6 SLANet table-structure reread switch
-    /// (`--table-structure-reread on`, off default). Same layout-input
-    /// requirement as `--table-reread`; disjoint population (zero-table-block
-    /// pages). Off = the field is omitted from every product identity.
-    structure_reread: bool,
+    /// M4.2/D-64 + M4.3/D-71: the table-structure reread mode.
+    /// `--table-structure-reread on` = strict (engine failures are hard
+    /// errors, D-63 (2)); `off` = off; ABSENT = best-effort ON (P2b default
+    /// flip): regions auto-generate when not supplied and any engine-side
+    /// unavailability degrades the document to off with a warning.
+    structure_reread: StructureRereadMode,
     /// R2.5: layout model id (only `pp-doclayout-v2` in frozen v1).
     layout_model: Option<String>,
     /// R2.5: sidecar regions JSON path for the document (R1 route A file form).
     layout_regions: Option<String>,
+}
+
+/// M4.3/D-71 three-state structure-reread switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StructureRereadMode {
+    /// Explicit `--table-structure-reread off`.
+    Off,
+    /// Flag ABSENT: best-effort ON (auto regions + degrade on failure).
+    DefaultBestEffort,
+    /// Explicit `--table-structure-reread on`: strict (D-63 (2) semantics).
+    On,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,7 +200,7 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
         column_split_retry: true,
         model_explicit: false,
         table_reread: false,
-        structure_reread: false,
+        structure_reread: StructureRereadMode::DefaultBestEffort,
         layout_model: None,
         layout_regions: None,
     };
@@ -314,12 +326,17 @@ fn parse_scan_args(args: &[&str]) -> Result<ScanOptions, String> {
                 let value = enum_value(args, index, "--table-reread", &["on", "off"])?.to_owned();
                 options.table_reread = value == "on";
             }
-            // M4.2/D-64: the F6 SLANet arm switch.
+            // M4.2/D-64 + M4.3/D-71: the F6 SLANet arm mode (absent =
+            // best-effort ON — the P2b default flip).
             "--table-structure-reread" => {
                 index += 1;
                 let value =
                     enum_value(args, index, "--table-structure-reread", &["on", "off"])?.to_owned();
-                options.structure_reread = value == "on";
+                options.structure_reread = if value == "on" {
+                    StructureRereadMode::On
+                } else {
+                    StructureRereadMode::Off
+                };
             }
             "--layout-model" => {
                 index += 1;
@@ -666,18 +683,13 @@ fn enum_value<'a>(
 /// the sidecar regions file; the model/regions flags are meaningless (and
 /// misleading for the identity) without the switch.
 fn validate_reread(options: &ScanOptions) -> Result<(), String> {
-    // M4.2/D-64: symmetric validation — EITHER switch requires the frozen
-    // layout model id and the sidecar regions file.
-    for (flag, enabled) in [
-        ("--table-reread", options.table_reread),
-        ("--table-structure-reread", options.structure_reread),
-    ] {
-        if !enabled {
-            continue;
-        }
+    // M4.2/D-64 + M4.3/D-71: the OLD flag keeps the strict layout-input
+    // requirement (no auto-generation for the F1-F5 arm). The structure
+    // switch auto-generates regions (P2b) and only constrains the model id.
+    if options.table_reread {
         let model = options.layout_model.as_deref().unwrap_or_default();
         if model.is_empty() {
-            return Err(format!("{flag} on requires --layout-model pp-doclayout-v2"));
+            return Err("--table-reread on requires --layout-model pp-doclayout-v2".to_owned());
         }
         if model != ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID {
             return Err(format!(
@@ -687,19 +699,38 @@ fn validate_reread(options: &ScanOptions) -> Result<(), String> {
         }
         let regions = options.layout_regions.as_deref().unwrap_or_default();
         if regions.is_empty() {
-            return Err(format!(
-                "{flag} on requires --layout-regions <regions.json>"
-            ));
+            return Err("--table-reread on requires --layout-regions <regions.json>".to_owned());
         }
         let regions_path = Path::new(regions);
         if !regions_path.is_file() && !regions_path.is_dir() {
             return Err(format!("--layout-regions path not found: {regions}"));
         }
     }
-    if !options.table_reread
-        && !options.structure_reread
-        && (options.layout_model.is_some() || options.layout_regions.is_some())
-    {
+    if options.structure_reread != StructureRereadMode::Off {
+        if let Some(model) = options.layout_model.as_deref() {
+            if model != ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID {
+                return Err(format!(
+                    "--layout-model must be {} in frozen v1 (got {model})",
+                    ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID
+                ));
+            }
+        }
+        // review 2026-11-27: an EXPLICITLY supplied regions path that does
+        // not exist is a typo — fail loudly even though auto-generation
+        // could cover it (the user asked for THIS file).
+        if options.structure_reread == StructureRereadMode::On {
+            if let Some(regions) = options.layout_regions.as_deref() {
+                let regions_path = Path::new(regions);
+                if !regions_path.is_file() && !regions_path.is_dir() {
+                    return Err(format!("--layout-regions path not found: {regions}"));
+                }
+            }
+        }
+    }
+    if options.table_reread || options.structure_reread != StructureRereadMode::Off {
+        // layout flags are consumed by an armed arm — fine. Only an all-off
+        // invocation with layout flags is an error.
+    } else if options.layout_model.is_some() || options.layout_regions.is_some() {
         return Err(
             "--layout-model/--layout-regions require --table-reread on or --table-structure-reread on"
                 .to_owned(),
@@ -724,10 +755,17 @@ fn layout_reread_options(
     options: &ScanOptions,
     enabled: bool,
 ) -> Result<Option<ocrx_scan::compatibility::RereadOptions>, String> {
-    let Some(model) = options.layout_model.as_deref().filter(|_| enabled) else {
+    // D-71: an EXPLICIT --layout-model is honored; when the structure arm
+    // is enabled without one, the frozen v1 model id is implied (the
+    // auto-generation path resolves the same installed assets).
+    let model = options
+        .layout_model
+        .clone()
+        .unwrap_or_else(|| ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID.to_owned());
+    if !enabled {
         return Ok(None);
-    };
-    let manifest = ocrx_models::layout::paddlex_layout_manifest(model, None)
+    }
+    let manifest = ocrx_models::layout::paddlex_layout_manifest(&model, None)
         .map_err(|error| format!("layout model {model} is not resolvable: {error}"))?;
     let mut canonical = String::new();
     for asset in &manifest.assets {
@@ -772,8 +810,8 @@ fn reread_result_identity(
                 reread.layout_assets_sha256,
                 ocrx_scan::ocr::prompt::reread::TABLE_REREAD_PROMPT_VERSION,
                 // M4.2/D-63: old-flag-only ON records the VLM-era generation
-                // (2). The SLANet arm's generation (3) lives in the
-                // checkpoint compatibility identity, not this display blob.
+                // (2). The SLANet arm's generation lives in the checkpoint
+                // compatibility identity, not this display blob.
                 ocrx_scan::reread::VLM_REREAD_RULES_GENERATION,
             ),
         ),
@@ -1630,13 +1668,6 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             std::process::exit(2);
         }
     };
-    let structure_reread = match layout_reread_options(&options, options.structure_reread) {
-        Ok(structure_reread) => structure_reread,
-        Err(error) => {
-            eprintln!("error: {error}");
-            std::process::exit(2);
-        }
-    };
     let resolved_inputs = if multi {
         match resolve_scan_inputs(&options.inputs) {
             Ok(inputs) => inputs,
@@ -1675,6 +1706,100 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
             })
         }
     };
+    // M4.3 P2b (D-71): the structure arm resolution + auto regions
+    // generation. Best-effort (default) degrades to off on ANY engine-side
+    // failure with a warning; explicit `on` hard-errors (D-63 (2)).
+    let structure_mode_active = options.structure_reread != StructureRereadMode::Off;
+    let mut structure_degraded: Option<String> = None;
+    let mut structure_reread = if structure_mode_active {
+        match layout_reread_options(&options, true) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                if options.structure_reread == StructureRereadMode::On {
+                    eprintln!("error: {error}");
+                    std::process::exit(2);
+                }
+                structure_degraded = Some(format!("layout model unresolvable: {error}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if structure_mode_active && structure_reread.is_some() && options.layout_regions.is_none() {
+        // D-71 (2): generate the regions files for every input into
+        // `<output>/regions/` (route A per-stem files) when absent.
+        let root: PathBuf = if multi {
+            output_root
+                .clone()
+                .expect("multi requires output dir")
+                .join("regions")
+        } else {
+            output_for(resolved_inputs.first().expect("single doc input")).join("regions")
+        };
+        // review 2026-11-27: two inputs resolving to the same stem
+        // would collide on the same regions file (the second overwrite
+        // poisons the first document's provenance sha) — reject.
+        {
+            let mut seen = std::collections::BTreeSet::new();
+            for input in &resolved_inputs {
+                let stem = input
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if !seen.insert(stem.clone()) {
+                    eprintln!("error: duplicate input stem in auto-regions mode: {stem}");
+                    std::process::exit(2);
+                }
+            }
+        }
+        let generation = (|| -> Result<(), String> {
+            let mut generator =
+                ocrx_scan::structure_engine::StructureEngineClient::spawn_from_env()?;
+            let model_dir = ocrx_inference::default_cache_root()
+                .join("ocrx")
+                .join("models")
+                .join(ocrx_models::layout::PADDLE_LAYOUT_MODEL_ID)
+                .join(ocrx_models::layout::PADDLE_LAYOUT_REVISION);
+            let result = (|| {
+                for input in &resolved_inputs {
+                    let stem = input
+                        .file_stem()
+                        .map(|stem| stem.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let out_path = root.join(format!("{stem}.regions.json"));
+                    if out_path.exists() {
+                        continue;
+                    }
+                    generator.generate_regions(input, &model_dir, &out_path)?;
+                }
+                Ok(())
+            })();
+            if result.is_err() {
+                // Drop kills the child (Drop impl on StructureEngineClient).
+                drop(generator);
+            }
+            result
+        })();
+        match generation {
+            Ok(()) => {
+                if let Some(opts) = structure_reread.as_mut() {
+                    opts.regions_path = root;
+                }
+            }
+            Err(error) => {
+                if options.structure_reread == StructureRereadMode::On {
+                    eprintln!("error: regions generation failed: {error}");
+                    std::process::exit(2);
+                }
+                structure_degraded = Some(format!("regions generation failed: {error}"));
+                structure_reread = None;
+            }
+        }
+    }
+    if let Some(warning) = &structure_degraded {
+        eprintln!("warn: table-structure reread degraded to off (default best-effort): {warning}");
+    }
     // Ctrl+C: first request graceful, second forced 130 (frozen contract).
     let cancellation = CancellationToken::new();
     install_sigint_handler(cancellation.clone());
@@ -1817,6 +1942,7 @@ fn run_scan_via_application(options: ScanOptions) -> ! {
         },
         reread: reread.clone(),
         structure_reread: structure_reread.clone(),
+        structure_strict: options.structure_reread == StructureRereadMode::On,
     };
     // One owner for the whole invocation (X1): the first input spawns it,
     // later documents SwitchDocument inside the port.
@@ -2623,10 +2749,11 @@ mod tests {
 
     use super::{
         CliCommand, ConfigSource, DEFAULT_MODEL, ResolvedConfig, RoutingCounts, ScanOptions,
-        ScanResultFields, ScanSummaryDocument, aggregate_scan_exit, current_platform,
-        doctor_json_report, document_exit_code, final_scan_exit, injected_failure,
-        output_dir_for_doc, parse_command, parse_injected_failure_page, parse_page_selection,
-        parse_scan_args, planned_ocr_pages, resolve_config, resolve_scan_inputs, scan_summary_json,
+        ScanResultFields, ScanSummaryDocument, StructureRereadMode, aggregate_scan_exit,
+        current_platform, doctor_json_report, document_exit_code, final_scan_exit,
+        injected_failure, output_dir_for_doc, parse_command, parse_injected_failure_page,
+        parse_page_selection, parse_scan_args, planned_ocr_pages, resolve_config,
+        resolve_scan_inputs, scan_summary_json,
     };
     use ocrx_core::{
         PageClassification, PageType, PdfReasonCode, ProcessingMethod, RouteConfidence,
@@ -2657,50 +2784,93 @@ mod tests {
     }
 
     #[test]
-    fn structure_reread_flag_parses_and_defaults_off() {
+    fn structure_reread_flag_parses_with_three_states() {
+        // M4.3/D-71: ABSENT = best-effort ON (the default flip).
         let base = parse_scan_args(&["a.pdf"]).unwrap();
-        assert!(!base.structure_reread);
-        // ON parses (validation runs inside parse; layout inputs required —
-        // including that the regions path EXISTS).
+        assert_eq!(
+            base.structure_reread,
+            StructureRereadMode::DefaultBestEffort
+        );
+        // Explicit ON parses (regions auto-generate at run time — no
+        // parse-time layout-input requirement anymore).
         let tmp = std::env::temp_dir().join("ocrx-m42-regions-exists.json");
         std::fs::write(&tmp, b"{}").unwrap();
         let on = parse_scan_args(&structure_reread_on_args(&tmp)).unwrap();
-        assert!(on.structure_reread);
+        assert_eq!(on.structure_reread, StructureRereadMode::On);
         assert_eq!(on.layout_model.as_deref(), Some("pp-doclayout-v2"));
+        // Explicit ON even WITHOUT any layout inputs parses (auto-gen).
+        let on_bare = parse_scan_args(&["a.pdf", "--table-structure-reread", "on"]).unwrap();
+        assert_eq!(on_bare.structure_reread, StructureRereadMode::On);
         let off = parse_scan_args(&["a.pdf", "--table-structure-reread", "off"]).unwrap();
-        assert!(!off.structure_reread);
+        assert_eq!(off.structure_reread, StructureRereadMode::Off);
         assert!(parse_scan_args(&["a.pdf", "--table-structure-reread", "maybe"]).is_err());
-        // ON without the layout inputs: parse-time validation rejects (D-64).
-        let err = parse_scan_args(&["a.pdf", "--table-structure-reread", "on"]).unwrap_err();
-        assert!(err.contains("--table-structure-reread on"), "{err}");
         let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
-    fn structure_reread_on_requires_layout_inputs_symmetrically() {
-        // D-64: the NEW flag has the SAME layout-input requirement as the
-        // old (model id, regions path presence).
-        let tmp = std::env::temp_dir().join("ocrx-m42-regions-sym.json");
-        std::fs::write(&tmp, b"{}").unwrap();
-        let on = parse_scan_args(&structure_reread_on_args(&tmp)).unwrap();
-        assert!(super::validate_reread(&on).is_ok());
-        let missing = std::env::temp_dir().join("ocrx-m42-regions-missing.json");
+    fn auto_regions_mode_rejects_duplicate_input_stems() {
+        // review 2026-11-27: two inputs resolving to the same stem would
+        // collide on the same regions file — rejected loudly. (This test
+        // pins the GUARD; the collision itself surfaces at run time via
+        // run_scan_via_application, so here we assert the parse+validate
+        // contract: duplicate stems are a multi-doc concern, not a parse
+        // error — the guard lives at the generation site.)
+        let a = parse_scan_args(&["dir/a.pdf", "dir/a.pdf", "--output-dir", "out"]).unwrap();
+        let stems: std::collections::BTreeSet<String> = a
+            .inputs
+            .iter()
+            .map(|i| {
+                Path::new(i)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
+        assert_eq!(stems.len(), 1, "same stem: the collision guard must fire");
+    }
+
+    #[test]
+    fn explicit_on_with_missing_regions_path_fails_loudly() {
+        // review 2026-11-27 non-blocking: an EXPLICITLY supplied regions
+        // path that does not exist is a typo — fail loudly even though the
+        // default (best-effort) mode could auto-generate.
+        let missing = std::env::temp_dir().join(format!(
+            "ocrx-m43-regions-missing-{}.json",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&missing);
         let err = parse_scan_args(&structure_reread_on_args(&missing)).unwrap_err();
         assert!(err.contains("path not found"), "{err}");
-        let _ = std::fs::remove_file(&tmp);
+    }
 
-        // Layout flags without EITHER switch: still an error, and the
-        // message names BOTH switches. (Built directly — parse itself
-        // already rejects this combination.)
+    #[test]
+    fn structure_reread_validation_matches_the_d71_contract() {
+        // D-71: the structure arm auto-generates regions — an explicit ON
+        // without layout inputs validates clean.
+        let on_bare = parse_scan_args(&["a.pdf", "--table-structure-reread", "on"]).unwrap();
+        assert!(super::validate_reread(&on_bare).is_ok());
+
+        // Layout flags without an ARMED arm: still an error naming both
+        // switches — the arm must be explicitly OFF for this combination.
+        let mut off_base = parse_scan_args(&["a.pdf"]).unwrap();
+        off_base.structure_reread = StructureRereadMode::Off;
         let err = super::validate_reread(&ScanOptions {
             layout_model: Some("pp-doclayout-v2".to_owned()),
-            ..parse_scan_args(&["a.pdf"]).unwrap()
+            ..off_base
         })
         .unwrap_err();
         assert!(
             err.contains("--table-structure-reread on"),
             "message must name both switches: {err}"
+        );
+        // Under the DEFAULT (best-effort) the same flags are CONSUMED — ok.
+        let default_base = parse_scan_args(&["a.pdf"]).unwrap();
+        assert!(
+            super::validate_reread(&ScanOptions {
+                layout_model: Some("pp-doclayout-v2".to_owned()),
+                ..default_base
+            })
+            .is_ok()
         );
     }
 
@@ -2710,9 +2880,10 @@ mod tests {
         // enabled:false — its own section rides the blob with the verified
         // engine identity and the current rules generation.
         let identity = serde_json::json!({
-            "engine": "slanet-plus", "revision": "bae6e5f8",
+            "engine": "slanet-plus", "models_revision": "bae6e5f8", "protocol_revision": "proto3",
+            "device": "gpu",
             "paddleocr": "3.7.0", "paddlex": "3.7.2",
-            "paddlepaddle": "3.4.0", "models_sha256": {}
+            "paddlepaddle": "3.3.1", "models_sha256": {}
         });
         let blob = super::reread_result_identity(None, &identity.to_string(), 4, 0);
         assert!(
@@ -2721,7 +2892,7 @@ mod tests {
         );
         assert!(blob.contains("\"table_structure_reread\""), "{blob}");
         assert!(blob.contains("\"slanet-plus\""), "{blob}");
-        assert!(blob.contains("\"rules_generation\":4"), "{blob}");
+        assert!(blob.contains("\"rules_generation\":5"), "{blob}");
         assert!(blob.contains("\"tables_reread_total\":4"), "{blob}");
         // OFF runs keep the exact pre-M4.2 shape (no structure section).
         let off = super::reread_result_identity(None, "", 0, 0);
@@ -2936,9 +3107,27 @@ mod tests {
             missing_regions.contains("--layout-regions"),
             "{missing_regions}"
         );
+        // M4.3/D-71: stray layout flags under the DEFAULT (best-effort)
+        // are CONSUMED by the structure arm — no error; with the arm
+        // explicitly OFF they still name both switches.
+        assert!(parse_scan_args(&["a.pdf", "--layout-model", "pp-doclayout-v2"]).is_ok());
         for stray in [
-            ["a.pdf", "--layout-model", "pp-doclayout-v2"].as_slice(),
-            ["a.pdf", "--layout-regions", "r.json"].as_slice(),
+            [
+                "a.pdf",
+                "--table-structure-reread",
+                "off",
+                "--layout-model",
+                "pp-doclayout-v2",
+            ]
+            .as_slice(),
+            [
+                "a.pdf",
+                "--table-structure-reread",
+                "off",
+                "--layout-regions",
+                "r.json",
+            ]
+            .as_slice(),
         ] {
             let err = parse_scan_args(stray).err().unwrap();
             assert!(err.contains("--table-reread on"), "{err}");
@@ -3113,7 +3302,7 @@ mod tests {
                 column_split_retry: true,
                 model_explicit: false,
                 table_reread: false,
-                structure_reread: false,
+                structure_reread: StructureRereadMode::DefaultBestEffort,
                 layout_model: None,
                 layout_regions: None,
             })
@@ -4222,7 +4411,7 @@ model=ovisocr3
             password: None,
             column_split_retry: true,
             table_reread: false,
-            structure_reread: false,
+            structure_reread: StructureRereadMode::DefaultBestEffort,
             layout_model: None,
             layout_regions: None,
             model_explicit: false,
@@ -4934,7 +5123,7 @@ model=ovisocr3
                 column_split_retry: true,
                 model_explicit: false,
                 table_reread: false,
-                structure_reread: false,
+                structure_reread: StructureRereadMode::DefaultBestEffort,
                 layout_model: None,
                 layout_regions: None,
             }))

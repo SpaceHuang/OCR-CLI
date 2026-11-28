@@ -70,7 +70,46 @@ pub trait PdfDocumentAccess {
 }
 
 /// One document's per-scan options (frozen defaults resolved by the CLI).
+/// M4.3 P2b-2 (D-71): the armed structure engine. Explicit `on` is EAGER
+/// (startup failure = D-63 (2) hard error); the default best-effort mode is
+/// LAZY (spawn at the first trigger region; zero-trigger documents never
+/// start the engine process).
+enum StructureEngineHandle {
+    Eager(crate::structure_engine::StructureEngineClient),
+    Lazy(crate::structure_engine::LazyStructureEngine),
+}
+
+impl StructureEngineHandle {
+    /// The hello identity — always present for the eager arm, only AFTER
+    /// the first trigger for the lazy arm (None = unprobed).
+    fn hello_identity(&self) -> Option<&crate::structure_engine::EngineIdentity> {
+        match self {
+            StructureEngineHandle::Eager(client) => Some(client.identity()),
+            StructureEngineHandle::Lazy(lazy) => lazy.identity(),
+        }
+    }
+}
+
+impl crate::structure_engine::StructureTableEngine for StructureEngineHandle {
+    fn recognize(
+        &mut self,
+        png: &[u8],
+        page: u32,
+        ordinal: usize,
+    ) -> Result<crate::structure_engine::StructureOutcome, crate::structure_engine::EngineErrorKind>
+    {
+        match self {
+            StructureEngineHandle::Eager(client) => client.recognize(png, page, ordinal),
+            StructureEngineHandle::Lazy(lazy) => lazy.recognize(png, page, ordinal),
+        }
+    }
+}
+
+/// One document's per-scan options (frozen defaults resolved by the CLI).
 #[derive(Debug, Clone)]
+// M4.3/D-71 added the 4th bool (structure_strict) — the switch matrix here
+// mirrors the CLI surface 1:1; a state-machine refactor is out of scope.
+#[allow(clippy::struct_excessive_bools)]
 pub struct DocumentOptions {
     pub pdf_mode: String,
     pub quality_tier: String,
@@ -100,6 +139,10 @@ pub struct DocumentOptions {
     /// (D-59, before any page product) and its verified handshake identity
     /// enters the compatibility.
     pub structure_reread: Option<crate::compatibility::RereadOptions>,
+    /// M4.3/D-71: explicit `on` = strict (spawn failure = hard error,
+    /// D-63 (2)); best-effort (default flip) degrades the document to off
+    /// with a warning instead.
+    pub structure_strict: bool,
 }
 
 impl Default for DocumentOptions {
@@ -121,6 +164,7 @@ impl Default for DocumentOptions {
             install: InstallPolicy::offline(),
             reread: None,
             structure_reread: None,
+            structure_strict: false,
         }
     }
 }
@@ -343,11 +387,43 @@ impl ScanApplication {
         // M4.2/D-59/D-63: the structure engine spawns at document start —
         // BEFORE any identity write, resume classification or page product.
         // Every startup-class failure is a HARD error (no products).
-        let mut structure_engine = if options.structure_reread.is_some() {
-            Some(
-                crate::structure_engine::StructureEngineClient::spawn_from_env()
-                    .map_err(std::io::Error::other)?,
-            )
+        // M4.3 P2b-3: the live identity slot — the lazy engine writes the
+        // verified identity here at spawn; committed pages pin it so
+        // engine-era products carry the engine-era pin.
+        let structure_identity_slot: std::rc::Rc<
+            std::cell::RefCell<Option<ocrx_output::StructureRereadIdentity>>,
+        > = std::rc::Rc::default();
+        let mut structure_engine_handle = if options.structure_reread.is_some() {
+            if options.structure_strict {
+                Some(StructureEngineHandle::Eager(
+                    crate::structure_engine::StructureEngineClient::spawn_from_env()
+                        .map_err(std::io::Error::other)?,
+                ))
+            } else if options.resume {
+                // P2b-3 BLOCK-2 fix: resume classification compares the doc
+                // identity EXACTLY — resolve the engine before classifying
+                // so the side carries the real identity (spawn failure
+                // degrades, preserving best-effort semantics).
+                match crate::structure_engine::StructureEngineClient::spawn_from_env() {
+                    Ok(client) => {
+                        *structure_identity_slot.borrow_mut() =
+                            Some(client.structure_reread_identity());
+                        Some(StructureEngineHandle::Eager(client))
+                    }
+                    Err(error) => {
+                        // best-effort degrade (doc-level): products keep the
+                        // OFF shape; the summary carries no identity.
+                        eprintln!(
+                            "warn: table-structure reread degraded to off (default best-effort): {error}"
+                        );
+                        None
+                    }
+                }
+            } else {
+                let mut lazy = crate::structure_engine::LazyStructureEngine::new();
+                lazy.set_identity_slot(structure_identity_slot.clone());
+                Some(StructureEngineHandle::Lazy(lazy))
+            }
         } else {
             None
         };
@@ -369,12 +445,16 @@ impl ScanApplication {
                 )
             })
             .unwrap_or_default();
-        let structure_identity: Option<ocrx_output::StructureRereadIdentity> =
-            structure_engine.as_ref().map(|client| {
-                let hello = client.identity();
-                ocrx_output::StructureRereadIdentity {
+        let mut structure_identity: Option<ocrx_output::StructureRereadIdentity> =
+            structure_engine_handle
+                .as_ref()
+                .and_then(|handle| handle.hello_identity())
+                .map(|hello| ocrx_output::StructureRereadIdentity {
                     engine: hello.engine.clone(),
-                    revision: hello.revision.clone(),
+                    models_revision: hello.models_revision.clone(),
+                    protocol_revision: hello.protocol_revision.clone(),
+                    device: hello.device.clone(),
+                    availability: "engine".to_owned(),
                     paddleocr: hello.paddleocr.clone(),
                     paddlex: hello.paddlex.clone(),
                     paddlepaddle: hello.paddlepaddle.clone(),
@@ -383,8 +463,7 @@ impl ScanApplication {
                         .iter()
                         .map(|(name, hash)| (name.clone(), hash.sha256.clone()))
                         .collect(),
-                }
-            });
+                });
         let failure =
             |code: u8, kind: &str, message: &str, cause: Option<String>| DocumentOutcome {
                 input: input.to_path_buf(),
@@ -990,6 +1069,7 @@ impl ScanApplication {
                 .with_regions_identity(&regions_identity),
             );
             let config = WindowConfig {
+                structure_identity_slot: Some(structure_identity_slot.clone()),
                 compatibility: &compatibility,
                 resume: false,
                 keep_pages: options.keep_pages,
@@ -1068,7 +1148,7 @@ impl ScanApplication {
                     &mut **provider as &mut dyn crate::region_provider::RegionProvider
                 }),
                 vlm_armed: options.reread.is_some(),
-                structure: structure_engine
+                structure: structure_engine_handle
                     .as_mut()
                     .map(|engine| engine as &mut dyn crate::structure_engine::StructureTableEngine),
             };
@@ -1211,6 +1291,28 @@ impl ScanApplication {
         // resumed (the ocr phase never runs, so ocr_summary carries nothing).
         // Without this, a fully-resumed structure run would omit
         // table_structure_reread from result.json.
+        // M4.3 P2b-2: the LAZY arm finalizes here — a doc whose engine
+        // spawned carries the verified identity; unprobed/degraded docs
+        // keep the OFF-shaped identity (None, conservative resume).
+        if let Some(StructureEngineHandle::Lazy(_)) = structure_engine_handle.as_ref() {
+            // P2b-3: the slot carries the verified identity iff the engine
+            // spawned; unprobed/degraded docs keep the OFF-shaped identity.
+            let slot_value = structure_identity_slot.borrow().clone();
+            match slot_value {
+                Some(identity) => structure_identity = Some(identity),
+                None => {
+                    if let Some(StructureEngineHandle::Lazy(lazy)) =
+                        structure_engine_handle.as_ref()
+                    {
+                        if let Some(error) = lazy.spawn_error() {
+                            summary.warnings.push(format!(
+                                "table-structure reread degraded to off (default best-effort): {error}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         summary.structure_reread_json = structure_identity
             .as_ref()
             .map(|identity| serde_json::to_string(identity).unwrap_or_default())

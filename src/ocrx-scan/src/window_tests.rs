@@ -245,6 +245,7 @@ fn compatibility() -> ScanCompatibility {
 fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
     WindowConfig {
         compatibility,
+        structure_identity_slot: None,
         resume: false,
         keep_pages: false,
         column_split_enabled: true,
@@ -263,6 +264,7 @@ fn config(compatibility: &ScanCompatibility) -> WindowConfig<'_> {
 
 fn config_with_ladder<'a>(compatibility: &'a ScanCompatibility, model: &str) -> WindowConfig<'a> {
     WindowConfig {
+        structure_identity_slot: None,
         ladder: crate::ladder_for_model(
             &ocrx_inference_api::ModelId::new(model).expect("built-in id is valid"),
         ),
@@ -1299,6 +1301,7 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
     let mut good_image = RenderedPage::new(1, 1, vec![200; 3]).unwrap();
     good_image.generation = 2;
     let artifact = |page: u32, body: &str| PageArtifactResult {
+        trigger_state_json: String::new(),
         png: None,
         markdown: body.to_owned(),
         page_json: format!(r#"{{"schema_version":1,"page_number":{page},"blocks":[]}}"#),
@@ -1338,6 +1341,7 @@ fn png_encode_failure_is_page_level_and_remaining_pages_commit_rblk4() {
         &terminal,
         &root,
         &compatibility(),
+        None,
         &CommitRecorder::disabled(),
         &CancellationToken::new(),
         &mut completed,
