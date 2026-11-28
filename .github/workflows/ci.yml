@@ -214,7 +214,10 @@ jobs:
 
       - name: engines window faces
         working-directory: plugins/ocrx-dsh
+        # build BEFORE build:test: the tests self-reference `@ocrx/dsh`,
+        # whose types resolve through the lib/index.d.ts that build emits.
         run: |
           npm install --no-save --legacy-peer-deps typescript@5.9.3 @types/node@22
+          npm run build
           npm run build:test
           node --test test-dist/test/engines-window.test.js
