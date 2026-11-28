@@ -87,3 +87,23 @@ CI 无法本地执行的作业（`dsh-loading`、双平台 `plugin-test` 矩阵�
 4. 行为测试四项：stdout collect 规格断言（必须请求 spill 且 cap ≥ maxBytes）；harness 守卫负例；lossy 无 spill 批量 → collection 错误（非 launcher_failed，指引含 exit code 与拆批）；单文档 face 同场景 → cli_error + collection limit 说明。
 
 修复后：插件 `npm test` 110 项全绿（103 过 + 7 集成跳过）；真实二进制集成 7/7；Rust workspace 0 failed；fmt 干净；`test-release-scripts.sh` EXIT=0。
+
+## 8. 本机 DSH 真实装载轮（2026-11-28）
+
+环境：本机 DeepSeek Harness 桌面版自带 CLI（`resources/runtime/cli/bin/dsh.cmd`，版本 **0.2.2-rc.5**，与冻结窗口一致；Electron 运行时满足 node ≥ 24.9）。
+
+执行序列与结果：
+
+1. `pack-plugin.mjs` 打插件包 `ocrx-dsh-0.1.0.tgz`（4 个关键 entry 齐）。
+2. 本地组装 win32 平台 stage（target/release 真实 ocrx.exe + vendor pdfium + 系统 CRT DLL + 许可集）→ `build-platform-packages.mjs` 打 `ocrx-ocrx-win32-x64-0.1.0.tgz`（7.5 MB ≤ 64 MiB）。
+3. `dsh plugin --profile ocrx-test add <插件 tgz>` → pnpm v11.28.5 安装成功，`dsh.profile.bundles` 激活 `@ocrx/dsh`（pnpm 对未发布的 optionalDependencies 静默跳过，符合预期）。
+4. `dsh plugin --profile ocrx-test add <平台包 tgz>` → 作为普通依赖落位（dsh 正确提示"declares no dsh.bundle — installed as a plain dependency"）。
+5. `--dump-config`：组合树出现 `# == @ocrx/dsh` 层（`id: ocrx, name: '@ocrx/dsh'`）。
+6. **真实宿主 web 启动装载**：初次启动暴露真实 bug——宿主 schema 校验器拒绝 output schema `type: 'json'`（JsonSchemaError，注册失败）。修复为 `type: 'object'` 并新增宿主子集回归测试（所有编译后 schema type ∈ object/array/string/number/integer/boolean/null）后重新打包安装，启动无任何 ocrx 相关错误输出（bundle 挂载与 apply() 注册通过，失败会打印并跳过 bundle）。
+7. **bundled 定位**：插件在 profile 内 `locateBinary()` → `source: 'bundled'`，指向 `node_modules/@ocrx/ocrx-win32-x64/bin/ocrx.exe`；该二进制 `ocrx version` → `ocrx 0.1.0`，真实扫描（native-plus-empty.pdf，pdf-mode text，恒 offline 旗标）→ success 2/2 页 + markdown 产出。
+8. `dsh-loading-smoke.mjs` 对真实 profile：注册/Config 校验/binary 面全部通过。
+9. `dsh plugin remove @ocrx/dsh` + `remove @ocrx/ocrx-win32-x64` → bundle 退回 dsh-base，无插件文件残留（仅 pnpm 自身留下的空 scope 目录，已澄清非插件残留）；测试 profile 已删除还原。
+
+发现并修复：output schema `type: 'json'` 超出 rc.5 宿主允许子集（静态测试全绿未能发现——该 face 只有真实宿主能暴露）。回归测试已钉死。
+
+注：headless 会话面需 LLM 凭据（新 profile 未配置），未执行；headless 漏斗属真机门槛（runbook §7）。
