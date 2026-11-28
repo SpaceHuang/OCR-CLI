@@ -794,10 +794,10 @@ pub fn orchestrate_partial(
     engine: &mut dyn crate::structure_engine::StructureTableEngine,
 ) -> std::io::Result<(Vec<PageBlock>, String, RereadStats)> {
     let mut stats = RereadStats::default();
-    let emitted_htmls: Vec<&str> = blocks
+    let mut emitted_htmls: Vec<String> = blocks
         .iter()
         .filter_map(|block| match block {
-            PageBlock::HtmlTable { html } => Some(html.as_str()),
+            PageBlock::HtmlTable { html } => Some(html.clone()),
             _ => None,
         })
         .collect();
@@ -861,8 +861,10 @@ pub fn orchestrate_partial(
         };
         if let Some(reread_html) = reread_html {
             if f6_structural_gate(&reread_html) {
-                let (verdict, jaccard) =
-                    dedup_vs_emitted_with_jaccard(&reread_html, &emitted_htmls);
+                let (verdict, jaccard) = dedup_vs_emitted_with_jaccard(
+                    &reread_html,
+                    &emitted_htmls.iter().map(String::as_str).collect::<Vec<_>>(),
+                );
                 outcome.jaccard = jaccard;
                 match verdict {
                     DedupVerdict::Pass => {
@@ -870,7 +872,13 @@ pub fn orchestrate_partial(
                         adopted.push(PageBlock::HtmlTable {
                             html: reread_html.clone(),
                         });
-                        adopted_html.push(reread_html);
+                        adopted_html.push(reread_html.clone());
+                        // review 2026-11-27: adopted candidates join the
+                        // comparison domain — a later candidate duplicating
+                        // an EARLIER adopted candidate is also a duplicate
+                        // (the two eastmoney column tables are distinct; two
+                        // identical candidates are a det double-fire).
+                        emitted_htmls.push(reread_html.clone());
                     }
                     DedupVerdict::Duplicate => {
                         outcome.reject_reason = Some("duplicate_of_emitted");
@@ -2578,6 +2586,41 @@ mod tests {
         assert!(engine.calls.borrow().is_empty(), "no decode ran");
         assert_eq!(new_blocks.len(), 1);
         assert_eq!(new_md, emitted);
+    }
+
+    /// review 2026-11-27: an adopted candidate JOINS the dedup comparison
+    /// domain — a later candidate duplicating an EARLIER ADOPTED candidate
+    /// (not just an originally-emitted table) is rejected as duplicate.
+    #[test]
+    fn partial_arm_dedup_covers_earlier_adopted_candidates() {
+        let emitted = table_with_cells(&["首表", "列甲列", "列乙列"]);
+        let blocks: Vec<PageBlock> = vec![PageBlock::HtmlTable {
+            html: emitted.clone(),
+        }];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 100.0, 100.0)),
+                f6_region(1, (0.0, 100.0, 100.0, 200.0)),
+                f6_region(2, (0.0, 200.0, 100.0, 300.0)),
+                f6_region(3, (0.0, 300.0, 100.0, 400.0)),
+            ],
+        };
+        let first = table_with_cells(&["候选甲", "季度甲", "数值甲"]);
+        let second = table_with_cells(&["候选甲", "季度甲", "数值甲"]); // dup of first
+        let third = table_with_cells(&["候选丙", "季度丙", "数值丙"]);
+        let mut engine = F6Engine {
+            responses: vec![first.clone(), second.clone(), third.clone()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, _new_md, stats) =
+            orchestrate_partial(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_partial_emitted, 2, "first + third adopted");
+        assert_eq!(stats.f6_partial_dup_rejected, 1, "second dup of first");
+        // page_json: emitted + first + third (second rejected)
+        assert_eq!(new_blocks.len(), 3);
+        assert!(matches!(&new_blocks[1], PageBlock::HtmlTable { html } if html == &first));
+        assert!(matches!(&new_blocks[2], PageBlock::HtmlTable { html } if html == &third));
     }
 
     #[test]

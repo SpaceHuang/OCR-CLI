@@ -44,5 +44,16 @@
   "emitted_blocks_kept": "17/17",
   "identical_to_cpu_dry_run": true
  },
- "pending": "G0.5 formal spike adjudication (GPU eval running) + user gate decision (frozen 20% FAIL vs true-miss 44% vs outcome-based option C)"
+ "pending": "G0.5 formal spike adjudication (GPU eval running) + user gate decision (frozen 20% FAIL vs true-miss 44% vs outcome-based option C)",
+ "environment_caveat": {
+  "finding": "paddle 3.3.1-gpu wheel compiled with CUDNN 9.9; machine has CUDNN 9.5 — paddle emits a serious-incompatibility warning at every GPU init",
+  "observed": "all GPU inference (probe, T4 campaign, beta/gamma, dual-arm spike) completed with sane outputs and zero crashes across ~2000+ inferences",
+  "disposition": "recorded as environment risk; follow-ups: (1) upgrade machine CUDNN to 9.9 or switch to the cu118 wheel, (2) add CUDNN version to the engine identity so runtime changes pin products"
+ },
+ "gpu_run_to_run_variance": {
+  "finding": "GPU OCR-rec (PP-OCRv4_server_rec_doc) cell text can vary at WHITESPACE level across process runs on dense crops (e.g. Note3 vs Note 3 on the page-0cbdcfa9 nested table) — observed in the 3rd GPU smoke run; the 1st-2nd pair was byte-identical",
+  "scope": "whitespace-level only; table structure stable; classification split stable across all runs",
+  "disposition": "smoke html assertion relaxed to whitespace-normalized equality (structure/verdict contract stays exact); full-corpus gamma==beta md was byte-identical in the same campaign pair, so corpus-level stability held for the shipped evidence",
+  "residual_risk": "individual dense crops may wobble across future runs — byte-exact html pinning is NOT a GPU-era guarantee"
+ }
 }

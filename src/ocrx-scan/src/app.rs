@@ -399,6 +399,26 @@ impl ScanApplication {
                     crate::structure_engine::StructureEngineClient::spawn_from_env()
                         .map_err(std::io::Error::other)?,
                 ))
+            } else if options.resume {
+                // P2b-3 BLOCK-2 fix: resume classification compares the doc
+                // identity EXACTLY — resolve the engine before classifying
+                // so the side carries the real identity (spawn failure
+                // degrades, preserving best-effort semantics).
+                match crate::structure_engine::StructureEngineClient::spawn_from_env() {
+                    Ok(client) => {
+                        *structure_identity_slot.borrow_mut() =
+                            Some(client.structure_reread_identity());
+                        Some(StructureEngineHandle::Eager(client))
+                    }
+                    Err(error) => {
+                        // best-effort degrade (doc-level): products keep the
+                        // OFF shape; the summary carries no identity.
+                        eprintln!(
+                            "warn: table-structure reread degraded to off (default best-effort): {error}"
+                        );
+                        None
+                    }
+                }
             } else {
                 let mut lazy = crate::structure_engine::LazyStructureEngine::new();
                 lazy.set_identity_slot(structure_identity_slot.clone());

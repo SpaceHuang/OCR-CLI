@@ -958,6 +958,11 @@ pub(crate) fn commit_terminal(
                     if let Some(identity) = slot.borrow().as_ref() {
                         if let Some(ocr) = page_compatibility.ocr.as_mut() {
                             ocr.table_structure_reread = Some(identity.clone());
+                            // P2b-3 BLOCK-2 fix: pin the generation alongside
+                            // the identity — without it lazy-doc checkpoints
+                            // carry gen 0 while the resume side expects 5,
+                            // forcing full reprocess of rescued documents.
+                            ocr.reread_rules_generation = crate::reread::REREAD_RULES_GENERATION;
                         }
                     }
                 }
