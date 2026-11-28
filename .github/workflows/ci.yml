@@ -193,8 +193,10 @@ jobs:
         run: |
           dsh --version
           # npm strips `@` from scoped tarball names: @ocrx/dsh packs as
-          # ocrx-dsh-<version>.tgz (BLOCK-1 spelling).
-          TARBALL=$(ls dist/ocrx-dsh-*.tgz | head -1)
+          # ocrx-dsh-<version>.tgz (BLOCK-1 spelling). Pass an ABSOLUTE path:
+          # the dsh plugin manager hands the specifier to pnpm with its own
+          # cwd, and a relative spelling was misread as a git dependency.
+          TARBALL=$(ls "$GITHUB_WORKSPACE/dist/ocrx-dsh-"*.tgz | head -1)
           dsh plugin --profile ci add "$TARBALL"
           # Registration + Config validation + binary_not_found assertions run
           # through the plugin's own harness against the dsh host context.
