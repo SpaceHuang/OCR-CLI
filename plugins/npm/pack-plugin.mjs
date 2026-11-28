@@ -62,18 +62,26 @@ function main() {
   //    ALSO works from a clean checkout: without the build there IS no
   //    package (review BLOCK-2).
   const tscJs = path.join(pluginDir, 'node_modules', 'typescript', 'bin', 'tsc');
-  if (!existsSync(tscJs)) fail(`typescript not installed under the plugin (${tscJs})`);
-  const compile = spawnSync(
-    process.execPath,
-    [tscJs, '-p', pluginDir],
-    { encoding: 'utf8', windowsHide: true },
-  );
-  if (compile.status !== 0) {
-    fail(`tsc failed: ${compile.stderr || compile.stdout}`);
-  }
   const libDir = path.join(pluginDir, 'lib');
+  if (existsSync(tscJs)) {
+    const compile = spawnSync(
+      process.execPath,
+      [tscJs, '-p', pluginDir],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    if (compile.status !== 0) {
+      fail(`tsc failed: ${compile.stderr || compile.stdout}`);
+    }
+  } else if (!existsSync(path.join(libDir, 'index.js'))) {
+    // No toolchain AND no previously built lib: a clean checkout without the
+    // frozen-lockfile install cannot produce a package (review BLOCK-2).
+    fail(
+      `typescript not installed under the plugin (${tscJs}) and no prior lib/index.js — ` +
+        'run the frozen-lockfile install (pnpm install --frozen-lockfile) before packing',
+    );
+  }
   if (!existsSync(path.join(libDir, 'index.js'))) {
-    fail('tsc produced no lib/index.js — the entry point would be missing from the tarball');
+    fail('no lib/index.js — the entry point would be missing from the tarball');
   }
 
   // 2. Stage: manifest (with the pinned version), the FRESH lib/, patch,

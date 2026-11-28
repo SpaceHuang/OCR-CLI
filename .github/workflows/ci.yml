@@ -64,6 +64,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # pack-plugin.mjs's behavioral self-test compiles the plugin — give it
+      # a toolchain (a clean checkout has neither node_modules nor lib/).
+      - name: install plugin compile toolchain
+        shell: bash
+        run: npm install --prefix plugins/ocrx-dsh --no-save typescript@5.9.3 @types/node@22
       - name: contract checks + installer smoke matrix
         shell: bash
         run: bash scripts/test-release-scripts.sh
@@ -206,6 +211,5 @@ jobs:
       - name: engines window faces
         working-directory: plugins/ocrx-dsh
         run: |
-          npm install --no-save typescript@5.9.3 @types/node@22
-          node "$(dirname "$(command -v node)")/node_modules/npm/bin/npm-cli.js" run build:test
-          node --test "test-dist/test/engines-window.test.js"
+          npx --yes --package typescript@5.9.3 --package @types/node@22 tsc -p tsconfig.test.json
+          node --test test-dist/test/engines-window.test.js
