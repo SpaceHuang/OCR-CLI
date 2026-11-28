@@ -35,6 +35,27 @@ else
 fi
 cp "$ROOT_DIR/assets/skills/ocrx/SKILL.md" "$STAGE/SKILL.md"
 [[ -f "$STAGE/SKILL.md" ]] || { echo "SKILL.md missing at skill root" >&2; exit 4; }
+# Ship the full license set with the archive (C4 / requirement 5.1: the
+# macOS archive previously shipped WITHOUT licenses - the npm platform
+# package must be same-source with the Release archive, so both carry the
+# identical set). Mirrors the Windows packager: the project Apache-2.0 text,
+# the third-party notices, the pinned llama.cpp MIT license, and the PDFium
+# license set from the fetched baseline (licenses/ sits next to the dylib).
+for RepoFile in LICENSE THIRD_PARTY_NOTICES.md; do
+  [[ -f "$ROOT_DIR/$RepoFile" ]] || { echo "license file missing in repo: $RepoFile" >&2; exit 4; }
+  cp "$ROOT_DIR/$RepoFile" "$STAGE/$RepoFile"
+done
+[[ -f "$ROOT_DIR/assets/licenses/llama.cpp/LICENSE" ]] || { echo "llama.cpp license missing under assets/licenses" >&2; exit 4; }
+mkdir -p "$STAGE/licenses/llama.cpp"
+cp "$ROOT_DIR/assets/licenses/llama.cpp/LICENSE" "$STAGE/licenses/llama.cpp/LICENSE"
+if [[ -n "${OCRX_PDFIUM_LIBRARY:-}" ]]; then
+  PdfiumRoot=$(dirname "$(dirname "$OCRX_PDFIUM_LIBRARY")")
+  if [[ -d "$PdfiumRoot/licenses" ]]; then
+    mkdir -p "$STAGE/licenses/pdfium"
+    cp -R "$PdfiumRoot/licenses/." "$STAGE/licenses/pdfium/"
+  fi
+  [[ -d "$STAGE/licenses/pdfium" ]] || { echo "PDFium license set missing next to the dylib" >&2; exit 4; }
+fi
 cat > "$STAGE/INSTALL.txt" <<'EOF'
 This directory is a standard Agent Skill root (SKILL.md) plus the OCR-CLI binary.
 
@@ -44,6 +65,7 @@ Layout:
     bin/ocrx
     lib/libpdfium.dylib
     INSTALL.txt
+    LICENSE, THIRD_PARTY_NOTICES.md, licenses/
 
 It does not contain model weights. Model installation is explicit.
 

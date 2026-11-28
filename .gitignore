@@ -28,3 +28,15 @@ __pycache__/
 
 # ZCode session workspace (plans, editor state), not project content
 .zcode/
+
+# plugins half (dsh-plugin-v0.1 plan §3)
+plugins/*/lib/
+plugins/*/node_modules/
+plugins/*/*.tgz
+plugins/npm/pack-probe/
+plugins/ocrx-dsh/.spike-tmp/
+plugins/*/test-dist/
+plugins/*/.devhost/
+
+# stage-0 spike scratch (dsh dependency tree)
+/.spike-tmp/

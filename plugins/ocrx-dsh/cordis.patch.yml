@@ -1,0 +1,9 @@
+# Bundle patch (dsh.bundle.patch, requirement §6.1/§6.2): inserts one loader
+# entry that activates this plugin's tools/command/skill provider. The entry
+# `name` is the module specifier of the npm package installed into the dsh
+# profile workspace (`@ocrx/dsh`, D-1); `config` stays empty so user config
+# under `ocrx:` in the profile config applies untouched.
+- insert:
+    - id: ocrx
+      name: '@ocrx/dsh'
+      config: {}
