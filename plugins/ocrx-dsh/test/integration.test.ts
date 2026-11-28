@@ -92,6 +92,10 @@ function realSubprocessSeam(): unknown {
   };
 }
 
+function tool_of(env: { config: ReturnType<typeof resolveConfig>; ctx: PluginContext }) {
+  return createModelTool(env);
+}
+
 const scanEnv = () => {
   const e = env();
   // scan walks compose(None) and does NOT read OCRX_MODEL_CACHE (C5 is P1),
@@ -157,7 +161,15 @@ test('integration: single-doc model_missing derives from the stdout failure obje
     )) as { error: { reason: string; guidance: string } | null; readiness?: { recommend: { model: string } } };
     assert.equal(result.error?.reason, 'model_missing', `reason: ${result.error?.reason}`);
     assert.match(result.error?.guidance ?? '', /ocrx_model_install/);
-    assert.equal(result.readiness?.recommend.model, 'ovisocr3', '无参数 recommend 面（默认模型，不硬编码）');
+    // 无参数 recommend 面（默认模型，不硬编码）：readiness 的 model 必须等于
+    // 同机 `ocrx model recommend` 文本面返回的模型——与 runner 内存无关
+    // （7 GiB CI runner 回退 ovisocr2，32 GiB 本机选 ovisocr3，均为正确行为）。
+    const textFace = (await tool_of(e).execute({ action: 'recommend' }, {})) as {
+      ok: boolean;
+      plan: { model: string } | null;
+    };
+    const expectedModel = textFace.plan?.model ?? 'ovisocr3';
+    assert.equal(result.readiness?.recommend.model, expectedModel, `无参数 recommend 面（同机一致）`);
   } finally {
     rmSync(outputDir, { recursive: true, force: true });
   }
