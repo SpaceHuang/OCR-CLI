@@ -33,6 +33,7 @@ __pycache__/
 plugins/*/lib/
 plugins/*/node_modules/
 plugins/*/*.tgz
+plugins/npm/pack-probe/
 plugins/ocrx-dsh/.spike-tmp/
 plugins/*/test-dist/
 plugins/*/.devhost/
