@@ -2588,6 +2588,41 @@ mod tests {
         assert_eq!(new_md, emitted);
     }
 
+    /// review 2026-11-27: an adopted candidate JOINS the dedup comparison
+    /// domain — a later candidate duplicating an EARLIER ADOPTED candidate
+    /// (not just an originally-emitted table) is rejected as duplicate.
+    #[test]
+    fn partial_arm_dedup_covers_earlier_adopted_candidates() {
+        let emitted = table_with_cells(&["首表", "列甲列", "列乙列"]);
+        let blocks: Vec<PageBlock> = vec![PageBlock::HtmlTable {
+            html: emitted.clone(),
+        }];
+        let page = f6_page();
+        let mut provider = F6Provider {
+            regions: vec![
+                f6_region(0, (0.0, 0.0, 100.0, 100.0)),
+                f6_region(1, (0.0, 100.0, 100.0, 200.0)),
+                f6_region(2, (0.0, 200.0, 100.0, 300.0)),
+                f6_region(3, (0.0, 300.0, 100.0, 400.0)),
+            ],
+        };
+        let first = table_with_cells(&["候选甲", "季度甲", "数值甲"]);
+        let second = table_with_cells(&["候选甲", "季度甲", "数值甲"]); // dup of first
+        let third = table_with_cells(&["候选丙", "季度丙", "数值丙"]);
+        let mut engine = F6Engine {
+            responses: vec![first.clone(), second.clone(), third.clone()],
+            calls: std::cell::RefCell::new(Vec::new()),
+        };
+        let (new_blocks, _new_md, stats) =
+            orchestrate_partial(&blocks, "", 0, &page, &mut provider, &mut engine).unwrap();
+        assert_eq!(stats.f6_partial_emitted, 2, "first + third adopted");
+        assert_eq!(stats.f6_partial_dup_rejected, 1, "second dup of first");
+        // page_json: emitted + first + third (second rejected)
+        assert_eq!(new_blocks.len(), 3);
+        assert!(matches!(&new_blocks[1], PageBlock::HtmlTable { html } if html == &first));
+        assert!(matches!(&new_blocks[2], PageBlock::HtmlTable { html } if html == &third));
+    }
+
     #[test]
     fn partial_arm_multi_candidate_inserts_in_det_ordinal_order() {
         let emitted = table_with_cells(&["表一", "列甲列", "列乙列"]);
