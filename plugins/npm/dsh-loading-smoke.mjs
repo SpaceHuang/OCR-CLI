@@ -113,7 +113,12 @@ function main() {
       for (let visited = 0; queue.length > 0 && visited < 5000; visited += 1) {
         const dir = queue.shift();
         const candidate = path.join(dir, 'node_modules', '@ocrx');
-        if (existsSync(candidate)) fail(`plugin residue remains: ${candidate}`);
+        if (existsSync(candidate)) {
+          // An EMPTY scope directory is pnpm's own artifact after removing
+          // the symlinks — plugin residue means actual FILES remain.
+          const leftover = readdirSync(candidate);
+          if (leftover.length > 0) fail(`plugin residue remains: ${candidate} (${leftover.join(', ')})`);
+        }
         let entries;
         try {
           entries = readdirSync(dir, { withFileTypes: true });

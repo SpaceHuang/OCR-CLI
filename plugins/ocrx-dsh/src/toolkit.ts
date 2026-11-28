@@ -122,7 +122,12 @@ export function defineTool(input: RawToolInput): ToolDefinition {
     description: input.description,
     parameters,
     output: {
-      schema: { type: 'json', description: input.outputDescription ?? input.description },
+      // The rc.5 host schema validator accepts ONLY
+      // object/array/string/number/integer/boolean/null (found by the real
+      // host loading face — `type: 'json'` was rejected at registration).
+      // Tool results are canonical JSON objects, so `object` is the honest
+      // permissive root.
+      schema: { type: 'object', description: input.outputDescription ?? input.description },
       render(args, value) {
         return [{ type: 'text', text: input.renderText(args as Record<string, unknown>, value) }];
       },

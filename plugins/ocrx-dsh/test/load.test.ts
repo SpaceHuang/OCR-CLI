@@ -50,3 +50,50 @@ test('config validation rejects illegal values at load time', () => {
   assert.throws(() => plugin.apply(new FakeCtx() as never, { offline: 'yes' }));
   assert.throws(() => plugin.apply(new FakeCtx() as never, { command: 42 }));
 });
+
+// Real-host loading face (found by booting @deepseek-ai/dsh@0.2.2-rc.5 web):
+// the host schema validator accepts ONLY this type subset — `type: 'json'`
+// made registration fail with JsonSchemaError. Pin every compiled schema.
+const HOST_ALLOWED_TYPES = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']);
+
+function assertSchemaWithinHostSubset(schema: unknown, label: string): void {
+  const record = schema as { type?: string; properties?: Record<string, { type?: string; items?: unknown }> };
+  assert.ok(
+    HOST_ALLOWED_TYPES.has(record.type ?? ''),
+    `${label}.type must be in the rc.5 host subset, got ${record.type}`,
+  );
+  for (const [key, property] of Object.entries(record.properties ?? {})) {
+    assert.ok(
+      HOST_ALLOWED_TYPES.has(property.type ?? ''),
+      `${label}.properties.${key}.type must be in the rc.5 host subset, got ${property.type}`,
+    );
+    const items = property.items as { type?: string } | undefined;
+    if (items?.type !== undefined) {
+      assert.ok(
+        HOST_ALLOWED_TYPES.has(items.type),
+        `${label}.properties.${key}.items.type must be in the rc.5 host subset, got ${items.type}`,
+      );
+    }
+  }
+}
+
+test('every compiled tool schema stays within the rc.5 host JSON-schema subset', () => {
+  // Capture the full definitions (FakeCtx stores name+options only).
+  const definitions: Array<{
+    name: string;
+    parameters: Record<string, unknown>;
+    output: { schema: Record<string, unknown> };
+  }> = [];
+  const ctx = {
+    tools: { register(definition: { name: string; parameters: Record<string, unknown>; output: { schema: Record<string, unknown> } }) { definitions.push(definition); } },
+    commands: { register() {} },
+    skills: { registerProvider() {} },
+    get() { return undefined; },
+  };
+  plugin.apply(ctx as never, {});
+  assert.equal(definitions.length, 4, 'all four tools captured');
+  for (const definition of definitions) {
+    assertSchemaWithinHostSubset(definition.parameters, `${definition.name}.parameters`);
+    assertSchemaWithinHostSubset(definition.output.schema, `${definition.name}.output.schema`);
+  }
+});
