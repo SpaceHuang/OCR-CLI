@@ -161,8 +161,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: install pnpm (dsh plugin channel)
-        run: npm install -g pnpm@9
+      - name: install pnpm (match the desktop-host bundled pnpm 11)
+        run: npm install -g pnpm@11
 
       - name: install the locked dsh CLI
         run: npm install -g @deepseek-ai/dsh@0.2.2-rc.5
@@ -186,6 +186,10 @@ jobs:
 
       - name: load into dsh and assert the registration contract
         shell: bash
+        # npm_config_ignore_workspace_root_check: the dsh-managed profile IS a
+        # pnpm workspace root; pnpm 11 errors on root-add without this flag.
+        env:
+          npm_config_ignore_workspace_root_check: 'true'
         run: |
           dsh --version
           # npm strips `@` from scoped tarball names: @ocrx/dsh packs as
